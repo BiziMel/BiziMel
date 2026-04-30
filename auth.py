@@ -8,6 +8,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 
 AUTH_DB_NAME = "pipeflow_server_auth.db"
+VALID_ROLES = {"admin", "manager", "user"}
 
 
 def server_data_root() -> Path:
@@ -57,12 +58,14 @@ def create_user(email: str, password: str, full_name: str):
 
     connection = get_auth_connection()
     try:
+        existing_count = connection.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        role = "admin" if existing_count == 0 else "user"
         cursor = connection.execute(
             """
-            INSERT INTO users (email, password_hash, full_name)
-            VALUES (?, ?, ?)
+            INSERT INTO users (email, password_hash, full_name, role)
+            VALUES (?, ?, ?, ?)
             """,
-            (email, generate_password_hash(password), full_name),
+            (email, generate_password_hash(password), full_name, role),
         )
         connection.commit()
         return cursor.lastrowid, ""
@@ -117,3 +120,84 @@ def login_required(view):
         return view(*args, **kwargs)
 
     return wrapped
+
+
+def admin_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        user = current_user()
+        if not user:
+            return redirect(url_for("login"))
+        if user["role"] != "admin":
+            return redirect(url_for("home"))
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+def list_users():
+    connection = get_auth_connection()
+    users = connection.execute(
+        """
+        SELECT id, email, full_name, role, is_active, date_created, last_updated
+        FROM users
+        ORDER BY full_name, email
+        """
+    ).fetchall()
+    connection.close()
+    return users
+
+
+def set_user_active(user_id: int, is_active: bool):
+    connection = get_auth_connection()
+    connection.execute(
+        """
+        UPDATE users
+        SET is_active = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (1 if is_active else 0, user_id),
+    )
+    connection.commit()
+    connection.close()
+
+
+def reset_user_password(user_id: int, password: str):
+    password = (password or "").strip()
+    if len(password) < 8:
+        return "Password must be at least 8 characters."
+
+    connection = get_auth_connection()
+    connection.execute(
+        """
+        UPDATE users
+        SET password_hash = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (generate_password_hash(password), user_id),
+    )
+    connection.commit()
+    connection.close()
+    return ""
+
+
+def set_user_role(user_id: int, role: str):
+    role = (role or "").strip().lower()
+    if role not in VALID_ROLES:
+        return "Choose a valid role."
+
+    connection = get_auth_connection()
+    connection.execute(
+        """
+        UPDATE users
+        SET role = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (role, user_id),
+    )
+    connection.commit()
+    connection.close()
+    return ""

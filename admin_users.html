@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Admin - PipeFlow Server{% endblock %}
+
+{% block content %}
+<section class="page-header">
+    <div>
+        <h2>Profile Administration</h2>
+        <p class="muted-text">Manage profile access only. User PipeFlow workspaces remain private.</p>
+    </div>
+</section>
+
+{% if message %}
+    <div class="alert-success">{{ message }}</div>
+{% endif %}
+
+{% if error %}
+    <div class="alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+    <h3>Permission Structure</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Role</th>
+                <th>Access</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Admin</td>
+                <td>Manage profiles, roles, password resets, deactivation and reactivation. Cannot view another user's PipeFlow data.</td>
+            </tr>
+            <tr>
+                <td>Manager</td>
+                <td>Use their own private PipeFlow workspace. Team reporting can be added later.</td>
+            </tr>
+            <tr>
+                <td>User</td>
+                <td>Use their own private PipeFlow workspace only.</td>
+            </tr>
+            <tr>
+                <td>Inactive</td>
+                <td>Cannot sign in. Existing private data is retained.</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for user in users %}
+            <tr>
+                <td>{{ user["full_name"] }}</td>
+                <td>{{ user["email"] }}</td>
+                <td>{{ user["role"] }}</td>
+                <td>{{ "Active" if user["is_active"] else "Inactive" }}</td>
+                <td>{{ user["date_created"] }}</td>
+                <td>
+                    <form method="POST" action="{{ url_for('admin_update_user_role', user_id=user['id']) }}" class="inline-form">
+                        <select name="role" {% if user['id'] == session.get('user_id') %}disabled{% endif %}>
+                            <option value="user" {% if user["role"] == "user" %}selected{% endif %}>User</option>
+                            <option value="manager" {% if user["role"] == "manager" %}selected{% endif %}>Manager</option>
+                            <option value="admin" {% if user["role"] == "admin" %}selected{% endif %}>Admin</option>
+                        </select>
+                        <button type="submit" class="btn btn-secondary" {% if user['id'] == session.get('user_id') %}disabled{% endif %}>Update Role</button>
+                    </form>
+
+                    {% if user["is_active"] %}
+                        <form method="POST" action="{{ url_for('admin_deactivate_user', user_id=user['id']) }}" class="inline-form">
+                            <button type="submit" class="btn btn-danger">Deactivate</button>
+                        </form>
+                    {% else %}
+                        <form method="POST" action="{{ url_for('admin_reactivate_user', user_id=user['id']) }}" class="inline-form">
+                            <button type="submit" class="btn btn-secondary">Reactivate</button>
+                        </form>
+                    {% endif %}
+
+                    <form method="POST" action="{{ url_for('admin_reset_user_password', user_id=user['id']) }}" class="inline-form reset-password-form">
+                        <input type="password" name="password" minlength="8" placeholder="New password" required>
+                        <button type="submit" class="btn btn-secondary">Reset Password</button>
+                    </form>
+                </td>
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

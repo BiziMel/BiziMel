@@ -9,7 +9,7 @@ import re
 from datetime import datetime, timedelta
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 
@@ -132,6 +132,48 @@ def register():
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
+
+@app.route("/admin/users")
+@admin_required
+def admin_users():
+    return render_template("admin_users.html", users=list_users(), message=request.args.get("message", ""), error=request.args.get("error", ""))
+
+
+@app.route("/admin/users/<int:user_id>/deactivate", methods=("POST",))
+@admin_required
+def admin_deactivate_user(user_id):
+    if user_id == session.get("user_id"):
+        return redirect(url_for("admin_users", error="You cannot deactivate your own admin profile."))
+    set_user_active(user_id, False)
+    return redirect(url_for("admin_users", message="Profile deactivated."))
+
+
+@app.route("/admin/users/<int:user_id>/reactivate", methods=("POST",))
+@admin_required
+def admin_reactivate_user(user_id):
+    set_user_active(user_id, True)
+    return redirect(url_for("admin_users", message="Profile reactivated."))
+
+
+@app.route("/admin/users/<int:user_id>/role", methods=("POST",))
+@admin_required
+def admin_update_user_role(user_id):
+    if user_id == session.get("user_id"):
+        return redirect(url_for("admin_users", error="You cannot change your own admin role."))
+    error = set_user_role(user_id, request.form.get("role", ""))
+    if error:
+        return redirect(url_for("admin_users", error=error))
+    return redirect(url_for("admin_users", message="Role updated."))
+
+
+@app.route("/admin/users/<int:user_id>/reset-password", methods=("POST",))
+@admin_required
+def admin_reset_user_password(user_id):
+    error = reset_user_password(user_id, request.form.get("password", ""))
+    if error:
+        return redirect(url_for("admin_users", error=error))
+    return redirect(url_for("admin_users", message="Password reset."))
 
 
 def add_timeline_entry(connection, related_type, related_id, entry_type, entry_text, created_by="Melissa"):

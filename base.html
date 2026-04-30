@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}PipeFlow Server{% endblock %}</title>
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" type="image/png" href="/static/pipeflow.png?v=300">
+</head>
+<body>
+
+    <header class="header-stack">
+        <div class="app-brand">
+            <img src="{{ url_for('static', filename='pipeflow.png') }}"
+                 alt="PipeFlow Logo"
+                 class="app-logo">
+
+            <h1>{{ app_name or "PipeFlow Server" }}</h1>
+        </div>
+
+    <nav class="button-group nav-stack">
+    <a href="/" class="btn btn-primary">Dashboard</a>
+    <a href="/accounts" class="btn btn-primary">Accounts</a>
+    <a href="/partners" class="btn btn-primary">Partners</a>
+    <a href="/contacts" class="btn btn-primary">Contacts</a>
+    <a href="/outreach" class="btn btn-primary">Outreach</a>
+    <a href="/tasks" class="btn btn-primary">Tasks</a>
+    <a href="/reports" class="btn btn-primary">Reports</a>
+    <a href="/search" class="btn btn-primary">Search</a>
+    <a href="/profile" class="btn btn-secondary">Profile</a>
+    {% if current_user and current_user["role"] == "admin" %}
+    <a href="/admin/users" class="btn btn-secondary">Admin</a>
+    {% endif %}
+    {% if current_user %}
+    <a href="/logout" class="btn btn-secondary">Sign Out</a>
+    {% endif %}
+</nav>
+
+        {% if current_user %}
+        <p class="muted-text">Signed in as {{ current_user["full_name"] }}</p>
+        {% endif %}
+
+        <div class="header-search">
+            <form method="GET" action="{{ url_for('global_search') }}">
+                <input type="text"
+                       name="q"
+                       placeholder="Search PipeFlow..."
+                       class="header-search-input">
+            </form>
+        </div>
+    </header>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+</body>
+</html>
