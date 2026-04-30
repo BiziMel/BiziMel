@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h1 class="page-title">Task Reports</h1>
+
+<div class="button-group">
+    <a href="/reports" class="btn btn-secondary">Back to Reports</a>
+    <a href="{{ url_for('export_task_reports') }}" class="btn btn-primary">Export Task Report</a>
+</div>
+
+<div class="report-card">
+    <h3>Filters</h3>
+
+    <form method="get" action="/reports/tasks" class="filter-form">
+
+        <label>Start Date</label>
+        <input type="date" name="start_date" value="{{ selected_start_date }}">
+
+        <label>End Date</label>
+        <input type="date" name="end_date" value="{{ selected_end_date }}">
+
+        <label>Account</label>
+        <select name="account_id">
+            <option value="">All Accounts</option>
+            {% for account in accounts %}
+                <option value="{{ account['id'] }}" {% if selected_account == account['id']|string %}selected{% endif %}>
+                    {{ account['account_name'] }}
+                </option>
+            {% endfor %}
+        </select>
+
+        <label>Status</label>
+        <select name="task_status">
+            <option value="">All Statuses</option>
+            {% for item in task_statuses %}
+                <option value="{{ item['task_status'] }}" {% if selected_task_status == item['task_status'] %}selected{% endif %}>
+                    {{ item['task_status'] }}
+                </option>
+            {% endfor %}
+        </select>
+
+        <label>Assigned To</label>
+        <select name="assigned_to">
+            <option value="">All Users</option>
+            {% for item in assigned_users %}
+                <option value="{{ item['assigned_to'] }}" {% if selected_assigned_to == item['assigned_to'] %}selected{% endif %}>
+                    {{ item['assigned_to'] }}
+                </option>
+            {% endfor %}
+        </select>
+
+        <div class="button-group">
+            <button type="submit" class="btn btn-primary">Apply Filters</button>
+            <a href="/reports/tasks" class="btn btn-secondary">Clear Filters</a>
+        </div>
+
+    </form>
+</div>
+
+<div class="dashboard-grid">
+
+    <div class="stat-card premium-card">
+        <h3>Overdue Tasks</h3>
+        <p>{{ overdue_tasks }}</p>
+    </div>
+
+    <div class="stat-card premium-card">
+        <h3>Due Today</h3>
+        <p>{{ due_today }}</p>
+    </div>
+
+    <div class="stat-card premium-card">
+        <h3>Upcoming Tasks</h3>
+        <p>{{ upcoming_tasks }}</p>
+    </div>
+
+</div>
+
+<div class="report-grid">
+
+    <div class="report-card">
+        <h3>Tasks by Status</h3>
+        <canvas id="statusChart"></canvas>
+    </div>
+
+    <div class="report-card">
+        <h3>Tasks by Account</h3>
+        <canvas id="accountChart"></canvas>
+    </div>
+
+</div>
+
+<div class="report-table-section">
+    <div class="section-header">
+        <div>
+            <h2>Task Report Detail</h2>
+            <p>Full list of scheduled tasks and ownership.</p>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th>Next Action</th>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Status</th>
+                    <th>Assigned To</th>
+                    <th>Sales Play</th>
+                    <th>Account</th>
+                    <th>Account Tier</th>
+                    <th>Contact</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for task in tasks %}
+                    <tr>
+                        <td>{{ task["next_action"] or "Not set" }}</td>
+                        <td>{{ task["next_action_date"] or "Not set" }}</td>
+                        <td>{{ task["next_action_time"] or "Not set" }}</td>
+                        <td>{{ task["task_status"] or "Not Started" }}</td>
+                        <td>{{ task["assigned_to"] or "Unassigned" }}</td>
+                        <td>{{ task["sales_play"] or "Not set" }}</td>
+                        <td>{{ task["account_name"] or "Unknown" }}</td>
+                        <td>{{ "Tier " ~ task["account_tier"] if task["account_tier"] else "Not set" }}</td>
+                        <td>{{ task["contact_name"] or "Unknown" }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="9">No tasks found.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+    const statusLabels = [
+        {% for item in tasks_by_status %}
+            "{{ item['status'] or 'Unknown' }}",
+        {% endfor %}
+    ];
+
+    const statusData = [
+        {% for item in tasks_by_status %}
+            {{ item['total'] or 0 }},
+        {% endfor %}
+    ];
+
+    const accountLabels = [
+        {% for item in tasks_by_account %}
+            "{{ item['account_name'] or 'Unknown' }}",
+        {% endfor %}
+    ];
+
+    const accountData = [
+        {% for item in tasks_by_account %}
+            {{ item['total'] or 0 }},
+        {% endfor %}
+    ];
+
+    new Chart(document.getElementById("statusChart"), {
+        type: "doughnut",
+        data: {
+            labels: statusLabels,
+            datasets: [{
+                label: "Tasks",
+                data: statusData
+            }]
+        },
+        options: {
+            responsive: true
+        }
+    });
+
+    new Chart(document.getElementById("accountChart"), {
+        type: "bar",
+        data: {
+            labels: accountLabels,
+            datasets: [{
+                label: "Tasks",
+                data: accountData
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0
+                    }
+                }
+            }
+        }
+    });
+</script>
+
+{% endblock %}

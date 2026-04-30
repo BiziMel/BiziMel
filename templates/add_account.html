@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Add Account</h2>
+
+<form method="POST">
+
+    <label>Account Name</label>
+    <input type="text" name="account_name" required>
+
+    <label>Account Tier</label>
+    <select name="account_tier">
+        <option value="">Select tier</option>
+        {% for tier in dropdown_values.account_tiers %}
+            <option value="{{ tier }}">Tier {{ tier }}</option>
+        {% endfor %}
+    </select>
+
+    <label>Industry</label>
+    <input type="text" name="industry">
+
+    <label>Business Unit / Org</label>
+<input type="text" name="business_unit">
+
+    <label>Country</label>
+    <select name="country" required>
+        {% set selected_country = "" %}
+        {% include "_country_options.html" %}
+    </select>
+
+    <label>City</label>
+    <input type="text" name="city">
+
+    <label>Website</label>
+    <input type="url" name="website" placeholder="https://www.example.com">
+
+    <label>Pipeline Target USD $ ACV</label>
+    <input type="number" id="pipeline_target" name="pipeline_target" step="0.01" min="0" placeholder="0.00">
+
+    <label>Notes</label>
+    <textarea name="notes"></textarea>
+
+    <button type="submit">Save Account</button>
+
+</form>
+
+{% endblock %}

@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block title %}Partners | PipeFlow{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>Partners</h1>
+        <p>Partner organisations, account relationships and partner-side contacts.</p>
+    </div>
+</div>
+
+<div class="form-card">
+    <div class="section-header">
+        <div>
+            <h2>Add Partner Organisation</h2>
+            <p>Create the partner company once, then link it to accounts and contacts.</p>
+        </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('add_partner') }}" class="pipeflow-form">
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="partner_name">Partner Name</label>
+                <input type="text" id="partner_name" name="partner_name" required>
+            </div>
+
+            <div class="form-group">
+                <label for="partner_type">Partner Type</label>
+                <select id="partner_type" name="partner_type">
+                    <option value="">Select partner type</option>
+                    {% for partner_type in dropdown_values.partner_types %}
+                        <option value="{{ partner_type }}">{{ partner_type }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="website">Website</label>
+                <input type="text" id="website" name="website">
+            </div>
+
+            <div class="form-group">
+                <label for="relationship_owner">Relationship Owner</label>
+                <input type="text" id="relationship_owner" name="relationship_owner">
+            </div>
+
+            <div class="form-group">
+                <label for="city">City</label>
+                <input type="text" id="city" name="city">
+            </div>
+
+            <div class="form-group">
+                <label for="country">Country</label>
+                <select id="country" name="country">
+                    {% set selected_country = "" %}
+                    {% include "_country_options.html" %}
+                </select>
+            </div>
+
+            <div class="form-group full-width">
+                <label for="notes">Notes</label>
+                <textarea id="notes" name="notes" rows="3"></textarea>
+            </div>
+        </div>
+
+        <div class="button-group">
+            <button type="submit" class="btn btn-primary">Add Partner</button>
+        </div>
+    </form>
+</div>
+
+{% if partners %}
+    <div class="table-container">
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th>Partner</th>
+                    <th>Type</th>
+                    <th>Coverage</th>
+                    <th>Owner</th>
+                    <th>Location</th>
+                    <th>Website</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for partner in partners %}
+                    <tr>
+                        <td>
+                            <strong>{{ partner.partner_name }}</strong>
+                            <br>
+                            <small>{{ partner.notes or "No notes added" }}</small>
+                        </td>
+
+                        <td>{{ partner.partner_type or "Not set" }}</td>
+
+                        <td>
+                            <strong>{{ partner.account_count or 0 }}</strong> account relationship(s)
+                            <br>
+                            <strong>{{ partner.contact_count or 0 }}</strong> partner contact(s)
+                        </td>
+
+                        <td>{{ partner.relationship_owner or "Not assigned" }}</td>
+
+                        <td>
+                            {{ partner.city or "City not set" }}
+                            <br>
+                            <small>{{ partner.country or "Country not set" }}</small>
+                        </td>
+
+                        <td>
+                            {% if partner.website %}
+                                <a href="{{ partner.website }}" target="_blank" class="btn btn-secondary">Website</a>
+                            {% else %}
+                                <small>Not added</small>
+                            {% endif %}
+                        </td>
+
+                        <td>
+                            <a href="{{ url_for('view_partner', partner_id=partner.id) }}" class="btn btn-primary">
+                                View
+                            </a>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% else %}
+    <div class="empty-state">
+        <h3>No partners found yet</h3>
+        <p>Add your first partner organisation to connect partner contacts with target accounts.</p>
+    </div>
+{% endif %}
+
+{% endblock %}

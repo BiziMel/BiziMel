@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Edit Account</h2>
+
+<form method="POST">
+    <label>Account Name</label>
+    <input type="text" name="account_name" value="{{ account['account_name'] }}" required>
+
+    <label>Account Tier</label>
+    <select name="account_tier">
+        <option value="">Select tier</option>
+        {% for tier in dropdown_values.account_tiers %}
+            <option value="{{ tier }}" {% if account['account_tier'] == tier %}selected{% endif %}>Tier {{ tier }}</option>
+        {% endfor %}
+    </select>
+
+    <label>Industry</label>
+    <input type="text" name="industry" value="{{ account['industry'] }}">
+
+    <label>Business Unit / Org</label>
+<input type="text" name="business_unit" value="{{ account['business_unit'] }}">
+
+    <label>Country</label>
+    <select name="country" required>
+        {% set selected_country = account["country"] or "" %}
+        {% include "_country_options.html" %}
+    </select>
+
+    <label>City</label>
+    <input type="text" name="city" value="{{ account['city'] }}">
+
+    <label>Website</label>
+    <input type="url" name="website" value="{{ account['website'] }}">
+
+    <label>Pipeline Target USD $ ACV</label>
+    <input type="number" name="pipeline_target" step="0.01" min="0"
+           value="{{ '%.2f'|format(account['pipeline_target']|float) if account['pipeline_target'] else '' }}">
+
+    <label>Notes</label>
+    <textarea name="notes">{{ account['notes'] }}</textarea>
+
+    <button type="submit">Update Account</button>
+</form>
+
+<p><a href="/accounts">Back to Accounts</a></p>
+{% endblock %}

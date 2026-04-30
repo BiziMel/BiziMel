@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Profile | PipeFlow{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>User Profile</h1>
+        <p>Configure the user details for this PipeFlow installation.</p>
+    </div>
+
+    <div class="button-group">
+        <a href="{{ url_for('home') }}" class="btn btn-secondary">Back to Dashboard</a>
+    </div>
+</div>
+
+<div class="form-card">
+    <h2>Profile Details</h2>
+
+    <form method="POST" class="pipeflow-form">
+
+        <div class="form-grid">
+
+            <div class="form-group">
+                <label for="full_name">Full Name</label>
+                <input type="text"
+                       id="full_name"
+                       name="full_name"
+                       value="{{ profile.full_name or '' }}"
+                       placeholder="Enter full name">
+            </div>
+
+            <div class="form-group">
+                <label for="team">Team</label>
+                <input type="text"
+                       id="team"
+                       name="team"
+                       value="{{ profile.team or '' }}"
+                       placeholder="Enter team">
+            </div>
+
+            <div class="form-group full-width">
+                <label for="job_title">Job Title</label>
+                <input type="text"
+                       id="job_title"
+                       name="job_title"
+                       value="{{ profile.job_title or '' }}"
+                       placeholder="Enter job title">
+            </div>
+
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save Profile</button>
+        </div>
+
+    </form>
+</div>
+
+<div class="form-card">
+    <h2>Current Profile</h2>
+
+    <p><strong>Full Name:</strong> {{ profile.full_name or "Not configured" }}</p>
+    <p><strong>Team:</strong> {{ profile.team or "Not configured" }}</p>
+    <p><strong>Job Title:</strong> {{ profile.job_title or "Not configured" }}</p>
+</div>
+
+{% endblock %}

@@ -1,0 +1,323 @@
+{% extends "base.html" %}
+
+{% block title %}{{ partner.partner_name }} | PipeFlow{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>{{ partner.partner_name }}</h1>
+        <p>Partner organisation, contacts and account relationships.</p>
+    </div>
+
+    <a href="{{ url_for('partners') }}" class="btn btn-secondary">Back to Partners</a>
+</div>
+
+<div class="dashboard-grid">
+    <div class="metric-card">
+        <h3>Account Relationships</h3>
+        <p class="metric-number">{{ partner_account_count or 0 }}</p>
+    </div>
+
+    <div class="metric-card">
+        <h3>Partner Contacts</h3>
+        <p class="metric-number">{{ partner_contact_count or 0 }}</p>
+    </div>
+</div>
+
+<div class="form-card">
+    <div class="section-header">
+        <div>
+            <h2>Partner Details</h2>
+            <p>Core organisation details for partner-led selling.</p>
+        </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('edit_partner', partner_id=partner.id) }}" class="pipeflow-form">
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="partner_name">Partner Name</label>
+                <input type="text" id="partner_name" name="partner_name" value="{{ partner.partner_name }}" required>
+            </div>
+
+            <div class="form-group">
+                <label for="partner_type">Partner Type</label>
+                <select id="partner_type" name="partner_type">
+                    <option value="">Select partner type</option>
+                    {% for partner_type in dropdown_values.partner_types %}
+                        <option value="{{ partner_type }}" {% if partner.partner_type == partner_type %}selected{% endif %}>
+                            {{ partner_type }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="website">Website</label>
+                <input type="text" id="website" name="website" value="{{ partner.website or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="relationship_owner">Relationship Owner</label>
+                <input type="text" id="relationship_owner" name="relationship_owner" value="{{ partner.relationship_owner or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="city">City</label>
+                <input type="text" id="city" name="city" value="{{ partner.city or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="country">Country</label>
+                <select id="country" name="country">
+                    {% set selected_country = partner.country or "" %}
+                    {% include "_country_options.html" %}
+                </select>
+            </div>
+
+            <div class="form-group full-width">
+                <label for="notes">Notes</label>
+                <textarea id="notes" name="notes" rows="3">{{ partner.notes or "" }}</textarea>
+            </div>
+        </div>
+
+        <div class="button-group">
+            <button type="submit" class="btn btn-primary">Save Partner</button>
+        </div>
+    </form>
+</div>
+
+<div class="form-card">
+    <div class="section-header">
+        <div>
+            <h2>Account Relationships</h2>
+            <p>Accounts this partner is helping you sell into.</p>
+        </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('add_partner_account_relationship', partner_id=partner.id) }}" class="pipeflow-form partner-form">
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="account_id">Account</label>
+                <select id="account_id" name="account_id" required>
+                    <option value="">Select account</option>
+                    {% for account in accounts %}
+                        <option value="{{ account.id }}">{{ account.account_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="partner_role">Partner Role</label>
+                <select id="partner_role" name="partner_role">
+                    <option value="">Select partner role</option>
+                    {% for role in dropdown_values.partner_contact_roles %}
+                        <option value="{{ role }}">{{ role }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="involvement_status">Involvement Status</label>
+                <select id="involvement_status" name="involvement_status">
+                    <option value="">Select status</option>
+                    {% for status in dropdown_values.partner_involvement_statuses %}
+                        <option value="{{ status }}">{{ status }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="account_relationship_owner">Relationship Owner</label>
+                <input type="text" id="account_relationship_owner" name="relationship_owner" value="{{ partner.relationship_owner or '' }}">
+            </div>
+
+            <div class="form-group full-width">
+                <label for="next_action">Next Action</label>
+                <input type="text" id="next_action" name="next_action">
+            </div>
+
+            <div class="form-group full-width">
+                <label for="relationship_notes">Notes</label>
+                <textarea id="relationship_notes" name="notes" rows="3"></textarea>
+            </div>
+        </div>
+
+        <div class="button-group">
+            <button type="submit" class="btn btn-primary">Link Account</button>
+        </div>
+    </form>
+
+    {% if partner_accounts %}
+        <div class="partner-card-grid">
+            {% for relationship in partner_accounts %}
+                <div class="partner-card">
+                    <div class="partner-card-main">
+                        <div>
+                            <strong>
+                                <a href="{{ url_for('view_account', account_id=relationship.account_id) }}">
+                                    {{ relationship.account_name or "Unknown account" }}
+                                </a>
+                            </strong>
+                            <p>{{ relationship.partner_role or "No partner role set" }}</p>
+                            <p class="muted">{{ relationship.industry or "Industry not set" }}</p>
+                        </div>
+
+                        <span class="status-pill">{{ relationship.involvement_status or "No status" }}</span>
+                    </div>
+
+                    <div class="partner-detail-grid">
+                        <p><strong>Owner:</strong> {{ relationship.relationship_owner or "Not assigned" }}</p>
+                        <p><strong>Next Action:</strong> {{ relationship.next_action or "No next action set" }}</p>
+                        <p><strong>Location:</strong> {{ relationship.city or "City not set" }}, {{ relationship.country or "Country not set" }}</p>
+                    </div>
+
+                    {% if relationship.notes %}
+                        <p class="muted">{{ relationship.notes }}</p>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p>No account relationships linked to this partner yet.</p>
+    {% endif %}
+</div>
+
+<div class="form-card">
+    <div class="section-header">
+        <div>
+            <h2>Partner Contacts</h2>
+            <p>People at the partner organisation who can help create or progress opportunities.</p>
+        </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('add_partner_contact', partner_id=partner.id) }}" class="pipeflow-form partner-form">
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="name">Name</label>
+                <input type="text" id="name" name="name" required>
+            </div>
+
+            <div class="form-group">
+                <label for="job_title">Job Title</label>
+                <input type="text" id="job_title" name="job_title">
+            </div>
+
+            <div class="form-group">
+                <label for="partner_contact_role">Partner Role</label>
+                <select id="partner_contact_role" name="partner_contact_role">
+                    <option value="">Select partner role</option>
+                    {% for role in dropdown_values.partner_contact_roles %}
+                        <option value="{{ role }}">{{ role }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="relationship_status">Partner Engagement</label>
+                <select id="relationship_status" name="relationship_status">
+                    <option value="">Select engagement</option>
+                    {% for status in dropdown_values.partner_engagement_statuses %}
+                        <option value="{{ status }}">{{ status }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="relationship_owner">Relationship Owner</label>
+                <input type="text" id="relationship_owner" name="relationship_owner" value="{{ partner.relationship_owner or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="coverage_area">Coverage / Influence Area</label>
+                <input type="text" id="coverage_area" name="coverage_area" placeholder="Account patch, sector, cloud, procurement...">
+            </div>
+
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email">
+            </div>
+
+            <div class="form-group">
+                <label for="phone">Phone</label>
+                <input type="text" id="phone" name="phone">
+            </div>
+
+            <div class="form-group">
+                <label for="location">Location</label>
+                <input type="text" id="location" name="location">
+            </div>
+
+            <div class="form-group full-width">
+                <label for="linkedin">LinkedIn</label>
+                <input type="text" id="linkedin" name="linkedin">
+            </div>
+
+            <div class="form-group full-width">
+                <label for="next_action">Next Partner Action</label>
+                <input type="text" id="next_action" name="next_action">
+            </div>
+
+            <div class="form-group full-width">
+                <label for="contact_notes">Notes</label>
+                <textarea id="contact_notes" name="notes" rows="3"></textarea>
+            </div>
+        </div>
+
+        <div class="button-group">
+            <button type="submit" class="btn btn-primary">Add Partner Contact</button>
+        </div>
+    </form>
+
+    {% if partner_contacts %}
+        <div class="contact-card-grid">
+            {% for contact in partner_contacts %}
+                <div class="contact-summary-card partner-contact-card">
+                    <div>
+                        <strong>{{ contact.name }}</strong>
+                        <p>{{ contact.job_title or "No job title" }}</p>
+                        <p class="muted">{{ contact.partner_contact_role or "No partner role set" }}</p>
+                        <p class="muted">{{ contact.coverage_area or "No coverage area" }}</p>
+                    </div>
+
+                    <div class="contact-summary-actions">
+                        <span class="status-pill">{{ contact.relationship_status or "No engagement" }}</span>
+                        {% if contact.email %}
+                            <a href="mailto:{{ contact.email }}" class="btn btn-secondary">Email</a>
+                        {% endif %}
+                        {% if contact.linkedin %}
+                            <a href="{{ contact.linkedin }}" target="_blank" class="btn btn-secondary">LinkedIn</a>
+                        {% endif %}
+                        <form method="POST"
+                              action="{{ url_for('delete_partner_contact', partner_id=partner.id, contact_id=contact.id) }}"
+                              style="display:inline;">
+                            <button type="submit"
+                                    class="btn btn-danger"
+                                    onclick="return confirm('Delete this partner contact?');">
+                                Delete
+                            </button>
+                        </form>
+                    </div>
+
+                    <div class="partner-detail-grid full-width">
+                        <p><strong>Owner:</strong> {{ contact.relationship_owner or "Not assigned" }}</p>
+                        <p><strong>Location:</strong> {{ contact.location or "No location" }}</p>
+                        <p><strong>Next Action:</strong> {{ contact.next_action or "No next action set" }}</p>
+                    </div>
+
+                    {% if contact.phone or contact.notes %}
+                        <p class="muted">
+                            {{ contact.phone or "" }}
+                            {% if contact.phone and contact.notes %}<br>{% endif %}
+                            {{ contact.notes or "" }}
+                        </p>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p>No partner contacts added yet.</p>
+    {% endif %}
+</div>
+
+{% endblock %}

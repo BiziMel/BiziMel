@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+
+{% block title %}Search | PipeFlow{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>Global Search</h1>
+        <p>Search across accounts, contacts, partners, outreach and timeline history.</p>
+    </div>
+</div>
+
+<div class="form-card">
+    <form method="GET" action="{{ url_for('global_search') }}" class="pipeflow-form">
+        <div class="form-group">
+            <label for="q">Search PipeFlow</label>
+            <input type="text" id="q" name="q" value="{{ query }}" placeholder="Search account, contact, note, outcome, timeline entry...">
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Search</button>
+            <a href="{{ url_for('global_search') }}" class="btn btn-secondary">Clear</a>
+        </div>
+    </form>
+</div>
+
+{% if query %}
+
+<div class="dashboard-grid">
+    <div class="metric-card">
+        <h3>Accounts</h3>
+        <p class="metric-number">{{ account_results|length }}</p>
+    </div>
+
+    <div class="metric-card">
+        <h3>Contacts</h3>
+        <p class="metric-number">{{ contact_results|length }}</p>
+    </div>
+
+    <div class="metric-card">
+        <h3>Outreach</h3>
+        <p class="metric-number">{{ outreach_results|length }}</p>
+    </div>
+
+    <div class="metric-card">
+        <h3>Partners</h3>
+        <p class="metric-number">{{ partner_results|length + partner_contact_results|length }}</p>
+    </div>
+
+    <div class="metric-card">
+        <h3>Timeline</h3>
+        <p class="metric-number">{{ timeline_results|length }}</p>
+    </div>
+</div>
+
+<div class="dashboard-insight-grid">
+
+    <div class="insight-card">
+        <h2>Accounts</h2>
+
+        {% if account_results %}
+            <div class="insight-list">
+                {% for account in account_results %}
+                    <div class="search-result-card">
+                        <strong>{{ account.account_name }}</strong>
+                        <p>
+                            {{ account.industry or "No industry" }} ·
+                            {{ "Tier " ~ account.account_tier if account.account_tier else "No tier" }} ·
+                            {{ account.city or "No city" }}
+                        </p>
+                        <a href="{{ url_for('view_account', account_id=account.id) }}" class="btn btn-secondary">View Account</a>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p>No matching accounts.</p>
+        {% endif %}
+    </div>
+
+    <div class="insight-card">
+        <h2>Contacts</h2>
+
+        {% if contact_results %}
+            <div class="insight-list">
+                {% for contact in contact_results %}
+                    <div class="search-result-card">
+                        <strong>{{ contact.name }}</strong>
+                        <p>
+                            {{ contact.job_title or "No job title" }} ·
+                            {{ contact.account_name or "No account" }} ·
+                            {{ "Tier " ~ contact.account_tier if contact.account_tier else "No tier" }}
+                        </p>
+                        <a href="{{ url_for('view_contact', contact_id=contact.id) }}" class="btn btn-secondary">View Contact</a>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p>No matching contacts.</p>
+        {% endif %}
+    </div>
+
+</div>
+
+<div class="dashboard-insight-grid">
+
+    <div class="insight-card">
+        <h2>Partners</h2>
+
+        {% if partner_results %}
+            <div class="insight-list">
+                {% for partner in partner_results %}
+                    <div class="search-result-card">
+                        <strong>{{ partner.partner_name }}</strong>
+                        <p>{{ partner.partner_type or "No type" }} · {{ partner.relationship_owner or "No owner" }}</p>
+                        <a href="{{ url_for('view_partner', partner_id=partner.id) }}" class="btn btn-secondary">View Partner</a>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p>No matching partners.</p>
+        {% endif %}
+    </div>
+
+    <div class="insight-card">
+        <h2>Partner Contacts</h2>
+
+        {% if partner_contact_results %}
+            <div class="insight-list">
+                {% for contact in partner_contact_results %}
+                    <div class="search-result-card">
+                        <strong>{{ contact.name }}</strong>
+                        <p>{{ contact.partner_contact_role or contact.job_title or "No partner role" }} · {{ contact.partner_name or "No partner" }}</p>
+                        <a href="{{ url_for('view_partner', partner_id=contact.partner_id) }}" class="btn btn-secondary">View Partner</a>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p>No matching partner contacts.</p>
+        {% endif %}
+    </div>
+
+</div>
+
+<div class="form-card">
+    <h2>Outreach</h2>
+
+    {% if outreach_results %}
+        <div class="latest-outreach-list">
+            {% for item in outreach_results %}
+                <div class="latest-outreach-item">
+                    <div>
+                        <strong>{{ item.subject or "No subject" }}</strong>
+                        <p>
+                            {{ item.account_name or "No account" }} ·
+                            {{ "Tier " ~ item.account_tier if item.account_tier else "No tier" }} ·
+                            {{ item.contact_name or "No contact" }}
+                        </p>
+                        <p class="muted">{{ item.activity_date }} {{ item.activity_time }}</p>
+                    </div>
+
+                    <div class="latest-outreach-status">
+                        <span class="status-pill">{{ item.outcome or "No outcome" }}</span>
+                        <p>{{ item.next_action or "No next action set" }}</p>
+                        <a href="{{ url_for('view_outreach', outreach_id=item.id) }}" class="btn btn-secondary">View Outreach</a>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p>No matching outreach.</p>
+    {% endif %}
+</div>
+
+<div class="form-card">
+    <h2>Timeline Entries</h2>
+
+    {% if timeline_results %}
+        <div class="latest-outreach-list">
+            {% for entry in timeline_results %}
+                <div class="timeline-entry">
+                    <p>
+                        <strong>{{ entry.entry_type }}</strong>
+                        {% if entry.created_by %}
+                            by {{ entry.created_by }}
+                        {% endif %}
+                        <br>
+                        <small>{{ entry.date_created }}</small>
+                    </p>
+
+                    <p>{{ entry.entry_text }}</p>
+
+                    {% if entry.related_type == "account" %}
+                        <a href="{{ url_for('view_account', account_id=entry.related_id) }}" class="btn btn-secondary">Open Related Account</a>
+                    {% elif entry.related_type == "contact" %}
+                        <a href="{{ url_for('view_contact', contact_id=entry.related_id) }}" class="btn btn-secondary">Open Related Contact</a>
+                    {% elif entry.related_type == "outreach" %}
+                        <a href="{{ url_for('view_outreach', outreach_id=entry.related_id) }}" class="btn btn-secondary">Open Related Outreach</a>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p>No matching timeline entries.</p>
+    {% endif %}
+</div>
+
+{% else %}
+
+<div class="form-card">
+    <p>Enter a search term above to search your PipeFlow records.</p>
+</div>
+
+{% endif %}
+
+{% endblock %}

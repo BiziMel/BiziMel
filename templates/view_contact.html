@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>{{ contact.name }}</h1>
+    </div>
+
+    <div class="button-group">
+        <a href="{{ url_for('contacts') }}" class="btn btn-secondary">Back to Contacts</a>
+        <a href="{{ url_for('edit_contact', contact_id=contact.id) }}" class="btn btn-primary">Edit Contact</a>
+    </div>
+</div>
+
+
+<div class="detail-card">
+    <h2>Contact Details</h2>
+
+    <p><strong>Account:</strong> {{ contact.account_name }}</p>
+    <p>
+        <strong>Account Tier:</strong>
+        {% if contact.account_tier %}
+            Tier {{ contact.account_tier }}
+        {% else %}
+            Not set
+        {% endif %}
+    </p>
+    <p><strong>Category:</strong> {{ contact.category }}</p>
+    <p><strong>Job Title:</strong> {{ contact.job_title }}</p>
+    <p><strong>Org / Dept:</strong> {{ contact.org_dept }}</p>
+    <p><strong>Email:</strong> {{ contact.email }}</p>
+    <p><strong>Phone:</strong> {{ contact.phone }}</p>
+    <p><strong>Location:</strong> {{ contact.location }}</p>
+    <p>
+        <strong>LinkedIn:</strong>
+        {% if contact.linkedin %}
+            <a href="{{ contact.linkedin }}" target="_blank">LinkedIn profile</a>
+        {% else %}
+            Not added
+        {% endif %}
+    </p>
+    <p><strong>BMC Relationship:</strong> {{ contact.bmc_relationship }}</p>
+</div>
+
+<div class="detail-card">
+    <h2>Notes</h2>
+    <p><strong>Responsibilities:</strong><br>{{ contact.responsibilities }}</p>
+    <p><strong>Characteristics:</strong><br>{{ contact.characteristics }}</p>
+    <p><strong>Background:</strong><br>{{ contact.background }}</p>
+    <p><strong>Personal Interests:</strong><br>{{ contact.personal_interests }}</p>
+    <p><strong>Personal Win:</strong><br>{{ contact.personal_win }}</p>
+    <p><strong>Education:</strong><br>{{ contact.education }}</p>
+    <p><strong>Social Media:</strong><br>{{ contact.social_media }}</p>
+    <p><strong>Additional Notes:</strong><br>{{ contact.additional_notes }}</p>
+</div>
+
+<div class="detail-card">
+    <h2>Timeline</h2>
+
+    {% if timeline_entries %}
+        <div class="timeline">
+            {% for entry in timeline_entries %}
+                <div class="timeline-entry">
+                    <div class="timeline-meta">
+                        <strong>{{ entry.entry_type }}</strong>
+                        <span>{{ entry.date_created }}</span>
+                    </div>
+                    <p>{{ entry.entry_text }}</p>
+                    <small>Created by {{ entry.created_by }}</small>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p>No timeline entries yet.</p>
+    {% endif %}
+</div>
+{% endblock %}

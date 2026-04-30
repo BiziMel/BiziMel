@@ -1,0 +1,326 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h1 class="page-title">Outreach Reports</h1>
+
+<div class="button-group">
+    <a href="/reports" class="btn btn-secondary">Back to Reports</a>
+    <a href="{{ url_for('export_outreach_reports') }}" class="btn btn-primary">Export CSV</a>
+</div>
+
+<div class="report-card">
+    <h3>Filters</h3>
+
+    <form method="get" action="/reports/outreach" class="filter-form">
+
+        <label>Start Date</label>
+        <input type="date" name="start_date" value="{{ selected_start_date }}">
+
+        <label>End Date</label>
+        <input type="date" name="end_date" value="{{ selected_end_date }}">
+
+        <label>Account</label>
+        <select name="account_id">
+            <option value="">All Accounts</option>
+            {% for account in accounts %}
+                <option value="{{ account['id'] }}" {% if selected_account == account['id']|string %}selected{% endif %}>
+                    {{ account['account_name'] }}
+                </option>
+            {% endfor %}
+        </select>
+
+        <label>Activity Type</label>
+        <select name="activity_type">
+            <option value="">All Activity Types</option>
+            {% for item in activity_types %}
+                <option value="{{ item['activity_type'] }}" {% if selected_activity_type == item['activity_type'] %}selected{% endif %}>
+                    {{ item['activity_type'] }}
+                </option>
+            {% endfor %}
+        </select>
+
+        <label>Outcome</label>
+        <select name="outcome">
+            <option value="">All Outcomes</option>
+            {% for item in outcomes %}
+                <option value="{{ item['outcome'] }}" {% if selected_outcome == item['outcome'] %}selected{% endif %}>
+                    {{ item['outcome'] }}
+                </option>
+            {% endfor %}
+        </select>
+
+        <div class="button-group">
+            <button type="submit" class="btn btn-primary">Apply Filters</button>
+            <a href="/reports/outreach" class="btn btn-secondary">Clear Filters</a>
+        </div>
+
+    </form>
+</div>
+
+<div class="dashboard-grid">
+
+    <div class="dashboard-card">
+        <h3>Total Outreach</h3>
+        <p>{{ total_outreach }}</p>
+    </div>
+
+    <div class="dashboard-card">
+        <h3>Meetings Booked</h3>
+        <p>{{ meetings_booked }}</p>
+    </div>
+
+    <div class="dashboard-card">
+        <h3>Conversion Rate</h3>
+        <p>{{ conversion_rate }}%</p>
+    </div>
+
+</div>
+
+<div class="report-grid">
+
+    <div class="report-card">
+        <h3>Outcome Breakdown</h3>
+        <canvas id="outcomeChart"></canvas>
+    </div>
+
+    <div class="report-card">
+        <h3>Activity Type Breakdown</h3>
+        <canvas id="activityTypeChart"></canvas>
+    </div>
+
+    <div class="report-card">
+        <h3>Monthly Outreach Trend</h3>
+        <canvas id="monthlyTrendChart"></canvas>
+    </div>
+
+    <div class="report-card">
+        <h3>Monthly Conversion Trend</h3>
+        <canvas id="monthlyConversionChart"></canvas>
+    </div>
+
+</div>
+
+<div class="report-table-section">
+    <div class="section-header">
+        <div>
+            <h2>Outcome Breakdown</h2>
+            <p>Summary of outreach outcomes for the selected filters.</p>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th>Outcome</th>
+                    <th>Count</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for item in outcome_breakdown %}
+                    <tr>
+                        <td>{{ item["outcome"] or "Unknown" }}</td>
+                        <td>{{ item["count"] }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="2">No outcome data found.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="report-table-section">
+    <div class="section-header">
+        <div>
+            <h2>Latest Outreach</h2>
+            <p>Most recent outreach activity for the selected filters.</p>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Account</th>
+                    <th>Account Tier</th>
+                    <th>Type</th>
+                    <th>Outcome</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for item in latest_outreach %}
+                    <tr>
+                        <td>{{ item["activity_date"] or "Not set" }}</td>
+                        <td>{{ item["account_name"] or "Unknown" }}</td>
+                        <td>{{ "Tier " ~ item["account_tier"] if item["account_tier"] else "Not set" }}</td>
+                        <td>{{ item["activity_type"] or "Unknown" }}</td>
+                        <td>{{ item["outcome"] or "Unknown" }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="5">No outreach found.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+    const outcomeLabels = [
+        {% for item in outcome_breakdown %}
+            "{{ item['outcome'] or 'Unknown' }}",
+        {% endfor %}
+    ];
+
+    const outcomeData = [
+        {% for item in outcome_breakdown %}
+            {{ item['count'] or 0 }},
+        {% endfor %}
+    ];
+
+    const activityTypeLabels = [
+        {% for item in outreach_by_type %}
+            "{{ item['activity_type'] or 'Unknown' }}",
+        {% endfor %}
+    ];
+
+    const activityTypeData = [
+        {% for item in outreach_by_type %}
+            {{ item['count'] or 0 }},
+        {% endfor %}
+    ];
+
+    const monthlyLabels = [
+        {% for item in monthly_trends %}
+            "{{ item['month'] }}",
+        {% endfor %}
+    ];
+
+    const monthlyOutreachData = [
+        {% for item in monthly_trends %}
+            {{ item['total_outreach'] or 0 }},
+        {% endfor %}
+    ];
+
+    const monthlyMeetingsData = [
+        {% for item in monthly_trends %}
+            {{ item['meetings_booked'] or 0 }},
+        {% endfor %}
+    ];
+
+    const monthlyConversionData = [
+        {% for item in monthly_trends %}
+            {{ item['conversion_rate'] or 0 }},
+        {% endfor %}
+    ];
+
+    new Chart(document.getElementById("outcomeChart"), {
+        type: "bar",
+        data: {
+            labels: outcomeLabels,
+            datasets: [{
+                label: "Outcomes",
+                data: outcomeData
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0
+                    }
+                }
+            }
+        }
+    });
+
+    new Chart(document.getElementById("activityTypeChart"), {
+        type: "doughnut",
+        data: {
+            labels: activityTypeLabels,
+            datasets: [{
+                label: "Activity Types",
+                data: activityTypeData
+            }]
+        },
+        options: {
+            responsive: true
+        }
+    });
+
+    new Chart(document.getElementById("monthlyTrendChart"), {
+        type: "line",
+        data: {
+            labels: monthlyLabels,
+            datasets: [
+                {
+                    label: "Total Outreach",
+                    data: monthlyOutreachData,
+                    tension: 0.3
+                },
+                {
+                    label: "Meetings Booked",
+                    data: monthlyMeetingsData,
+                    tension: 0.3
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0
+                    }
+                }
+            }
+        }
+    });
+
+    new Chart(document.getElementById("monthlyConversionChart"), {
+        type: "line",
+        data: {
+            labels: monthlyLabels,
+            datasets: [
+                {
+                    label: "Conversion Rate %",
+                    data: monthlyConversionData,
+                    tension: 0.3
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return value + "%";
+                        }
+                    }
+                }
+            }
+        }
+    });
+</script>
+
+{% endblock %}

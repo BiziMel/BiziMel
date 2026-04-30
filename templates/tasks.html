@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}Tasks | PipeFlow{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>Tasks</h1>
+        <p>Your follow-up command centre.</p>
+    </div>
+</div>
+
+<div class="form-card">
+    <h2>Overdue Follow-ups</h2>
+
+    {% if overdue_tasks %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Account</th>
+                    <th>Tier</th>
+                    <th>Contact</th>
+                    <th>Sales Play</th>
+                    <th>Next Action</th>
+                    <th>Outcome</th>
+                    <th>Edit</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in overdue_tasks %}
+                    <tr>
+                        <td>{{ item.next_action_date }}</td>
+                        <td>{{ item.next_action_time }}</td>
+                        <td>{{ item.account_name }}</td>
+                        <td>{{ "Tier " ~ item.account_tier if item.account_tier else "Not set" }}</td>
+                        <td>{{ item.contact_name }}</td>
+                        <td>{{ item.sales_play or "—" }}</td>
+                        <td>{{ item.next_action }}</td>
+                        <td>{{ item.outcome }}</td>
+                        <td>
+                            <a href="{{ url_for('edit_outreach', outreach_id=item.id) }}" class="btn btn-primary">Edit</a>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>No overdue follow-ups.</p>
+    {% endif %}
+</div>
+
+<div class="form-card">
+    <h2>Due Today</h2>
+
+    {% if today_tasks %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Account</th>
+                    <th>Tier</th>
+                    <th>Contact</th>
+                    <th>Sales Play</th>
+                    <th>Next Action</th>
+                    <th>Outcome</th>
+                    <th>Edit</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in today_tasks %}
+                    <tr>
+                        <td>{{ item.next_action_time }}</td>
+                        <td>{{ item.account_name }}</td>
+                        <td>{{ "Tier " ~ item.account_tier if item.account_tier else "Not set" }}</td>
+                        <td>{{ item.contact_name }}</td>
+                        <td>{{ item.sales_play or "—" }}</td>
+                        <td>{{ item.next_action }}</td>
+                        <td>{{ item.outcome }}</td>
+                        <td>
+                            <a href="{{ url_for('edit_outreach', outreach_id=item.id) }}" class="btn btn-primary">Edit</a>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>No follow-ups due today.</p>
+    {% endif %}
+</div>
+
+<div class="form-card">
+    <h2>Upcoming Follow-ups</h2>
+
+    {% if upcoming_tasks %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Account</th>
+                    <th>Tier</th>
+                    <th>Contact</th>
+                    <th>Sales Play</th>
+                    <th>Next Action</th>
+                    <th>Outcome</th>
+                    <th>Edit</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in upcoming_tasks %}
+                    <tr>
+                        <td>{{ item.next_action_date }}</td>
+                        <td>{{ item.next_action_time }}</td>
+                        <td>{{ item.account_name }}</td>
+                        <td>{{ "Tier " ~ item.account_tier if item.account_tier else "Not set" }}</td>
+                        <td>{{ item.contact_name }}</td>
+                        <td>{{ item.sales_play or "—" }}</td>
+                        <td>{{ item.next_action }}</td>
+                        <td>{{ item.outcome }}</td>
+                        <td>
+                            <a href="{{ url_for('edit_outreach', outreach_id=item.id) }}" class="btn btn-primary">Edit</a>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>No upcoming follow-ups.</p>
+    {% endif %}
+</div>
+
+{% endblock %}

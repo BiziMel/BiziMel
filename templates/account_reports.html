@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h1 class="page-title">Account Reports</h1>
+
+<div class="button-group">
+    <a href="/reports" class="btn btn-secondary">Back to Reports</a>
+    <a href="/reports/accounts/export" class="btn btn-primary">Export CSV</a>
+</div>
+
+<div class="report-grid">
+
+    <div class="report-card">
+        <h3>Accounts by Industry</h3>
+        <canvas id="industryChart"></canvas>
+    </div>
+
+    <div class="report-card">
+        <h3>Top Pipeline Targets</h3>
+        <canvas id="pipelineChart"></canvas>
+    </div>
+
+    <div class="report-card">
+        <h3>Accounts by Country</h3>
+        <canvas id="countryChart"></canvas>
+    </div>
+
+    <div class="report-card">
+        <h3>Accounts by Tier</h3>
+        <canvas id="tierChart"></canvas>
+    </div>
+
+</div>
+
+<div class="report-table-section">
+    <div class="section-header">
+        <div>
+            <h2>Account Report Detail</h2>
+            <p>Full account list with industry, location and pipeline target.</p>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th>Account Name</th>
+                    <th>Tier</th>
+                    <th>Industry</th>
+                    <th>Country</th>
+                    <th>City</th>
+                    <th>Pipeline Target</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for account in accounts %}
+                    <tr>
+                        <td>{{ account["account_name"] }}</td>
+                        <td>{{ "Tier " ~ account["account_tier"] if account["account_tier"] else "Not set" }}</td>
+                        <td>{{ account["industry"] }}</td>
+                        <td>{{ account["country"] }}</td>
+                        <td>{{ account["city"] }}</td>
+                        <td>${{ "%.2f"|format(account["pipeline_target"] or 0) }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="6">No accounts found.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+    const industryLabels = [
+        {% for item in accounts_by_industry %}
+            "{{ item['industry'] }}",
+        {% endfor %}
+    ];
+
+    const industryData = [
+        {% for item in accounts_by_industry %}
+            {{ item['total'] }},
+        {% endfor %}
+    ];
+
+    const pipelineLabels = [
+        {% for item in pipeline_by_account %}
+            "{{ item['account_name'] }}",
+        {% endfor %}
+    ];
+
+    const pipelineData = [
+        {% for item in pipeline_by_account %}
+            {{ item['pipeline_target'] or 0 }},
+        {% endfor %}
+    ];
+
+    const countryLabels = [
+        {% for item in accounts_by_country %}
+            "{{ item['country'] }}",
+        {% endfor %}
+    ];
+
+    const countryData = [
+        {% for item in accounts_by_country %}
+            {{ item['total'] }},
+        {% endfor %}
+    ];
+
+    const tierLabels = [
+        {% for item in accounts_by_tier %}
+            "{% if item['account_tier'] != 'Not set' %}Tier {{ item['account_tier'] }}{% else %}Not set{% endif %}",
+        {% endfor %}
+    ];
+
+    const tierData = [
+        {% for item in accounts_by_tier %}
+            {{ item['total'] }},
+        {% endfor %}
+    ];
+
+    new Chart(document.getElementById("industryChart"), {
+        type: "doughnut",
+        data: {
+            labels: industryLabels,
+            datasets: [{
+                label: "Accounts",
+                data: industryData
+            }]
+        },
+        options: {
+            responsive: true
+        }
+    });
+
+    new Chart(document.getElementById("pipelineChart"), {
+        type: "bar",
+        data: {
+            labels: pipelineLabels,
+            datasets: [{
+                label: "Pipeline Target",
+                data: pipelineData
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+
+    new Chart(document.getElementById("countryChart"), {
+        type: "bar",
+        data: {
+            labels: countryLabels,
+            datasets: [{
+                label: "Accounts",
+                data: countryData
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0
+                    }
+                }
+            }
+        }
+    });
+
+    new Chart(document.getElementById("tierChart"), {
+        type: "doughnut",
+        data: {
+            labels: tierLabels,
+            datasets: [{
+                label: "Accounts",
+                data: tierData
+            }]
+        },
+        options: {
+            responsive: true
+        }
+    });
+</script>
+
+{% endblock %}

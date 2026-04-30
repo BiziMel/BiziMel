@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>Reports</h1>
+        <p>Review pipeline execution, outreach activity, contacts and task performance.</p>
+    </div>
+</div>
+
+<div class="report-grid">
+
+    <div class="report-card">
+        <h3>Account Reports</h3>
+        <p>Review account coverage, pipeline target, industry spread and geography.</p>
+
+        <div class="button-group">
+            <a href="/reports/accounts" class="btn btn-primary">
+                Open Account Reports
+            </a>
+        </div>
+    </div>
+
+    <div class="report-card">
+        <h3>Outreach Reports</h3>
+        <p>Track activity volume, outcomes, conversion rate and monthly outreach trends.</p>
+
+        <div class="button-group">
+            <a href="/reports/outreach" class="btn btn-primary">
+                Open Outreach Reports
+            </a>
+        </div>
+    </div>
+
+    <div class="report-card">
+        <h3>Contact Reports</h3>
+        <p>Review stakeholder coverage, relationship strength and contact distribution.</p>
+
+        <div class="button-group">
+            <a href="/reports/contacts" class="btn btn-primary">
+                Open Contact Reports
+            </a>
+        </div>
+    </div>
+
+    <div class="report-card">
+        <h3>Task Reports</h3>
+        <p>Review overdue tasks, upcoming actions, ownership and task status.</p>
+
+        <div class="button-group">
+            <a href="/reports/tasks" class="btn btn-primary">
+                Open Task Reports
+            </a>
+        </div>
+    </div>
+
+    <div class="report-card">
+        <h3>PG Bible</h3>
+        <p>Export a single-sheet PG Bible workbook from the PipeFlow data set.</p>
+
+        <div class="button-group">
+            <a href="{{ url_for('export_pg_bible') }}" class="btn btn-primary">
+                Export PG Bible
+            </a>
+        </div>
+    </div>
+
+</div>
+
+{% endblock %}

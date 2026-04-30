@@ -1,0 +1,4 @@
+<option value="">Select country</option>
+{% for country in dropdown_values.countries %}
+    <option value="{{ country }}" {% if selected_country == country %}selected{% endif %}>{{ country }}</option>
+{% endfor %}

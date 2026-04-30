@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>Contacts</h1>
+        <p>Your relationship intelligence board across accounts, roles and stakeholder influence.</p>
+    </div>
+
+    <a href="{{ url_for('add_contact') }}" class="btn btn-primary">
+        Add Contact
+    </a>
+</div>
+
+{% if contacts %}
+
+<div class="table-container">
+    <table class="report-table">
+        <thead>
+            <tr>
+                <th>Contact</th>
+                <th>Account</th>
+                <th>Account Tier</th>
+                <th>Role</th>
+                <th>Relationship</th>
+                <th>Email</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            {% for contact in contacts %}
+                <tr>
+                    <td>
+                        <strong>{{ contact["name"] or "Unknown" }}</strong>
+                        <br>
+                        <small>{{ contact["category"] or "Category not set" }}</small>
+                    </td>
+
+                    <td>
+                        {{ contact["account_name"] or "Unknown account" }}
+                    </td>
+
+                    <td>
+                        <span class="status-pill">
+                            {% if contact["account_tier"] %}
+                                Tier {{ contact["account_tier"] }}
+                            {% else %}
+                                Not set
+                            {% endif %}
+                        </span>
+                    </td>
+
+                    <td>
+                        {{ contact["job_title"] or "Job title not set" }}
+                    </td>
+
+                    <td>
+                        <span class="health-pill">
+                            {{ contact["bmc_relationship"] or "Unknown" }}
+                        </span>
+                    </td>
+
+                    <td>
+                        {% if contact["email"] %}
+                            <a href="mailto:{{ contact['email'] }}">
+                                {{ contact["email"] }}
+                            </a>
+                        {% else %}
+                            <small>Not added</small>
+                        {% endif %}
+                    </td>
+
+                    <td>
+                        <a href="{{ url_for('view_contact', contact_id=contact['id']) }}" class="btn btn-primary">
+                            View
+                        </a>
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% else %}
+
+<div class="empty-state">
+    <h3>No contacts found yet</h3>
+    <p>Add your first contact to start building your stakeholder map.</p>
+    <a href="{{ url_for('add_contact') }}" class="btn btn-primary">
+        Add Contact
+    </a>
+</div>
+
+{% endif %}
+
+{% endblock %}

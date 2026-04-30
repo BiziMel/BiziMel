@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h1 class="page-title">Contact Reports</h1>
+
+<div class="button-group">
+    <a href="/reports" class="btn btn-secondary">Back to Reports</a>
+    <a href="{{ url_for('export_contact_reports') }}" class="btn btn-primary">Export Contact Report</a>
+</div>
+
+<div class="report-grid">
+
+    <div class="report-card">
+        <h3>Contacts by Category</h3>
+        <canvas id="categoryChart"></canvas>
+    </div>
+
+    <div class="report-card">
+        <h3>Relationship Breakdown</h3>
+        <canvas id="relationshipChart"></canvas>
+    </div>
+
+    <div class="report-card">
+        <h3>Top Accounts by Contacts</h3>
+        <canvas id="accountChart"></canvas>
+    </div>
+
+    <div class="report-card">
+        <h3>Contacts by Account Tier</h3>
+        <canvas id="tierChart"></canvas>
+    </div>
+
+</div>
+
+<div class="report-table-section">
+    <div class="section-header">
+        <div>
+            <h2>Contact Report Detail</h2>
+            <p>Full contact list and relationship coverage.</p>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Job Title</th>
+                    <th>Category</th>
+                    <th>Relationship</th>
+                    <th>Email</th>
+                    <th>Account</th>
+                    <th>Account Tier</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for contact in contacts %}
+                    <tr>
+                        <td>{{ contact["name"] or "Unknown" }}</td>
+                        <td>{{ contact["job_title"] or "Not set" }}</td>
+                        <td>{{ contact["category"] or "Unknown" }}</td>
+                        <td>{{ contact["bmc_relationship"] or "Unknown" }}</td>
+                        <td>{{ contact["email"] or "Not set" }}</td>
+                        <td>{{ contact["account_name"] or "Unknown" }}</td>
+                        <td>{{ "Tier " ~ contact["account_tier"] if contact["account_tier"] else "Not set" }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="7">No contacts found.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+    const pipeflowPalette = [
+        "#2563eb",
+        "#14b8a6",
+        "#8b5cf6",
+        "#f59e0b",
+        "#ec4899",
+        "#22c55e",
+        "#0ea5e9",
+        "#f97316",
+        "#6366f1",
+        "#84cc16"
+    ];
+
+    const softGridColour = "rgba(148, 163, 184, 0.22)";
+    const axisTextColour = "#475569";
+
+    const categoryLabels = [
+        {% for item in contacts_by_category %}
+            "{{ item['category'] or 'Unknown' }}",
+        {% endfor %}
+    ];
+
+    const categoryData = [
+        {% for item in contacts_by_category %}
+            {{ item['total'] or 0 }},
+        {% endfor %}
+    ];
+
+    const relationshipLabels = [
+        {% for item in contacts_by_relationship %}
+            "{{ item['relationship'] or 'Unknown' }}",
+        {% endfor %}
+    ];
+
+    const relationshipData = [
+        {% for item in contacts_by_relationship %}
+            {{ item['total'] or 0 }},
+        {% endfor %}
+    ];
+
+    const accountLabels = [
+        {% for item in contacts_by_account %}
+            "{{ item['account_name'] or 'Unknown' }}",
+        {% endfor %}
+    ];
+
+    const accountData = [
+        {% for item in contacts_by_account %}
+            {{ item['total'] or 0 }},
+        {% endfor %}
+    ];
+
+    const tierLabels = [
+        {% for item in contacts_by_account_tier %}
+            "{% if item['account_tier'] != 'Not set' %}Tier {{ item['account_tier'] }}{% else %}Not set{% endif %}",
+        {% endfor %}
+    ];
+
+    const tierData = [
+        {% for item in contacts_by_account_tier %}
+            {{ item['total'] or 0 }},
+        {% endfor %}
+    ];
+
+    new Chart(document.getElementById("categoryChart"), {
+        type: "doughnut",
+        data: {
+            labels: categoryLabels,
+            datasets: [{
+                label: "Contacts",
+                data: categoryData,
+                backgroundColor: pipeflowPalette,
+                borderColor: "#ffffff",
+                borderWidth: 3,
+                hoverOffset: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            cutout: "62%",
+            plugins: {
+                legend: {
+                    position: "bottom",
+                    labels: {
+                        boxWidth: 14,
+                        padding: 16,
+                        color: axisTextColour
+                    }
+                }
+            }
+        }
+    });
+
+    new Chart(document.getElementById("relationshipChart"), {
+        type: "bar",
+        data: {
+            labels: relationshipLabels,
+            datasets: [{
+                label: "Contacts",
+                data: relationshipData,
+                backgroundColor: pipeflowPalette,
+                borderRadius: 10,
+                borderSkipped: false
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                x: {
+                    ticks: {
+                        color: axisTextColour
+                    },
+                    grid: {
+                        display: false
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0,
+                        color: axisTextColour
+                    },
+                    grid: {
+                        color: softGridColour
+                    }
+                }
+            }
+        }
+    });
+
+    new Chart(document.getElementById("accountChart"), {
+        type: "bar",
+        data: {
+            labels: accountLabels,
+            datasets: [{
+                label: "Contacts",
+                data: accountData,
+                backgroundColor: pipeflowPalette,
+                borderRadius: 10,
+                borderSkipped: false
+            }]
+        },
+        options: {
+            responsive: true,
+            indexAxis: "y",
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0,
+                        color: axisTextColour
+                    },
+                    grid: {
+                        color: softGridColour
+                    }
+                },
+                y: {
+                    ticks: {
+                        color: axisTextColour
+                    },
+                    grid: {
+                        display: false
+                    }
+                }
+            }
+        }
+    });
+
+    new Chart(document.getElementById("tierChart"), {
+        type: "doughnut",
+        data: {
+            labels: tierLabels,
+            datasets: [{
+                label: "Contacts",
+                data: tierData,
+                backgroundColor: pipeflowPalette,
+                borderColor: "#ffffff",
+                borderWidth: 3,
+                hoverOffset: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            cutout: "62%",
+            plugins: {
+                legend: {
+                    position: "bottom",
+                    labels: {
+                        boxWidth: 14,
+                        padding: 16,
+                        color: axisTextColour
+                    }
+                }
+            }
+        }
+    });
+</script>
+
+{% endblock %}
