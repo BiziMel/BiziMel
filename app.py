@@ -6,12 +6,10 @@ import webbrowser
 import csv
 import io
 import re
-import smtplib
-from email.message import EmailMessage
 from datetime import datetime, timedelta
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, create_password_reset_token, reset_password_with_token
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 
@@ -71,43 +69,6 @@ def require_login_and_prepare_database():
 
 
 
-def public_base_url():
-    configured = os.environ.get("PIPEFLOW_PUBLIC_URL", "").strip().rstrip("/")
-    if configured:
-        return configured
-    return request.url_root.rstrip("/")
-
-
-def send_password_reset_email(email, reset_link):
-    smtp_host = os.environ.get("PIPEFLOW_SMTP_HOST", "").strip()
-    smtp_port = int(os.environ.get("PIPEFLOW_SMTP_PORT", "587"))
-    smtp_username = os.environ.get("PIPEFLOW_SMTP_USERNAME", "").strip()
-    smtp_password = os.environ.get("PIPEFLOW_SMTP_PASSWORD", "")
-    smtp_from = os.environ.get("PIPEFLOW_SMTP_FROM", smtp_username or "no-reply@pipeflow.local").strip()
-    use_tls = os.environ.get("PIPEFLOW_SMTP_TLS", "1") != "0"
-
-    if not smtp_host or not smtp_username or not smtp_password:
-        app.logger.warning("Password reset email not sent because SMTP is not configured. Reset link: %s", reset_link)
-        return False
-
-    message = EmailMessage()
-    message["Subject"] = "Reset your PipeFlow Server password"
-    message["From"] = smtp_from
-    message["To"] = email
-    message.set_content(
-        "Use this link to reset your PipeFlow Server password. "
-        "The link expires in one hour.\n\n"
-        f"{reset_link}\n"
-    )
-
-    with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as smtp:
-        if use_tls:
-            smtp.starttls()
-        smtp.login(smtp_username, smtp_password)
-        smtp.send_message(message)
-
-    return True
-
 
 @app.route("/login", methods=("GET", "POST"))
 def login():
@@ -141,38 +102,21 @@ def login():
 
 @app.route("/forgot-password", methods=("GET", "POST"))
 def forgot_password():
-    message = ""
     error = ""
     if request.method == "POST":
         email = request.form.get("email", "")
-        token = create_password_reset_token(email)
-        if token:
-            reset_link = f"{public_base_url()}{url_for('reset_password', token=token)}"
-            try:
-                email_sent = send_password_reset_email(email, reset_link)
-            except Exception:
-                app.logger.exception("Password reset email failed")
-                email_sent = False
-
-            if email_sent:
-                message = "If that email exists, a reset link has been sent."
-            else:
-                error = "Email is not configured yet. Ask an administrator to set up SMTP email settings."
-        else:
-            message = "If that email exists, a reset link has been sent."
-
-    return render_template("forgot_password.html", message=message, error=error)
-
-
-@app.route("/reset-password/<token>", methods=("GET", "POST"))
-def reset_password(token):
-    error = ""
-    if request.method == "POST":
-        error = reset_password_with_token(token, request.form.get("password", ""))
+        reset_phrase = request.form.get("reset_phrase", "")
+        password = request.form.get("password", "")
+        error = reset_password_with_phrase(email, reset_phrase, password)
         if not error:
             return redirect(url_for("login", message="Password reset. Please sign in."))
 
-    return render_template("reset_password.html", token=token, error=error)
+    return render_template("forgot_password.html", error=error)
+
+
+@app.route("/reset-password", methods=("GET", "POST"))
+def reset_password():
+    return redirect(url_for("forgot_password"))
 
 
 @app.route("/register", methods=("GET", "POST"))
@@ -183,6 +127,7 @@ def register():
             request.form.get("email", ""),
             request.form.get("password", ""),
             request.form.get("full_name", ""),
+            request.form.get("reset_phrase", ""),
         )
         if user_id:
             session.clear()

@@ -1,7 +1,5 @@
 import sqlite3
 import os
-import secrets
-from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 
@@ -30,6 +28,13 @@ def get_auth_connection():
     return connection
 
 
+def add_column_if_missing(connection, table_name, column_name, column_definition):
+    rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    existing_columns = [row["name"] for row in rows]
+    if column_name not in existing_columns:
+        connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")
+
+
 def initialise_auth_database() -> None:
     connection = get_auth_connection()
     connection.execute("""
@@ -39,22 +44,13 @@ def initialise_auth_database() -> None:
             password_hash TEXT NOT NULL,
             full_name TEXT NOT NULL,
             role TEXT DEFAULT 'user',
+            reset_phrase_hash TEXT,
             is_active INTEGER DEFAULT 1,
             date_created TEXT DEFAULT CURRENT_TIMESTAMP,
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    connection.execute("""
-        CREATE TABLE IF NOT EXISTS password_reset_tokens (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            token TEXT NOT NULL UNIQUE,
-            expires_at TEXT NOT NULL,
-            used_at TEXT,
-            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(user_id) REFERENCES users(id)
-        )
-    """)
+    add_column_if_missing(connection, "users", "reset_phrase_hash", "TEXT")
     connection.commit()
     connection.close()
 
@@ -63,11 +59,14 @@ def normalise_email(email: str) -> str:
     return (email or "").strip().lower()
 
 
-def create_user(email: str, password: str, full_name: str):
+def create_user(email: str, password: str, full_name: str, reset_phrase: str = ""):
     email = normalise_email(email)
     full_name = (full_name or "").strip()
-    if not email or not password or not full_name:
+    reset_phrase = (reset_phrase or "").strip()
+    if not email or not password or not full_name or not reset_phrase:
         return None, "All fields are required."
+    if len(reset_phrase) < 12:
+        return None, "Secret reset phrase must be at least 12 characters."
 
     connection = get_auth_connection()
     try:
@@ -75,10 +74,10 @@ def create_user(email: str, password: str, full_name: str):
         role = "admin" if existing_count == 0 else "user"
         cursor = connection.execute(
             """
-            INSERT INTO users (email, password_hash, full_name, role)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO users (email, password_hash, full_name, role, reset_phrase_hash)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (email, generate_password_hash(password), full_name, role),
+            (email, generate_password_hash(password), full_name, role, generate_password_hash(reset_phrase)),
         )
         connection.commit()
         return cursor.lastrowid, ""
@@ -88,11 +87,15 @@ def create_user(email: str, password: str, full_name: str):
         connection.close()
 
 
-def find_active_user_by_email(email: str):
+def verify_reset_phrase(email: str, reset_phrase: str):
+    reset_phrase = (reset_phrase or "").strip()
+    if not reset_phrase:
+        return None
+
     connection = get_auth_connection()
     user = connection.execute(
         """
-        SELECT id, email, full_name, role
+        SELECT id, email, full_name, reset_phrase_hash
         FROM users
         WHERE email = ?
           AND is_active = 1
@@ -100,62 +103,16 @@ def find_active_user_by_email(email: str):
         (normalise_email(email),),
     ).fetchone()
     connection.close()
-    return user
+
+    if user and user["reset_phrase_hash"] and check_password_hash(user["reset_phrase_hash"], reset_phrase):
+        return user
+    return None
 
 
-def create_password_reset_token(email: str):
-    user = find_active_user_by_email(email)
+def reset_password_with_phrase(email: str, reset_phrase: str, password: str):
+    user = verify_reset_phrase(email, reset_phrase)
     if not user:
-        return None
-
-    token = secrets.token_urlsafe(32)
-    expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
-    connection = get_auth_connection()
-    connection.execute(
-        """
-        INSERT INTO password_reset_tokens (user_id, token, expires_at)
-        VALUES (?, ?, ?)
-        """,
-        (user["id"], token, expires_at),
-    )
-    connection.commit()
-    connection.close()
-    return token
-
-
-def get_valid_password_reset_token(token: str):
-    token = (token or "").strip()
-    if not token:
-        return None
-
-    connection = get_auth_connection()
-    row = connection.execute(
-        """
-        SELECT password_reset_tokens.*, users.email, users.full_name
-        FROM password_reset_tokens
-        JOIN users ON users.id = password_reset_tokens.user_id
-        WHERE password_reset_tokens.token = ?
-          AND password_reset_tokens.used_at IS NULL
-          AND users.is_active = 1
-        """,
-        (token,),
-    ).fetchone()
-    connection.close()
-
-    if not row:
-        return None
-
-    expires_at = datetime.fromisoformat(row["expires_at"])
-    if expires_at < datetime.now(timezone.utc):
-        return None
-
-    return row
-
-
-def reset_password_with_token(token: str, password: str):
-    row = get_valid_password_reset_token(token)
-    if not row:
-        return "This reset link has expired or has already been used."
+        return "Email or secret phrase was not recognised."
 
     password = (password or "").strip()
     if len(password) < 8:
@@ -169,20 +126,11 @@ def reset_password_with_token(token: str, password: str):
             last_updated = CURRENT_TIMESTAMP
         WHERE id = ?
         """,
-        (generate_password_hash(password), row["user_id"]),
-    )
-    connection.execute(
-        """
-        UPDATE password_reset_tokens
-        SET used_at = CURRENT_TIMESTAMP
-        WHERE token = ?
-        """,
-        (token,),
+        (generate_password_hash(password), user["id"]),
     )
     connection.commit()
     connection.close()
     return ""
-
 
 def authenticate_user(email: str, password: str):
     connection = get_auth_connection()

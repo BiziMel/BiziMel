@@ -50,16 +50,8 @@ PipeFlow Server uses one application with one login database, but each user has 
 This is suitable for a small hosted proof of concept. For production team use, move the data layer to PostgreSQL and enforce ownership with database-level constraints and route-level checks.
 
 
-## Password Reset Email
+## Password Reset
 
-Password reset links are sent by SMTP. Add these environment variables in Render:
+PipeFlow Server uses a no-email password reset flow. During registration, each user creates a secret reset phrase. The phrase is hashed and is never stored as plain text.
 
-- `PIPEFLOW_PUBLIC_URL`: the public Render URL, for example `https://bizimel.onrender.com`
-- `PIPEFLOW_SMTP_HOST`: SMTP server host
-- `PIPEFLOW_SMTP_PORT`: SMTP server port, usually `587`
-- `PIPEFLOW_SMTP_USERNAME`: SMTP username
-- `PIPEFLOW_SMTP_PASSWORD`: SMTP password or app password
-- `PIPEFLOW_SMTP_FROM`: sender email address
-- `PIPEFLOW_SMTP_TLS`: `1` for TLS, `0` to disable
-
-If SMTP is not configured, the reset form will not email users and will show an administrator setup message.
+If a user forgets their password, they enter their email, secret reset phrase and new password. If the phrase matches, the password is reset. Admins can still reset passwords manually from Profile Administration.
