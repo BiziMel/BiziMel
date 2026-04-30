@@ -1136,3 +1136,23 @@ a:hover {
     border-radius: 6px;
     min-height: auto;
 }
+
+.alert-success {
+    border: 1px solid #6cab6a;
+    background: #f1fbf0;
+    color: #205b22;
+    padding: 10px 12px;
+    border-radius: 6px;
+    margin: 14px 0;
+}
+
+.inline-form {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 6px 4px 0;
+}
+
+.reset-password-form input {
+    width: 160px;
+}

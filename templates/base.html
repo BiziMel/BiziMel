@@ -28,6 +28,9 @@
     <a href="/reports" class="btn btn-primary">Reports</a>
     <a href="/search" class="btn btn-primary">Search</a>
     <a href="/profile" class="btn btn-secondary">Profile</a>
+    {% if current_user and current_user["role"] == "admin" %}
+    <a href="/admin/users" class="btn btn-secondary">Admin</a>
+    {% endif %}
     {% if current_user %}
     <a href="/logout" class="btn btn-secondary">Sign Out</a>
     {% endif %}

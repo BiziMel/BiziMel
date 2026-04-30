@@ -1,5 +1,7 @@
 import sqlite3
 import os
+import secrets
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 
@@ -42,6 +44,17 @@ def initialise_auth_database() -> None:
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS password_reset_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token TEXT NOT NULL UNIQUE,
+            expires_at TEXT NOT NULL,
+            used_at TEXT,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+    """)
     connection.commit()
     connection.close()
 
@@ -73,6 +86,102 @@ def create_user(email: str, password: str, full_name: str):
         return None, "An account already exists for that email address."
     finally:
         connection.close()
+
+
+def find_active_user_by_email(email: str):
+    connection = get_auth_connection()
+    user = connection.execute(
+        """
+        SELECT id, email, full_name, role
+        FROM users
+        WHERE email = ?
+          AND is_active = 1
+        """,
+        (normalise_email(email),),
+    ).fetchone()
+    connection.close()
+    return user
+
+
+def create_password_reset_token(email: str):
+    user = find_active_user_by_email(email)
+    if not user:
+        return None
+
+    token = secrets.token_urlsafe(32)
+    expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    connection = get_auth_connection()
+    connection.execute(
+        """
+        INSERT INTO password_reset_tokens (user_id, token, expires_at)
+        VALUES (?, ?, ?)
+        """,
+        (user["id"], token, expires_at),
+    )
+    connection.commit()
+    connection.close()
+    return token
+
+
+def get_valid_password_reset_token(token: str):
+    token = (token or "").strip()
+    if not token:
+        return None
+
+    connection = get_auth_connection()
+    row = connection.execute(
+        """
+        SELECT password_reset_tokens.*, users.email, users.full_name
+        FROM password_reset_tokens
+        JOIN users ON users.id = password_reset_tokens.user_id
+        WHERE password_reset_tokens.token = ?
+          AND password_reset_tokens.used_at IS NULL
+          AND users.is_active = 1
+        """,
+        (token,),
+    ).fetchone()
+    connection.close()
+
+    if not row:
+        return None
+
+    expires_at = datetime.fromisoformat(row["expires_at"])
+    if expires_at < datetime.now(timezone.utc):
+        return None
+
+    return row
+
+
+def reset_password_with_token(token: str, password: str):
+    row = get_valid_password_reset_token(token)
+    if not row:
+        return "This reset link has expired or has already been used."
+
+    password = (password or "").strip()
+    if len(password) < 8:
+        return "Password must be at least 8 characters."
+
+    connection = get_auth_connection()
+    connection.execute(
+        """
+        UPDATE users
+        SET password_hash = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (generate_password_hash(password), row["user_id"]),
+    )
+    connection.execute(
+        """
+        UPDATE password_reset_tokens
+        SET used_at = CURRENT_TIMESTAMP
+        WHERE token = ?
+        """,
+        (token,),
+    )
+    connection.commit()
+    connection.close()
+    return ""
 
 
 def authenticate_user(email: str, password: str):
