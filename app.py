@@ -77,7 +77,7 @@ def version_health():
     from db_compat import translate_sql
     sample = "datetime(next_action_date || ' ' || IFNULL(next_action_time, '00:00')) < datetime('now', '-1 hour')"
     lines = [
-        "pipeflow_server_build=2026-05-01-pg-template-campaign-controls-v1",
+        "pipeflow_server_build=2026-05-01-dashboard-task-consolidation-v1",
         f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
         f"translation_check={translate_sql(sample)}",
     ]
@@ -976,6 +976,9 @@ def render_dashboard_fallback():
             "link": url_for("reports")
         }],
         learning_insights=[],
+        dashboard_tasks=[],
+        task_statuses=DROPDOWN_VALUES["task_statuses"],
+        outreach_outcomes=DROPDOWN_VALUES["outreach_outcomes"],
         broadcast_messages=list_broadcast_messages(active_only=True)
     )
 
@@ -1037,6 +1040,23 @@ def build_dashboard_response(connection):
         LEFT JOIN contacts ON outreach.contact_id = contacts.id
         ORDER BY outreach.activity_date DESC, outreach.activity_time DESC
         LIMIT 5
+    """).fetchall()
+
+    dashboard_tasks = connection.execute("""
+        SELECT outreach.*, accounts.account_name, accounts.account_tier, contacts.name AS contact_name
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
+        WHERE outreach.next_action IS NOT NULL
+          AND outreach.next_action != ''
+          AND outreach.next_action_date IS NOT NULL
+          AND outreach.next_action_date != ''
+          AND COALESCE(outreach.task_status, '') != 'Completed'
+        ORDER BY
+            CASE WHEN date(outreach.next_action_date) < date('now') THEN 0 ELSE 1 END,
+            outreach.next_action_date ASC,
+            outreach.next_action_time ASC
+        LIMIT 8
     """).fetchall()
 
     account_health_rows = connection.execute("""
@@ -1262,6 +1282,9 @@ def build_dashboard_response(connection):
         needs_attention_accounts=needs_attention_accounts,
         ai_insights=ai_insights,
         learning_insights=learning_insights,
+        dashboard_tasks=dashboard_tasks,
+        task_statuses=DROPDOWN_VALUES["task_statuses"],
+        outreach_outcomes=DROPDOWN_VALUES["outreach_outcomes"],
         broadcast_messages=list_broadcast_messages(active_only=True)
     )
 
@@ -2992,55 +3015,7 @@ def global_search():
 
 @app.route("/tasks")
 def tasks():
-    connection = get_db_connection()
-
-    overdue_tasks = connection.execute("""
-        SELECT outreach.*, accounts.account_name, accounts.account_tier, contacts.name AS contact_name
-        FROM outreach
-        LEFT JOIN accounts ON outreach.account_id = accounts.id
-        LEFT JOIN contacts ON outreach.contact_id = contacts.id
-        WHERE next_action_date IS NOT NULL
-          AND next_action_date != ''
-          AND date(next_action_date) < date('now')
-          AND COALESCE(task_status, '') != 'Completed'
-        ORDER BY next_action_date ASC, next_action_time ASC
-    """).fetchall()
-
-    today_tasks = connection.execute("""
-        SELECT outreach.*, accounts.account_name, accounts.account_tier, contacts.name AS contact_name
-        FROM outreach
-        LEFT JOIN accounts ON outreach.account_id = accounts.id
-        LEFT JOIN contacts ON outreach.contact_id = contacts.id
-        WHERE next_action_date IS NOT NULL
-          AND next_action_date != ''
-          AND date(next_action_date) = date('now')
-          AND COALESCE(task_status, '') != 'Completed'
-        ORDER BY next_action_time ASC
-    """).fetchall()
-
-    upcoming_tasks = connection.execute("""
-        SELECT outreach.*, accounts.account_name, accounts.account_tier, contacts.name AS contact_name
-        FROM outreach
-        LEFT JOIN accounts ON outreach.account_id = accounts.id
-        LEFT JOIN contacts ON outreach.contact_id = contacts.id
-        WHERE next_action_date IS NOT NULL
-          AND next_action_date != ''
-          AND date(next_action_date) > date('now')
-          AND COALESCE(task_status, '') != 'Completed'
-        ORDER BY next_action_date ASC, next_action_time ASC
-        LIMIT 10
-    """).fetchall()
-
-    connection.close()
-
-    return render_template(
-        "tasks.html",
-        overdue_tasks=overdue_tasks,
-        today_tasks=today_tasks,
-        upcoming_tasks=upcoming_tasks,
-        task_statuses=DROPDOWN_VALUES["task_statuses"],
-        outreach_outcomes=DROPDOWN_VALUES["outreach_outcomes"]
-    )
+    return redirect(url_for("home", _anchor="dashboard-tasks"))
 
 
 @app.route("/tasks/<int:outreach_id>/update", methods=("POST",))
@@ -3050,9 +3025,10 @@ def update_task_from_tasks(outreach_id):
         "SELECT * FROM outreach WHERE id = ?",
         (outreach_id,),
     ).fetchone()
+    return_target = request.form.get("return_to") or request.referrer or url_for("home")
     if not outreach_item:
         connection.close()
-        return redirect(url_for("tasks"))
+        return redirect(return_target)
 
     new_values = {
         "outcome": request.form.get("outcome"),
@@ -3104,7 +3080,7 @@ def update_task_from_tasks(outreach_id):
         )
     connection.commit()
     connection.close()
-    return redirect(url_for("tasks"))
+    return redirect(return_target)
 
 
 @app.route("/tasks/<int:outreach_id>/complete", methods=("POST",))
@@ -3114,9 +3090,10 @@ def complete_task_from_tasks(outreach_id):
         "SELECT * FROM outreach WHERE id = ?",
         (outreach_id,),
     ).fetchone()
+    return_target = request.form.get("return_to") or request.referrer or url_for("home")
     if not outreach_item:
         connection.close()
-        return redirect(url_for("tasks"))
+        return redirect(return_target)
 
     outcome = request.form.get("outcome") or outreach_item["outcome"] or "Follow-up Required"
     connection.execute(
@@ -3138,7 +3115,7 @@ def complete_task_from_tasks(outreach_id):
     )
     connection.commit()
     connection.close()
-    return redirect(url_for("tasks"))
+    return redirect(return_target)
 
 
 @app.route("/profile", methods=("GET", "POST"))
