@@ -77,7 +77,7 @@ def version_health():
     from db_compat import translate_sql
     sample = "datetime(next_action_date || ' ' || IFNULL(next_action_time, '00:00')) < datetime('now', '-1 hour')"
     lines = [
-        "pipeflow_server_build=2026-05-01-pg-template-campaign-controls-v1",
+        "pipeflow_server_build=2026-05-01-campaign-date-volume-v1",
         f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
         f"translation_check={translate_sql(sample)}",
     ]
@@ -656,27 +656,29 @@ def evenly_spaced_dates(start_date, end_date, task_count):
     return sorted(dates)
 
 
-def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per_week):
+def build_campaign_schedule(campaign_start, campaign_end, tasks_per_week):
     templates = campaign_step_templates()
-    total_tasks = max(1, int(total_tasks or 1))
-    times_per_week = max(1, min(int(times_per_week or 1), 7))
+    tasks_per_week = max(1, min(int(tasks_per_week or 1), 7))
     schedule = []
+    template_index = 0
+    week_start = campaign_start
 
-    for index, action_date in enumerate(evenly_spaced_dates(campaign_start, campaign_end, total_tasks)):
-        if action_date < campaign_start:
-            action_date = campaign_start
-        if action_date > campaign_end:
-            action_date = campaign_end
-        template = dict(templates[index % len(templates)])
-        template["action_date"] = action_date
-        template["times_per_week"] = times_per_week
-        schedule.append(template)
+    while week_start <= campaign_end:
+        week_end = min(week_start + timedelta(days=6), campaign_end)
+        available_days = (week_end - week_start).days + 1
+        task_count = min(tasks_per_week, available_days)
+        for action_date in evenly_spaced_dates(week_start, week_end, task_count):
+            template = dict(templates[template_index % len(templates)])
+            template["action_date"] = action_date
+            schedule.append(template)
+            template_index += 1
+        week_start = week_end + timedelta(days=1)
 
     return schedule
 
 
 def build_pg_campaign_steps(pg_week_start):
-    return build_campaign_schedule(pg_week_start - timedelta(days=28), pg_week_start - timedelta(days=1), 8, 2)
+    return build_campaign_schedule(pg_week_start - timedelta(days=28), pg_week_start - timedelta(days=1), 2)
 
 
 POSITIVE_OUTCOMES = (
@@ -2480,8 +2482,7 @@ def campaign_builder():
     selected_pg_week_start = request.form.get("pg_week_start", "")
     selected_campaign_start = request.form.get("campaign_start_date", "")
     selected_campaign_end = request.form.get("campaign_end_date", "")
-    selected_total_tasks = request.form.get("total_outreach_tasks", "8")
-    selected_times_per_week = request.form.get("times_per_week", "2")
+    selected_tasks_per_week = request.form.get("tasks_per_week", "2")
     selected_sales_plays = request.form.get("sales_plays", "")
 
     if request.method == "POST":
@@ -2490,15 +2491,10 @@ def campaign_builder():
         campaign_start_raw = request.form.get("campaign_start_date", "")
         campaign_end_raw = request.form.get("campaign_end_date", "")
         try:
-            total_tasks = max(1, min(int(request.form.get("total_outreach_tasks", "8") or 8), 50))
+            tasks_per_week = max(1, min(int(request.form.get("tasks_per_week", "2") or 2), 7))
         except ValueError:
-            total_tasks = 8
-        try:
-            times_per_week = max(1, min(int(request.form.get("times_per_week", "2") or 2), 7))
-        except ValueError:
-            times_per_week = 2
-        selected_total_tasks = str(total_tasks)
-        selected_times_per_week = str(times_per_week)
+            tasks_per_week = 2
+        selected_tasks_per_week = str(tasks_per_week)
         contact_ids = request.form.getlist("contact_ids")
         sales_plays = [
             play.strip()
@@ -2537,14 +2533,13 @@ def campaign_builder():
 
             for contact in contacts:
                 for sales_play in sales_plays:
-                    for step in build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per_week):
+                    for step in build_campaign_schedule(campaign_start, campaign_end, tasks_per_week):
                         action_date = step["action_date"]
                         subject = f"{step['subject_prefix']}: {sales_play}"
                         notes = (
                             f"Auto-generated campaign step for {account_name}. "
                             f"Campaign window: {campaign_start.isoformat()} to {campaign_end.isoformat()}. "
-                            f"Total outreach tasks: {total_tasks}. "
-                            f"Times per week: {times_per_week}. "
+                            f"Tasks per week: {tasks_per_week}. "
                             f"Sales play: {sales_play}. Contact: {contact['name']}."
                         )
                         next_action = f"{step['next_action']} for {contact['name']} - {sales_play}"
@@ -2558,7 +2553,6 @@ def campaign_builder():
                                 campaign_start_date,
                                 campaign_end_date,
                                 campaign_tasks_per_week,
-                                campaign_total_tasks,
                                 account_id,
                                 contact_id,
                                 activity_type,
@@ -2573,7 +2567,7 @@ def campaign_builder():
                                 task_status,
                                 assigned_to
                             )
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, (
                             fy,
                             quarter,
@@ -2581,8 +2575,7 @@ def campaign_builder():
                             sales_play,
                             campaign_start.isoformat(),
                             campaign_end.isoformat(),
-                            times_per_week,
-                            total_tasks,
+                            tasks_per_week,
                             account_id,
                             contact["id"],
                             step["activity_type"],
@@ -2604,7 +2597,7 @@ def campaign_builder():
                 "account",
                 account_id,
                 "Campaign Built",
-                f"Generated {generated_count} campaign outreach step(s) from {campaign_start.isoformat()} to {campaign_end.isoformat()} with {total_tasks} task(s) at {times_per_week} time(s) per week"
+                f"Generated {generated_count} campaign outreach step(s) from {campaign_start.isoformat()} to {campaign_end.isoformat()} at {tasks_per_week} task(s) per week"
             )
             connection.commit()
 
@@ -2644,8 +2637,7 @@ def campaign_builder():
         selected_pg_week_start=selected_pg_week_start,
         selected_campaign_start=selected_campaign_start,
         selected_campaign_end=selected_campaign_end,
-        selected_total_tasks=selected_total_tasks,
-        selected_times_per_week=selected_times_per_week,
+        selected_tasks_per_week=selected_tasks_per_week,
         selected_sales_plays=selected_sales_plays
     )
 
@@ -3353,8 +3345,11 @@ def build_pg_bible_report_from_db(connection):
 def export_pg_bible():
     template_setting = os.environ.get("PG_BIBLE_TEMPLATE_PATH", "").strip()
     if not template_setting:
-        bundled_template = Path(__file__).resolve().parent / "pg_bible_templates" / "PG Bible FY27.xlsx"
-        template_setting = str(bundled_template)
+        return Response(
+            "PG Bible export is not configured on this server. Set PG_BIBLE_TEMPLATE_PATH to an uploaded template file.",
+            status=400,
+            mimetype="text/plain",
+        )
 
     try:
         from excel_exporter import PGBibleExporter

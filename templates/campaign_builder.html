@@ -67,27 +67,15 @@
             </div>
 
             <div class="form-group">
-                <label for="total_outreach_tasks">Qty Outreach Tasks</label>
+                <label for="tasks_per_week">Outreach Tasks Per Week</label>
                 <input type="number"
-                       id="total_outreach_tasks"
-                       name="total_outreach_tasks"
-                       min="1"
-                       max="50"
-                       value="{{ selected_total_tasks or '8' }}"
-                       required>
-                <p class="field-help">Total generated for each selected contact and sales play.</p>
-            </div>
-
-            <div class="form-group">
-                <label for="times_per_week">Qty Times Per Week</label>
-                <input type="number"
-                       id="times_per_week"
-                       name="times_per_week"
+                       id="tasks_per_week"
+                       name="tasks_per_week"
                        min="1"
                        max="7"
-                       value="{{ selected_times_per_week or '2' }}"
+                       value="{{ selected_tasks_per_week or '2' }}"
                        required>
-                <p class="field-help">Maximum task frequency per week.</p>
+                <p class="field-help">Applied per selected contact and sales play.</p>
             </div>
 
             <div class="form-group">
