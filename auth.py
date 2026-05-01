@@ -52,19 +52,34 @@ def add_column_if_missing(connection, table_name, column_name, column_definition
 
 def initialise_auth_database() -> None:
     connection = get_auth_connection()
-    connection.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL,
-            full_name TEXT NOT NULL,
-            role TEXT DEFAULT 'user',
-            reset_phrase_hash TEXT,
-            is_active INTEGER DEFAULT 1,
-            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
-            last_updated TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+    if using_postgres():
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                full_name TEXT NOT NULL,
+                role TEXT DEFAULT 'user',
+                reset_phrase_hash TEXT,
+                is_active INTEGER DEFAULT 1,
+                date_created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+    else:
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                full_name TEXT NOT NULL,
+                role TEXT DEFAULT 'user',
+                reset_phrase_hash TEXT,
+                is_active INTEGER DEFAULT 1,
+                date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+                last_updated TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
     add_column_if_missing(connection, "users", "reset_phrase_hash", "TEXT")
     connection.commit()
     connection.close()
@@ -87,15 +102,28 @@ def create_user(email: str, password: str, full_name: str, reset_phrase: str = "
     try:
         existing_count = connection.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         role = "admin" if existing_count == 0 else "user"
-        cursor = connection.execute(
-            """
-            INSERT INTO users (email, password_hash, full_name, role, reset_phrase_hash)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (email, generate_password_hash(password), full_name, role, generate_password_hash(reset_phrase)),
-        )
+        if using_postgres():
+            cursor = connection.execute(
+                """
+                INSERT INTO users (email, password_hash, full_name, role, reset_phrase_hash)
+                VALUES (?, ?, ?, ?, ?)
+                RETURNING id
+                """,
+                (email, generate_password_hash(password), full_name, role, generate_password_hash(reset_phrase)),
+            )
+            row = cursor.fetchone()
+            user_id = row["id"]
+        else:
+            cursor = connection.execute(
+                """
+                INSERT INTO users (email, password_hash, full_name, role, reset_phrase_hash)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (email, generate_password_hash(password), full_name, role, generate_password_hash(reset_phrase)),
+            )
+            user_id = cursor.lastrowid
         connection.commit()
-        return cursor.lastrowid, ""
+        return user_id, ""
     except Exception as exc:
         if "unique" not in str(exc).lower() and "duplicate" not in str(exc).lower():
             raise

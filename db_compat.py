@@ -149,12 +149,14 @@ class PgConnectionAdapter:
             translated = translated.rstrip().rstrip(";") + " ON CONFLICT (partner_name) DO NOTHING"
         table = insert_table_name(translated)
         wants_lastrowid = table in USER_TABLES or table == "users"
+        auto_returning = False
         if wants_lastrowid and " returning " not in translated.lower() and not re.search(r"\binsert\s+into[\s\S]+\bselect\b", translated, flags=re.IGNORECASE):
             translated = translated.rstrip().rstrip(";") + " RETURNING id"
+            auto_returning = True
 
         cursor = self.connection.execute(translated, params)
         lastrowid = None
-        if wants_lastrowid and cursor.description:
+        if auto_returning and cursor.description:
             row = cursor.fetchone()
             row = hybrid(row)
             if row is not None:
