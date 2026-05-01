@@ -52,7 +52,7 @@ def inject_dropdown_values():
     return {
         "dropdown_values": DROPDOWN_VALUES,
         "current_user": current_user(),
-        "app_name": "PipeFlow Server",
+        "app_name": "PipeFlow PG Manager",
     }
 
 
@@ -77,7 +77,7 @@ def version_health():
     from db_compat import translate_sql
     sample = "datetime(next_action_date || ' ' || IFNULL(next_action_time, '00:00')) < datetime('now', '-1 hour')"
     lines = [
-        "pipeflow_server_build=2026-05-01-dashboard-task-consolidation-v1",
+        "pipeflow_server_build=2026-05-01-combined-execution-insights-v1",
         f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
         f"translation_check={translate_sql(sample)}",
     ]
@@ -728,6 +728,40 @@ def add_learning_score(rows):
     return scored_rows
 
 
+def build_execution_insights(ai_insights, learning_insights):
+    combined = []
+    for insight in ai_insights:
+        combined.append({
+            "source": "AI Insight",
+            "category": insight.get("type", "Insight"),
+            "title": insight.get("title", ""),
+            "message": insight.get("message", ""),
+            "action": insight.get("message", ""),
+            "link": insight.get("link", url_for("home")),
+            "priority": insight.get("severity", "medium"),
+        })
+
+    for insight in learning_insights:
+        combined.append({
+            "source": "Campaign Learning",
+            "category": insight.get("signal", "Learning"),
+            "title": insight.get("title", ""),
+            "message": insight.get("message", ""),
+            "action": insight.get("action", ""),
+            "link": insight.get("link", url_for("campaign_builder")),
+            "priority": "learning",
+        })
+
+    priority_order = {
+        "high": 1,
+        "medium": 2,
+        "learning": 3,
+        "positive": 4,
+    }
+    combined.sort(key=lambda item: priority_order.get(item["priority"], 5))
+    return combined[:10]
+
+
 def build_learning_insights(connection):
     positive_placeholders = ",".join("?" for _ in POSITIVE_OUTCOMES)
     negative_placeholders = ",".join("?" for _ in NEGATIVE_OUTCOMES)
@@ -976,6 +1010,7 @@ def render_dashboard_fallback():
             "link": url_for("reports")
         }],
         learning_insights=[],
+        execution_insights=[],
         dashboard_tasks=[],
         task_statuses=DROPDOWN_VALUES["task_statuses"],
         outreach_outcomes=DROPDOWN_VALUES["outreach_outcomes"],
@@ -1267,6 +1302,7 @@ def build_dashboard_response(connection):
     )
 
     ai_insights = ai_insights[:6]
+    execution_insights = build_execution_insights(ai_insights, learning_insights)
 
     return render_template(
         "index.html",
@@ -1282,6 +1318,7 @@ def build_dashboard_response(connection):
         needs_attention_accounts=needs_attention_accounts,
         ai_insights=ai_insights,
         learning_insights=learning_insights,
+        execution_insights=execution_insights,
         dashboard_tasks=dashboard_tasks,
         task_statuses=DROPDOWN_VALUES["task_statuses"],
         outreach_outcomes=DROPDOWN_VALUES["outreach_outcomes"],

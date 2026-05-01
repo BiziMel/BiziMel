@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Sign In - PipeFlow Server{% endblock %}
+{% block title %}Sign In - PipeFlow PG Manager{% endblock %}
 
 {% block content %}
 <div class="login-layout">
     <section class="auth-panel">
         <h2>Sign In</h2>
-        <p class="muted-text">Use your PipeFlow Server profile to access your private workspace.</p>
+        <p class="muted-text">Use your PipeFlow PG Manager profile to access your private workspace.</p>
 
         {% if message %}
             <div class="alert-success">{{ message }}</div>
@@ -31,7 +31,7 @@
         </p>
 
         <p class="muted-text">
-            New to PipeFlow Server?
+            New to PipeFlow PG Manager?
             <a href="{{ url_for('register') }}">Create a profile</a>
         </p>
     </section>

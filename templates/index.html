@@ -160,93 +160,52 @@
     </section>
 </div>
 
-<div class="dashboard-main-grid">
-    <section class="form-card">
-        <div class="section-header">
-            <div>
-                <h2>AI Insights</h2>
-                <p>Suggested execution signals based on account coverage, activity, meetings and follow-ups.</p>
-            </div>
+<section class="form-card dashboard-execution-insights-card">
+    <div class="section-header">
+        <div>
+            <h2>Execution Insights</h2>
+            <p>Combined AI guidance and campaign learning for the next best sales actions.</p>
         </div>
+        <a href="{{ url_for('campaign_builder') }}" class="btn btn-secondary">Build Campaign</a>
+    </div>
 
-        {% if ai_insights %}
-            <div class="table-container flush-table-container">
-                <table class="report-table">
-                    <thead>
+    {% if execution_insights %}
+        <div class="table-container flush-table-container">
+            <table class="report-table execution-insights-table">
+                <thead>
+                    <tr>
+                        <th>Source</th>
+                        <th>Signal</th>
+                        <th>What It Means</th>
+                        <th>Recommended Move</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for insight in execution_insights %}
                         <tr>
-                            <th>Insight Type</th>
-                            <th>Headline</th>
-                            <th>Recommended Action</th>
+                            <td><strong>{{ insight.source }}</strong></td>
+                            <td>{{ insight.category }}</td>
+                            <td>
+                                <strong>{{ insight.title }}</strong><br>
+                                <span class="muted">{{ insight.message }}</span>
+                            </td>
+                            <td>
+                                {{ insight.action }}
+                                <br><br>
+                                <a href="{{ insight.link }}" class="btn btn-secondary btn-small">Open</a>
+                            </td>
                         </tr>
-                    </thead>
-                    <tbody>
-                        {% for insight in ai_insights %}
-                            <tr>
-                                <td><strong>{{ insight.type }}</strong></td>
-                                <td><strong>{{ insight.title }}</strong></td>
-                                <td>
-                                    {{ insight.message }}
-                                    <br><br>
-                                    <a href="{{ insight.link }}" class="btn btn-secondary btn-small">Open</a>
-                                </td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% else %}
-            <div class="empty-state">
-                <h3>No AI insights yet</h3>
-                <p>Add more accounts, contacts, outreach and follow-ups to generate useful execution signals.</p>
-            </div>
-        {% endif %}
-    </section>
-
-    <section class="form-card">
-        <div class="section-header">
-            <div>
-                <h2>Campaign Learning</h2>
-                <p>Ideas from campaign outcomes, sales plays, contacts, accounts and follow-up progress.</p>
-            </div>
-            <a href="{{ url_for('campaign_builder') }}" class="btn btn-secondary">Build Campaign</a>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
-
-        {% if learning_insights %}
-            <div class="table-container flush-table-container">
-                <table class="report-table">
-                    <thead>
-                        <tr>
-                            <th>Signal</th>
-                            <th>What looks promising</th>
-                            <th>Suggested move</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for insight in learning_insights %}
-                            <tr>
-                                <td><strong>{{ insight.signal }}</strong></td>
-                                <td>
-                                    <strong>{{ insight.title }}</strong><br>
-                                    <span class="muted">{{ insight.message }}</span>
-                                </td>
-                                <td>
-                                    {{ insight.action }}
-                                    <br><br>
-                                    <a href="{{ insight.link }}" class="btn btn-secondary btn-small">Open</a>
-                                </td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% else %}
-            <div class="empty-state">
-                <h3>No campaign learning yet</h3>
-                <p>Add campaign outcomes and sales plays to generate suggestions.</p>
-            </div>
-        {% endif %}
-    </section>
-</div>
+    {% else %}
+        <div class="empty-state">
+            <h3>No execution insights yet</h3>
+            <p>Add accounts, contacts, outreach, outcomes and campaign activity to generate recommendations.</p>
+        </div>
+    {% endif %}
+</section>
 
 <div class="form-card dashboard-chart-card">
     <div class="section-header">
