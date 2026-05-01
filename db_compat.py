@@ -72,6 +72,11 @@ def translate_sql(sql):
     translated = translated.replace("datetime('now')", "CURRENT_TIMESTAMP")
     translated = translated.replace("date('now', '+7 days')", "(CURRENT_DATE + INTERVAL '7 days')")
     translated = translated.replace("date('now')", "CURRENT_DATE")
+    translated = re.sub(r"strftime\s*\(\s*'%w'\s*,\s*([^)]+)\)", r"CAST(pipeflow_strftime('%w', \1) AS INTEGER)", translated, flags=re.IGNORECASE)
+    translated = re.sub(r"\bdatetime\s*\(", "pipeflow_datetime(", translated, flags=re.IGNORECASE)
+    translated = re.sub(r"\bstrftime\s*\(", "pipeflow_strftime(", translated, flags=re.IGNORECASE)
+    translated = re.sub(r"\bjulianday\s*\(", "pipeflow_julianday(", translated, flags=re.IGNORECASE)
+    translated = re.sub(r"\bdate\s*\(", "pipeflow_date(", translated, flags=re.IGNORECASE)
     return translated
 
 
@@ -206,28 +211,38 @@ def postgres_connection(schema=None):
         cursor.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
         cursor.execute(f'SET search_path TO "{schema}", public')
         cursor.execute("""
-            CREATE OR REPLACE FUNCTION julianday(value text)
+            CREATE OR REPLACE FUNCTION pipeflow_julianday(value text)
             RETURNS double precision
-            LANGUAGE sql
-            IMMUTABLE
-            AS $$ SELECT EXTRACT(EPOCH FROM value::timestamp) / 86400.0 $$
+            LANGUAGE plpgsql
+            STABLE
+            AS $$
+            BEGIN
+                IF value = 'now' THEN
+                    RETURN EXTRACT(EPOCH FROM CURRENT_TIMESTAMP) / 86400.0;
+                END IF;
+                IF NULLIF(value, '') IS NULL THEN
+                    RETURN NULL;
+                END IF;
+                RETURN EXTRACT(EPOCH FROM value::timestamp) / 86400.0;
+            END;
+            $$
         """)
         cursor.execute("""
-            CREATE OR REPLACE FUNCTION julianday(value timestamp)
+            CREATE OR REPLACE FUNCTION pipeflow_julianday(value timestamp)
             RETURNS double precision
             LANGUAGE sql
             IMMUTABLE
             AS $$ SELECT EXTRACT(EPOCH FROM value) / 86400.0 $$
         """)
         cursor.execute("""
-            CREATE OR REPLACE FUNCTION julianday(value date)
+            CREATE OR REPLACE FUNCTION pipeflow_julianday(value date)
             RETURNS double precision
             LANGUAGE sql
             IMMUTABLE
             AS $$ SELECT EXTRACT(EPOCH FROM value::timestamp) / 86400.0 $$
         """)
         cursor.execute("""
-            CREATE OR REPLACE FUNCTION strftime(format text, value text)
+            CREATE OR REPLACE FUNCTION pipeflow_strftime(format text, value text)
             RETURNS text
             LANGUAGE plpgsql
             IMMUTABLE
@@ -243,7 +258,7 @@ def postgres_connection(schema=None):
             $$
         """)
         cursor.execute("""
-            CREATE OR REPLACE FUNCTION strftime(format text, value timestamp)
+            CREATE OR REPLACE FUNCTION pipeflow_strftime(format text, value timestamp)
             RETURNS text
             LANGUAGE plpgsql
             IMMUTABLE
@@ -259,7 +274,7 @@ def postgres_connection(schema=None):
             $$
         """)
         cursor.execute("""
-            CREATE OR REPLACE FUNCTION strftime(format text, value date)
+            CREATE OR REPLACE FUNCTION pipeflow_strftime(format text, value date)
             RETURNS text
             LANGUAGE plpgsql
             IMMUTABLE
@@ -275,7 +290,73 @@ def postgres_connection(schema=None):
             $$
         """)
         cursor.execute("""
-            CREATE OR REPLACE FUNCTION date(value text)
+            CREATE OR REPLACE FUNCTION pipeflow_datetime(value text)
+            RETURNS timestamp
+            LANGUAGE plpgsql
+            STABLE
+            AS $$
+            BEGIN
+                IF value = 'now' THEN
+                    RETURN CURRENT_TIMESTAMP;
+                END IF;
+                IF NULLIF(value, '') IS NULL THEN
+                    RETURN NULL;
+                END IF;
+                RETURN value::timestamp;
+            END;
+            $$
+        """)
+        cursor.execute("""
+            CREATE OR REPLACE FUNCTION pipeflow_datetime(value timestamp)
+            RETURNS timestamp
+            LANGUAGE sql
+            IMMUTABLE
+            AS $$ SELECT value $$
+        """)
+        cursor.execute("""
+            CREATE OR REPLACE FUNCTION pipeflow_datetime(value date)
+            RETURNS timestamp
+            LANGUAGE sql
+            IMMUTABLE
+            AS $$ SELECT value::timestamp $$
+        """)
+        cursor.execute("""
+            CREATE OR REPLACE FUNCTION pipeflow_datetime(value text, modifier text)
+            RETURNS timestamp
+            LANGUAGE plpgsql
+            STABLE
+            AS $$
+            DECLARE
+                amount integer;
+                base_value timestamp;
+            BEGIN
+                IF value = 'now' THEN
+                    base_value := CURRENT_TIMESTAMP;
+                ELSIF NULLIF(value, '') IS NULL THEN
+                    RETURN NULL;
+                ELSE
+                    base_value := value::timestamp;
+                END IF;
+
+                IF modifier LIKE '+% hour' OR modifier LIKE '+% hours' THEN
+                    amount := split_part(substring(modifier from 2), ' ', 1)::integer;
+                    RETURN base_value + (amount * INTERVAL '1 hour');
+                ELSIF modifier LIKE '-% hour' OR modifier LIKE '-% hours' THEN
+                    amount := split_part(substring(modifier from 2), ' ', 1)::integer;
+                    RETURN base_value - (amount * INTERVAL '1 hour');
+                ELSIF modifier LIKE '+% days' THEN
+                    amount := split_part(substring(modifier from 2), ' ', 1)::integer;
+                    RETURN base_value + (amount * INTERVAL '1 day');
+                ELSIF modifier LIKE '-% days' THEN
+                    amount := split_part(substring(modifier from 2), ' ', 1)::integer;
+                    RETURN base_value - (amount * INTERVAL '1 day');
+                END IF;
+                RETURN base_value;
+            END;
+            $$
+        """)
+        cursor.execute("""
+            CREATE OR REPLACE FUNCTION pipeflow_date(value text)
             RETURNS date
             LANGUAGE plpgsql
             IMMUTABLE
@@ -292,14 +373,21 @@ def postgres_connection(schema=None):
             $$
         """)
         cursor.execute("""
-            CREATE OR REPLACE FUNCTION date(value timestamp)
+            CREATE OR REPLACE FUNCTION pipeflow_date(value timestamp)
             RETURNS date
             LANGUAGE sql
             IMMUTABLE
             AS $$ SELECT value::date $$
         """)
         cursor.execute("""
-            CREATE OR REPLACE FUNCTION date(value text, modifier text)
+            CREATE OR REPLACE FUNCTION pipeflow_date(value date)
+            RETURNS date
+            LANGUAGE sql
+            IMMUTABLE
+            AS $$ SELECT value $$
+        """)
+        cursor.execute("""
+            CREATE OR REPLACE FUNCTION pipeflow_date(value text, modifier text)
             RETURNS date
             LANGUAGE plpgsql
             IMMUTABLE
@@ -332,7 +420,7 @@ def postgres_connection(schema=None):
             $$
         """)
         cursor.execute("""
-            CREATE OR REPLACE FUNCTION date(value timestamp, modifier text)
+            CREATE OR REPLACE FUNCTION pipeflow_date(value timestamp, modifier text)
             RETURNS date
             LANGUAGE plpgsql
             IMMUTABLE

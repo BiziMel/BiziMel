@@ -6,6 +6,7 @@ import webbrowser
 import csv
 import io
 import re
+import traceback
 from datetime import datetime, timedelta
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session
@@ -69,6 +70,18 @@ def require_login_and_prepare_database():
 
 
 
+
+
+@app.route("/health/version")
+def version_health():
+    from db_compat import translate_sql
+    sample = "datetime(next_action_date || ' ' || IFNULL(next_action_time, '00:00')) < datetime('now', '-1 hour')"
+    lines = [
+        "pipeflow_server_build=2026-05-01-dashboard-safe-postgres-compat-v2",
+        f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
+        f"translation_check={translate_sql(sample)}",
+    ]
+    return Response("\n".join(lines), mimetype="text/plain")
 
 
 @app.route("/health/storage")
@@ -617,6 +630,41 @@ def build_learning_insights(connection):
 @app.route("/")
 def home():
     connection = get_db_connection()
+    try:
+        return build_dashboard_response(connection)
+    except Exception as exc:
+        print(f"Dashboard failed: {exc!r}", file=sys.stderr)
+        traceback.print_exc()
+        return render_dashboard_fallback()
+    finally:
+        connection.close()
+
+
+def render_dashboard_fallback():
+    return render_template(
+        "index.html",
+        total_accounts=0,
+        total_contacts=0,
+        total_outreach=0,
+        meetings_booked=0,
+        follow_ups_due=0,
+        latest_outreach=[],
+        outreach_by_account=[],
+        outcome_breakdown=[],
+        top_accounts=[],
+        needs_attention_accounts=[],
+        ai_insights=[{
+            "type": "Dashboard Check",
+            "severity": "high",
+            "title": "Dashboard data needs a refresh",
+            "message": "One dashboard query could not be loaded. Other app pages should still be available while this is checked.",
+            "link": url_for("reports")
+        }],
+        learning_insights=[]
+    )
+
+
+def build_dashboard_response(connection):
 
     total_accounts = connection.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
     total_contacts = connection.execute("SELECT COUNT(*) FROM contacts").fetchone()[0]
@@ -883,8 +931,6 @@ def home():
     )
 
     ai_insights = ai_insights[:6]
-
-    connection.close()
 
     return render_template(
         "index.html",
