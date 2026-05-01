@@ -4,8 +4,8 @@
 <div class="page-header">
     <h1>{{ outreach_item.subject }}</h1>
     <div class="button-row">
-        <a class="button" href="{{ url_for('outreach') }}">Back to Outreach</a>
-        <a class="button" href="{{ url_for('edit_outreach', outreach_id=outreach_item.id) }}">Edit Outreach</a>
+        <a class="btn btn-secondary" href="{{ url_for('outreach') }}">Back to Outreach</a>
+        <a class="btn btn-primary" href="{{ url_for('edit_outreach', outreach_id=outreach_item.id) }}">Edit Outreach</a>
     </div>
 </div>
 
