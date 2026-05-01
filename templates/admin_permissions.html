@@ -81,7 +81,7 @@
     </div>
 </div>
 
-<div class="card">
+<div class="card admin-users-card">
     <div class="section-header">
         <div>
             <h3>User Permissions</h3>
@@ -89,36 +89,47 @@
         </div>
     </div>
 
-    <table>
-        <thead>
-            <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Team</th>
-                <th>Role</th>
-                <th>Status</th>
-                <th>Created</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for user in users %}
-                <tr>
-                    <td>{{ user["full_name"] }}</td>
-                    <td>{{ user["email"] }}</td>
-                    <td>{{ user["team"] or "Not set" }}</td>
-                    <td>{{ user["role"] }}</td>
-                    <td>{{ "Active" if user["is_active"] else "Inactive" }}</td>
-                    <td>{{ user["date_created"] }}</td>
-                    <td>
-                        <form method="POST" action="{{ url_for('admin_update_user_identity', user_id=user['id']) }}" class="admin-user-details-form">
-                            <input type="text" name="full_name" value="{{ user['full_name'] }}" placeholder="Name" required>
-                            <input type="email" name="email" value="{{ user['email'] }}" placeholder="Email" required>
-                            <input type="text" name="team" value="{{ user['team'] or '' }}" placeholder="Team">
-                            <button type="submit" class="btn btn-secondary">Save Details</button>
-                        </form>
+    <div class="admin-user-card-grid">
+        {% for user in users %}
+            <article class="admin-user-card">
+                <div class="admin-user-card-header">
+                    <div>
+                        <h4>{{ user["full_name"] }}</h4>
+                        <p>{{ user["email"] }}</p>
+                    </div>
+                    <div class="admin-user-badges">
+                        <span class="permission-badge">{{ user["role"]|capitalize }}</span>
+                        <span class="user-status-pill {{ 'user-status-active' if user['is_active'] else 'user-status-inactive' }}">
+                            {{ "Active" if user["is_active"] else "Inactive" }}
+                        </span>
+                    </div>
+                </div>
 
-                        <form method="POST" action="{{ url_for('admin_update_user_role', user_id=user['id']) }}" class="inline-form">
+                <div class="admin-user-meta-grid">
+                    <div>
+                        <span>Team</span>
+                        <strong>{{ user["team"] or "Not set" }}</strong>
+                    </div>
+                    <div>
+                        <span>Created</span>
+                        <strong>{{ user["date_created"] }}</strong>
+                    </div>
+                </div>
+
+                <div class="admin-user-section">
+                    <h5>Profile Details</h5>
+                    <form method="POST" action="{{ url_for('admin_update_user_identity', user_id=user['id']) }}" class="admin-user-details-form">
+                        <input type="text" name="full_name" value="{{ user['full_name'] }}" placeholder="Name" required>
+                        <input type="email" name="email" value="{{ user['email'] }}" placeholder="Email" required>
+                        <input type="text" name="team" value="{{ user['team'] or '' }}" placeholder="Team">
+                        <button type="submit" class="btn btn-secondary">Save Details</button>
+                    </form>
+                </div>
+
+                <div class="admin-user-section admin-user-actions-grid">
+                    <div>
+                        <h5>Role</h5>
+                        <form method="POST" action="{{ url_for('admin_update_user_role', user_id=user['id']) }}" class="admin-user-role-form">
                             <select name="role" {% if user['id'] == session.get('user_id') %}disabled{% endif %}>
                                 <option value="user" {% if user["role"] == "user" %}selected{% endif %}>User</option>
                                 <option value="manager" {% if user["role"] == "manager" %}selected{% endif %}>Manager</option>
@@ -126,26 +137,32 @@
                             </select>
                             <button type="submit" class="btn btn-secondary" {% if user['id'] == session.get('user_id') %}disabled{% endif %}>Update Role</button>
                         </form>
+                    </div>
 
+                    <div>
+                        <h5>Access</h5>
                         {% if user["is_active"] %}
-                            <form method="POST" action="{{ url_for('admin_deactivate_user', user_id=user['id']) }}" class="inline-form">
-                                <button type="submit" class="btn btn-danger">Deactivate</button>
+                            <form method="POST" action="{{ url_for('admin_deactivate_user', user_id=user['id']) }}">
+                                <button type="submit" class="btn btn-danger">Deactivate Profile</button>
                             </form>
                         {% else %}
-                            <form method="POST" action="{{ url_for('admin_reactivate_user', user_id=user['id']) }}" class="inline-form">
-                                <button type="submit" class="btn btn-secondary">Reactivate</button>
+                            <form method="POST" action="{{ url_for('admin_reactivate_user', user_id=user['id']) }}">
+                                <button type="submit" class="btn btn-secondary">Reactivate Profile</button>
                             </form>
                         {% endif %}
+                    </div>
+                </div>
 
-                        <form method="POST" action="{{ url_for('admin_reset_user_password', user_id=user['id']) }}" class="inline-form reset-password-form">
-                            <input type="password" name="password" minlength="8" placeholder="New password" required>
-                            <button type="submit" class="btn btn-secondary">Reset Password</button>
-                        </form>
-                    </td>
-                </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+                <div class="admin-user-section">
+                    <h5>Password Reset</h5>
+                    <form method="POST" action="{{ url_for('admin_reset_user_password', user_id=user['id']) }}" class="admin-user-password-form">
+                        <input type="password" name="password" minlength="8" placeholder="New password" required>
+                        <button type="submit" class="btn btn-secondary">Reset Password</button>
+                    </form>
+                </div>
+            </article>
+        {% endfor %}
+    </div>
 </div>
 
 <div class="card">
@@ -242,40 +259,39 @@
     </div>
 
     {% if audit_entries %}
-        <table class="audit-table">
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Admin</th>
-                    <th>Action</th>
-                    <th>Target</th>
-                    <th>Details</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for entry in audit_entries %}
-                    <tr>
-                        <td>{{ entry.date_created }}</td>
-                        <td>
-                            <strong>{{ entry.actor_name or "System" }}</strong>
-                            {% if entry.actor_email %}
-                                <br><span class="muted-text">{{ entry.actor_email }}</span>
-                            {% endif %}
-                        </td>
-                        <td><span class="audit-action-pill">{{ entry.action_type }}</span></td>
-                        <td>
-                            <strong>{{ entry.target_type or "Change" }}</strong>
-                            {% if entry.target_label %}
-                                <br><span class="muted-text">{{ entry.target_label }}</span>
-                            {% endif %}
-                        </td>
-                        <td>{{ entry.detail or "No details recorded." }}</td>
-                    </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div class="audit-timeline">
+            {% for entry in audit_entries %}
+                <article class="audit-entry-card">
+                    <div class="audit-entry-main">
+                        <div>
+                            <span class="audit-action-pill">{{ entry.action_type }}</span>
+                            <h4>{{ entry.target_label or entry.target_type or "Admin change" }}</h4>
+                            <p>{{ entry.detail or "No details recorded." }}</p>
+                        </div>
+
+                        <div class="audit-entry-meta">
+                            <span>{{ entry.date_created }}</span>
+                        </div>
+                    </div>
+
+                    <div class="audit-entry-footer">
+                        <span>
+                            <strong>Admin</strong>
+                            {{ entry.actor_name or "System" }}{% if entry.actor_email %} · {{ entry.actor_email }}{% endif %}
+                        </span>
+                        <span>
+                            <strong>Target</strong>
+                            {{ entry.target_type or "Change" }}
+                        </span>
+                    </div>
+                </article>
+            {% endfor %}
+        </div>
     {% else %}
-        <p class="muted-text">No admin changes have been recorded yet.</p>
+        <div class="empty-state audit-empty-state">
+            <h3>No admin changes yet</h3>
+            <p>Role, profile, password and account field control changes will appear here once admins start making updates.</p>
+        </div>
     {% endif %}
 </div>
 {% endblock %}
