@@ -51,8 +51,14 @@ def postgres_identifier(value):
 
 
 def current_user_schema():
-    user_id = session.get("user_id") if has_request_context() else None
-    return postgres_identifier(f"user_{user_id}" if user_id else "system")
+    if has_request_context():
+        user_email = session.get("user_email")
+        if user_email:
+            return postgres_identifier(f"workspace_{user_email}")
+        user_id = session.get("user_id")
+        if user_id:
+            return postgres_identifier(f"workspace_user_{user_id}")
+    return postgres_identifier("system")
 
 
 def translate_sql(sql):
