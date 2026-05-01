@@ -97,7 +97,8 @@
                         <th>Sales Play</th>
                         <th>Campaign Start</th>
                         <th>Campaign End</th>
-                        <th>Tasks / Week</th>
+                        <th>Total Tasks</th>
+                        <th>Times / Week</th>
                         <th>Date</th>
                         <th>Time</th>
                         <th>Account</th>
@@ -134,6 +135,7 @@
                                     -
                                 {% endif %}
                             </td>
+                            <td>{{ item.campaign_total_tasks or "-" }}</td>
                             <td>{{ item.campaign_tasks_per_week or "-" }}</td>
                             <td>
     {% if item.activity_date %}
