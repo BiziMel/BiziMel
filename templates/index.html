@@ -11,6 +11,22 @@
     </div>
 </div>
 
+{% if broadcast_messages %}
+    <section class="dashboard-broadcast-ticker" aria-label="Broadcast messages">
+        <div class="dashboard-broadcast-label">Broadcast</div>
+        <div class="dashboard-broadcast-window">
+            <div class="dashboard-broadcast-track">
+                {% for broadcast in broadcast_messages %}
+                    <span class="dashboard-broadcast-item broadcast-{{ broadcast['severity'] }}">
+                        <strong>{{ broadcast['title'] }}</strong>
+                        {{ broadcast['message'] }}
+                    </span>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+{% endif %}
+
 <div class="form-card">
     <div class="section-header">
         <div>

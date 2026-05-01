@@ -10,7 +10,7 @@ import traceback
 from datetime import datetime, timedelta
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema
@@ -77,7 +77,7 @@ def version_health():
     from db_compat import translate_sql
     sample = "datetime(next_action_date || ' ' || IFNULL(next_action_time, '00:00')) < datetime('now', '-1 hour')"
     lines = [
-        "pipeflow_server_build=2026-05-01-dashboard-safe-postgres-compat-v2",
+        "pipeflow_server_build=2026-05-01-scheduled-broadcasts-v1",
         f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
         f"translation_check={translate_sql(sample)}",
     ]
@@ -125,7 +125,7 @@ def login():
             return redirect(url_for("home"))
         error = "Email or password was not recognised."
 
-    return render_template("login.html", error=error, message=message)
+    return render_template("login.html", error=error, message=message, broadcast_messages=list_broadcast_messages(active_only=True))
 
 
 @app.route("/forgot-password", methods=("GET", "POST"))
@@ -192,6 +192,7 @@ def render_admin_permissions():
         "admin_permissions.html",
         users=list_users(),
         account_fields=list_account_field_definitions(active_only=False),
+        broadcast_messages=list_broadcast_messages(active_only=False),
         audit_entries=list_admin_audit_entries(limit=75),
         message=request.args.get("message", ""),
         error=request.args.get("error", "")
@@ -212,6 +213,53 @@ def admin_users():
 @admin_required
 def admin_permissions():
     return render_admin_permissions()
+
+
+@app.route("/admin/broadcasts/add", methods=("POST",))
+@admin_required
+def admin_add_broadcast():
+    error = create_broadcast_message(
+        request.form.get("title", ""),
+        request.form.get("message", ""),
+        request.form.get("severity", "info"),
+        request.form.get("start_at", ""),
+        request.form.get("stop_at", ""),
+        bool(request.form.get("is_active"))
+    )
+    if error:
+        return redirect(url_for("admin_users", error=error))
+    return redirect(url_for("admin_users", message="Broadcast message added."))
+
+
+@app.route("/admin/broadcasts/<int:message_id>/update", methods=("POST",))
+@admin_required
+def admin_update_broadcast(message_id):
+    error = update_broadcast_message(
+        message_id,
+        request.form.get("title", ""),
+        request.form.get("message", ""),
+        request.form.get("severity", "info"),
+        request.form.get("start_at", ""),
+        request.form.get("stop_at", ""),
+        bool(request.form.get("is_active"))
+    )
+    if error:
+        return redirect(url_for("admin_users", error=error))
+    return redirect(url_for("admin_users", message="Broadcast message updated."))
+
+
+@app.route("/admin/broadcasts/<int:message_id>/deactivate", methods=("POST",))
+@admin_required
+def admin_deactivate_broadcast(message_id):
+    set_broadcast_message_active(message_id, False)
+    return redirect(url_for("admin_users", message="Broadcast message hidden."))
+
+
+@app.route("/admin/broadcasts/<int:message_id>/reactivate", methods=("POST",))
+@admin_required
+def admin_reactivate_broadcast(message_id):
+    set_broadcast_message_active(message_id, True)
+    return redirect(url_for("admin_users", message="Broadcast message restored."))
 
 
 @app.route("/admin/account-fields/add", methods=("POST",))
@@ -884,7 +932,8 @@ def render_dashboard_fallback():
             "message": "One dashboard query could not be loaded. Other app pages should still be available while this is checked.",
             "link": url_for("reports")
         }],
-        learning_insights=[]
+        learning_insights=[],
+        broadcast_messages=list_broadcast_messages(active_only=True)
     )
 
 
@@ -1169,7 +1218,8 @@ def build_dashboard_response(connection):
         top_accounts=top_accounts,
         needs_attention_accounts=needs_attention_accounts,
         ai_insights=ai_insights,
-        learning_insights=learning_insights
+        learning_insights=learning_insights,
+        broadcast_messages=list_broadcast_messages(active_only=True)
     )
 
 
@@ -2909,8 +2959,108 @@ def tasks():
         "tasks.html",
         overdue_tasks=overdue_tasks,
         today_tasks=today_tasks,
-        upcoming_tasks=upcoming_tasks
+        upcoming_tasks=upcoming_tasks,
+        task_statuses=DROPDOWN_VALUES["task_statuses"],
+        outreach_outcomes=DROPDOWN_VALUES["outreach_outcomes"]
     )
+
+
+@app.route("/tasks/<int:outreach_id>/update", methods=("POST",))
+def update_task_from_tasks(outreach_id):
+    connection = get_db_connection()
+    outreach_item = connection.execute(
+        "SELECT * FROM outreach WHERE id = ?",
+        (outreach_id,),
+    ).fetchone()
+    if not outreach_item:
+        connection.close()
+        return redirect(url_for("tasks"))
+
+    new_values = {
+        "outcome": request.form.get("outcome"),
+        "task_status": request.form.get("task_status", "Not Started"),
+        "next_action": request.form.get("next_action"),
+        "next_action_date": request.form.get("next_action_date"),
+        "next_action_time": request.form.get("next_action_time"),
+        "notes": request.form.get("notes"),
+    }
+    labels = {
+        "outcome": "Outcome",
+        "task_status": "Task status",
+        "next_action": "Next action",
+        "next_action_date": "Next action date",
+        "next_action_time": "Next action time",
+        "notes": "Notes",
+    }
+    changes = build_change_log(outreach_item, new_values, labels)
+
+    connection.execute(
+        """
+        UPDATE outreach
+        SET outcome = ?,
+            task_status = ?,
+            next_action = ?,
+            next_action_date = ?,
+            next_action_time = ?,
+            notes = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (
+            new_values["outcome"],
+            new_values["task_status"],
+            new_values["next_action"],
+            new_values["next_action_date"],
+            new_values["next_action_time"],
+            new_values["notes"],
+            outreach_id,
+        ),
+    )
+    if changes:
+        add_timeline_entry(
+            connection,
+            "outreach",
+            outreach_id,
+            "Task Updated",
+            "Task updated from Tasks page: " + "; ".join(changes),
+        )
+    connection.commit()
+    connection.close()
+    return redirect(url_for("tasks"))
+
+
+@app.route("/tasks/<int:outreach_id>/complete", methods=("POST",))
+def complete_task_from_tasks(outreach_id):
+    connection = get_db_connection()
+    outreach_item = connection.execute(
+        "SELECT * FROM outreach WHERE id = ?",
+        (outreach_id,),
+    ).fetchone()
+    if not outreach_item:
+        connection.close()
+        return redirect(url_for("tasks"))
+
+    outcome = request.form.get("outcome") or outreach_item["outcome"] or "Follow-up Required"
+    connection.execute(
+        """
+        UPDATE outreach
+        SET task_status = 'Completed',
+            outcome = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (outcome, outreach_id),
+    )
+    add_timeline_entry(
+        connection,
+        "outreach",
+        outreach_id,
+        "Task Completed",
+        f"Task marked completed from Tasks page with outcome: {outcome}",
+    )
+    connection.commit()
+    connection.close()
+    return redirect(url_for("tasks"))
 
 
 @app.route("/profile", methods=("GET", "POST"))

@@ -1,5 +1,6 @@
 import sqlite3
 import os
+from datetime import datetime
 from functools import wraps
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from db_compat import get_connection, postgres_identifier, using_postgres
 AUTH_DB_NAME = "pipeflow_server_auth.db"
 VALID_ROLES = {"admin", "manager", "user"}
 VALID_ACCOUNT_FIELD_TYPES = {"text", "number", "date", "textarea"}
+VALID_BROADCAST_SEVERITIES = {"info", "success", "warning", "urgent"}
 
 
 
@@ -108,9 +110,24 @@ def initialise_auth_database() -> None:
             date_created TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS broadcast_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            severity TEXT NOT NULL DEFAULT 'info',
+            start_at TEXT,
+            stop_at TEXT,
+            is_active INTEGER DEFAULT 1,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     add_column_if_missing(connection, "users", "reset_phrase_hash", "TEXT")
     add_column_if_missing(connection, "users", "team", "TEXT")
     add_column_if_missing(connection, "users", "workspace_schema", "TEXT")
+    add_column_if_missing(connection, "broadcast_messages", "start_at", "TEXT")
+    add_column_if_missing(connection, "broadcast_messages", "stop_at", "TEXT")
     connection.commit()
     connection.close()
 
@@ -484,6 +501,162 @@ def set_account_field_active(field_id: int, is_active: bool):
     connection.commit()
     connection.close()
 
+
+def normalise_broadcast_severity(severity: str) -> str:
+    severity = (severity or "info").strip().lower()
+    return severity if severity in VALID_BROADCAST_SEVERITIES else "info"
+
+
+def normalise_broadcast_datetime(value: str) -> str:
+    value = (value or "").strip()
+    if not value:
+        return ""
+    try:
+        parsed = datetime.strptime(value, "%Y-%m-%dT%H:%M")
+    except ValueError:
+        return ""
+    return parsed.strftime("%Y-%m-%dT%H:%M")
+
+
+def current_broadcast_key() -> str:
+    return datetime.now().strftime("%Y-%m-%dT%H:%M")
+
+
+def cleanup_expired_broadcast_messages(connection=None):
+    close_connection = connection is None
+    if connection is None:
+        connection = get_auth_connection()
+    now_key = current_broadcast_key()
+    connection.execute(
+        """
+        DELETE FROM broadcast_messages
+        WHERE stop_at IS NOT NULL
+          AND stop_at != ''
+          AND stop_at < ?
+        """,
+        (now_key,),
+    )
+    connection.commit()
+    if close_connection:
+        connection.close()
+
+
+def list_broadcast_messages(active_only: bool = False):
+    connection = get_auth_connection()
+    cleanup_expired_broadcast_messages(connection)
+    query = """
+        SELECT *
+        FROM broadcast_messages
+    """
+    params = []
+    if active_only:
+        now_key = current_broadcast_key()
+        query += """
+            WHERE is_active = ?
+              AND start_at <= ?
+              AND stop_at >= ?
+        """
+        params.extend([1, now_key, now_key])
+    query += " ORDER BY is_active DESC, start_at ASC, last_updated DESC, date_created DESC, id DESC"
+    rows = connection.execute(query, params).fetchall()
+    connection.close()
+    return rows
+
+
+def get_broadcast_message(message_id: int):
+    connection = get_auth_connection()
+    cleanup_expired_broadcast_messages(connection)
+    row = connection.execute(
+        """
+        SELECT *
+        FROM broadcast_messages
+        WHERE id = ?
+        """,
+        (message_id,),
+    ).fetchone()
+    connection.close()
+    return row
+
+
+def validate_broadcast_schedule(start_at: str, stop_at: str):
+    start_at = normalise_broadcast_datetime(start_at)
+    stop_at = normalise_broadcast_datetime(stop_at)
+    if not start_at or not stop_at:
+        return "", "", "Start and stop date/time are required."
+    if stop_at <= start_at:
+        return start_at, stop_at, "Stop date/time must be after the start date/time."
+    return start_at, stop_at, ""
+
+
+def create_broadcast_message(title: str, message: str, severity: str, start_at: str, stop_at: str, is_active: bool):
+    title = (title or "").strip()
+    message = (message or "").strip()
+    severity = normalise_broadcast_severity(severity)
+    start_at, stop_at, error = validate_broadcast_schedule(start_at, stop_at)
+    if not title or not message:
+        return "Broadcast title and message are required."
+    if error:
+        return error
+
+    connection = get_auth_connection()
+    cleanup_expired_broadcast_messages(connection)
+    connection.execute(
+        """
+        INSERT INTO broadcast_messages (title, message, severity, start_at, stop_at, is_active)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (title, message, severity, start_at, stop_at, 1 if is_active else 0),
+    )
+    connection.commit()
+    connection.close()
+    return ""
+
+
+def update_broadcast_message(message_id: int, title: str, message: str, severity: str, start_at: str, stop_at: str, is_active: bool):
+    title = (title or "").strip()
+    message = (message or "").strip()
+    severity = normalise_broadcast_severity(severity)
+    start_at, stop_at, error = validate_broadcast_schedule(start_at, stop_at)
+    if not title or not message:
+        return "Broadcast title and message are required."
+    if error:
+        return error
+
+    connection = get_auth_connection()
+    cleanup_expired_broadcast_messages(connection)
+    connection.execute(
+        """
+        UPDATE broadcast_messages
+        SET title = ?,
+            message = ?,
+            severity = ?,
+            start_at = ?,
+            stop_at = ?,
+            is_active = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (title, message, severity, start_at, stop_at, 1 if is_active else 0, message_id),
+    )
+    connection.commit()
+    connection.close()
+    return ""
+
+
+def set_broadcast_message_active(message_id: int, is_active: bool):
+    connection = get_auth_connection()
+    cleanup_expired_broadcast_messages(connection)
+    connection.execute(
+        """
+        UPDATE broadcast_messages
+        SET is_active = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (1 if is_active else 0, message_id),
+    )
+    connection.commit()
+    connection.close()
 
 
 def get_user_for_admin(user_id: int):
