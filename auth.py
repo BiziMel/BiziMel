@@ -5,6 +5,7 @@ from pathlib import Path
 
 from flask import redirect, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
+from db_compat import get_connection, using_postgres
 
 
 AUTH_DB_NAME = "pipeflow_server_auth.db"
@@ -22,6 +23,8 @@ def auth_database_path() -> Path:
 
 
 def get_auth_connection():
+    if using_postgres():
+        return get_connection(schema="public")
     connection = sqlite3.connect(auth_database_path())
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA busy_timeout = 5000")
@@ -29,8 +32,20 @@ def get_auth_connection():
 
 
 def add_column_if_missing(connection, table_name, column_name, column_definition):
-    rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
-    existing_columns = [row["name"] for row in rows]
+    if using_postgres():
+        rows = connection.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = ?
+            """,
+            (table_name,),
+        ).fetchall()
+        existing_columns = [row["column_name"] for row in rows]
+    else:
+        rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+        existing_columns = [row["name"] for row in rows]
     if column_name not in existing_columns:
         connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")
 
@@ -81,7 +96,9 @@ def create_user(email: str, password: str, full_name: str, reset_phrase: str = "
         )
         connection.commit()
         return cursor.lastrowid, ""
-    except sqlite3.IntegrityError:
+    except Exception as exc:
+        if "unique" not in str(exc).lower() and "duplicate" not in str(exc).lower():
+            raise
         return None, "An account already exists for that email address."
     finally:
         connection.close()

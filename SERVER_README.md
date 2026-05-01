@@ -55,3 +55,14 @@ This is suitable for a small hosted proof of concept. For production team use, m
 PipeFlow Server uses a no-email password reset flow. During registration, each user creates a secret reset phrase. The phrase is hashed and is never stored as plain text.
 
 If a user forgets their password, they enter their email, secret reset phrase and new password. If the phrase matches, the password is reset. Admins can still reset passwords manually from Profile Administration.
+
+
+## Supabase/Postgres Persistence
+
+When `DATABASE_URL` is set, PipeFlow Server stores authentication in Supabase/Postgres and creates a private Postgres schema for each user workspace. This keeps Admin profile management separate from user PipeFlow data.
+
+Required Render variable:
+
+- `DATABASE_URL`: Supabase Session pooler connection string
+
+With Supabase enabled, `PIPEFLOW_DATA_DIR` is no longer used for primary application data. It can remain set harmlessly for local fallback behavior.

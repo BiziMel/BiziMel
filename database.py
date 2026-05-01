@@ -1,32 +1,33 @@
-import sqlite3
-import os
-from pathlib import Path
-
-from flask import has_request_context, session
+from db_compat import get_connection, using_postgres
 
 DB_NAME = "pipeflow.db"
 
 
 def get_database_path():
-    data_root = Path(os.environ.get("PIPEFLOW_DATA_DIR", Path(__file__).resolve().parent / "server_data"))
-    if has_request_context() and session.get("user_id"):
-        app_folder = data_root / "users" / str(session["user_id"])
-    else:
-        app_folder = data_root / "system"
-
-    app_folder.mkdir(parents=True, exist_ok=True)
-    return app_folder / DB_NAME
+    from db_compat import sqlite_database_path
+    return sqlite_database_path()
 
 
 def get_db_connection():
-    db_path = get_database_path()
-    connection = sqlite3.connect(db_path)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA busy_timeout = 5000")
-    return connection
+    return get_connection()
 
 
 def add_column_if_missing(cursor, table_name, column_name, column_definition):
+    if using_postgres():
+        rows = cursor.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = %s
+            """,
+            (table_name,),
+        ).fetchall()
+        existing_columns = [row["column_name"] for row in rows]
+        if column_name not in existing_columns:
+            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")
+        return
+
     cursor.execute(f"PRAGMA table_info({table_name})")
     existing_columns = [column[1] for column in cursor.fetchall()]
 
