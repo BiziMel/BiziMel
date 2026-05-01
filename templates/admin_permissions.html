@@ -169,188 +169,156 @@
     <div class="section-header">
         <div>
             <h3>Broadcast Messages</h3>
-            <p class="muted-text">Schedule messages that appear on the sign-in screen and across the top of the dashboard during the chosen time window.</p>
+            <p class="muted-text">Create, edit, pause or delete messages shown on the sign-in screen and dashboard ticker during the chosen time window.</p>
         </div>
     </div>
 
     <div class="broadcast-purpose">
         <strong>Scheduled visibility</strong>
-        <p>Use broadcasts for release notes, planned maintenance, data entry reminders, training notes or urgent service messages. Messages are shown only between their start and stop times, then expired messages are removed automatically.</p>
+        <p>Broadcasts are only visible between their start and stop times. Expired messages are removed automatically, and duplicate clicks are cleaned up so users do not see repeated messages.</p>
     </div>
 
-    <form method="POST" action="{{ url_for('admin_add_broadcast') }}" class="admin-broadcast-form js-single-submit">
-        <label>Title</label>
-        <input type="text" name="title" placeholder="Example: Friday PG Bible export reminder" required>
+    <section class="broadcast-create-panel">
+        <div class="broadcast-panel-heading">
+            <h4>Create Broadcast</h4>
+            <p class="muted-text">Write the message once, choose when it should appear, then activate it for users.</p>
+        </div>
 
-        <label>Message</label>
-        <textarea name="message" rows="3" placeholder="Write the message users should see before signing in." required></textarea>
+        <form method="POST" action="{{ url_for('admin_add_broadcast') }}" class="broadcast-create-form js-single-submit">
+            <div class="form-group">
+                <label>Title</label>
+                <input type="text" name="title" placeholder="Example: Friday PG Bible export reminder" required>
+            </div>
 
-        <label>Type</label>
-        <select name="severity">
-            <option value="info">Info</option>
-            <option value="success">Success</option>
-            <option value="warning">Warning</option>
-            <option value="urgent">Urgent</option>
-        </select>
+            <div class="form-group full-width">
+                <label>Message</label>
+                <textarea name="message" rows="3" placeholder="Write the message users should see before signing in and on the dashboard." required></textarea>
+            </div>
 
-        <label>Start</label>
-        <input type="datetime-local" name="start_at" required>
+            <div class="form-group">
+                <label>Type</label>
+                <select name="severity">
+                    <option value="info">Info</option>
+                    <option value="success">Success</option>
+                    <option value="warning">Warning</option>
+                    <option value="urgent">Urgent</option>
+                </select>
+            </div>
 
-        <label>Stop</label>
-        <input type="datetime-local" name="stop_at" required>
+            <div class="form-group">
+                <label>Start Date & Time</label>
+                <input type="datetime-local" name="start_at" required>
+            </div>
 
-        <label class="checkbox-label">
-            <input type="checkbox" name="is_active" value="1" checked>
-            Active
-        </label>
+            <div class="form-group">
+                <label>Stop Date & Time</label>
+                <input type="datetime-local" name="stop_at" required>
+            </div>
 
-        <button type="submit" class="btn btn-primary">Add Broadcast</button>
-    </form>
+            <label class="checkbox-label broadcast-active-control">
+                <input type="checkbox" name="is_active" value="1" checked>
+                Active
+            </label>
 
-    {% if broadcast_messages %}
-        <div class="admin-broadcast-list">
-            {% for broadcast in broadcast_messages %}
-                <article class="admin-broadcast-item broadcast-{{ broadcast['severity'] }}">
-                    <div class="admin-broadcast-item-header">
-                        <div>
-                            <span class="broadcast-status-pill {{ 'broadcast-status-active' if broadcast['is_active'] else 'broadcast-status-hidden' }}">
-                                {{ "Active" if broadcast["is_active"] else "Paused" }}
-                            </span>
-                            <span class="broadcast-type-pill">{{ broadcast['severity']|capitalize }}</span>
+            <div class="broadcast-form-actions">
+                <button type="submit" class="btn btn-primary">Add Broadcast</button>
+            </div>
+        </form>
+    </section>
+
+    <section class="broadcast-manage-panel">
+        <div class="broadcast-panel-heading">
+            <h4>Manage Broadcasts</h4>
+            <p class="muted-text">Edit the wording or schedule, pause a message, or delete it completely.</p>
+        </div>
+
+        {% if broadcast_messages %}
+            <div class="broadcast-card-grid">
+                {% for broadcast in broadcast_messages %}
+                    <article class="broadcast-management-card broadcast-{{ broadcast['severity'] }}">
+                        <div class="broadcast-management-header">
+                            <div>
+                                <span class="broadcast-status-pill {{ 'broadcast-status-active' if broadcast['is_active'] else 'broadcast-status-hidden' }}">
+                                    {{ "Active" if broadcast["is_active"] else "Paused" }}
+                                </span>
+                                <span class="broadcast-type-pill">{{ broadcast['severity']|capitalize }}</span>
+                            </div>
+                            <small>{{ broadcast['start_at'] or 'Not scheduled' }} to {{ broadcast['stop_at'] or 'Not scheduled' }}</small>
                         </div>
-                        <small>{{ broadcast['start_at'] or 'Not scheduled' }} to {{ broadcast['stop_at'] or 'Not scheduled' }}</small>
-                    </div>
 
-                    <form method="POST" action="{{ url_for('admin_update_broadcast', message_id=broadcast['id']) }}" class="admin-broadcast-edit-form js-single-submit">
-                        <input type="text" name="title" value="{{ broadcast['title'] }}" required>
-                        <textarea name="message" rows="3" required>{{ broadcast['message'] }}</textarea>
-                        <select name="severity">
-                            <option value="info" {% if broadcast['severity'] == 'info' %}selected{% endif %}>Info</option>
-                            <option value="success" {% if broadcast['severity'] == 'success' %}selected{% endif %}>Success</option>
-                            <option value="warning" {% if broadcast['severity'] == 'warning' %}selected{% endif %}>Warning</option>
-                            <option value="urgent" {% if broadcast['severity'] == 'urgent' %}selected{% endif %}>Urgent</option>
-                        </select>
-                        <input type="datetime-local" name="start_at" value="{{ broadcast['start_at'] or '' }}" required>
-                        <input type="datetime-local" name="stop_at" value="{{ broadcast['stop_at'] or '' }}" required>
-                        <label class="checkbox-label compact">
-                            <input type="checkbox" name="is_active" value="1" {% if broadcast['is_active'] %}checked{% endif %}>
-                            Active
-                        </label>
-                        <button type="submit" class="btn btn-secondary">Save</button>
-                    </form>
+                        <form method="POST" action="{{ url_for('admin_update_broadcast', message_id=broadcast['id']) }}" class="broadcast-edit-form js-single-submit">
+                            <div class="form-group">
+                                <label>Title</label>
+                                <input type="text" name="title" value="{{ broadcast['title'] }}" required>
+                            </div>
 
-                    <div class="broadcast-row-actions">
-                        {% if broadcast["is_active"] %}
-                            <form method="POST" action="{{ url_for('admin_deactivate_broadcast', message_id=broadcast['id']) }}" class="inline-form">
-                                <button type="submit" class="btn btn-danger">Pause</button>
-                            </form>
-                        {% else %}
-                            <form method="POST" action="{{ url_for('admin_reactivate_broadcast', message_id=broadcast['id']) }}" class="inline-form">
-                                <button type="submit" class="btn btn-secondary">Reactivate</button>
-                            </form>
-                        {% endif %}
-                        <form method="POST" action="{{ url_for('admin_delete_broadcast', message_id=broadcast['id']) }}" class="inline-form">
-                            <button type="submit" class="btn btn-danger">Delete</button>
-                        </form>
-                    </div>
-                </article>
-            {% endfor %}
-        </div>
-    {% else %}
-        <p class="muted-text">No broadcast messages have been created yet.</p>
-    {% endif %}
-</div>
+                            <div class="form-group full-width">
+                                <label>Message</label>
+                                <textarea name="message" rows="3" required>{{ broadcast['message'] }}</textarea>
+                            </div>
 
-<div class="card">
-    <div class="section-header">
-        <div>
-            <h3>Account Field Controls</h3>
-            <p class="muted-text">Create the account fields your team should capture consistently. Values entered by each user stay inside that user's private workspace.</p>
-        </div>
-    </div>
-
-    <div class="account-field-purpose">
-        <strong>What this is for</strong>
-        <p>Use Account Field Controls when you want every user to capture the same extra account information, such as renewal date, contract status, buying centre, incumbent supplier or qualification score. Admins define the field once; each user fills in their own values privately on their own accounts.</p>
-    </div>
-
-    <form method="POST" action="{{ url_for('admin_add_account_field') }}" class="admin-field-form">
-        <label>Field Label</label>
-        <input type="text" name="field_label" placeholder="Example: Renewal Date" required>
-
-        <label>Field Type</label>
-        <select name="field_type">
-            <option value="text">Text</option>
-            <option value="number">Number</option>
-            <option value="date">Date</option>
-            <option value="textarea">Long Text</option>
-        </select>
-
-        <label class="checkbox-label">
-            <input type="checkbox" name="is_required" value="1">
-            Required
-        </label>
-
-        <button type="submit" class="btn btn-primary">Add Field</button>
-    </form>
-
-    {% if account_fields %}
-        <table>
-            <thead>
-                <tr>
-                    <th>Label</th>
-                    <th>Type</th>
-                    <th>Required</th>
-                    <th>Status</th>
-                    <th>Order</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for field in account_fields %}
-                    <tr>
-                        <td colspan="6">
-                            <form method="POST" action="{{ url_for('admin_update_account_field', field_id=field['id']) }}" class="admin-field-row">
-                                <input type="text" name="field_label" value="{{ field['field_label'] }}" required>
-                                <select name="field_type">
-                                    <option value="text" {% if field['field_type'] == 'text' %}selected{% endif %}>Text</option>
-                                    <option value="number" {% if field['field_type'] == 'number' %}selected{% endif %}>Number</option>
-                                    <option value="date" {% if field['field_type'] == 'date' %}selected{% endif %}>Date</option>
-                                    <option value="textarea" {% if field['field_type'] == 'textarea' %}selected{% endif %}>Long Text</option>
+                            <div class="form-group">
+                                <label>Type</label>
+                                <select name="severity">
+                                    <option value="info" {% if broadcast['severity'] == 'info' %}selected{% endif %}>Info</option>
+                                    <option value="success" {% if broadcast['severity'] == 'success' %}selected{% endif %}>Success</option>
+                                    <option value="warning" {% if broadcast['severity'] == 'warning' %}selected{% endif %}>Warning</option>
+                                    <option value="urgent" {% if broadcast['severity'] == 'urgent' %}selected{% endif %}>Urgent</option>
                                 </select>
-                                <label class="checkbox-label compact">
-                                    <input type="checkbox" name="is_required" value="1" {% if field['is_required'] %}checked{% endif %}>
-                                    Required
-                                </label>
-                                <span>{{ "Active" if field["is_active"] else "Inactive" }}</span>
-                                <input type="number" name="sort_order" value="{{ field['sort_order'] or 0 }}">
-                                <button type="submit" class="btn btn-secondary">Save</button>
-                            </form>
+                            </div>
 
-                            {% if field["is_active"] %}
-                                <form method="POST" action="{{ url_for('admin_deactivate_account_field', field_id=field['id']) }}" class="inline-form">
-                                    <button type="submit" class="btn btn-danger">Remove from Forms</button>
+                            <div class="form-group">
+                                <label>Start Date & Time</label>
+                                <input type="datetime-local" name="start_at" value="{{ broadcast['start_at'] or '' }}" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Stop Date & Time</label>
+                                <input type="datetime-local" name="stop_at" value="{{ broadcast['stop_at'] or '' }}" required>
+                            </div>
+
+                            <label class="checkbox-label broadcast-active-control">
+                                <input type="checkbox" name="is_active" value="1" {% if broadcast['is_active'] %}checked{% endif %}>
+                                Active
+                            </label>
+
+                            <div class="broadcast-form-actions full-width">
+                                <button type="submit" class="btn btn-secondary">Save Changes</button>
+                            </div>
+                        </form>
+
+                        <div class="broadcast-secondary-actions">
+                            {% if broadcast["is_active"] %}
+                                <form method="POST" action="{{ url_for('admin_deactivate_broadcast', message_id=broadcast['id']) }}" class="inline-form">
+                                    <button type="submit" class="btn btn-secondary">Pause Broadcast</button>
                                 </form>
                             {% else %}
-                                <form method="POST" action="{{ url_for('admin_reactivate_account_field', field_id=field['id']) }}" class="inline-form">
-                                    <button type="submit" class="btn btn-secondary">Restore</button>
+                                <form method="POST" action="{{ url_for('admin_reactivate_broadcast', message_id=broadcast['id']) }}" class="inline-form">
+                                    <button type="submit" class="btn btn-secondary">Reactivate Broadcast</button>
                                 </form>
                             {% endif %}
-                        </td>
-                    </tr>
+                            <form method="POST" action="{{ url_for('admin_delete_broadcast', message_id=broadcast['id']) }}" class="inline-form broadcast-delete-form">
+                                <button type="submit" class="btn btn-danger">Delete Broadcast</button>
+                            </form>
+                        </div>
+                    </article>
                 {% endfor %}
-            </tbody>
-        </table>
-    {% else %}
-        <p class="muted-text">No custom account fields have been added yet.</p>
-    {% endif %}
+            </div>
+        {% else %}
+            <div class="empty-state broadcast-empty-state">
+                <h3>No broadcast messages yet</h3>
+                <p>Create the first broadcast above when you need to communicate with users.</p>
+            </div>
+        {% endif %}
+    </section>
 </div>
+
 
 <div class="card admin-audit-card">
     <div class="section-header">
         <div>
             <h3>Admin Audit Trail</h3>
-            <p class="muted-text">A record of permission changes, profile access changes, password resets and account field control changes.</p>
+            <p class="muted-text">A record of permission changes, profile access changes and password resets.</p>
         </div>
     </div>
 
@@ -398,6 +366,14 @@
             if (button) {
                 button.disabled = true;
                 button.textContent = "Saving...";
+            }
+        });
+    });
+
+    document.querySelectorAll(".broadcast-delete-form").forEach((form) => {
+        form.addEventListener("submit", (event) => {
+            if (!window.confirm("Delete this broadcast message?")) {
+                event.preventDefault();
             }
         });
     });

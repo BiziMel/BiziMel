@@ -77,7 +77,7 @@ def version_health():
     from db_compat import translate_sql
     sample = "datetime(next_action_date || ' ' || IFNULL(next_action_time, '00:00')) < datetime('now', '-1 hour')"
     lines = [
-        "pipeflow_server_build=2026-05-01-broadcast-timezone-dedupe-v1",
+        "pipeflow_server_build=2026-05-01-admin-remove-account-fields-ui-v1",
         f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
         f"translation_check={translate_sql(sample)}",
     ]
@@ -191,7 +191,6 @@ def render_admin_permissions():
     return render_template(
         "admin_permissions.html",
         users=list_users(),
-        account_fields=list_account_field_definitions(active_only=False),
         broadcast_messages=list_broadcast_messages(active_only=False),
         audit_entries=list_admin_audit_entries(limit=75),
         message=request.args.get("message", ""),
