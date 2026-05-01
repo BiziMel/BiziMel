@@ -349,6 +349,7 @@ class PGBibleExporter:
             report.plan_items,
             key=lambda item: (
                 MONTH_ORDER.get(norm(item.month), 99),
+                item.pg_bible_order if item.pg_bible_order is not None else 999999,
                 int(item.account_tier or 99) if str(item.account_tier).isdigit() else 99,
                 -float(item.pipeline_target_value or 0),
             ),

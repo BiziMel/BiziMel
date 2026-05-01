@@ -38,6 +38,7 @@ class GoalsSummary:
 @dataclass
 class PlanItem:
     month: str = ""
+    pg_bible_order: int | None = None
     account_tier: str = ""
     pipeline_target_value: Decimal = Decimal("0")
     marketing_event: str = ""

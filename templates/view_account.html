@@ -66,6 +66,11 @@
     <h2>Account Details</h2>
 
     <p>
+        <strong>PG Bible Order:</strong>
+        {{ account["pg_bible_order"] or "Not set" }}
+    </p>
+
+    <p>
         <strong>Account Tier:</strong>
         {% if account["account_tier"] %}
             Tier {{ account["account_tier"] }}

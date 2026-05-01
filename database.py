@@ -45,6 +45,7 @@ def initialise_database():
         CREATE TABLE IF NOT EXISTS accounts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             account_name TEXT NOT NULL,
+            pg_bible_order INTEGER,
             account_tier TEXT,
             industry TEXT,
             business_unit TEXT,
@@ -213,6 +214,7 @@ def initialise_database():
     # Safe migrations for accounts
     add_column_if_missing(cursor, "accounts", "business_unit", "TEXT")
     add_column_if_missing(cursor, "accounts", "account_tier", "TEXT")
+    add_column_if_missing(cursor, "accounts", "pg_bible_order", "INTEGER")
 
     # Safe migrations for outreach
     add_column_if_missing(cursor, "outreach", "fy", "TEXT")

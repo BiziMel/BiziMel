@@ -7,6 +7,10 @@
     <label>Account Name</label>
     <input type="text" name="account_name" value="{{ account['account_name'] }}" required>
 
+    <label>PG Bible Order</label>
+    <input type="number" name="pg_bible_order" min="1" step="1" value="{{ account['pg_bible_order'] or '' }}" placeholder="Example: 1">
+    <p class="field-help">Controls the account sequence in the PG Bible export. Leave blank to sort after numbered accounts.</p>
+
     <label>Account Tier</label>
     <select name="account_tier">
         <option value="">Select tier</option>

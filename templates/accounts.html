@@ -19,6 +19,7 @@
     <table class="report-table">
         <thead>
             <tr>
+                <th>PG Order</th>
                 <th>Account</th>
                 <th>Tier</th>
                 <th>Health</th>
@@ -33,6 +34,10 @@
         <tbody>
             {% for account in accounts %}
                 <tr>
+                    <td>
+                        <span class="status-pill">{{ account["pg_bible_order"] or "Not set" }}</span>
+                    </td>
+
                     <td>
                         <strong>{{ account["account_name"] or "Unknown" }}</strong>
                         <br>

@@ -1384,7 +1384,10 @@ def view_partner(partner_id):
     accounts = connection.execute("""
         SELECT *
         FROM accounts
-        ORDER BY account_name
+        ORDER BY
+            CASE WHEN pg_bible_order IS NULL THEN 1 ELSE 0 END,
+            pg_bible_order,
+            account_name
     """).fetchall()
 
     connection.close()
@@ -1563,10 +1566,11 @@ def add_account():
         connection = get_db_connection()
         cursor = connection.execute("""
             INSERT INTO accounts
-            (account_name, account_tier, industry, business_unit, country, city, website, pipeline_target, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (account_name, pg_bible_order, account_tier, industry, business_unit, country, city, website, pipeline_target, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             request.form.get("account_name"),
+            request.form.get("pg_bible_order") or None,
             request.form.get("account_tier"),
             request.form.get("industry"),
             request.form.get("business_unit"),
@@ -1900,6 +1904,7 @@ def edit_account(account_id):
     if request.method == "POST":
         new_values = {
             "account_name": request.form.get("account_name"),
+            "pg_bible_order": request.form.get("pg_bible_order") or None,
             "account_tier": request.form.get("account_tier"),
             "industry": request.form.get("industry"),
             "business_unit": request.form.get("business_unit"),
@@ -1912,6 +1917,7 @@ def edit_account(account_id):
 
         labels = {
             "account_name": "Account name",
+            "pg_bible_order": "PG Bible order",
             "account_tier": "Account tier",
             "industry": "Industry",
             "business_unit": "Business unit / org",
@@ -1928,6 +1934,7 @@ def edit_account(account_id):
         connection.execute("""
             UPDATE accounts
             SET account_name = ?,
+                pg_bible_order = ?,
                 account_tier = ?,
                 industry = ?,
                 business_unit = ?,
@@ -1940,6 +1947,7 @@ def edit_account(account_id):
             WHERE id = ?
         """, (
             new_values["account_name"],
+            new_values["pg_bible_order"],
             new_values["account_tier"],
             new_values["industry"],
             new_values["business_unit"],
@@ -2486,7 +2494,11 @@ def campaign_builder():
         SELECT contacts.*, accounts.account_name
         FROM contacts
         LEFT JOIN accounts ON contacts.account_id = accounts.id
-        ORDER BY accounts.account_name, contacts.name
+        ORDER BY
+            CASE WHEN accounts.pg_bible_order IS NULL THEN 1 ELSE 0 END,
+            accounts.pg_bible_order,
+            accounts.account_name,
+            contacts.name
     """).fetchall()
 
     profile = connection.execute("""
@@ -2967,7 +2979,10 @@ def build_pg_bible_report_from_db(connection):
     accounts = connection.execute("""
         SELECT *
         FROM accounts
-        ORDER BY account_name
+        ORDER BY
+            CASE WHEN pg_bible_order IS NULL THEN 1 ELSE 0 END,
+            pg_bible_order,
+            account_name
     """).fetchall()
 
     plan_items = []
@@ -2988,6 +3003,7 @@ def build_pg_bible_report_from_db(connection):
                 seen_sales_plays.add(sales_play_key)
 
         plan_items.append(PlanItem(
+            pg_bible_order=account["pg_bible_order"],
             account_tier=account["account_tier"] or "",
             pipeline_target_value=account["pipeline_target"] or 0,
             notes=account["notes"] or "",
@@ -3003,7 +3019,11 @@ def build_pg_bible_report_from_db(connection):
             accounts.account_name
         FROM contacts
         LEFT JOIN accounts ON contacts.account_id = accounts.id
-        ORDER BY accounts.account_name, contacts.name
+        ORDER BY
+            CASE WHEN accounts.pg_bible_order IS NULL THEN 1 ELSE 0 END,
+            accounts.pg_bible_order,
+            accounts.account_name,
+            contacts.name
     """).fetchall()
 
     action_items = []
@@ -3158,6 +3178,7 @@ def account_reports():
 
     accounts = connection.execute("""
         SELECT
+            pg_bible_order,
             account_name,
             account_tier,
             industry,
@@ -3165,7 +3186,10 @@ def account_reports():
             city,
             pipeline_target
         FROM accounts
-        ORDER BY account_name
+        ORDER BY
+            CASE WHEN pg_bible_order IS NULL THEN 1 ELSE 0 END,
+            pg_bible_order,
+            account_name
     """).fetchall()
 
     accounts_by_industry = connection.execute("""
@@ -3222,6 +3246,7 @@ def export_account_reports():
 
     accounts = connection.execute("""
         SELECT
+            pg_bible_order,
             account_name,
             account_tier,
             industry,
@@ -3229,7 +3254,10 @@ def export_account_reports():
             city,
             pipeline_target
         FROM accounts
-        ORDER BY account_name
+        ORDER BY
+            CASE WHEN pg_bible_order IS NULL THEN 1 ELSE 0 END,
+            pg_bible_order,
+            account_name
     """).fetchall()
 
     connection.close()
@@ -3238,6 +3266,7 @@ def export_account_reports():
     writer = csv.writer(output)
 
     writer.writerow([
+        "PG Bible Order",
         "Account Name",
         "Account Tier",
         "Industry",
@@ -3248,6 +3277,7 @@ def export_account_reports():
 
     for account in accounts:
         writer.writerow([
+            account["pg_bible_order"],
             account["account_name"],
             account["account_tier"],
             account["industry"],
