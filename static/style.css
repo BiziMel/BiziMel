@@ -2019,6 +2019,29 @@ body {
     font-size: 12px;
 }
 
+.dashboard-task-due-controls {
+    display: grid;
+    grid-template-columns: minmax(132px, 1fr) minmax(104px, 0.8fr);
+    gap: 6px;
+    min-width: 248px;
+}
+
+.dashboard-task-due-controls input {
+    width: 100%;
+    min-width: 0;
+    padding: 7px 8px;
+    font-size: 12px;
+}
+
+.dashboard-task-due-form {
+    display: grid;
+    gap: 6px;
+}
+
+.dashboard-task-due-save {
+    justify-self: start;
+}
+
 .dashboard-task-actions,
 .dashboard-task-complete-form {
     display: flex;
