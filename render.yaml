@@ -11,3 +11,5 @@ services:
         generateValue: true
       - key: PIPEFLOW_DATA_DIR
         value: /tmp/pipeflow-server-data
+      - key: DATABASE_URL
+        sync: false
