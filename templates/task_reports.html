@@ -141,29 +141,10 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <script>
-    const statusLabels = [
-        {% for item in tasks_by_status %}
-            "{{ item['status'] or 'Unknown' }}",
-        {% endfor %}
-    ];
-
-    const statusData = [
-        {% for item in tasks_by_status %}
-            {{ item['total'] or 0 }},
-        {% endfor %}
-    ];
-
-    const accountLabels = [
-        {% for item in tasks_by_account %}
-            "{{ item['account_name'] or 'Unknown' }}",
-        {% endfor %}
-    ];
-
-    const accountData = [
-        {% for item in tasks_by_account %}
-            {{ item['total'] or 0 }},
-        {% endfor %}
-    ];
+    const statusLabels = {{ status_chart_labels | tojson }};
+    const statusData = {{ status_chart_data | tojson }};
+    const accountLabels = {{ account_chart_labels | tojson }};
+    const accountData = {{ account_chart_data | tojson }};
 
     new Chart(document.getElementById("statusChart"), {
         type: "doughnut",

@@ -176,53 +176,14 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <script>
-    const outcomeLabels = [
-        {% for item in outcome_breakdown %}
-            "{{ item['outcome'] or 'Unknown' }}",
-        {% endfor %}
-    ];
-
-    const outcomeData = [
-        {% for item in outcome_breakdown %}
-            {{ item['count'] or 0 }},
-        {% endfor %}
-    ];
-
-    const activityTypeLabels = [
-        {% for item in outreach_by_type %}
-            "{{ item['activity_type'] or 'Unknown' }}",
-        {% endfor %}
-    ];
-
-    const activityTypeData = [
-        {% for item in outreach_by_type %}
-            {{ item['count'] or 0 }},
-        {% endfor %}
-    ];
-
-    const monthlyLabels = [
-        {% for item in monthly_trends %}
-            "{{ item['month'] }}",
-        {% endfor %}
-    ];
-
-    const monthlyOutreachData = [
-        {% for item in monthly_trends %}
-            {{ item['total_outreach'] or 0 }},
-        {% endfor %}
-    ];
-
-    const monthlyMeetingsData = [
-        {% for item in monthly_trends %}
-            {{ item['meetings_booked'] or 0 }},
-        {% endfor %}
-    ];
-
-    const monthlyConversionData = [
-        {% for item in monthly_trends %}
-            {{ item['conversion_rate'] or 0 }},
-        {% endfor %}
-    ];
+    const outcomeLabels = {{ outcome_chart_labels | tojson }};
+    const outcomeData = {{ outcome_chart_data | tojson }};
+    const activityTypeLabels = {{ activity_type_chart_labels | tojson }};
+    const activityTypeData = {{ activity_type_chart_data | tojson }};
+    const monthlyLabels = {{ monthly_chart_labels | tojson }};
+    const monthlyOutreachData = {{ monthly_outreach_data | tojson }};
+    const monthlyMeetingsData = {{ monthly_meetings_data | tojson }};
+    const monthlyConversionData = {{ monthly_conversion_data | tojson }};
 
     new Chart(document.getElementById("outcomeChart"), {
         type: "bar",

@@ -77,7 +77,7 @@ def version_health():
     from db_compat import translate_sql
     sample = "datetime(next_action_date || ' ' || IFNULL(next_action_time, '00:00')) < datetime('now', '-1 hour')"
     lines = [
-        "pipeflow_server_build=2026-05-01-outreach-detail-button-alignment-v1",
+        "pipeflow_server_build=2026-05-01-reporting-stability-v1",
         f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
         f"translation_check={translate_sql(sample)}",
     ]
@@ -3309,45 +3309,81 @@ def build_pg_bible_report_from_db(connection):
             vo_value=contact["pipeline_target"] or 0 if meeting_count else 0,
         ))
 
-    weekly_rows = connection.execute("""
+    weekly_source_rows = connection.execute("""
         SELECT
-            date(activity_date, '-' || ((strftime('%w', activity_date) + 6) % 7) || ' days') AS week_key,
-            SUM(CASE WHEN campaign = 'VITO' THEN 1 ELSE 0 END) AS vitos_sent,
-            SUM(CASE WHEN campaign = 'VITO' AND outcome != 'No Response Yet' THEN 1 ELSE 0 END) AS vitos_chased,
-            SUM(CASE WHEN activity_type = 'Meeting' OR outcome = 'Meeting Booked' THEN 1 ELSE 0 END) AS discovery_booked,
-            SUM(CASE WHEN activity_type = 'Meeting' THEN 1 ELSE 0 END) AS discovery_completed,
-            SUM(CASE WHEN outcome = 'Meeting Booked' THEN 1 ELSE 0 END) AS nbms_booked,
-            SUM(CASE WHEN outcome = 'Meeting Booked' AND contacts.category = 'Executive' THEN 1 ELSE 0 END) AS nbms_exec_firsts,
-            SUM(CASE WHEN outcome = 'Meeting Booked' AND COALESCE(task_status, '') = 'Completed' THEN 1 ELSE 0 END) AS nbms_completed,
-            SUM(CASE WHEN outcome IN ('Meeting Booked', 'Positive Response', 'Referral Made') THEN 1 ELSE 0 END) AS pipeline_generated_vo_count,
-            SUM(CASE WHEN outcome IN ('Meeting Booked', 'Positive Response', 'Referral Made') THEN COALESCE(accounts.pipeline_target, 0) ELSE 0 END) AS pipeline_generated_value
+            outreach.activity_date,
+            outreach.campaign,
+            outreach.activity_type,
+            outreach.outcome,
+            outreach.task_status,
+            accounts.pipeline_target,
+            contacts.category
         FROM outreach
         LEFT JOIN accounts ON outreach.account_id = accounts.id
         LEFT JOIN contacts ON outreach.contact_id = contacts.id
         WHERE activity_date IS NOT NULL
           AND activity_date != ''
-        GROUP BY week_key
-        ORDER BY week_key
     """).fetchall()
+
+    weekly_totals = {}
+    for row in weekly_source_rows:
+        try:
+            activity_date = datetime.strptime(str(row["activity_date"]), "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        week_start = activity_date - timedelta(days=activity_date.weekday())
+        week_key = week_start.isoformat()
+        if week_key not in weekly_totals:
+            weekly_totals[week_key] = {
+                "vitos_sent": 0,
+                "vitos_chased": 0,
+                "discovery_booked": 0,
+                "discovery_completed": 0,
+                "nbms_booked": 0,
+                "nbms_exec_firsts": 0,
+                "nbms_completed": 0,
+                "pipeline_generated_vo_count": 0,
+                "pipeline_generated_value": 0,
+            }
+        totals = weekly_totals[week_key]
+        is_meeting_booked = row["outcome"] == "Meeting Booked"
+        is_pipeline_outcome = row["outcome"] in ("Meeting Booked", "Positive Response", "Referral Made")
+        if row["campaign"] == "VITO":
+            totals["vitos_sent"] += 1
+            if row["outcome"] != "No Response Yet":
+                totals["vitos_chased"] += 1
+        if row["activity_type"] == "Meeting" or is_meeting_booked:
+            totals["discovery_booked"] += 1
+        if row["activity_type"] == "Meeting":
+            totals["discovery_completed"] += 1
+        if is_meeting_booked:
+            totals["nbms_booked"] += 1
+            if row["category"] == "Executive":
+                totals["nbms_exec_firsts"] += 1
+            if (row["task_status"] or "") == "Completed":
+                totals["nbms_completed"] += 1
+        if is_pipeline_outcome:
+            totals["pipeline_generated_vo_count"] += 1
+            totals["pipeline_generated_value"] += row["pipeline_target"] or 0
 
     weekly_results = [
         WeeklyResultRow(
-            week_key=row["week_key"],
-            vitos_sent=row["vitos_sent"] or 0,
-            vitos_chased=row["vitos_chased"] or 0,
-            discovery_booked=row["discovery_booked"] or 0,
-            discovery_completed=row["discovery_completed"] or 0,
-            nbms_booked=row["nbms_booked"] or 0,
-            nbms_exec_firsts=row["nbms_exec_firsts"] or 0,
-            nbms_completed=row["nbms_completed"] or 0,
-            pipeline_generated_vo_count=row["pipeline_generated_vo_count"] or 0,
-            pipeline_generated_value=row["pipeline_generated_value"] or 0,
+            week_key=week_key,
+            vitos_sent=totals["vitos_sent"],
+            vitos_chased=totals["vitos_chased"],
+            discovery_booked=totals["discovery_booked"],
+            discovery_completed=totals["discovery_completed"],
+            nbms_booked=totals["nbms_booked"],
+            nbms_exec_firsts=totals["nbms_exec_firsts"],
+            nbms_completed=totals["nbms_completed"],
+            pipeline_generated_vo_count=totals["pipeline_generated_vo_count"],
+            pipeline_generated_value=totals["pipeline_generated_value"],
         )
-        for row in weekly_rows
+        for week_key, totals in sorted(weekly_totals.items())
     ]
 
     total_account_target = sum(account["pipeline_target"] or 0 for account in accounts)
-    total_pipeline_added = sum(row["pipeline_generated_value"] or 0 for row in weekly_rows)
+    total_pipeline_added = sum(row.pipeline_generated_value or 0 for row in weekly_results)
     calc_payload = {
         "starting_pipeline": os.environ.get("PIPEFLOW_PG_STARTING_PIPELINE", total_account_target),
         "pipeline_added": os.environ.get("PIPEFLOW_PG_PIPELINE_ADDED", total_pipeline_added),
@@ -3548,60 +3584,16 @@ def task_reports():
     selected_task_status = request.args.get("task_status", "")
     selected_assigned_to = request.args.get("assigned_to", "")
 
-    filters = [
-        "outreach.next_action IS NOT NULL",
-        "outreach.next_action != ''"
-    ]
-
-    params = []
-
-    if selected_start_date:
-        filters.append("date(outreach.next_action_date) >= date(?)")
-        params.append(selected_start_date)
-
-    if selected_end_date:
-        filters.append("date(outreach.next_action_date) <= date(?)")
-        params.append(selected_end_date)
-
-    if selected_account:
-        filters.append("outreach.account_id = ?")
-        params.append(selected_account)
-
-    if selected_task_status:
-        filters.append("COALESCE(NULLIF(outreach.task_status, ''), 'Not Started') = ?")
-        params.append(selected_task_status)
-
-    if selected_assigned_to:
-        filters.append("outreach.assigned_to = ?")
-        params.append(selected_assigned_to)
-
-    where_clause = "WHERE " + " AND ".join(filters)
-
     accounts = connection.execute("""
         SELECT id, account_name
         FROM accounts
         ORDER BY account_name
     """).fetchall()
 
-    task_statuses = connection.execute("""
-        SELECT DISTINCT COALESCE(NULLIF(task_status, ''), 'Not Started') AS task_status
-        FROM outreach
-        WHERE next_action IS NOT NULL
-          AND next_action != ''
-        ORDER BY task_status
-    """).fetchall()
-
-    assigned_users = connection.execute("""
-        SELECT DISTINCT assigned_to
-        FROM outreach
-        WHERE assigned_to IS NOT NULL
-          AND assigned_to != ''
-        ORDER BY assigned_to
-    """).fetchall()
-
-    tasks = connection.execute(f"""
+    all_tasks = connection.execute("""
         SELECT
             outreach.id,
+            outreach.account_id,
             outreach.next_action,
             outreach.next_action_date,
             outreach.next_action_time,
@@ -3614,66 +3606,86 @@ def task_reports():
         FROM outreach
         LEFT JOIN accounts ON outreach.account_id = accounts.id
         LEFT JOIN contacts ON outreach.contact_id = contacts.id
-        {where_clause}
+        WHERE outreach.next_action IS NOT NULL
+          AND outreach.next_action != ''
         ORDER BY outreach.next_action_date ASC, outreach.next_action_time ASC
-    """, params).fetchall()
-
-    overdue_tasks = connection.execute(f"""
-        SELECT COUNT(*)
-        FROM outreach
-        LEFT JOIN accounts ON outreach.account_id = accounts.id
-        LEFT JOIN contacts ON outreach.contact_id = contacts.id
-        {where_clause}
-          AND outreach.next_action_date < date('now')
-          AND COALESCE(outreach.task_status, '') != 'Completed'
-    """, params).fetchone()[0]
-
-    due_today = connection.execute(f"""
-        SELECT COUNT(*)
-        FROM outreach
-        LEFT JOIN accounts ON outreach.account_id = accounts.id
-        LEFT JOIN contacts ON outreach.contact_id = contacts.id
-        {where_clause}
-          AND outreach.next_action_date = date('now')
-          AND COALESCE(outreach.task_status, '') != 'Completed'
-    """, params).fetchone()[0]
-
-    upcoming_tasks = connection.execute(f"""
-        SELECT COUNT(*)
-        FROM outreach
-        LEFT JOIN accounts ON outreach.account_id = accounts.id
-        LEFT JOIN contacts ON outreach.contact_id = contacts.id
-        {where_clause}
-          AND outreach.next_action_date > date('now')
-          AND COALESCE(outreach.task_status, '') != 'Completed'
-    """, params).fetchone()[0]
-
-    tasks_by_status = connection.execute(f"""
-        SELECT
-            COALESCE(NULLIF(outreach.task_status, ''), 'Not Started') AS status,
-            COUNT(*) AS total
-        FROM outreach
-        LEFT JOIN accounts ON outreach.account_id = accounts.id
-        LEFT JOIN contacts ON outreach.contact_id = contacts.id
-        {where_clause}
-        GROUP BY COALESCE(NULLIF(outreach.task_status, ''), 'Not Started')
-        ORDER BY total DESC
-    """, params).fetchall()
-
-    tasks_by_account = connection.execute(f"""
-        SELECT
-            COALESCE(accounts.account_name, 'Unknown') AS account_name,
-            COUNT(outreach.id) AS total
-        FROM outreach
-        LEFT JOIN accounts ON outreach.account_id = accounts.id
-        LEFT JOIN contacts ON outreach.contact_id = contacts.id
-        {where_clause}
-        GROUP BY COALESCE(accounts.account_name, 'Unknown')
-        ORDER BY total DESC
-        LIMIT 10
-    """, params).fetchall()
+    """).fetchall()
 
     connection.close()
+
+    def parse_report_date(value):
+        if not value:
+            return None
+        try:
+            return datetime.strptime(str(value), "%Y-%m-%d").date()
+        except ValueError:
+            return None
+
+    start_date = parse_report_date(selected_start_date)
+    end_date = parse_report_date(selected_end_date)
+
+    def normalised_status(task):
+        return task["task_status"] or "Not Started"
+
+    def include_task(task):
+        task_date = parse_report_date(task["next_action_date"])
+        if start_date and (not task_date or task_date < start_date):
+            return False
+        if end_date and (not task_date or task_date > end_date):
+            return False
+        if selected_account and str(task["account_id"] or "") != selected_account:
+            return False
+        if selected_task_status and normalised_status(task) != selected_task_status:
+            return False
+        if selected_assigned_to and (task["assigned_to"] or "") != selected_assigned_to:
+            return False
+        return True
+
+    tasks = [task for task in all_tasks if include_task(task)]
+    today = datetime.now().date()
+    active_tasks = [task for task in tasks if normalised_status(task) != "Completed"]
+    overdue_tasks = sum(
+        1 for task in active_tasks
+        if parse_report_date(task["next_action_date"]) and parse_report_date(task["next_action_date"]) < today
+    )
+    due_today = sum(
+        1 for task in active_tasks
+        if parse_report_date(task["next_action_date"]) == today
+    )
+    upcoming_tasks = sum(
+        1 for task in active_tasks
+        if parse_report_date(task["next_action_date"]) and parse_report_date(task["next_action_date"]) > today
+    )
+
+    task_statuses = [
+        {"task_status": status}
+        for status in sorted({normalised_status(task) for task in all_tasks})
+    ]
+    assigned_users = [
+        {"assigned_to": assigned_to}
+        for assigned_to in sorted({task["assigned_to"] for task in all_tasks if task["assigned_to"]})
+    ]
+
+    status_totals = {}
+    account_totals = {}
+    for task in tasks:
+        status = normalised_status(task)
+        account_name = task["account_name"] or "Unknown"
+        status_totals[status] = status_totals.get(status, 0) + 1
+        account_totals[account_name] = account_totals.get(account_name, 0) + 1
+
+    tasks_by_status = [
+        {"status": status, "total": total}
+        for status, total in sorted(status_totals.items(), key=lambda item: (-item[1], item[0]))
+    ]
+    tasks_by_account = [
+        {"account_name": account_name, "total": total}
+        for account_name, total in sorted(account_totals.items(), key=lambda item: (-item[1], item[0]))[:10]
+    ]
+    status_chart_labels = [item["status"] for item in tasks_by_status]
+    status_chart_data = [item["total"] for item in tasks_by_status]
+    account_chart_labels = [item["account_name"] for item in tasks_by_account]
+    account_chart_data = [item["total"] for item in tasks_by_account]
 
     return render_template(
         "task_reports.html",
@@ -3690,7 +3702,11 @@ def task_reports():
         selected_end_date=selected_end_date,
         selected_account=selected_account,
         selected_task_status=selected_task_status,
-        selected_assigned_to=selected_assigned_to
+        selected_assigned_to=selected_assigned_to,
+        status_chart_labels=status_chart_labels,
+        status_chart_data=status_chart_data,
+        account_chart_labels=account_chart_labels,
+        account_chart_data=account_chart_data
     )
 
 
@@ -3785,33 +3801,6 @@ def outreach_reports():
     selected_activity_type = request.args.get("activity_type", "")
     selected_outcome = request.args.get("outcome", "")
 
-    filters = []
-    params = []
-
-    if selected_start_date:
-        filters.append("date(outreach.activity_date) >= date(?)")
-        params.append(selected_start_date)
-
-    if selected_end_date:
-        filters.append("date(outreach.activity_date) <= date(?)")
-        params.append(selected_end_date)
-
-    if selected_account:
-        filters.append("outreach.account_id = ?")
-        params.append(selected_account)
-
-    if selected_activity_type:
-        filters.append("outreach.activity_type = ?")
-        params.append(selected_activity_type)
-
-    if selected_outcome:
-        filters.append("outreach.outcome = ?")
-        params.append(selected_outcome)
-
-    where_clause = ""
-    if filters:
-        where_clause = "WHERE " + " AND ".join(filters)
-
     accounts = connection.execute("""
         SELECT id, account_name
         FROM accounts
@@ -3834,98 +3823,93 @@ def outreach_reports():
         ORDER BY outcome
     """).fetchall()
 
-    total_outreach = connection.execute(f"""
-        SELECT COUNT(*)
-        FROM outreach
-        {where_clause}
-    """, params).fetchone()[0]
-
-    meetings_booked = connection.execute(f"""
-        SELECT COUNT(*)
-        FROM outreach
-        {where_clause}
-        {"AND" if where_clause else "WHERE"} (
-            outreach.outcome = 'Meeting Booked'
-            OR outreach.activity_type = 'Meeting'
-        )
-    """, params).fetchone()[0]
-
-    conversion_rate = 0
-    if total_outreach > 0:
-        conversion_rate = round((meetings_booked / total_outreach) * 100, 2)
-
-    outcome_breakdown = connection.execute(f"""
+    all_outreach = connection.execute("""
         SELECT
-            COALESCE(NULLIF(outreach.outcome, ''), 'Unknown') AS outcome,
-            COUNT(*) AS count
-        FROM outreach
-        {where_clause}
-        GROUP BY COALESCE(NULLIF(outreach.outcome, ''), 'Unknown')
-        ORDER BY count DESC
-    """, params).fetchall()
-
-    outreach_by_type = connection.execute(f"""
-        SELECT
-            COALESCE(NULLIF(outreach.activity_type, ''), 'Unknown') AS activity_type,
-            COUNT(*) AS count
-        FROM outreach
-        {where_clause}
-        GROUP BY COALESCE(NULLIF(outreach.activity_type, ''), 'Unknown')
-        ORDER BY count DESC
-    """, params).fetchall()
-
-    latest_outreach = connection.execute(f"""
-        SELECT
+            outreach.id,
+            outreach.account_id,
             outreach.activity_date,
+            outreach.activity_time,
             outreach.activity_type,
             outreach.outcome,
             accounts.account_name,
             accounts.account_tier
         FROM outreach
         LEFT JOIN accounts ON outreach.account_id = accounts.id
-        {where_clause}
-        ORDER BY outreach.activity_date DESC, outreach.activity_time DESC
-        LIMIT 10
-    """, params).fetchall()
-
-    monthly_trends_raw = connection.execute(f"""
-        SELECT
-            strftime('%Y-%m', outreach.activity_date) AS month,
-            COUNT(*) AS total_outreach,
-            SUM(
-                CASE
-                    WHEN outreach.outcome = 'Meeting Booked'
-                      OR outreach.activity_type = 'Meeting'
-                    THEN 1
-                    ELSE 0
-                END
-            ) AS meetings_booked
-        FROM outreach
-        {where_clause}
-        {"AND" if where_clause else "WHERE"} outreach.activity_date IS NOT NULL
-          AND outreach.activity_date != ''
-        GROUP BY month
-        ORDER BY month
-    """, params).fetchall()
-
-    monthly_trends = []
-
-    for row in monthly_trends_raw:
-        total = row["total_outreach"] or 0
-        meetings = row["meetings_booked"] or 0
-
-        conversion = 0
-        if total > 0:
-            conversion = round((meetings / total) * 100, 2)
-
-        monthly_trends.append({
-            "month": row["month"],
-            "total_outreach": total,
-            "meetings_booked": meetings,
-            "conversion_rate": conversion
-        })
+        ORDER BY outreach.activity_date DESC, outreach.activity_time DESC, outreach.id DESC
+    """).fetchall()
 
     connection.close()
+
+    def parse_report_date(value):
+        if not value:
+            return None
+        try:
+            return datetime.strptime(str(value), "%Y-%m-%d").date()
+        except ValueError:
+            return None
+
+    start_date = parse_report_date(selected_start_date)
+    end_date = parse_report_date(selected_end_date)
+
+    def include_item(item):
+        activity_date = parse_report_date(item["activity_date"])
+        if start_date and (not activity_date or activity_date < start_date):
+            return False
+        if end_date and (not activity_date or activity_date > end_date):
+            return False
+        if selected_account and str(item["account_id"] or "") != selected_account:
+            return False
+        if selected_activity_type and (item["activity_type"] or "") != selected_activity_type:
+            return False
+        if selected_outcome and (item["outcome"] or "") != selected_outcome:
+            return False
+        return True
+
+    filtered_outreach = [item for item in all_outreach if include_item(item)]
+    total_outreach = len(filtered_outreach)
+    meetings_booked = sum(
+        1 for item in filtered_outreach
+        if item["outcome"] == "Meeting Booked" or item["activity_type"] == "Meeting"
+    )
+    conversion_rate = round((meetings_booked / total_outreach) * 100, 2) if total_outreach else 0
+
+    outcome_totals = {}
+    type_totals = {}
+    monthly_totals = {}
+    for item in filtered_outreach:
+        outcome = item["outcome"] or "Unknown"
+        activity_type = item["activity_type"] or "Unknown"
+        outcome_totals[outcome] = outcome_totals.get(outcome, 0) + 1
+        type_totals[activity_type] = type_totals.get(activity_type, 0) + 1
+        activity_date = parse_report_date(item["activity_date"])
+        if activity_date:
+            month = activity_date.strftime("%Y-%m")
+            if month not in monthly_totals:
+                monthly_totals[month] = {"total_outreach": 0, "meetings_booked": 0}
+            monthly_totals[month]["total_outreach"] += 1
+            if item["outcome"] == "Meeting Booked" or item["activity_type"] == "Meeting":
+                monthly_totals[month]["meetings_booked"] += 1
+
+    outcome_breakdown = [
+        {"outcome": outcome, "count": count}
+        for outcome, count in sorted(outcome_totals.items(), key=lambda item: (-item[1], item[0]))
+    ]
+    outreach_by_type = [
+        {"activity_type": activity_type, "count": count}
+        for activity_type, count in sorted(type_totals.items(), key=lambda item: (-item[1], item[0]))
+    ]
+    latest_outreach = filtered_outreach[:10]
+
+    monthly_trends = []
+    for month, totals in sorted(monthly_totals.items()):
+        total = totals["total_outreach"]
+        meetings = totals["meetings_booked"]
+        monthly_trends.append({
+            "month": month,
+            "total_outreach": total,
+            "meetings_booked": meetings,
+            "conversion_rate": round((meetings / total) * 100, 2) if total else 0,
+        })
 
     return render_template(
         "outreach_reports.html",
@@ -3943,7 +3927,15 @@ def outreach_reports():
         selected_end_date=selected_end_date,
         selected_account=selected_account,
         selected_activity_type=selected_activity_type,
-        selected_outcome=selected_outcome
+        selected_outcome=selected_outcome,
+        outcome_chart_labels=[item["outcome"] for item in outcome_breakdown],
+        outcome_chart_data=[item["count"] for item in outcome_breakdown],
+        activity_type_chart_labels=[item["activity_type"] for item in outreach_by_type],
+        activity_type_chart_data=[item["count"] for item in outreach_by_type],
+        monthly_chart_labels=[item["month"] for item in monthly_trends],
+        monthly_outreach_data=[item["total_outreach"] for item in monthly_trends],
+        monthly_meetings_data=[item["meetings_booked"] for item in monthly_trends],
+        monthly_conversion_data=[item["conversion_rate"] for item in monthly_trends],
     )
 
 
