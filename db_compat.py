@@ -213,6 +213,20 @@ def postgres_connection(schema=None):
             AS $$ SELECT EXTRACT(EPOCH FROM value::timestamp) / 86400.0 $$
         """)
         cursor.execute("""
+            CREATE OR REPLACE FUNCTION julianday(value timestamp)
+            RETURNS double precision
+            LANGUAGE sql
+            IMMUTABLE
+            AS $$ SELECT EXTRACT(EPOCH FROM value) / 86400.0 $$
+        """)
+        cursor.execute("""
+            CREATE OR REPLACE FUNCTION julianday(value date)
+            RETURNS double precision
+            LANGUAGE sql
+            IMMUTABLE
+            AS $$ SELECT EXTRACT(EPOCH FROM value::timestamp) / 86400.0 $$
+        """)
+        cursor.execute("""
             CREATE OR REPLACE FUNCTION strftime(format text, value text)
             RETURNS text
             LANGUAGE plpgsql
@@ -227,6 +241,62 @@ def postgres_connection(schema=None):
                 RETURN to_char(value::timestamp, format);
             END;
             $$
+        """)
+        cursor.execute("""
+            CREATE OR REPLACE FUNCTION strftime(format text, value timestamp)
+            RETURNS text
+            LANGUAGE plpgsql
+            IMMUTABLE
+            AS $$
+            BEGIN
+                IF format = '%w' THEN
+                    RETURN EXTRACT(DOW FROM value)::int::text;
+                ELSIF format = '%Y-%m' THEN
+                    RETURN to_char(value, 'YYYY-MM');
+                END IF;
+                RETURN to_char(value, format);
+            END;
+            $$
+        """)
+        cursor.execute("""
+            CREATE OR REPLACE FUNCTION strftime(format text, value date)
+            RETURNS text
+            LANGUAGE plpgsql
+            IMMUTABLE
+            AS $$
+            BEGIN
+                IF format = '%w' THEN
+                    RETURN EXTRACT(DOW FROM value)::int::text;
+                ELSIF format = '%Y-%m' THEN
+                    RETURN to_char(value, 'YYYY-MM');
+                END IF;
+                RETURN to_char(value, format);
+            END;
+            $$
+        """)
+        cursor.execute("""
+            CREATE OR REPLACE FUNCTION date(value text)
+            RETURNS date
+            LANGUAGE plpgsql
+            IMMUTABLE
+            AS $$
+            BEGIN
+                IF value = 'now' THEN
+                    RETURN CURRENT_DATE;
+                END IF;
+                IF NULLIF(value, '') IS NULL THEN
+                    RETURN NULL;
+                END IF;
+                RETURN value::date;
+            END;
+            $$
+        """)
+        cursor.execute("""
+            CREATE OR REPLACE FUNCTION date(value timestamp)
+            RETURNS date
+            LANGUAGE sql
+            IMMUTABLE
+            AS $$ SELECT value::date $$
         """)
         cursor.execute("""
             CREATE OR REPLACE FUNCTION date(value text, modifier text)
@@ -247,6 +317,9 @@ def postgres_connection(schema=None):
                     END IF;
                     RETURN CURRENT_DATE;
                 END IF;
+                IF NULLIF(value, '') IS NULL THEN
+                    RETURN NULL;
+                END IF;
                 IF modifier LIKE '+% days' THEN
                     amount := split_part(substring(modifier from 2), ' ', 1)::integer;
                     RETURN value::date + amount;
@@ -255,6 +328,28 @@ def postgres_connection(schema=None):
                     RETURN value::date - amount;
                 END IF;
                 RETURN value::date;
+            END;
+            $$
+        """)
+        cursor.execute("""
+            CREATE OR REPLACE FUNCTION date(value timestamp, modifier text)
+            RETURNS date
+            LANGUAGE plpgsql
+            IMMUTABLE
+            AS $$
+            DECLARE
+                amount integer;
+                base_date date;
+            BEGIN
+                base_date := value::date;
+                IF modifier LIKE '+% days' THEN
+                    amount := split_part(substring(modifier from 2), ' ', 1)::integer;
+                    RETURN base_date + amount;
+                ELSIF modifier LIKE '-% days' THEN
+                    amount := split_part(substring(modifier from 2), ' ', 1)::integer;
+                    RETURN base_date - amount;
+                END IF;
+                RETURN base_date;
             END;
             $$
         """)
