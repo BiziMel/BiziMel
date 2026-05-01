@@ -12,6 +12,7 @@ from flask import Flask, render_template, request, redirect, url_for, Response, 
 from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
+from db_compat import using_postgres, current_user_schema
 
 
 for vendor_base in (
@@ -56,7 +57,7 @@ def inject_dropdown_values():
 
 @app.before_request
 def require_login_and_prepare_database():
-    public_endpoints = {"login", "register", "forgot_password", "reset_password", "static"}
+    public_endpoints = {"login", "register", "forgot_password", "reset_password", "storage_health", "static"}
     if request.endpoint in public_endpoints:
         return None
 
@@ -68,6 +69,19 @@ def require_login_and_prepare_database():
 
 
 
+
+
+@app.route("/health/storage")
+def storage_health():
+    backend = "supabase_postgres" if using_postgres() else "temporary_sqlite"
+    lines = [
+        f"backend={backend}",
+        f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
+        f"user_id={session.get('user_id', '')}",
+        f"user_email={session.get('user_email', '')}",
+        f"workspace_schema={current_user_schema() if using_postgres() else ''}",
+    ]
+    return Response("\n".join(lines), mimetype="text/plain")
 
 
 @app.route("/login", methods=("GET", "POST"))
