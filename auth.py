@@ -1,6 +1,7 @@
 import sqlite3
 import os
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from functools import wraps
 from pathlib import Path
 
@@ -518,8 +519,45 @@ def normalise_broadcast_datetime(value: str) -> str:
     return parsed.strftime("%Y-%m-%dT%H:%M")
 
 
+def broadcast_timezone():
+    timezone_name = os.environ.get("PIPEFLOW_TIMEZONE", "Europe/London")
+    try:
+        return ZoneInfo(timezone_name)
+    except Exception:
+        return ZoneInfo("Europe/London")
+
+
 def current_broadcast_key() -> str:
-    return datetime.now().strftime("%Y-%m-%dT%H:%M")
+    return datetime.now(broadcast_timezone()).strftime("%Y-%m-%dT%H:%M")
+
+
+def cleanup_duplicate_broadcast_messages(connection):
+    rows = connection.execute(
+        """
+        SELECT *
+        FROM broadcast_messages
+        ORDER BY id ASC
+        """
+    ).fetchall()
+    seen = set()
+    duplicate_ids = []
+    for row in rows:
+        key = (
+            row["title"],
+            row["message"],
+            row["severity"],
+            row["start_at"] if "start_at" in row.keys() else "",
+            row["stop_at"] if "stop_at" in row.keys() else "",
+        )
+        if key in seen:
+            duplicate_ids.append(row["id"])
+        else:
+            seen.add(key)
+
+    for duplicate_id in duplicate_ids:
+        connection.execute("DELETE FROM broadcast_messages WHERE id = ?", (duplicate_id,))
+    if duplicate_ids:
+        connection.commit()
 
 
 def cleanup_expired_broadcast_messages(connection=None):
@@ -537,6 +575,7 @@ def cleanup_expired_broadcast_messages(connection=None):
         (now_key,),
     )
     connection.commit()
+    cleanup_duplicate_broadcast_messages(connection)
     if close_connection:
         connection.close()
 
@@ -600,6 +639,33 @@ def create_broadcast_message(title: str, message: str, severity: str, start_at: 
 
     connection = get_auth_connection()
     cleanup_expired_broadcast_messages(connection)
+    existing = connection.execute(
+        """
+        SELECT id
+        FROM broadcast_messages
+        WHERE title = ?
+          AND message = ?
+          AND severity = ?
+          AND start_at = ?
+          AND stop_at = ?
+        LIMIT 1
+        """,
+        (title, message, severity, start_at, stop_at),
+    ).fetchone()
+    if existing:
+        connection.execute(
+            """
+            UPDATE broadcast_messages
+            SET is_active = ?,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (1 if is_active else 0, existing["id"]),
+        )
+        connection.commit()
+        connection.close()
+        return ""
+
     connection.execute(
         """
         INSERT INTO broadcast_messages (title, message, severity, start_at, stop_at, is_active)
@@ -655,6 +721,13 @@ def set_broadcast_message_active(message_id: int, is_active: bool):
         """,
         (1 if is_active else 0, message_id),
     )
+    connection.commit()
+    connection.close()
+
+
+def delete_broadcast_message(message_id: int):
+    connection = get_auth_connection()
+    connection.execute("DELETE FROM broadcast_messages WHERE id = ?", (message_id,))
     connection.commit()
     connection.close()
 

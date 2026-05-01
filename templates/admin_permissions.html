@@ -178,7 +178,7 @@
         <p>Use broadcasts for release notes, planned maintenance, data entry reminders, training notes or urgent service messages. Messages are shown only between their start and stop times, then expired messages are removed automatically.</p>
     </div>
 
-    <form method="POST" action="{{ url_for('admin_add_broadcast') }}" class="admin-broadcast-form">
+    <form method="POST" action="{{ url_for('admin_add_broadcast') }}" class="admin-broadcast-form js-single-submit">
         <label>Title</label>
         <input type="text" name="title" placeholder="Example: Friday PG Bible export reminder" required>
 
@@ -221,7 +221,7 @@
                         <small>{{ broadcast['start_at'] or 'Not scheduled' }} to {{ broadcast['stop_at'] or 'Not scheduled' }}</small>
                     </div>
 
-                    <form method="POST" action="{{ url_for('admin_update_broadcast', message_id=broadcast['id']) }}" class="admin-broadcast-edit-form">
+                    <form method="POST" action="{{ url_for('admin_update_broadcast', message_id=broadcast['id']) }}" class="admin-broadcast-edit-form js-single-submit">
                         <input type="text" name="title" value="{{ broadcast['title'] }}" required>
                         <textarea name="message" rows="3" required>{{ broadcast['message'] }}</textarea>
                         <select name="severity">
@@ -249,6 +249,9 @@
                                 <button type="submit" class="btn btn-secondary">Reactivate</button>
                             </form>
                         {% endif %}
+                        <form method="POST" action="{{ url_for('admin_delete_broadcast', message_id=broadcast['id']) }}" class="inline-form">
+                            <button type="submit" class="btn btn-danger">Delete</button>
+                        </form>
                     </div>
                 </article>
             {% endfor %}
@@ -387,4 +390,16 @@
         </div>
     {% endif %}
 </div>
+
+<script>
+    document.querySelectorAll(".js-single-submit").forEach((form) => {
+        form.addEventListener("submit", () => {
+            const button = form.querySelector("button[type='submit']");
+            if (button) {
+                button.disabled = true;
+                button.textContent = "Saving...";
+            }
+        });
+    });
+</script>
 {% endblock %}

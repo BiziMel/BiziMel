@@ -10,7 +10,7 @@ import traceback
 from datetime import datetime, timedelta
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema
@@ -77,7 +77,7 @@ def version_health():
     from db_compat import translate_sql
     sample = "datetime(next_action_date || ' ' || IFNULL(next_action_time, '00:00')) < datetime('now', '-1 hour')"
     lines = [
-        "pipeflow_server_build=2026-05-01-scheduled-broadcasts-v1",
+        "pipeflow_server_build=2026-05-01-broadcast-timezone-dedupe-v1",
         f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
         f"translation_check={translate_sql(sample)}",
     ]
@@ -260,6 +260,13 @@ def admin_deactivate_broadcast(message_id):
 def admin_reactivate_broadcast(message_id):
     set_broadcast_message_active(message_id, True)
     return redirect(url_for("admin_users", message="Broadcast message restored."))
+
+
+@app.route("/admin/broadcasts/<int:message_id>/delete", methods=("POST",))
+@admin_required
+def admin_delete_broadcast(message_id):
+    delete_broadcast_message(message_id)
+    return redirect(url_for("admin_users", message="Broadcast message deleted."))
 
 
 @app.route("/admin/account-fields/add", methods=("POST",))

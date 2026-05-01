@@ -13,6 +13,8 @@ except ModuleNotFoundError:  # Local SQLite mode does not need psycopg.
 from flask import has_request_context, session
 
 DB_NAME = "pipeflow.db"
+_POSTGRES_READY_SCHEMAS = set()
+_POSTGRES_BOOTSTRAPPED = False
 USER_TABLES = {
     "accounts",
     "contacts",
@@ -444,6 +446,31 @@ def postgres_connection(schema=None):
             END;
             $$
         """)
+    connection.commit()
+    return PgConnectionAdapter(connection)
+
+
+_bootstrap_postgres_connection = postgres_connection
+
+
+def postgres_connection(schema=None):
+    global _POSTGRES_BOOTSTRAPPED
+    if psycopg is None:
+        raise RuntimeError("DATABASE_URL is set but psycopg is not installed.")
+
+    schema = schema or current_user_schema()
+    if not _POSTGRES_BOOTSTRAPPED:
+        connection = _bootstrap_postgres_connection(schema=schema)
+        _POSTGRES_BOOTSTRAPPED = True
+        _POSTGRES_READY_SCHEMAS.add(schema)
+        return connection
+
+    connection = psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row)
+    with connection.cursor() as cursor:
+        if schema not in _POSTGRES_READY_SCHEMAS:
+            cursor.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
+            _POSTGRES_READY_SCHEMAS.add(schema)
+        cursor.execute(f'SET search_path TO "{schema}", public')
     connection.commit()
     return PgConnectionAdapter(connection)
 

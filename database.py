@@ -1,11 +1,18 @@
-from db_compat import get_connection, using_postgres
+from db_compat import get_connection, using_postgres, current_user_schema, sqlite_database_path
+
+_INITIALISED_DATABASES = set()
 
 DB_NAME = "pipeflow.db"
 
 
 def get_database_path():
-    from db_compat import sqlite_database_path
     return sqlite_database_path()
+
+
+def database_initialisation_key():
+    if using_postgres():
+        return f"postgres:{current_user_schema()}"
+    return f"sqlite:{sqlite_database_path()}"
 
 
 def get_db_connection():
@@ -37,7 +44,11 @@ def add_column_if_missing(cursor, table_name, column_name, column_definition):
         )
 
 
-def initialise_database():
+def initialise_database(force=False):
+    cache_key = database_initialisation_key()
+    if not force and cache_key in _INITIALISED_DATABASES:
+        return
+
     connection = get_db_connection()
     cursor = connection.cursor()
 
@@ -321,3 +332,4 @@ def initialise_database():
 
     connection.commit()
     connection.close()
+    _INITIALISED_DATABASES.add(cache_key)
