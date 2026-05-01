@@ -52,6 +52,9 @@ def postgres_identifier(value):
 
 def current_user_schema():
     if has_request_context():
+        workspace_schema = session.get("workspace_schema")
+        if workspace_schema:
+            return postgres_identifier(workspace_schema)
         user_email = session.get("user_email")
         if user_email:
             return postgres_identifier(f"workspace_{user_email}")

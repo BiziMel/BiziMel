@@ -10,7 +10,7 @@ import traceback
 from datetime import datetime, timedelta
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema
@@ -108,6 +108,7 @@ def login():
             session["user_id"] = user["id"]
             session["user_email"] = user["email"]
             session["user_name"] = user["full_name"]
+            session["workspace_schema"] = ensure_user_workspace_schema(user)
             initialise_database()
             connection = get_db_connection()
             connection.execute(
@@ -161,6 +162,7 @@ def register():
             session["user_id"] = user_id
             session["user_email"] = request.form.get("email", "").strip().lower()
             session["user_name"] = request.form.get("full_name", "").strip()
+            session["workspace_schema"] = ensure_user_workspace_schema(get_user_for_admin(user_id))
             initialise_database()
             connection = get_db_connection()
             connection.execute(
@@ -284,6 +286,39 @@ def admin_reactivate_account_field(field_id):
         "Field restored to account forms."
     )
     return redirect(url_for("admin_users", message="Account field restored to account forms."))
+
+
+@app.route("/admin/users/<int:user_id>/identity", methods=("POST",))
+@admin_required
+def admin_update_user_identity(user_id):
+    user = get_user_for_admin(user_id)
+    if not user:
+        return redirect(url_for("admin_users", error="Profile was not found."))
+    old_email = user["email"]
+    old_name = user["full_name"]
+    old_team = user["team"] if "team" in user.keys() and user["team"] else ""
+    new_email = request.form.get("email", "")
+    new_name = request.form.get("full_name", "")
+    new_team = request.form.get("team", "")
+    error = update_user_identity(user_id, new_email, new_name, new_team)
+    if error:
+        return redirect(url_for("admin_users", error=error))
+
+    changes = []
+    if old_name != new_name.strip():
+        changes.append(f"Name changed from {old_name} to {new_name.strip()}")
+    if old_email != new_email.strip().lower():
+        changes.append(f"Email changed from {old_email} to {new_email.strip().lower()}")
+    if old_team != new_team.strip():
+        changes.append(f"Team changed from {old_team or 'Not set'} to {new_team.strip() or 'Not set'}")
+    log_admin_audit(
+        current_user(),
+        "Profile details updated",
+        "User",
+        new_email.strip().lower(),
+        "; ".join(changes) if changes else "Profile details saved with no visible changes."
+    )
+    return redirect(url_for("admin_users", message="Profile details updated."))
 
 
 @app.route("/admin/users/<int:user_id>/deactivate", methods=("POST",))

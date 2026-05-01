@@ -5,7 +5,7 @@ from pathlib import Path
 
 from flask import redirect, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
-from db_compat import get_connection, using_postgres
+from db_compat import get_connection, postgres_identifier, using_postgres
 
 
 AUTH_DB_NAME = "pipeflow_server_auth.db"
@@ -109,6 +109,8 @@ def initialise_auth_database() -> None:
         )
     """)
     add_column_if_missing(connection, "users", "reset_phrase_hash", "TEXT")
+    add_column_if_missing(connection, "users", "team", "TEXT")
+    add_column_if_missing(connection, "users", "workspace_schema", "TEXT")
     connection.commit()
     connection.close()
 
@@ -231,7 +233,7 @@ def current_user():
     connection = get_auth_connection()
     user = connection.execute(
         """
-        SELECT id, email, full_name, role
+        SELECT id, email, full_name, team, role, workspace_schema
         FROM users
         WHERE id = ?
           AND is_active = 1
@@ -265,11 +267,43 @@ def admin_required(view):
     return wrapped
 
 
+def ensure_user_workspace_schema(user):
+    if not user:
+        return ""
+    if "workspace_schema" in user.keys() and user["workspace_schema"]:
+        return user["workspace_schema"]
+    schema = postgres_identifier(f"workspace_{user['email']}")
+    connection = get_auth_connection()
+    connection.execute(
+        """
+        UPDATE users
+        SET workspace_schema = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (schema, user["id"]),
+    )
+    connection.commit()
+    connection.close()
+    return schema
+
+
 def list_users():
     connection = get_auth_connection()
     users = connection.execute(
         """
-        SELECT id, email, full_name, role, is_active, date_created, last_updated
+        SELECT id, email, full_name, team, role, is_active, workspace_schema, date_created, last_updated
+        FROM users
+        ORDER BY full_name, email
+        """
+    ).fetchall()
+    connection.close()
+    for user in users:
+        ensure_user_workspace_schema(user)
+    connection = get_auth_connection()
+    users = connection.execute(
+        """
+        SELECT id, email, full_name, team, role, is_active, workspace_schema, date_created, last_updated
         FROM users
         ORDER BY full_name, email
         """
@@ -456,7 +490,7 @@ def get_user_for_admin(user_id: int):
     connection = get_auth_connection()
     user = connection.execute(
         """
-        SELECT id, email, full_name, role, is_active
+        SELECT id, email, full_name, team, role, is_active, workspace_schema
         FROM users
         WHERE id = ?
         """,
@@ -522,3 +556,40 @@ def list_admin_audit_entries(limit: int = 50):
     ).fetchall()
     connection.close()
     return rows
+
+
+
+def update_user_identity(user_id: int, email: str, full_name: str, team: str):
+    email = normalise_email(email)
+    full_name = (full_name or "").strip()
+    team = (team or "").strip()
+    if not email or not full_name:
+        return "Name and email are required."
+
+    user = get_user_for_admin(user_id)
+    if not user:
+        return "User was not found."
+    workspace_schema = user["workspace_schema"] if "workspace_schema" in user.keys() and user["workspace_schema"] else postgres_identifier(f"workspace_{user['email']}")
+
+    connection = get_auth_connection()
+    try:
+        connection.execute(
+            """
+            UPDATE users
+            SET email = ?,
+                full_name = ?,
+                team = ?,
+                workspace_schema = ?,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (email, full_name, team, workspace_schema, user_id),
+        )
+        connection.commit()
+        return ""
+    except Exception as exc:
+        if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+            return "Another profile already uses that email address."
+        raise
+    finally:
+        connection.close()

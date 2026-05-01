@@ -1370,3 +1370,22 @@ a:hover {
     font-weight: 800;
     white-space: nowrap;
 }
+
+
+.admin-user-details-form {
+    display: grid;
+    grid-template-columns: minmax(150px, 1fr) minmax(190px, 1.2fr) minmax(120px, 0.8fr) auto;
+    gap: 8px;
+    align-items: center;
+    margin: 4px 0 8px;
+}
+
+.admin-user-details-form input {
+    min-width: 0;
+}
+
+@media (max-width: 900px) {
+    .admin-user-details-form {
+        grid-template-columns: 1fr;
+    }
+}
