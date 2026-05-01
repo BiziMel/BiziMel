@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Permissions - PipeFlow Server{% endblock %}
+
+{% block content %}
+<section class="page-header admin-hero">
+    <div>
+        <p class="eyebrow">Admin Console</p>
+        <h2>Permissions & App Controls</h2>
+        <p class="muted-text">Control who can administer PipeFlow, keep user workspaces private, and shape the account fields everyone uses.</p>
+    </div>
+</section>
+
+{% if message %}
+    <div class="alert-success">{{ message }}</div>
+{% endif %}
+
+{% if error %}
+    <div class="alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="permissions-overview-card">
+    <div class="section-header">
+        <div>
+            <h3>Permission Structure</h3>
+            <p class="muted-text">Roles are deliberately simple. Admins manage access and configuration, while each user keeps their own PipeFlow data private.</p>
+        </div>
+    </div>
+
+    <div class="permission-card-grid">
+        <div class="permission-card permission-card-admin">
+            <div class="permission-card-header">
+                <span class="permission-badge">Admin</span>
+                <span class="permission-level">Full control</span>
+            </div>
+            <p>Can manage profiles, grant or remove admin access, reset passwords, deactivate users, configure account fields and delete accounts in their own workspace.</p>
+            <p class="permission-note">Admin access does not open another user's private account, contact, partner, outreach or task data.</p>
+        </div>
+
+        <div class="permission-card">
+            <div class="permission-card-header">
+                <span class="permission-badge">Manager</span>
+                <span class="permission-level">Workspace user</span>
+            </div>
+            <p>Can use their own private PipeFlow workspace for accounts, contacts, partners, outreach, tasks, reports and exports.</p>
+            <p class="permission-note">Team reporting can be added later without changing the privacy model.</p>
+        </div>
+
+        <div class="permission-card">
+            <div class="permission-card-header">
+                <span class="permission-badge">User</span>
+                <span class="permission-level">Standard access</span>
+            </div>
+            <p>Can manage their own PipeFlow activity and data. They cannot administer profiles, change global fields or delete accounts.</p>
+            <p class="permission-note">Best for everyday sales users.</p>
+        </div>
+
+        <div class="permission-card permission-card-muted">
+            <div class="permission-card-header">
+                <span class="permission-badge">Inactive</span>
+                <span class="permission-level">Access paused</span>
+            </div>
+            <p>Cannot sign in. The profile is retained so access can be restored later if needed.</p>
+            <p class="permission-note">Use this when someone leaves or no longer needs access.</p>
+        </div>
+    </div>
+</div>
+
+<div class="admin-control-strip">
+    <div>
+        <strong>Privacy rule</strong>
+        <p>Admins manage the system, not another user's private PipeFlow records.</p>
+    </div>
+    <div>
+        <strong>Account deletion</strong>
+        <p>Only admins see and can use Delete Account, and only inside their own workspace.</p>
+    </div>
+    <div>
+        <strong>Global fields</strong>
+        <p>Account field changes appear on every user's forms, while field values stay private per user.</p>
+    </div>
+</div>
+
+<div class="card">
+    <div class="section-header">
+        <div>
+            <h3>User Permissions</h3>
+            <p class="muted-text">Promote trusted users to Admin, move people back to standard access, or pause profiles when access is no longer needed.</p>
+        </div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+                <tr>
+                    <td>{{ user["full_name"] }}</td>
+                    <td>{{ user["email"] }}</td>
+                    <td>{{ user["role"] }}</td>
+                    <td>{{ "Active" if user["is_active"] else "Inactive" }}</td>
+                    <td>{{ user["date_created"] }}</td>
+                    <td>
+                        <form method="POST" action="{{ url_for('admin_update_user_role', user_id=user['id']) }}" class="inline-form">
+                            <select name="role" {% if user['id'] == session.get('user_id') %}disabled{% endif %}>
+                                <option value="user" {% if user["role"] == "user" %}selected{% endif %}>User</option>
+                                <option value="manager" {% if user["role"] == "manager" %}selected{% endif %}>Manager</option>
+                                <option value="admin" {% if user["role"] == "admin" %}selected{% endif %}>Admin</option>
+                            </select>
+                            <button type="submit" class="btn btn-secondary" {% if user['id'] == session.get('user_id') %}disabled{% endif %}>Update Role</button>
+                        </form>
+
+                        {% if user["is_active"] %}
+                            <form method="POST" action="{{ url_for('admin_deactivate_user', user_id=user['id']) }}" class="inline-form">
+                                <button type="submit" class="btn btn-danger">Deactivate</button>
+                            </form>
+                        {% else %}
+                            <form method="POST" action="{{ url_for('admin_reactivate_user', user_id=user['id']) }}" class="inline-form">
+                                <button type="submit" class="btn btn-secondary">Reactivate</button>
+                            </form>
+                        {% endif %}
+
+                        <form method="POST" action="{{ url_for('admin_reset_user_password', user_id=user['id']) }}" class="inline-form reset-password-form">
+                            <input type="password" name="password" minlength="8" placeholder="New password" required>
+                            <button type="submit" class="btn btn-secondary">Reset Password</button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <div class="section-header">
+        <div>
+            <h3>Account Field Controls</h3>
+            <p class="muted-text">Create the account fields your team should capture consistently. Values entered by each user stay inside that user's private workspace.</p>
+        </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('admin_add_account_field') }}" class="admin-field-form">
+        <label>Field Label</label>
+        <input type="text" name="field_label" placeholder="Example: Renewal Date" required>
+
+        <label>Field Type</label>
+        <select name="field_type">
+            <option value="text">Text</option>
+            <option value="number">Number</option>
+            <option value="date">Date</option>
+            <option value="textarea">Long Text</option>
+        </select>
+
+        <label class="checkbox-label">
+            <input type="checkbox" name="is_required" value="1">
+            Required
+        </label>
+
+        <button type="submit" class="btn btn-primary">Add Field</button>
+    </form>
+
+    {% if account_fields %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Label</th>
+                    <th>Type</th>
+                    <th>Required</th>
+                    <th>Status</th>
+                    <th>Order</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for field in account_fields %}
+                    <tr>
+                        <td colspan="6">
+                            <form method="POST" action="{{ url_for('admin_update_account_field', field_id=field['id']) }}" class="admin-field-row">
+                                <input type="text" name="field_label" value="{{ field['field_label'] }}" required>
+                                <select name="field_type">
+                                    <option value="text" {% if field['field_type'] == 'text' %}selected{% endif %}>Text</option>
+                                    <option value="number" {% if field['field_type'] == 'number' %}selected{% endif %}>Number</option>
+                                    <option value="date" {% if field['field_type'] == 'date' %}selected{% endif %}>Date</option>
+                                    <option value="textarea" {% if field['field_type'] == 'textarea' %}selected{% endif %}>Long Text</option>
+                                </select>
+                                <label class="checkbox-label compact">
+                                    <input type="checkbox" name="is_required" value="1" {% if field['is_required'] %}checked{% endif %}>
+                                    Required
+                                </label>
+                                <span>{{ "Active" if field["is_active"] else "Inactive" }}</span>
+                                <input type="number" name="sort_order" value="{{ field['sort_order'] or 0 }}">
+                                <button type="submit" class="btn btn-secondary">Save</button>
+                            </form>
+
+                            {% if field["is_active"] %}
+                                <form method="POST" action="{{ url_for('admin_deactivate_account_field', field_id=field['id']) }}" class="inline-form">
+                                    <button type="submit" class="btn btn-danger">Remove from Forms</button>
+                                </form>
+                            {% else %}
+                                <form method="POST" action="{{ url_for('admin_reactivate_account_field', field_id=field['id']) }}" class="inline-form">
+                                    <button type="submit" class="btn btn-secondary">Restore</button>
+                                </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p class="muted-text">No custom account fields have been added yet.</p>
+    {% endif %}
+</div>
+{% endblock %}

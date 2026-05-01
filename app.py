@@ -10,7 +10,7 @@ import traceback
 from datetime import datetime, timedelta
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema
@@ -185,10 +185,72 @@ def logout():
     return redirect(url_for("login"))
 
 
+def render_admin_permissions():
+    return render_template(
+        "admin_permissions.html",
+        users=list_users(),
+        account_fields=list_account_field_definitions(active_only=False),
+        message=request.args.get("message", ""),
+        error=request.args.get("error", "")
+    )
+
+
 @app.route("/admin/users")
 @admin_required
 def admin_users():
-    return render_template("admin_users.html", users=list_users(), message=request.args.get("message", ""), error=request.args.get("error", ""))
+    return redirect(url_for(
+        "admin_permissions",
+        message=request.args.get("message", ""),
+        error=request.args.get("error", "")
+    ))
+
+
+@app.route("/admin/permissions")
+@admin_required
+def admin_permissions():
+    return render_admin_permissions()
+
+
+@app.route("/admin/account-fields/add", methods=("POST",))
+@admin_required
+def admin_add_account_field():
+    error = create_account_field_definition(
+        request.form.get("field_label", ""),
+        request.form.get("field_type", "text"),
+        bool(request.form.get("is_required"))
+    )
+    if error:
+        return redirect(url_for("admin_users", error=error))
+    return redirect(url_for("admin_users", message="Account field added."))
+
+
+@app.route("/admin/account-fields/<int:field_id>/update", methods=("POST",))
+@admin_required
+def admin_update_account_field(field_id):
+    error = update_account_field_definition(
+        field_id,
+        request.form.get("field_label", ""),
+        request.form.get("field_type", "text"),
+        bool(request.form.get("is_required")),
+        request.form.get("sort_order", "0")
+    )
+    if error:
+        return redirect(url_for("admin_users", error=error))
+    return redirect(url_for("admin_users", message="Account field updated."))
+
+
+@app.route("/admin/account-fields/<int:field_id>/deactivate", methods=("POST",))
+@admin_required
+def admin_deactivate_account_field(field_id):
+    set_account_field_active(field_id, False)
+    return redirect(url_for("admin_users", message="Account field removed from account forms."))
+
+
+@app.route("/admin/account-fields/<int:field_id>/reactivate", methods=("POST",))
+@admin_required
+def admin_reactivate_account_field(field_id):
+    set_account_field_active(field_id, True)
+    return redirect(url_for("admin_users", message="Account field restored to account forms."))
 
 
 @app.route("/admin/users/<int:user_id>/deactivate", methods=("POST",))
@@ -257,6 +319,66 @@ def build_change_log(existing_record, new_values, labels):
             label = labels.get(field_name, field_name)
             changes.append(f"{label} changed from '{old_value}' to '{new_value}'")
 
+    return changes
+
+
+def account_custom_field_payload(active_only=True):
+    return [dict(field) for field in list_account_field_definitions(active_only=active_only)]
+
+
+def load_account_custom_values(connection, account_id):
+    rows = connection.execute(
+        """
+        SELECT field_key, field_value
+        FROM account_custom_values
+        WHERE account_id = ?
+        """,
+        (account_id,),
+    ).fetchall()
+    return {row["field_key"]: row["field_value"] for row in rows}
+
+
+def save_account_custom_values(connection, account_id, fields, form):
+    for field in fields:
+        field_key = field["field_key"]
+        value = (form.get(f"custom_{field_key}") or "").strip()
+        existing = connection.execute(
+            """
+            SELECT id
+            FROM account_custom_values
+            WHERE account_id = ?
+              AND field_key = ?
+            """,
+            (account_id, field_key),
+        ).fetchone()
+        if existing:
+            connection.execute(
+                """
+                UPDATE account_custom_values
+                SET field_value = ?,
+                    last_updated = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (value, existing["id"]),
+            )
+        else:
+            connection.execute(
+                """
+                INSERT INTO account_custom_values (account_id, field_key, field_value)
+                VALUES (?, ?, ?)
+                """,
+                (account_id, field_key, value),
+            )
+
+
+def build_custom_field_changes(fields, old_values, form):
+    changes = []
+    for field in fields:
+        key = field["field_key"]
+        old_value = old_values.get(key) or ""
+        new_value = (form.get(f"custom_{key}") or "").strip()
+        if str(old_value) != str(new_value):
+            changes.append(f"{field['field_label']} changed from '{old_value}' to '{new_value}'")
     return changes
 
 
@@ -1334,9 +1456,10 @@ def add_partner_account_relationship(partner_id):
 
 @app.route("/accounts/add", methods=("GET", "POST"))
 def add_account():
+    custom_fields = account_custom_field_payload(active_only=True)
     if request.method == "POST":
         connection = get_db_connection()
-        connection.execute("""
+        cursor = connection.execute("""
             INSERT INTO accounts
             (account_name, account_tier, industry, business_unit, country, city, website, pipeline_target, notes)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1351,11 +1474,13 @@ def add_account():
             request.form.get("pipeline_target"),
             request.form.get("notes")
         ))
+        account_id = cursor.lastrowid
+        save_account_custom_values(connection, account_id, custom_fields, request.form)
         connection.commit()
         connection.close()
         return redirect(url_for("accounts"))
 
-    return render_template("add_account.html")
+    return render_template("add_account.html", custom_fields=custom_fields)
 
 
 @app.route("/accounts/<int:account_id>")
@@ -1459,6 +1584,9 @@ def view_account(account_id):
         ORDER BY date_created DESC
     """, (account_id,)).fetchall()
 
+    custom_fields = account_custom_field_payload(active_only=True)
+    custom_values = load_account_custom_values(connection, account_id)
+
     connection.close()
 
     return render_template(
@@ -1469,7 +1597,9 @@ def view_account(account_id):
         account_contacts=account_contacts,
         account_partners=account_partners,
         partner_options=partner_options,
-        timeline_entries=timeline_entries
+        timeline_entries=timeline_entries,
+        custom_fields=custom_fields,
+        custom_values=custom_values
     )
 
 
@@ -1662,6 +1792,8 @@ def edit_account(account_id):
         "SELECT * FROM accounts WHERE id = ?",
         (account_id,)
     ).fetchone()
+    custom_fields = account_custom_field_payload(active_only=True)
+    custom_values = load_account_custom_values(connection, account_id)
 
     if request.method == "POST":
         new_values = {
@@ -1689,6 +1821,7 @@ def edit_account(account_id):
         }
 
         changes = build_change_log(account, new_values, labels)
+        changes.extend(build_custom_field_changes(custom_fields, custom_values, request.form))
 
         connection.execute("""
             UPDATE accounts
@@ -1716,6 +1849,8 @@ def edit_account(account_id):
             account_id
         ))
 
+        save_account_custom_values(connection, account_id, custom_fields, request.form)
+
         if changes:
             add_timeline_entry(
                 connection,
@@ -1731,14 +1866,21 @@ def edit_account(account_id):
         return redirect(url_for("view_account", account_id=account_id))
 
     connection.close()
-    return render_template("edit_account.html", account=account)
+    return render_template(
+        "edit_account.html",
+        account=account,
+        custom_fields=custom_fields,
+        custom_values=custom_values
+    )
 
 
 @app.route("/accounts/<int:account_id>/delete", methods=("POST",))
+@admin_required
 def delete_account(account_id):
     connection = get_db_connection()
     connection.execute("DELETE FROM timeline_entries WHERE related_type = 'account' AND related_id = ?", (account_id,))
     connection.execute("DELETE FROM account_partners WHERE account_id = ?", (account_id,))
+    connection.execute("DELETE FROM account_custom_values WHERE account_id = ?", (account_id,))
     connection.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
     connection.commit()
     connection.close()

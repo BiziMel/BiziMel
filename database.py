@@ -168,6 +168,18 @@ def initialise_database():
     """)
 
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS account_custom_values (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            field_key TEXT NOT NULL,
+            field_value TEXT,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(account_id) REFERENCES accounts(id)
+        )
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS timeline_entries (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             related_type TEXT NOT NULL,
@@ -190,6 +202,13 @@ def initialise_database():
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # Safe migrations for account custom values
+    add_column_if_missing(cursor, "account_custom_values", "account_id", "INTEGER")
+    add_column_if_missing(cursor, "account_custom_values", "field_key", "TEXT")
+    add_column_if_missing(cursor, "account_custom_values", "field_value", "TEXT")
+    add_column_if_missing(cursor, "account_custom_values", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "account_custom_values", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
 
     # Safe migrations for accounts
     add_column_if_missing(cursor, "accounts", "business_unit", "TEXT")

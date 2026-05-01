@@ -10,6 +10,8 @@ from db_compat import get_connection, using_postgres
 
 AUTH_DB_NAME = "pipeflow_server_auth.db"
 VALID_ROLES = {"admin", "manager", "user"}
+VALID_ACCOUNT_FIELD_TYPES = {"text", "number", "date", "textarea"}
+
 
 
 def server_data_root() -> Path:
@@ -80,6 +82,19 @@ def initialise_auth_database() -> None:
                 last_updated TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS account_field_definitions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            field_key TEXT NOT NULL UNIQUE,
+            field_label TEXT NOT NULL,
+            field_type TEXT NOT NULL DEFAULT 'text',
+            is_required INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            sort_order INTEGER DEFAULT 0,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     add_column_if_missing(connection, "users", "reset_phrase_hash", "TEXT")
     connection.commit()
     connection.close()
@@ -303,3 +318,121 @@ def set_user_role(user_id: int, role: str):
     connection.commit()
     connection.close()
     return ""
+
+
+
+def account_field_key(label: str) -> str:
+    import re
+    key = re.sub(r"[^a-zA-Z0-9]+", "_", (label or "").strip().lower()).strip("_")
+    if not key:
+        key = "custom_field"
+    if key[0].isdigit():
+        key = f"field_{key}"
+    return key[:40]
+
+
+def list_account_field_definitions(active_only: bool = False):
+    connection = get_auth_connection()
+    query = """
+        SELECT *
+        FROM account_field_definitions
+    """
+    params = []
+    if active_only:
+        query += " WHERE is_active = ?"
+        params.append(1)
+    query += " ORDER BY sort_order, field_label"
+    fields = connection.execute(query, params).fetchall()
+    connection.close()
+    return fields
+
+
+def create_account_field_definition(label: str, field_type: str, is_required: bool):
+    label = (label or "").strip()
+    field_type = (field_type or "text").strip().lower()
+    if not label:
+        return "Field label is required."
+    if field_type not in VALID_ACCOUNT_FIELD_TYPES:
+        return "Choose a valid field type."
+
+    connection = get_auth_connection()
+    try:
+        base_key = account_field_key(label)
+        field_key = base_key
+        suffix = 2
+        while connection.execute(
+            "SELECT id FROM account_field_definitions WHERE field_key = ?",
+            (field_key,),
+        ).fetchone():
+            field_key = f"{base_key[:35]}_{suffix}"
+            suffix += 1
+
+        row = connection.execute("SELECT COALESCE(MAX(sort_order), 0) + 10 AS next_order FROM account_field_definitions").fetchone()
+        sort_order = row["next_order"] if row else 10
+        connection.execute(
+            """
+            INSERT INTO account_field_definitions (
+                field_key,
+                field_label,
+                field_type,
+                is_required,
+                is_active,
+                sort_order
+            )
+            VALUES (?, ?, ?, ?, 1, ?)
+            """,
+            (field_key, label, field_type, 1 if is_required else 0, sort_order),
+        )
+        connection.commit()
+        return ""
+    except Exception as exc:
+        if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+            return "A field with that label already exists."
+        raise
+    finally:
+        connection.close()
+
+
+def update_account_field_definition(field_id: int, label: str, field_type: str, is_required: bool, sort_order: str):
+    label = (label or "").strip()
+    field_type = (field_type or "text").strip().lower()
+    if not label:
+        return "Field label is required."
+    if field_type not in VALID_ACCOUNT_FIELD_TYPES:
+        return "Choose a valid field type."
+    try:
+        sort_value = int(sort_order or 0)
+    except ValueError:
+        sort_value = 0
+
+    connection = get_auth_connection()
+    connection.execute(
+        """
+        UPDATE account_field_definitions
+        SET field_label = ?,
+            field_type = ?,
+            is_required = ?,
+            sort_order = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (label, field_type, 1 if is_required else 0, sort_value, field_id),
+    )
+    connection.commit()
+    connection.close()
+    return ""
+
+
+def set_account_field_active(field_id: int, is_active: bool):
+    connection = get_auth_connection()
+    connection.execute(
+        """
+        UPDATE account_field_definitions
+        SET is_active = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (1 if is_active else 0, field_id),
+    )
+    connection.commit()
+    connection.close()

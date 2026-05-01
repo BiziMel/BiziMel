@@ -40,6 +40,21 @@
     <label>Notes</label>
     <textarea name="notes"></textarea>
 
+    {% if custom_fields %}
+        <h3>Additional Account Fields</h3>
+        {% for field in custom_fields %}
+            <label>{{ field.field_label }}{% if field.is_required %} *{% endif %}</label>
+            {% if field.field_type == "textarea" %}
+                <textarea name="custom_{{ field.field_key }}" {% if field.is_required %}required{% endif %}></textarea>
+            {% else %}
+                <input type="{{ 'number' if field.field_type == 'number' else 'date' if field.field_type == 'date' else 'text' }}"
+                       name="custom_{{ field.field_key }}"
+                       {% if field.field_type == 'number' %}step="0.01"{% endif %}
+                       {% if field.is_required %}required{% endif %}>
+            {% endif %}
+        {% endfor %}
+    {% endif %}
+
     <button type="submit">Save Account</button>
 
 </form>
