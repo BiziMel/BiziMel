@@ -2142,3 +2142,38 @@ a:hover {
         min-height: 34px;
     }
 }
+
+
+.sortable-heading {
+    position: relative;
+    cursor: pointer;
+    user-select: none;
+    padding-right: 26px !important;
+}
+
+.sortable-heading::after {
+    content: "+";
+    position: absolute;
+    right: 9px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.sortable-heading[data-sort-direction="asc"]::after {
+    content: "^";
+    color: #0f172a;
+}
+
+.sortable-heading[data-sort-direction="desc"]::after {
+    content: "v";
+    color: #0f172a;
+}
+
+.sortable-heading:hover,
+.sortable-heading:focus {
+    background: #eaf4e8;
+    outline: none;
+}
