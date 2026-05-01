@@ -1326,3 +1326,47 @@ a:hover {
         grid-template-columns: 1fr;
     }
 }
+
+
+.account-field-purpose {
+    background: #f8fafc;
+    border: 1px solid #dbe4f0;
+    border-left: 4px solid #2563eb;
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin: 10px 0 16px;
+}
+
+.account-field-purpose strong {
+    display: block;
+    color: #0f172a;
+    margin-bottom: 6px;
+}
+
+.account-field-purpose p {
+    margin: 0;
+    color: #475569;
+    line-height: 1.45;
+}
+
+.admin-audit-card {
+    margin-top: 20px;
+}
+
+.audit-table td {
+    vertical-align: top;
+}
+
+.audit-action-pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: #eef6ff;
+    color: #164e9f;
+    border: 1px solid #b8d7ff;
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+}

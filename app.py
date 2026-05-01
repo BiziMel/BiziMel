@@ -10,7 +10,7 @@ import traceback
 from datetime import datetime, timedelta
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema
@@ -190,6 +190,7 @@ def render_admin_permissions():
         "admin_permissions.html",
         users=list_users(),
         account_fields=list_account_field_definitions(active_only=False),
+        audit_entries=list_admin_audit_entries(limit=75),
         message=request.args.get("message", ""),
         error=request.args.get("error", "")
     )
@@ -221,12 +222,20 @@ def admin_add_account_field():
     )
     if error:
         return redirect(url_for("admin_users", error=error))
+    log_admin_audit(
+        current_user(),
+        "Account field added",
+        "Account field",
+        request.form.get("field_label", ""),
+        f"Type: {request.form.get('field_type', 'text')}; Required: {'Yes' if request.form.get('is_required') else 'No'}"
+    )
     return redirect(url_for("admin_users", message="Account field added."))
 
 
 @app.route("/admin/account-fields/<int:field_id>/update", methods=("POST",))
 @admin_required
 def admin_update_account_field(field_id):
+    before = get_account_field_definition(field_id)
     error = update_account_field_definition(
         field_id,
         request.form.get("field_label", ""),
@@ -236,20 +245,44 @@ def admin_update_account_field(field_id):
     )
     if error:
         return redirect(url_for("admin_users", error=error))
+    before_label = before["field_label"] if before else "Unknown field"
+    detail = (
+        f"Label: {before_label} to {request.form.get('field_label', '')}; "
+        f"Type: {request.form.get('field_type', 'text')}; "
+        f"Required: {'Yes' if request.form.get('is_required') else 'No'}; "
+        f"Order: {request.form.get('sort_order', '0')}"
+    )
+    log_admin_audit(current_user(), "Account field updated", "Account field", request.form.get("field_label", ""), detail)
     return redirect(url_for("admin_users", message="Account field updated."))
 
 
 @app.route("/admin/account-fields/<int:field_id>/deactivate", methods=("POST",))
 @admin_required
 def admin_deactivate_account_field(field_id):
+    field = get_account_field_definition(field_id)
     set_account_field_active(field_id, False)
+    log_admin_audit(
+        current_user(),
+        "Account field removed",
+        "Account field",
+        field["field_label"] if field else f"Field {field_id}",
+        "Field hidden from account forms. Existing values are retained."
+    )
     return redirect(url_for("admin_users", message="Account field removed from account forms."))
 
 
 @app.route("/admin/account-fields/<int:field_id>/reactivate", methods=("POST",))
 @admin_required
 def admin_reactivate_account_field(field_id):
+    field = get_account_field_definition(field_id)
     set_account_field_active(field_id, True)
+    log_admin_audit(
+        current_user(),
+        "Account field restored",
+        "Account field",
+        field["field_label"] if field else f"Field {field_id}",
+        "Field restored to account forms."
+    )
     return redirect(url_for("admin_users", message="Account field restored to account forms."))
 
 
@@ -258,14 +291,30 @@ def admin_reactivate_account_field(field_id):
 def admin_deactivate_user(user_id):
     if user_id == session.get("user_id"):
         return redirect(url_for("admin_users", error="You cannot deactivate your own admin profile."))
+    user = get_user_for_admin(user_id)
     set_user_active(user_id, False)
+    log_admin_audit(
+        current_user(),
+        "Profile deactivated",
+        "User",
+        user["email"] if user else f"User {user_id}",
+        "User sign-in access was paused."
+    )
     return redirect(url_for("admin_users", message="Profile deactivated."))
 
 
 @app.route("/admin/users/<int:user_id>/reactivate", methods=("POST",))
 @admin_required
 def admin_reactivate_user(user_id):
+    user = get_user_for_admin(user_id)
     set_user_active(user_id, True)
+    log_admin_audit(
+        current_user(),
+        "Profile reactivated",
+        "User",
+        user["email"] if user else f"User {user_id}",
+        "User sign-in access was restored."
+    )
     return redirect(url_for("admin_users", message="Profile reactivated."))
 
 
@@ -274,18 +323,36 @@ def admin_reactivate_user(user_id):
 def admin_update_user_role(user_id):
     if user_id == session.get("user_id"):
         return redirect(url_for("admin_users", error="You cannot change your own admin role."))
-    error = set_user_role(user_id, request.form.get("role", ""))
+    user = get_user_for_admin(user_id)
+    old_role = user["role"] if user else "unknown"
+    new_role = request.form.get("role", "")
+    error = set_user_role(user_id, new_role)
     if error:
         return redirect(url_for("admin_users", error=error))
+    log_admin_audit(
+        current_user(),
+        "Role updated",
+        "User",
+        user["email"] if user else f"User {user_id}",
+        f"Role changed from {old_role} to {new_role}."
+    )
     return redirect(url_for("admin_users", message="Role updated."))
 
 
 @app.route("/admin/users/<int:user_id>/reset-password", methods=("POST",))
 @admin_required
 def admin_reset_user_password(user_id):
+    user = get_user_for_admin(user_id)
     error = reset_user_password(user_id, request.form.get("password", ""))
     if error:
         return redirect(url_for("admin_users", error=error))
+    log_admin_audit(
+        current_user(),
+        "Password reset",
+        "User",
+        user["email"] if user else f"User {user_id}",
+        "Admin reset this user's password."
+    )
     return redirect(url_for("admin_users", message="Password reset."))
 
 

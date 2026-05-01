@@ -95,6 +95,19 @@ def initialise_auth_database() -> None:
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS admin_audit_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            actor_user_id INTEGER,
+            actor_name TEXT,
+            actor_email TEXT,
+            action_type TEXT NOT NULL,
+            target_type TEXT,
+            target_label TEXT,
+            detail TEXT,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     add_column_if_missing(connection, "users", "reset_phrase_hash", "TEXT")
     connection.commit()
     connection.close()
@@ -436,3 +449,76 @@ def set_account_field_active(field_id: int, is_active: bool):
     )
     connection.commit()
     connection.close()
+
+
+
+def get_user_for_admin(user_id: int):
+    connection = get_auth_connection()
+    user = connection.execute(
+        """
+        SELECT id, email, full_name, role, is_active
+        FROM users
+        WHERE id = ?
+        """,
+        (user_id,),
+    ).fetchone()
+    connection.close()
+    return user
+
+
+def get_account_field_definition(field_id: int):
+    connection = get_auth_connection()
+    field = connection.execute(
+        """
+        SELECT *
+        FROM account_field_definitions
+        WHERE id = ?
+        """,
+        (field_id,),
+    ).fetchone()
+    connection.close()
+    return field
+
+
+def log_admin_audit(actor, action_type: str, target_type: str = "", target_label: str = "", detail: str = ""):
+    connection = get_auth_connection()
+    connection.execute(
+        """
+        INSERT INTO admin_audit_entries (
+            actor_user_id,
+            actor_name,
+            actor_email,
+            action_type,
+            target_type,
+            target_label,
+            detail
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            actor["id"] if actor else None,
+            actor["full_name"] if actor else "System",
+            actor["email"] if actor else "",
+            action_type,
+            target_type,
+            target_label,
+            detail,
+        ),
+    )
+    connection.commit()
+    connection.close()
+
+
+def list_admin_audit_entries(limit: int = 50):
+    connection = get_auth_connection()
+    rows = connection.execute(
+        """
+        SELECT *
+        FROM admin_audit_entries
+        ORDER BY date_created DESC, id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    connection.close()
+    return rows
