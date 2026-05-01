@@ -7,7 +7,7 @@
 <div class="page-header">
     <div>
         <h1>Campaign Builder</h1>
-        <p>Build a 4-week outreach sequence leading into PG week.</p>
+        <p>Build a timed outreach sequence with the right weekly task volume leading into PG week.</p>
     </div>
 
     <a href="{{ url_for('outreach') }}" class="btn btn-secondary">Back to Outreach</a>
@@ -46,6 +46,48 @@
                        name="pg_week_start"
                        value="{{ selected_pg_week_start }}"
                        required>
+            </div>
+
+            <div class="form-group">
+                <label for="campaign_start_date">Campaign Start</label>
+                <input type="date"
+                       id="campaign_start_date"
+                       name="campaign_start_date"
+                       value="{{ selected_campaign_start }}"
+                       required>
+            </div>
+
+            <div class="form-group">
+                <label for="campaign_end_date">Campaign End</label>
+                <input type="date"
+                       id="campaign_end_date"
+                       name="campaign_end_date"
+                       value="{{ selected_campaign_end }}"
+                       required>
+            </div>
+
+            <div class="form-group">
+                <label for="total_outreach_tasks">Qty Outreach Tasks</label>
+                <input type="number"
+                       id="total_outreach_tasks"
+                       name="total_outreach_tasks"
+                       min="1"
+                       max="50"
+                       value="{{ selected_total_tasks or '8' }}"
+                       required>
+                <p class="field-help">Total generated for each selected contact and sales play.</p>
+            </div>
+
+            <div class="form-group">
+                <label for="times_per_week">Qty Times Per Week</label>
+                <input type="number"
+                       id="times_per_week"
+                       name="times_per_week"
+                       min="1"
+                       max="7"
+                       value="{{ selected_times_per_week or '2' }}"
+                       required>
+                <p class="field-help">Maximum task frequency per week.</p>
             </div>
 
             <div class="form-group">
@@ -121,4 +163,39 @@
     </form>
 </div>
 
+<script>
+    const pgWeekInput = document.getElementById("pg_week_start");
+    const campaignStartInput = document.getElementById("campaign_start_date");
+    const campaignEndInput = document.getElementById("campaign_end_date");
+
+    function isoDate(date) {
+        return date.toISOString().slice(0, 10);
+    }
+
+    function setDefaultCampaignWindow() {
+        if (!pgWeekInput || !pgWeekInput.value) {
+            return;
+        }
+        const pgWeekStart = new Date(`${pgWeekInput.value}T00:00:00`);
+        if (!campaignStartInput.value) {
+            const startDate = new Date(pgWeekStart);
+            startDate.setDate(startDate.getDate() - 28);
+            campaignStartInput.value = isoDate(startDate);
+        }
+        if (!campaignEndInput.value) {
+            const endDate = new Date(pgWeekStart);
+            endDate.setDate(endDate.getDate() - 1);
+            campaignEndInput.value = isoDate(endDate);
+        }
+    }
+
+    if (pgWeekInput) {
+        pgWeekInput.addEventListener("change", () => {
+            campaignStartInput.value = "";
+            campaignEndInput.value = "";
+            setDefaultCampaignWindow();
+        });
+        setDefaultCampaignWindow();
+    }
+</script>
 {% endblock %}

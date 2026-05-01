@@ -107,6 +107,10 @@ def initialise_database(force=False):
             contact_id INTEGER,
             campaign TEXT,
             sales_play TEXT,
+            campaign_start_date TEXT,
+            campaign_end_date TEXT,
+            campaign_tasks_per_week INTEGER,
+            campaign_total_tasks INTEGER,
             activity_date TEXT,
             activity_time TEXT,
             activity_type TEXT,
@@ -232,6 +236,10 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "outreach", "quarter", "TEXT")
     add_column_if_missing(cursor, "outreach", "campaign", "TEXT")
     add_column_if_missing(cursor, "outreach", "sales_play", "TEXT")
+    add_column_if_missing(cursor, "outreach", "campaign_start_date", "TEXT")
+    add_column_if_missing(cursor, "outreach", "campaign_end_date", "TEXT")
+    add_column_if_missing(cursor, "outreach", "campaign_tasks_per_week", "INTEGER")
+    add_column_if_missing(cursor, "outreach", "campaign_total_tasks", "INTEGER")
     add_column_if_missing(cursor, "outreach", "activity_time", "TEXT")
     add_column_if_missing(cursor, "outreach", "next_action_time", "TEXT")
     add_column_if_missing(cursor, "outreach", "task_status", "TEXT DEFAULT 'Not Started'")

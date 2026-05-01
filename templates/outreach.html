@@ -95,6 +95,10 @@
                         <th>Quarter</th>
                         <th>Campaign</th>
                         <th>Sales Play</th>
+                        <th>Campaign Start</th>
+                        <th>Campaign End</th>
+                        <th>Total Tasks</th>
+                        <th>Times / Week</th>
                         <th>Date</th>
                         <th>Time</th>
                         <th>Account</th>
@@ -113,32 +117,48 @@
                 <tbody>
                     {% for item in outreach_records %}
                         <tr>
-                            <td>{{ item.fy or "—" }}</td>
-                            <td>{{ item.quarter or "—" }}</td>
-                            <td>{{ item.campaign or "—" }}</td>
-                            <td>{{ item.sales_play or "—" }}</td>
+                            <td>{{ item.fy or "-" }}</td>
+                            <td>{{ item.quarter or "-" }}</td>
+                            <td>{{ item.campaign or "-" }}</td>
+                            <td>{{ item.sales_play or "-" }}</td>
+                            <td>
+                                {% if item.campaign_start_date %}
+                                    {{ item.campaign_start_date[8:10] }}-{{ item.campaign_start_date[5:7] }}-{{ item.campaign_start_date[0:4] }}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if item.campaign_end_date %}
+                                    {{ item.campaign_end_date[8:10] }}-{{ item.campaign_end_date[5:7] }}-{{ item.campaign_end_date[0:4] }}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td>{{ item.campaign_total_tasks or "-" }}</td>
+                            <td>{{ item.campaign_tasks_per_week or "-" }}</td>
                             <td>
     {% if item.activity_date %}
         {{ item.activity_date[8:10] }}-{{ item.activity_date[5:7] }}-{{ item.activity_date[0:4] }}
     {% else %}
-        —
+        -
     {% endif %}
 </td>
-                            <td>{{ item.activity_time or "—" }}</td>
-                            <td>{{ item.account_name or "—" }}</td>
-                            <td>{{ "Tier " ~ item.account_tier if item.account_tier else "—" }}</td>
-                            <td>{{ item.contact_name or "—" }}</td>
-                            <td>{{ item.activity_type or "—" }}</td>
-                            <td>{{ item.subject or "—" }}</td>
-                            <td>{{ item.outcome or "—" }}</td>
-                            <td>{{ item.next_action or "—" }}</td>
+                            <td>{{ item.activity_time or "-" }}</td>
+                            <td>{{ item.account_name or "-" }}</td>
+                            <td>{{ "Tier " ~ item.account_tier if item.account_tier else "-" }}</td>
+                            <td>{{ item.contact_name or "-" }}</td>
+                            <td>{{ item.activity_type or "-" }}</td>
+                            <td>{{ item.subject or "-" }}</td>
+                            <td>{{ item.outcome or "-" }}</td>
+                            <td>{{ item.next_action or "-" }}</td>
 <td>
     {% if item.next_action_date %}
         {{ item.next_action_date[8:10] }}-{{ item.next_action_date[5:7] }}-{{ item.next_action_date[0:4] }}
     {% else %}
-        —
+        -
     {% endif %}
-</td>                            <td>{{ item.next_action_time or "—" }}</td>
+</td>                            <td>{{ item.next_action_time or "-" }}</td>
 
                             <td>
                                 <div class="table-actions outreach-actions">
