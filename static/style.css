@@ -773,6 +773,7 @@ a:hover {
 .report-table {
     width: 100%;
     max-width: 100%;
+    min-width: max-content;
     border-collapse: separate;
     border-spacing: 0;
     font-size: 15px;
@@ -785,14 +786,20 @@ a:hover {
     text-align: left;
     padding: 16px;
     border-bottom: 2px solid #c7d2fe;
-    overflow-wrap: anywhere;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
 }
 
 .report-table td {
     padding: 16px;
     border-bottom: 1px solid #e5e7eb;
     vertical-align: top;
-    overflow-wrap: anywhere;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
 }
 
 .report-table tr:hover td {
@@ -892,6 +899,10 @@ a:hover {
     padding: 7px 8px;
     vertical-align: top;
     font-size: 12px;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
 }
 
 .outreach-table th {
@@ -2030,12 +2041,17 @@ body {
 
 .dashboard-task-table {
     font-size: 12px;
+    min-width: max-content;
 }
 
 .dashboard-task-table th,
 .dashboard-task-table td {
     padding: 10px;
     vertical-align: top;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
 }
 
 .dashboard-task-table select {
@@ -2048,7 +2064,7 @@ body {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
     gap: 6px;
-    min-width: 0;
+    min-width: 248px;
 }
 
 .dashboard-task-due-controls input {
@@ -2198,5 +2214,9 @@ body {
     .report-table th,
     .report-table td {
         padding: 8px;
+        white-space: nowrap;
+        overflow-wrap: normal;
+        word-break: normal;
+        hyphens: none;
     }
 }
