@@ -77,7 +77,7 @@ def version_health():
     from db_compat import translate_sql
     sample = "datetime(next_action_date || ' ' || IFNULL(next_action_time, '00:00')) < datetime('now', '-1 hour')"
     lines = [
-        "pipeflow_server_build=2026-05-04-contained-table-wrapping-v1",
+        "pipeflow_server_build=2026-05-04-this-week-command-centre-v1",
         f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
         f"translation_check={translate_sql(sample)}",
     ]
@@ -992,6 +992,14 @@ def home():
 def render_dashboard_fallback():
     return render_template(
         "index.html",
+        this_week_due=0,
+        this_week_completed=0,
+        this_week_overdue=0,
+        this_week_untouched_accounts=0,
+        this_week_meetings_booked=0,
+        this_week_pipeline_created=0,
+        this_week_start="",
+        this_week_end="",
         total_accounts=0,
         total_contacts=0,
         total_outreach=0,
@@ -1023,6 +1031,70 @@ def build_dashboard_response(connection):
     total_accounts = connection.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
     total_contacts = connection.execute("SELECT COUNT(*) FROM contacts").fetchone()[0]
     total_outreach = connection.execute("SELECT COUNT(*) FROM outreach").fetchone()[0]
+    today = datetime.now().date()
+    week_start = today - timedelta(days=today.weekday())
+    week_end = week_start + timedelta(days=6)
+    week_start_key = week_start.isoformat()
+    week_end_key = week_end.isoformat()
+
+    all_accounts = connection.execute("""
+        SELECT id, account_name, pipeline_target
+        FROM accounts
+    """).fetchall()
+
+    weekly_outreach_rows = connection.execute("""
+        SELECT
+            outreach.*,
+            accounts.pipeline_target
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+    """).fetchall()
+
+    def parse_dashboard_date(value):
+        if not value:
+            return None
+        try:
+            return datetime.strptime(str(value), "%Y-%m-%d").date()
+        except ValueError:
+            return None
+
+    def task_completed(row):
+        return (row["task_status"] or "") == "Completed"
+
+    this_week_due = 0
+    this_week_completed = 0
+    this_week_overdue = 0
+    this_week_meetings_booked = 0
+    this_week_pipeline_created = 0
+    touched_account_ids = set()
+
+    for row in weekly_outreach_rows:
+        next_action_date = parse_dashboard_date(row["next_action_date"])
+        activity_date = parse_dashboard_date(row["activity_date"])
+
+        if next_action_date and week_start <= next_action_date <= week_end and not task_completed(row):
+            this_week_due += 1
+
+        if next_action_date and next_action_date < today and not task_completed(row):
+            this_week_overdue += 1
+
+        if task_completed(row):
+            last_updated_date = parse_dashboard_date(str(row["last_updated"] or "")[:10])
+            if last_updated_date and week_start <= last_updated_date <= week_end:
+                this_week_completed += 1
+
+        if activity_date and week_start <= activity_date <= week_end:
+            if row["account_id"]:
+                touched_account_ids.add(row["account_id"])
+            if row["outcome"] == "Meeting Booked" or row["activity_type"] == "Meeting":
+                this_week_meetings_booked += 1
+            if row["outcome"] in ("Meeting Booked", "Positive Response", "Referral Made"):
+                this_week_pipeline_created += row["pipeline_target"] or 0
+
+    this_week_untouched_accounts = max(
+        0,
+        len(all_accounts) - len(touched_account_ids)
+    )
 
     meetings_booked = connection.execute("""
         SELECT COUNT(*) FROM outreach
@@ -1306,6 +1378,14 @@ def build_dashboard_response(connection):
 
     return render_template(
         "index.html",
+        this_week_due=this_week_due,
+        this_week_completed=this_week_completed,
+        this_week_overdue=this_week_overdue,
+        this_week_untouched_accounts=this_week_untouched_accounts,
+        this_week_meetings_booked=this_week_meetings_booked,
+        this_week_pipeline_created=this_week_pipeline_created,
+        this_week_start=week_start_key,
+        this_week_end=week_end_key,
         total_accounts=total_accounts,
         total_contacts=total_contacts,
         total_outreach=total_outreach,

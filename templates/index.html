@@ -27,354 +27,381 @@
     </section>
 {% endif %}
 
-<div class="dashboard-top-stack">
-<section class="form-card dashboard-snapshot-card dashboard-snapshot-row">
-        <div class="section-header">
-            <div>
-                <h2>Pipeline Snapshot</h2>
-                <p>Your current account, contact, outreach and follow-up position.</p>
+<div class="dashboard-command-layout">
+    <main class="dashboard-command-main">
+        <section class="form-card dashboard-week-card">
+            <div class="section-header">
+                <div>
+                    <h2>This Week Command Centre</h2>
+                    <p>{{ this_week_start }} to {{ this_week_end }}</p>
+                </div>
             </div>
-        </div>
 
-        <div class="pipeline-snapshot-grid compact-snapshot-grid">
-            <a href="{{ url_for('accounts') }}" class="metric-card-link">
-                <div class="metric-card">
-                    <h3>Total Accounts</h3>
-                    <p class="metric-number">{{ total_accounts }}</p>
-                </div>
-            </a>
-
-            <a href="{{ url_for('contacts') }}" class="metric-card-link">
-                <div class="metric-card">
-                    <h3>Total Contacts</h3>
-                    <p class="metric-number">{{ total_contacts }}</p>
-                </div>
-            </a>
-
-            <a href="{{ url_for('outreach') }}" class="metric-card-link">
-                <div class="metric-card">
-                    <h3>Total Outreach</h3>
-                    <p class="metric-number">{{ total_outreach }}</p>
-                </div>
-            </a>
-
-            <a href="{{ url_for('outreach') }}" class="metric-card-link">
-                <div class="metric-card">
-                    <h3>Meetings Booked</h3>
-                    <p class="metric-number">{{ meetings_booked }}</p>
-                </div>
-            </a>
-
-            <a href="#dashboard-tasks" class="metric-card-link">
-                <div class="metric-card">
-                    <h3>Follow-ups Due</h3>
-                    <p class="metric-number">{{ follow_ups_due }}</p>
-                    <p class="metric-subtext">Overdue and next 7 days</p>
-                </div>
-            </a>
-        </div>
-</section>
-
-<section class="form-card dashboard-task-card" id="dashboard-tasks">
-        <div class="section-header">
-            <div>
-                <h2>Tasks</h2>
-                <p>Update priority follow-ups directly from the dashboard.</p>
+            <div class="dashboard-week-grid">
+                <a href="#dashboard-tasks" class="metric-card-link">
+                    <div class="metric-card compact-command-card">
+                        <h3>Due This Week</h3>
+                        <p class="metric-number">{{ this_week_due }}</p>
+                    </div>
+                </a>
+                <a href="{{ url_for('reports') }}" class="metric-card-link">
+                    <div class="metric-card compact-command-card">
+                        <h3>Completed This Week</h3>
+                        <p class="metric-number">{{ this_week_completed }}</p>
+                    </div>
+                </a>
+                <a href="#dashboard-tasks" class="metric-card-link">
+                    <div class="metric-card compact-command-card command-risk-card">
+                        <h3>Overdue Actions</h3>
+                        <p class="metric-number">{{ this_week_overdue }}</p>
+                    </div>
+                </a>
+                <a href="{{ url_for('accounts') }}" class="metric-card-link">
+                    <div class="metric-card compact-command-card">
+                        <h3>Untouched Accounts</h3>
+                        <p class="metric-number">{{ this_week_untouched_accounts }}</p>
+                    </div>
+                </a>
+                <a href="{{ url_for('outreach') }}" class="metric-card-link">
+                    <div class="metric-card compact-command-card">
+                        <h3>Meetings Booked</h3>
+                        <p class="metric-number">{{ this_week_meetings_booked }}</p>
+                    </div>
+                </a>
+                <a href="{{ url_for('reports') }}" class="metric-card-link">
+                    <div class="metric-card compact-command-card">
+                        <h3>Pipeline Created</h3>
+                        <p class="metric-number">${{ "{:,.0f}".format(this_week_pipeline_created or 0) }}</p>
+                    </div>
+                </a>
             </div>
-        </div>
+        </section>
 
-        {% if dashboard_tasks %}
-            <div class="dashboard-task-table-wrap">
-                <table class="report-table dashboard-task-table no-sort">
-                    <thead>
-                        <tr>
-                            <th>Due</th>
-                            <th>Account</th>
-                            <th>Next Action</th>
-                            <th>Status</th>
-                            <th>Outcome</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for item in dashboard_tasks %}
+        <section class="form-card dashboard-snapshot-card dashboard-snapshot-row">
+            <div class="section-header">
+                <div>
+                    <h2>Pipeline Snapshot</h2>
+                    <p>Your current account, contact, outreach and follow-up position.</p>
+                </div>
+            </div>
+
+            <div class="pipeline-snapshot-grid compact-snapshot-grid">
+                <a href="{{ url_for('accounts') }}" class="metric-card-link">
+                    <div class="metric-card">
+                        <h3>Total Accounts</h3>
+                        <p class="metric-number">{{ total_accounts }}</p>
+                    </div>
+                </a>
+                <a href="{{ url_for('contacts') }}" class="metric-card-link">
+                    <div class="metric-card">
+                        <h3>Total Contacts</h3>
+                        <p class="metric-number">{{ total_contacts }}</p>
+                    </div>
+                </a>
+                <a href="{{ url_for('outreach') }}" class="metric-card-link">
+                    <div class="metric-card">
+                        <h3>Total Outreach</h3>
+                        <p class="metric-number">{{ total_outreach }}</p>
+                    </div>
+                </a>
+                <a href="{{ url_for('outreach') }}" class="metric-card-link">
+                    <div class="metric-card">
+                        <h3>Meetings Booked</h3>
+                        <p class="metric-number">{{ meetings_booked }}</p>
+                    </div>
+                </a>
+                <a href="#dashboard-tasks" class="metric-card-link">
+                    <div class="metric-card">
+                        <h3>Follow-ups Due</h3>
+                        <p class="metric-number">{{ follow_ups_due }}</p>
+                        <p class="metric-subtext">Overdue and next 7 days</p>
+                    </div>
+                </a>
+            </div>
+        </section>
+
+        <section class="form-card dashboard-execution-insights-card">
+            <div class="section-header">
+                <div>
+                    <h2>Execution Insights</h2>
+                    <p>Combined AI guidance and campaign learning for the next best sales actions.</p>
+                </div>
+                <a href="{{ url_for('campaign_builder') }}" class="btn btn-secondary">Build Campaign</a>
+            </div>
+
+            {% if execution_insights %}
+                <div class="table-container flush-table-container">
+                    <table class="report-table execution-insights-table">
+                        <thead>
                             <tr>
-                                <td>
-                                    <div class="dashboard-task-due-controls">
-                                        <input
-                                            type="date"
-                                            name="next_action_date"
-                                            value="{{ item.next_action_date or '' }}"
-                                            form="dashboard-task-update-{{ item.id }}"
-                                            aria-label="Task due date">
-                                        <input
-                                            type="time"
-                                            name="next_action_time"
-                                            value="{{ item.next_action_time or '' }}"
-                                            form="dashboard-task-update-{{ item.id }}"
-                                            aria-label="Task due time">
-                                    </div>
-                                </td>
-                                <td>
-                                    <strong>{{ item.account_name or "No account" }}</strong><br>
-                                    <span class="muted">{{ item.contact_name or "No contact" }}</span>
-                                </td>
-                                <td>{{ item.next_action or "No next action" }}</td>
-                                <td><span class="status-pill">{{ item.task_status or "Not Started" }}</span></td>
-                                <td>{{ item.outcome or "No outcome" }}</td>
-                                <td>
-                                    <form method="POST" action="{{ url_for('update_task_from_tasks', outreach_id=item.id) }}" class="dashboard-task-update-form" id="dashboard-task-update-{{ item.id }}">
-                                        <input type="hidden" name="return_to" value="{{ url_for('home', _anchor='dashboard-tasks') }}">
-                                        <input type="hidden" name="next_action" value="{{ item.next_action or '' }}">
-                                        <input type="hidden" name="notes" value="{{ item.notes or '' }}">
-                                        <div class="dashboard-task-control-grid">
-                                            <select name="task_status" aria-label="Task status">
-                                                {% for status in task_statuses %}
-                                                    <option value="{{ status }}" {% if (item.task_status or 'Not Started') == status %}selected{% endif %}>{{ status }}</option>
-                                                {% endfor %}
-                                            </select>
-                                            <select name="outcome" aria-label="Outcome">
-                                                <option value="">Select outcome</option>
-                                                {% for outcome in outreach_outcomes %}
-                                                    <option value="{{ outcome }}" {% if item.outcome == outcome %}selected{% endif %}>{{ outcome }}</option>
-                                                {% endfor %}
-                                            </select>
-                                        </div>
-                                        <div class="dashboard-task-actions">
-                                            <button type="submit" class="btn btn-primary btn-small">Update</button>
-                                            <a href="{{ url_for('view_outreach', outreach_id=item.id) }}" class="btn btn-secondary btn-small">Open</a>
-                                        </div>
-                                    </form>
-                                    <form method="POST" action="{{ url_for('complete_task_from_tasks', outreach_id=item.id) }}" class="dashboard-task-complete-form">
-                                        <input type="hidden" name="return_to" value="{{ url_for('home', _anchor='dashboard-tasks') }}">
-                                        <input type="hidden" name="outcome" value="{{ item.outcome or 'Follow-up Required' }}">
-                                        <button type="submit" class="btn btn-secondary btn-small">Complete</button>
-                                    </form>
-                                </td>
+                                <th>Source</th>
+                                <th>Signal</th>
+                                <th>What It Means</th>
+                                <th>Recommended Move</th>
                             </tr>
+                        </thead>
+                        <tbody>
+                            {% for insight in execution_insights %}
+                                <tr>
+                                    <td><strong>{{ insight.source }}</strong></td>
+                                    <td>{{ insight.category }}</td>
+                                    <td>
+                                        <strong>{{ insight.title }}</strong><br>
+                                        <span class="muted">{{ insight.message }}</span>
+                                    </td>
+                                    <td>
+                                        {{ insight.action }}
+                                        <br><br>
+                                        <a href="{{ insight.link }}" class="btn btn-secondary btn-small">Open</a>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty-state">
+                    <h3>No execution insights yet</h3>
+                    <p>Add accounts, contacts, outreach, outcomes and campaign activity to generate recommendations.</p>
+                </div>
+            {% endif %}
+        </section>
+
+        <section class="form-card dashboard-chart-card">
+            <div class="section-header">
+                <div>
+                    <h2>Outreach by Account</h2>
+                    <p>Where your prospecting effort is currently concentrated.</p>
+                </div>
+            </div>
+
+            {% if outreach_by_account %}
+                <div class="chart-container">
+                    <canvas id="outreachByAccountChart"></canvas>
+                </div>
+                <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+                <script>
+                    const rawOutreachData = [
+                        {% for row in outreach_by_account %}
+                            {
+                                account: {{ (row.account_name or 'Unknown Account')|tojson }},
+                                type: {{ (row.activity_type or 'Unknown Type')|tojson }},
+                                total: {{ row.total }}
+                            },
                         {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% else %}
-            <div class="empty-state compact-empty-state">
-                <h3>No active tasks</h3>
-                <p>New follow-ups will appear here when outreach creates next actions.</p>
-            </div>
-        {% endif %}
-</section>
-</div>
+                    ];
+                    const accountLabels = [...new Set(rawOutreachData.map(item => item.account))];
+                    const activityTypes = [...new Set(rawOutreachData.map(item => item.type))];
+                    const chartPalette = ["#2563eb", "#14b8a6", "#8b5cf6", "#f59e0b", "#ec4899", "#22c55e", "#0ea5e9", "#f97316"];
+                    const datasets = activityTypes.map((type, index) => ({
+                        label: type,
+                        data: accountLabels.map(account => {
+                            const match = rawOutreachData.find(item => item.account === account && item.type === type);
+                            return match ? match.total : 0;
+                        }),
+                        backgroundColor: chartPalette[index % chartPalette.length],
+                        borderRadius: 8,
+                        borderSkipped: false
+                    }));
+                    new Chart(document.getElementById("outreachByAccountChart"), {
+                        type: "bar",
+                        data: { labels: accountLabels, datasets: datasets },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { display: true, position: "bottom" } },
+                            scales: {
+                                x: { stacked: true, grid: { display: false } },
+                                y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
+                            }
+                        }
+                    });
+                </script>
+            {% else %}
+                <p>No outreach by account data yet.</p>
+            {% endif %}
+        </section>
+    </main>
 
-<section class="form-card dashboard-execution-insights-card">
-    <div class="section-header">
-        <div>
-            <h2>Execution Insights</h2>
-            <p>Combined AI guidance and campaign learning for the next best sales actions.</p>
-        </div>
-        <a href="{{ url_for('campaign_builder') }}" class="btn btn-secondary">Build Campaign</a>
-    </div>
+    <aside class="dashboard-command-side">
+        <section class="form-card dashboard-task-card" id="dashboard-tasks">
+            <div class="section-header">
+                <div>
+                    <h2>Tasks</h2>
+                    <p>Update priority follow-ups directly from the dashboard.</p>
+                </div>
+            </div>
 
-    {% if execution_insights %}
-        <div class="table-container flush-table-container">
-            <table class="report-table execution-insights-table">
-                <thead>
-                    <tr>
-                        <th>Source</th>
-                        <th>Signal</th>
-                        <th>What It Means</th>
-                        <th>Recommended Move</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for insight in execution_insights %}
-                        <tr>
-                            <td><strong>{{ insight.source }}</strong></td>
-                            <td>{{ insight.category }}</td>
-                            <td>
-                                <strong>{{ insight.title }}</strong><br>
-                                <span class="muted">{{ insight.message }}</span>
-                            </td>
-                            <td>
-                                {{ insight.action }}
-                                <br><br>
-                                <a href="{{ insight.link }}" class="btn btn-secondary btn-small">Open</a>
-                            </td>
-                        </tr>
+            {% if dashboard_tasks %}
+                <div class="dashboard-task-table-wrap">
+                    <table class="report-table dashboard-task-table no-sort">
+                        <thead>
+                            <tr>
+                                <th>Due</th>
+                                <th>Account</th>
+                                <th>Next Action</th>
+                                <th>Status</th>
+                                <th>Outcome</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in dashboard_tasks %}
+                                <tr>
+                                    <td>
+                                        <div class="dashboard-task-due-controls">
+                                            <input type="date" name="next_action_date" value="{{ item.next_action_date or '' }}" form="dashboard-task-update-{{ item.id }}" aria-label="Task due date">
+                                            <input type="time" name="next_action_time" value="{{ item.next_action_time or '' }}" form="dashboard-task-update-{{ item.id }}" aria-label="Task due time">
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <strong>{{ item.account_name or "No account" }}</strong><br>
+                                        <span class="muted">{{ item.contact_name or "No contact" }}</span>
+                                    </td>
+                                    <td>{{ item.next_action or "No next action" }}</td>
+                                    <td><span class="status-pill">{{ item.task_status or "Not Started" }}</span></td>
+                                    <td>{{ item.outcome or "No outcome" }}</td>
+                                    <td>
+                                        <form method="POST" action="{{ url_for('update_task_from_tasks', outreach_id=item.id) }}" class="dashboard-task-update-form" id="dashboard-task-update-{{ item.id }}">
+                                            <input type="hidden" name="return_to" value="{{ url_for('home', _anchor='dashboard-tasks') }}">
+                                            <input type="hidden" name="next_action" value="{{ item.next_action or '' }}">
+                                            <input type="hidden" name="notes" value="{{ item.notes or '' }}">
+                                            <div class="dashboard-task-control-grid">
+                                                <select name="task_status" aria-label="Task status">
+                                                    {% for status in task_statuses %}
+                                                        <option value="{{ status }}" {% if (item.task_status or 'Not Started') == status %}selected{% endif %}>{{ status }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                                <select name="outcome" aria-label="Outcome">
+                                                    <option value="">Select outcome</option>
+                                                    {% for outcome in outreach_outcomes %}
+                                                        <option value="{{ outcome }}" {% if item.outcome == outcome %}selected{% endif %}>{{ outcome }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                            </div>
+                                            <div class="dashboard-task-actions">
+                                                <button type="submit" class="btn btn-primary btn-small">Update</button>
+                                                <a href="{{ url_for('view_outreach', outreach_id=item.id) }}" class="btn btn-secondary btn-small">Open</a>
+                                            </div>
+                                        </form>
+                                        <form method="POST" action="{{ url_for('complete_task_from_tasks', outreach_id=item.id) }}" class="dashboard-task-complete-form">
+                                            <input type="hidden" name="return_to" value="{{ url_for('home', _anchor='dashboard-tasks') }}">
+                                            <input type="hidden" name="outcome" value="{{ item.outcome or 'Follow-up Required' }}">
+                                            <button type="submit" class="btn btn-secondary btn-small">Complete</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty-state compact-empty-state">
+                    <h3>No active tasks</h3>
+                    <p>New follow-ups will appear here when outreach creates next actions.</p>
+                </div>
+            {% endif %}
+        </section>
+
+        <section class="form-card">
+            <div class="section-header">
+                <div>
+                    <h2>Needs Attention</h2>
+                    <p>Top accounts requiring action based on health score.</p>
+                </div>
+                <a href="{{ url_for('accounts') }}" class="btn btn-secondary">View All</a>
+            </div>
+            {% if needs_attention_accounts %}
+                <div class="needs-attention-list">
+                    {% for account in needs_attention_accounts %}
+                        <div class="needs-attention-item">
+                            <div>
+                                <strong>{{ account.account_name }}</strong>
+                                <p>{{ account.health_reason }}</p>
+                            </div>
+                            <div class="needs-attention-status">
+                                <span class="health-pill health-{{ account.health_colour }}">{{ account.health_label }}</span>
+                                <a href="{{ url_for('view_account', account_id=account.id) }}" class="btn btn-secondary">Open</a>
+                            </div>
+                        </div>
                     {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    {% else %}
-        <div class="empty-state">
-            <h3>No execution insights yet</h3>
-            <p>Add accounts, contacts, outreach, outcomes and campaign activity to generate recommendations.</p>
-        </div>
-    {% endif %}
-</section>
+                </div>
+            {% else %}
+                <p>No accounts need attention right now.</p>
+            {% endif %}
+        </section>
 
-<div class="form-card dashboard-chart-card">
-    <div class="section-header">
-        <div>
-            <h2>Outreach by Account</h2>
-            <p>Where your prospecting effort is currently concentrated.</p>
-        </div>
-    </div>
-
-    {% if outreach_by_account %}
-        <div class="chart-container">
-            <canvas id="outreachByAccountChart"></canvas>
-        </div>
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-        <script>
-            const rawOutreachData = [
-                {% for row in outreach_by_account %}
-                    {
-                        account: "{{ row.account_name or 'Unknown Account' }}",
-                        type: "{{ row.activity_type or 'Unknown Type' }}",
-                        total: {{ row.total }}
-                    },
-                {% endfor %}
-            ];
-            const accountLabels = [...new Set(rawOutreachData.map(item => item.account))];
-            const activityTypes = [...new Set(rawOutreachData.map(item => item.type))];
-            const chartPalette = ["#2563eb", "#14b8a6", "#8b5cf6", "#f59e0b", "#ec4899", "#22c55e", "#0ea5e9", "#f97316"];
-            const datasets = activityTypes.map((type, index) => ({
-                label: type,
-                data: accountLabels.map(account => {
-                    const match = rawOutreachData.find(item => item.account === account && item.type === type);
-                    return match ? match.total : 0;
-                }),
-                backgroundColor: chartPalette[index % chartPalette.length],
-                borderRadius: 8,
-                borderSkipped: false
-            }));
-            new Chart(document.getElementById("outreachByAccountChart"), {
-                type: "bar",
-                data: { labels: accountLabels, datasets: datasets },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: true, position: "bottom" } },
-                    scales: {
-                        x: { stacked: true, grid: { display: false } },
-                        y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
-                    }
-                }
-            });
-        </script>
-    {% else %}
-        <p>No outreach by account data yet.</p>
-    {% endif %}
-</div>
-
-<div class="dashboard-insight-grid">
-    <div class="insight-card">
-        <div class="section-header">
-            <div>
-                <h2>Outcome Breakdown</h2>
-                <p>How outreach is converting.</p>
+        <section class="form-card">
+            <div class="section-header">
+                <div>
+                    <h2>Latest Outreach</h2>
+                    <p>Your most recent prospecting activity.</p>
+                </div>
+                <a href="{{ url_for('outreach') }}" class="btn btn-secondary">View All</a>
             </div>
-        </div>
-        {% if outcome_breakdown %}
-            <div class="insight-list">
-                {% for row in outcome_breakdown %}
-                    <div class="insight-row">
-                        <span>{{ row.outcome or "Unknown" }}</span>
-                        <strong>{{ row.total }}</strong>
-                    </div>
-                {% endfor %}
-            </div>
-        {% else %}
-            <p>No outcome data yet.</p>
-        {% endif %}
-    </div>
-
-    <div class="insight-card">
-        <div class="section-header">
-            <div>
-                <h2>Top Accounts</h2>
-                <p>Most active accounts by touchpoint volume.</p>
-            </div>
-        </div>
-        {% if top_accounts %}
-            <div class="insight-list">
-                {% for row in top_accounts %}
-                    <div class="insight-row">
-                        <span>{{ row.account_name or "Unknown" }}</span>
-                        <strong>{{ row.total }}</strong>
-                    </div>
-                {% endfor %}
-            </div>
-        {% else %}
-            <p>No account outreach data yet.</p>
-        {% endif %}
-    </div>
-</div>
-
-<div class="dashboard-grid">
-    <div class="form-card">
-        <div class="section-header">
-            <div>
-                <h2>Needs Attention</h2>
-                <p>Top accounts requiring action based on health score.</p>
-            </div>
-            <a href="{{ url_for('accounts') }}" class="btn btn-secondary">View All Accounts</a>
-        </div>
-        {% if needs_attention_accounts %}
-            <div class="needs-attention-list">
-                {% for account in needs_attention_accounts %}
-                    <div class="needs-attention-item">
-                        <div>
-                            <strong>{{ account.account_name }}</strong>
-                            <p>{{ account.health_reason }}</p>
+            {% if latest_outreach %}
+                <div class="latest-outreach-list">
+                    {% for item in latest_outreach %}
+                        <div class="latest-outreach-item">
+                            <div>
+                                <strong>{{ item.account_name }}</strong>
+                                <p>{{ item.contact_name or "No contact linked" }} - {{ item.activity_type }}</p>
+                                <p class="muted">
+                                    {% if item.activity_date %}
+                                        {{ item.activity_date[8:10] }}-{{ item.activity_date[5:7] }}-{{ item.activity_date[0:4] }}
+                                    {% else %}
+                                        No date
+                                    {% endif %}
+                                    {{ item.activity_time or "" }}
+                                </p>
+                            </div>
+                            <div class="latest-outreach-status">
+                                <span class="status-pill">{{ item.outcome or "No outcome" }}</span>
+                                <p>{{ item.next_action or "No next action set" }}</p>
+                            </div>
                         </div>
-                        <div class="needs-attention-status">
-                            <span class="health-pill health-{{ account.health_colour }}">{{ account.health_label }}</span>
-                            <a href="{{ url_for('view_account', account_id=account.id) }}" class="btn btn-secondary">Open</a>
-                        </div>
-                    </div>
-                {% endfor %}
-            </div>
-        {% else %}
-            <p>No accounts need attention right now.</p>
-        {% endif %}
-    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p>No outreach activity added yet.</p>
+            {% endif %}
+        </section>
 
-    <div class="form-card">
-        <div class="section-header">
-            <div>
-                <h2>Latest Outreach</h2>
-                <p>Your most recent prospecting activity.</p>
-            </div>
-            <a href="{{ url_for('outreach') }}" class="btn btn-secondary">View All</a>
-        </div>
-        {% if latest_outreach %}
-            <div class="latest-outreach-list">
-                {% for item in latest_outreach %}
-                    <div class="latest-outreach-item">
-                        <div>
-                            <strong>{{ item.account_name }}</strong>
-                            <p>{{ item.contact_name or "No contact linked" }} - {{ item.activity_type }}</p>
-                            <p class="muted">
-                                {% if item.activity_date %}
-                                    {{ item.activity_date[8:10] }}-{{ item.activity_date[5:7] }}-{{ item.activity_date[0:4] }}
-                                {% else %}
-                                    No date
-                                {% endif %}
-                                {{ item.activity_time or "" }}
-                            </p>
+        <section class="form-card dashboard-side-summary-card">
+            <div class="dashboard-mini-summary-grid">
+                <div>
+                    <h2>Outcome Breakdown</h2>
+                    {% if outcome_breakdown %}
+                        <div class="insight-list">
+                            {% for row in outcome_breakdown %}
+                                <div class="insight-row">
+                                    <span>{{ row.outcome or "Unknown" }}</span>
+                                    <strong>{{ row.total }}</strong>
+                                </div>
+                            {% endfor %}
                         </div>
-                        <div class="latest-outreach-status">
-                            <span class="status-pill">{{ item.outcome or "No outcome" }}</span>
-                            <p>{{ item.next_action or "No next action set" }}</p>
+                    {% else %}
+                        <p>No outcome data yet.</p>
+                    {% endif %}
+                </div>
+                <div>
+                    <h2>Top Accounts</h2>
+                    {% if top_accounts %}
+                        <div class="insight-list">
+                            {% for row in top_accounts %}
+                                <div class="insight-row">
+                                    <span>{{ row.account_name or "Unknown" }}</span>
+                                    <strong>{{ row.total }}</strong>
+                                </div>
+                            {% endfor %}
                         </div>
-                    </div>
-                {% endfor %}
+                    {% else %}
+                        <p>No account outreach data yet.</p>
+                    {% endif %}
+                </div>
             </div>
-        {% else %}
-            <p>No outreach activity added yet.</p>
-        {% endif %}
-    </div>
+        </section>
+    </aside>
 </div>
 
 {% endblock %}
