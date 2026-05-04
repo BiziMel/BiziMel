@@ -1,16 +1,73 @@
-# PipeFlow Server
+# PipeFlow PG Manager Server
 
-PipeFlow Server is the hosted, multi-user version of PipeFlow.
+PipeFlow PG Manager Server is the hosted, multi-user version of PipeFlow.
 
-## What Changed
+## Current Hosted Model
 
-- Users create a PipeFlow Server profile with email, password and full name.
-- Each user gets a separate private PipeFlow database under `server_data/users/<user_id>/pipeflow.db`.
-- The login database is stored at `server_data/pipeflow_server_auth.db`.
-- Existing PipeFlow screens, reports and exports run against the signed-in user's private database.
-- The app runs on `PORT` for hosted environments.
+- Users register with email, password, full name and a private reset phrase.
+- Supabase/Postgres is the intended hosted database.
+- Authentication data is stored centrally.
+- Each user gets a private workspace schema for their PipeFlow data.
+- Accounts, contacts, partners, outreach, tasks, reports and PG Bible exports are isolated by user workspace.
+- Admin users can manage profiles, permissions, broadcasts and password resets.
 
-This first server version keeps SQLite because it can run without a paid database service. For a larger team, the next step would be PostgreSQL with row-level ownership.
+## Render Configuration
+
+Use a Python web service.
+
+Build command:
+
+```bash
+pip install -r requirements.txt
+```
+
+Start command:
+
+```bash
+gunicorn app:app
+```
+
+Required environment variables:
+
+```text
+PIPEFLOW_NO_BROWSER=1
+PIPEFLOW_SECRET_KEY=<long random secret>
+DATABASE_URL=<Supabase session pooler connection string>
+```
+
+Optional environment variables:
+
+```text
+PG_BIBLE_TEMPLATE_PATH=<path to uploaded PG Bible template>
+PIPEFLOW_DATA_DIR=/tmp/pipeflow-server-data
+```
+
+`PG_BIBLE_TEMPLATE_PATH` is optional because the project includes:
+
+```text
+pg_bible_templates/PG Bible FY27.xlsx
+```
+
+`PIPEFLOW_DATA_DIR` is only used for local SQLite fallback and temporary export files when Supabase is enabled.
+
+## Supabase Connection
+
+Use the Supabase session pooler connection string for `DATABASE_URL`.
+
+Check the deployed app after setting it:
+
+```text
+/health/storage
+```
+
+Expected hosted result:
+
+```text
+backend=supabase_postgres
+database_url_configured=true
+```
+
+If it shows `temporary_sqlite`, Render is not receiving `DATABASE_URL`.
 
 ## Local Run
 
@@ -25,44 +82,56 @@ Open:
 http://localhost:5070
 ```
 
-Create a profile, then use PipeFlow normally.
+## Smoke Test
 
-## Deployment Notes
+Before packaging or uploading a new build, run:
 
-Set these environment variables on the host:
+```bash
+python3 smoke_test.py
+```
 
-- `PORT`: provided by the host, for example Render
-- `PIPEFLOW_SECRET_KEY`: a long random secret string
-- `PIPEFLOW_NO_BROWSER=1`
-- `PIPEFLOW_DATA_DIR`: persistent folder for the auth database and per-user PipeFlow databases
-- `PG_BIBLE_TEMPLATE_PATH`: optional path to the PG Bible template file if exports are enabled
+The smoke test creates a temporary profile and checks:
 
-The host must provide persistent storage for the `server_data` folder, otherwise user data will be lost when the app restarts or redeploys.
+- login and registration
+- dashboard
+- accounts, contacts, partners and outreach pages
+- task update
+- reports
+- CSV exports
+- PG Bible Excel export
 
-On Render free web services, `/tmp` is temporary. This is useful for a first launch test, but not for long-term storage. For real use, add a Render disk and set `PIPEFLOW_DATA_DIR` to that mounted disk path.
+It does not touch real user data.
 
-## Privacy Model
+## Upload Guidance
 
-PipeFlow Server uses one application with one login database, but each user has a separate PipeFlow database file. This keeps accounts, contacts, outreach, partners, tasks, reports and PG Bible exports isolated by user.
+Do not upload these folders or files to GitHub/Render:
 
-## Current Limitation
+```text
+server_data
+__pycache__
+build
+dist
+*.db
+*.sqlite
+*.sqlite3
+*.pyc
+```
 
-This is suitable for a small hosted proof of concept. For production team use, move the data layer to PostgreSQL and enforce ownership with database-level constraints and route-level checks.
-
+The `vendor` folder is not required for Render because dependencies are installed from `requirements.txt`.
 
 ## Password Reset
 
-PipeFlow Server uses a no-email password reset flow. During registration, each user creates a secret reset phrase. The phrase is hashed and is never stored as plain text.
+PipeFlow uses a no-email password reset flow.
 
-If a user forgets their password, they enter their email, secret reset phrase and new password. If the phrase matches, the password is reset. Admins can still reset passwords manually from Profile Administration.
+During registration, each user creates a secret reset phrase. The phrase is hashed and is never stored as plain text.
 
+If a user forgets their password, they enter their email, secret reset phrase and new password. If the phrase matches, the password is reset.
 
-## Supabase/Postgres Persistence
+Admins can also reset passwords from Profile Administration.
 
-When `DATABASE_URL` is set, PipeFlow Server stores authentication in Supabase/Postgres and creates a private Postgres schema for each user workspace. This keeps Admin profile management separate from user PipeFlow data.
+## Operational Notes
 
-Required Render variable:
-
-- `DATABASE_URL`: Supabase Session pooler connection string
-
-With Supabase enabled, `PIPEFLOW_DATA_DIR` is no longer used for primary application data. It can remain set harmlessly for local fallback behavior.
+- UptimeRobot can keep the free Render service warm.
+- Reports are designed to avoid database-specific date calculations where possible.
+- PG Bible export uses the bundled template and writes a single Excel sheet named after the user profile.
+- Database indexes are created automatically during workspace initialisation.

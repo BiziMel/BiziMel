@@ -1,0 +1,189 @@
+import os
+import sqlite3
+import tempfile
+from pathlib import Path
+
+
+def assert_ok(condition, message):
+    if not condition:
+        raise AssertionError(message)
+
+
+def seed_validation_data(db_path):
+    connection = sqlite3.connect(db_path)
+    account_id = connection.execute(
+        """
+        INSERT INTO accounts (
+            account_name, pg_bible_order, account_tier, industry, business_unit,
+            country, city, website, pipeline_target, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "Smoke Test Account",
+            1,
+            "1",
+            "Public Sector",
+            "BMC",
+            "United Kingdom",
+            "London",
+            "https://example.com",
+            500000,
+            "Smoke test notes",
+        ),
+    ).lastrowid
+    contact_id = connection.execute(
+        """
+        INSERT INTO contacts (account_id, category, name, job_title, email, phone, location)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (account_id, "Executive", "Smoke Test Contact", "CIO", "contact@example.com", "12345", "London"),
+    ).lastrowid
+    partner_id = connection.execute(
+        """
+        INSERT INTO partners (partner_name, partner_type, country, city, relationship_owner)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        ("Smoke Test Partner", "SI", "United Kingdom", "London", "Smoke Tester"),
+    ).lastrowid
+    connection.execute(
+        """
+        INSERT INTO partner_contacts (partner_id, name, job_title, partner_contact_role, email)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (partner_id, "Smoke Partner Contact", "CTO", "Presales", "partner@example.com"),
+    )
+    connection.execute(
+        """
+        INSERT INTO account_partners (account_id, partner_id, partner_name, partner_role, involvement_status)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (account_id, partner_id, "Smoke Test Partner", "Account Manager", "Active"),
+    )
+    outreach_id = connection.execute(
+        """
+        INSERT INTO outreach (
+            fy, quarter, account_id, contact_id, campaign, sales_play, campaign_start_date,
+            campaign_end_date, campaign_tasks_per_week, campaign_total_tasks, activity_date,
+            activity_time, activity_type, subject, notes, outcome, next_action,
+            next_action_date, next_action_time, task_status, assigned_to
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "FY27",
+            "Q1",
+            account_id,
+            contact_id,
+            "VITO",
+            "Smoke Test Play",
+            "2026-05-01",
+            "2026-05-29",
+            3,
+            12,
+            "2026-05-01",
+            "09:00",
+            "Call",
+            "Smoke test outreach",
+            "Sales play: Smoke Test Play. Contact: Smoke Test Contact",
+            "Meeting Booked",
+            "Follow up",
+            "2026-05-05",
+            "10:00",
+            "Not Started",
+            "Smoke Tester",
+        ),
+    ).lastrowid
+    connection.commit()
+    connection.close()
+    return account_id, contact_id, partner_id, outreach_id
+
+
+def main():
+    with tempfile.TemporaryDirectory() as tmp:
+        os.environ["PIPEFLOW_DATA_DIR"] = tmp
+        os.environ.pop("DATABASE_URL", None)
+        os.environ["PIPEFLOW_SECRET_KEY"] = "pipeflow-smoke-test-key"
+
+        import app as pipeflow_app
+
+        client = pipeflow_app.app.test_client()
+        for path in ("/login", "/register", "/forgot-password"):
+            response = client.get(path)
+            assert_ok(response.status_code == 200, f"{path} returned {response.status_code}")
+
+        response = client.post(
+            "/register",
+            data={
+                "full_name": "Smoke Test Admin",
+                "email": "smoke-test@example.com",
+                "password": "Password123!",
+                "reset_phrase": "smoke test secret phrase",
+            },
+            follow_redirects=True,
+        )
+        assert_ok(response.status_code == 200, f"register returned {response.status_code}")
+        assert_ok(client.get("/health/version").status_code == 200, "health/version failed")
+
+        db_path = Path(tmp) / "users" / "1" / "pipeflow.db"
+        account_id, contact_id, partner_id, outreach_id = seed_validation_data(db_path)
+
+        pages = {
+            "/": "Dashboard",
+            "/accounts": "Accounts",
+            f"/accounts/{account_id}": "Smoke Test Account",
+            "/contacts": "Contacts",
+            f"/contacts/{contact_id}": "Smoke Test Contact",
+            "/partners": "Partners",
+            f"/partners/{partner_id}": "Smoke Test Partner",
+            "/outreach": "Outreach",
+            f"/outreach/{outreach_id}": "Smoke test outreach",
+            "/outreach/add": "Add Outreach",
+            "/outreach/campaign-builder": "Campaign Builder",
+            "/reports": "Reports",
+            "/reports/accounts": "Account Reports",
+            "/reports/contacts": "Contact Reports",
+            "/reports/outreach": "Outreach Reports",
+            "/reports/tasks": "Task Reports",
+            "/search?q=Smoke": "Global Search",
+            "/profile": "Profile",
+            "/admin/permissions": "Admin",
+        }
+        for path, marker in pages.items():
+            response = client.get(path)
+            html = response.get_data(as_text=True)
+            assert_ok(response.status_code == 200 and marker in html, f"{path} failed")
+
+        response = client.post(
+            f"/tasks/{outreach_id}/update",
+            data={
+                "return_to": "/",
+                "next_action": "Updated smoke follow up",
+                "next_action_date": "2026-05-06",
+                "next_action_time": "11:30",
+                "task_status": "In Progress",
+                "outcome": "Meeting Booked",
+                "notes": "Updated from smoke test",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "dashboard task update failed")
+
+        for path in (
+            "/reports/accounts/export",
+            "/reports/contacts/export",
+            "/reports/outreach/export",
+            "/reports/tasks/export",
+            "/outreach/export",
+        ):
+            response = client.get(path)
+            assert_ok(response.status_code == 200, f"{path} returned {response.status_code}")
+            assert_ok(response.headers.get("Content-Disposition"), f"{path} did not download")
+
+        response = client.get("/reports/pg-bible/export")
+        assert_ok(response.status_code == 200, f"PG Bible export returned {response.status_code}")
+        assert_ok(response.headers.get("Content-Disposition"), "PG Bible did not download")
+
+    print("PipeFlow smoke test passed.")
+
+
+if __name__ == "__main__":
+    main()

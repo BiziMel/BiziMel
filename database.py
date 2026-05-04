@@ -44,6 +44,13 @@ def add_column_if_missing(cursor, table_name, column_name, column_definition):
         )
 
 
+def create_index_if_missing(cursor, index_name, table_name, columns):
+    column_sql = ", ".join(columns)
+    cursor.execute(
+        f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({column_sql})"
+    )
+
+
 def initialise_database(force=False):
     cache_key = database_initialisation_key()
     if not force and cache_key in _INITIALISED_DATABASES:
@@ -337,6 +344,27 @@ def initialise_database(force=False):
             SELECT 1 FROM user_profile WHERE id = 1
         )
     """)
+
+    index_definitions = [
+        ("idx_accounts_pg_bible_order", "accounts", ["pg_bible_order", "account_name"]),
+        ("idx_accounts_tier", "accounts", ["account_tier"]),
+        ("idx_contacts_account", "contacts", ["account_id"]),
+        ("idx_contacts_category", "contacts", ["category"]),
+        ("idx_outreach_account", "outreach", ["account_id"]),
+        ("idx_outreach_contact", "outreach", ["contact_id"]),
+        ("idx_outreach_activity_date", "outreach", ["activity_date"]),
+        ("idx_outreach_next_action_date", "outreach", ["next_action_date"]),
+        ("idx_outreach_task_status", "outreach", ["task_status"]),
+        ("idx_outreach_campaign", "outreach", ["campaign"]),
+        ("idx_outreach_sales_play", "outreach", ["sales_play"]),
+        ("idx_account_partners_account", "account_partners", ["account_id"]),
+        ("idx_account_partners_partner", "account_partners", ["partner_id"]),
+        ("idx_partner_contacts_partner", "partner_contacts", ["partner_id"]),
+        ("idx_timeline_related", "timeline_entries", ["related_type", "related_id"]),
+        ("idx_account_custom_values_account", "account_custom_values", ["account_id"]),
+    ]
+    for index_name, table_name, columns in index_definitions:
+        create_index_if_missing(cursor, index_name, table_name, columns)
 
     connection.commit()
     connection.close()
