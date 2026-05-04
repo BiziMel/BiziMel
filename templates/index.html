@@ -240,14 +240,12 @@
                                 <th>Due</th>
                                 <th>Account</th>
                                 <th>Next Action</th>
-                                <th>Status</th>
-                                <th>Outcome</th>
-                                <th>Actions</th>
+                                <th>Status / Outcome</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for item in dashboard_tasks %}
-                                <tr>
+                                <tr class="dashboard-task-main-row">
                                     <td>
                                         <div class="dashboard-task-due-controls">
                                             <input type="date" name="next_action_date" value="{{ item.next_action_date or '' }}" form="dashboard-task-update-{{ item.id }}" aria-label="Task due date">
@@ -259,8 +257,6 @@
                                         <span class="muted">{{ item.contact_name or "No contact" }}</span>
                                     </td>
                                     <td>{{ item.next_action or "No next action" }}</td>
-                                    <td><span class="status-pill">{{ item.task_status or "Not Started" }}</span></td>
-                                    <td>{{ item.outcome or "No outcome" }}</td>
                                     <td>
                                         <form method="POST" action="{{ url_for('update_task_from_tasks', outreach_id=item.id) }}" class="dashboard-task-update-form" id="dashboard-task-update-{{ item.id }}">
                                             <input type="hidden" name="return_to" value="{{ url_for('home', _anchor='dashboard-tasks') }}">
@@ -279,16 +275,20 @@
                                                     {% endfor %}
                                                 </select>
                                             </div>
-                                            <div class="dashboard-task-actions">
-                                                <button type="submit" class="btn btn-primary btn-small">Update</button>
-                                                <a href="{{ url_for('view_outreach', outreach_id=item.id) }}" class="btn btn-secondary btn-small">Open</a>
-                                            </div>
                                         </form>
-                                        <form method="POST" action="{{ url_for('complete_task_from_tasks', outreach_id=item.id) }}" class="dashboard-task-complete-form">
-                                            <input type="hidden" name="return_to" value="{{ url_for('home', _anchor='dashboard-tasks') }}">
-                                            <input type="hidden" name="outcome" value="{{ item.outcome or 'Follow-up Required' }}">
-                                            <button type="submit" class="btn btn-secondary btn-small">Complete</button>
-                                        </form>
+                                    </td>
+                                </tr>
+                                <tr class="dashboard-task-action-row">
+                                    <td colspan="4">
+                                        <div class="dashboard-task-actions">
+                                            <button type="submit" form="dashboard-task-update-{{ item.id }}" class="btn btn-primary btn-small">Update</button>
+                                            <a href="{{ url_for('view_outreach', outreach_id=item.id) }}" class="btn btn-secondary btn-small">Open</a>
+                                            <form method="POST" action="{{ url_for('complete_task_from_tasks', outreach_id=item.id) }}" class="dashboard-task-complete-form">
+                                                <input type="hidden" name="return_to" value="{{ url_for('home', _anchor='dashboard-tasks') }}">
+                                                <input type="hidden" name="outcome" value="{{ item.outcome or 'Follow-up Required' }}">
+                                                <button type="submit" class="btn btn-secondary btn-small">Complete</button>
+                                            </form>
+                                        </div>
                                     </td>
                                 </tr>
                             {% endfor %}

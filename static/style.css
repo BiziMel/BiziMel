@@ -2109,12 +2109,21 @@ body {
 
 .dashboard-task-table th,
 .dashboard-task-table td {
-    padding: 10px;
+    padding: 9px;
     vertical-align: top;
     white-space: normal;
     overflow-wrap: normal;
     word-break: normal;
     hyphens: none;
+}
+
+.dashboard-task-main-row td {
+    border-bottom: 0;
+}
+
+.dashboard-task-action-row td {
+    padding-top: 0;
+    border-bottom: 1px solid #dbe4f0;
 }
 
 .dashboard-task-table select {
@@ -2146,7 +2155,7 @@ body {
 }
 
 .dashboard-task-complete-form {
-    margin-top: 6px;
+    margin-top: 0;
 }
 
 .dashboard-task-actions .btn-small,
