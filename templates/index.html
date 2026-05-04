@@ -100,26 +100,20 @@
                         {% for item in dashboard_tasks %}
                             <tr>
                                 <td>
-                                    <form method="POST" action="{{ url_for('update_task_from_tasks', outreach_id=item.id) }}" class="dashboard-task-due-form">
-                                        <input type="hidden" name="return_to" value="{{ url_for('home', _anchor='dashboard-tasks') }}">
-                                        <input type="hidden" name="next_action" value="{{ item.next_action or '' }}">
-                                        <input type="hidden" name="notes" value="{{ item.notes or '' }}">
-                                        <input type="hidden" name="task_status" value="{{ item.task_status or 'Not Started' }}">
-                                        <input type="hidden" name="outcome" value="{{ item.outcome or '' }}">
-                                        <div class="dashboard-task-due-controls">
+                                    <div class="dashboard-task-due-controls">
                                         <input
                                             type="date"
                                             name="next_action_date"
                                             value="{{ item.next_action_date or '' }}"
+                                            form="dashboard-task-update-{{ item.id }}"
                                             aria-label="Task due date">
                                         <input
                                             type="time"
                                             name="next_action_time"
                                             value="{{ item.next_action_time or '' }}"
+                                            form="dashboard-task-update-{{ item.id }}"
                                             aria-label="Task due time">
-                                        </div>
-                                        <button type="submit" class="btn btn-secondary btn-small dashboard-task-due-save">Save Due</button>
-                                    </form>
+                                    </div>
                                 </td>
                                 <td>
                                     <strong>{{ item.account_name or "No account" }}</strong><br>
@@ -132,8 +126,6 @@
                                     <form method="POST" action="{{ url_for('update_task_from_tasks', outreach_id=item.id) }}" class="dashboard-task-update-form" id="dashboard-task-update-{{ item.id }}">
                                         <input type="hidden" name="return_to" value="{{ url_for('home', _anchor='dashboard-tasks') }}">
                                         <input type="hidden" name="next_action" value="{{ item.next_action or '' }}">
-                                        <input type="hidden" name="next_action_date" value="{{ item.next_action_date or '' }}">
-                                        <input type="hidden" name="next_action_time" value="{{ item.next_action_time or '' }}">
                                         <input type="hidden" name="notes" value="{{ item.notes or '' }}">
                                         <div class="dashboard-task-control-grid">
                                             <select name="task_status" aria-label="Task status">
