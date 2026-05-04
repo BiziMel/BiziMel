@@ -2104,7 +2104,24 @@ body {
 .dashboard-task-table {
     font-size: 12px;
     min-width: 0;
+    width: 100%;
     table-layout: fixed;
+}
+
+.dashboard-task-due-col {
+    width: 23%;
+}
+
+.dashboard-task-account-col {
+    width: 25%;
+}
+
+.dashboard-task-action-col {
+    width: 27%;
+}
+
+.dashboard-task-status-col {
+    width: 25%;
 }
 
 .dashboard-task-table th,
@@ -2127,9 +2144,17 @@ body {
 }
 
 .dashboard-task-table select {
-    min-width: 130px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     padding: 7px 8px;
     font-size: 12px;
+}
+
+.dashboard-task-update-form {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
 }
 
 .dashboard-task-due-controls {
@@ -2211,7 +2236,7 @@ body {
 
 .dashboard-task-control-grid {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 6px;
     margin-bottom: 6px;
 }
