@@ -2109,19 +2109,15 @@ body {
 }
 
 .dashboard-task-due-col {
-    width: 23%;
+    width: 24%;
 }
 
 .dashboard-task-account-col {
-    width: 25%;
+    width: 30%;
 }
 
 .dashboard-task-action-col {
-    width: 27%;
-}
-
-.dashboard-task-status-col {
-    width: 25%;
+    width: 46%;
 }
 
 .dashboard-task-table th,
@@ -2141,6 +2137,13 @@ body {
 .dashboard-task-action-row td {
     padding-top: 0;
     border-bottom: 1px solid #dbe4f0;
+}
+
+.dashboard-task-action-band {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 8px;
+    align-items: center;
 }
 
 .dashboard-task-table select {
@@ -2236,9 +2239,21 @@ body {
 
 .dashboard-task-control-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
-    margin-bottom: 6px;
+    margin-bottom: 0;
+}
+
+@media (max-width: 1180px) {
+    .dashboard-task-action-band {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .dashboard-task-actions,
+    .dashboard-task-complete-form {
+        justify-content: flex-start;
+    }
 }
 
 @media (max-width: 900px) {

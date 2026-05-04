@@ -239,14 +239,12 @@
                             <col class="dashboard-task-due-col">
                             <col class="dashboard-task-account-col">
                             <col class="dashboard-task-action-col">
-                            <col class="dashboard-task-status-col">
                         </colgroup>
                         <thead>
                             <tr>
                                 <th>Due</th>
                                 <th>Account</th>
                                 <th>Next Action</th>
-                                <th>Status / Outcome</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -263,32 +261,32 @@
                                         <span class="muted">{{ item.contact_name or "No contact" }}</span>
                                     </td>
                                     <td>{{ item.next_action or "No next action" }}</td>
-                                    <td>
+                                </tr>
+                                <tr class="dashboard-task-action-row">
+                                    <td colspan="3">
                                         <form method="POST" action="{{ url_for('update_task_from_tasks', outreach_id=item.id) }}" class="dashboard-task-update-form" id="dashboard-task-update-{{ item.id }}">
                                             <input type="hidden" name="return_to" value="{{ url_for('home', _anchor='dashboard-tasks') }}">
                                             <input type="hidden" name="next_action" value="{{ item.next_action or '' }}">
                                             <input type="hidden" name="notes" value="{{ item.notes or '' }}">
+                                        </form>
+                                        <div class="dashboard-task-action-band">
                                             <div class="dashboard-task-control-grid">
-                                                <select name="task_status" aria-label="Task status">
+                                                <select name="task_status" form="dashboard-task-update-{{ item.id }}" aria-label="Task status">
                                                     {% for status in task_statuses %}
                                                         <option value="{{ status }}" {% if (item.task_status or 'Not Started') == status %}selected{% endif %}>{{ status }}</option>
                                                     {% endfor %}
                                                 </select>
-                                                <select name="outcome" aria-label="Outcome">
+                                                <select name="outcome" form="dashboard-task-update-{{ item.id }}" aria-label="Outcome">
                                                     <option value="">Select outcome</option>
                                                     {% for outcome in outreach_outcomes %}
                                                         <option value="{{ outcome }}" {% if item.outcome == outcome %}selected{% endif %}>{{ outcome }}</option>
                                                     {% endfor %}
                                                 </select>
                                             </div>
-                                        </form>
-                                    </td>
-                                </tr>
-                                <tr class="dashboard-task-action-row">
-                                    <td colspan="4">
-                                        <div class="dashboard-task-actions">
-                                            <button type="submit" form="dashboard-task-update-{{ item.id }}" class="btn btn-primary btn-small">Update</button>
-                                            <a href="{{ url_for('view_outreach', outreach_id=item.id) }}" class="btn btn-secondary btn-small">Open</a>
+                                            <div class="dashboard-task-actions">
+                                                <button type="submit" form="dashboard-task-update-{{ item.id }}" class="btn btn-primary btn-small">Update</button>
+                                                <a href="{{ url_for('view_outreach', outreach_id=item.id) }}" class="btn btn-secondary btn-small">Open</a>
+                                            </div>
                                             <form method="POST" action="{{ url_for('complete_task_from_tasks', outreach_id=item.id) }}" class="dashboard-task-complete-form">
                                                 <input type="hidden" name="return_to" value="{{ url_for('home', _anchor='dashboard-tasks') }}">
                                                 <input type="hidden" name="outcome" value="{{ item.outcome or 'Follow-up Required' }}">
