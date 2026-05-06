@@ -35,8 +35,10 @@
 
     <form method="POST" action="{{ url_for('edit_partner', partner_id=partner.id) }}" class="pipeflow-form">
         <div class="form-grid">
+            <div class="form-section-heading full-width">Partner Account</div>
+
             <div class="form-group">
-                <label for="partner_name">Partner Name</label>
+                <label for="partner_name">Partner Account Name</label>
                 <input type="text" id="partner_name" name="partner_name" value="{{ partner.partner_name }}" required>
             </div>
 
@@ -53,14 +55,29 @@
             </div>
 
             <div class="form-group">
-                <label for="website">Website</label>
-                <input type="text" id="website" name="website" value="{{ partner.website or '' }}">
+                <label for="website">Account Website</label>
+                <input type="text"
+                       id="website"
+                       name="website"
+                       value="{{ partner.website or '' }}"
+                       pattern="^(https?://|www\.).+"
+                       title="Enter a website starting with http://, https:// or www.">
+            </div>
+
+            <div class="form-section-heading full-width">Ownership</div>
+
+            <div class="form-group">
+                <label for="partner_manager">Partner Manager</label>
+                <input type="text" id="partner_manager" name="partner_manager" value="{{ partner.partner_manager or '' }}">
             </div>
 
             <div class="form-group">
-                <label for="relationship_owner">Relationship Owner</label>
-                <input type="text" id="relationship_owner" name="relationship_owner" value="{{ partner.relationship_owner or '' }}">
+                <label for="bmc_partner_manager">BMC Partner Manager</label>
+                <input type="text" id="bmc_partner_manager" name="bmc_partner_manager" value="{{ partner.bmc_partner_manager or partner.relationship_owner or '' }}">
+                <input type="hidden" name="relationship_owner" value="{{ partner.bmc_partner_manager or partner.relationship_owner or '' }}">
             </div>
+
+            <div class="form-section-heading full-width">Location</div>
 
             <div class="form-group">
                 <label for="city">City</label>
@@ -129,7 +146,7 @@
 
             <div class="form-group">
                 <label for="account_relationship_owner">Relationship Owner</label>
-                <input type="text" id="account_relationship_owner" name="relationship_owner" value="{{ partner.relationship_owner or '' }}">
+                <input type="text" id="account_relationship_owner" name="relationship_owner" value="{{ partner.bmc_partner_manager or partner.relationship_owner or '' }}">
             </div>
 
             <div class="form-group full-width">
@@ -224,8 +241,18 @@
             </div>
 
             <div class="form-group">
+                <label for="contact_account_id">Responsible Account</label>
+                <select id="contact_account_id" name="account_id">
+                    <option value="">No account assigned</option>
+                    {% for account in accounts %}
+                        <option value="{{ account.id }}">{{ account.account_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
                 <label for="relationship_owner">Relationship Owner</label>
-                <input type="text" id="relationship_owner" name="relationship_owner" value="{{ partner.relationship_owner or '' }}">
+                <input type="text" id="relationship_owner" name="relationship_owner" value="{{ partner.bmc_partner_manager or partner.relationship_owner or '' }}">
             </div>
 
             <div class="form-group">
@@ -277,6 +304,7 @@
                         <strong>{{ contact.name }}</strong>
                         <p>{{ contact.job_title or "No job title" }}</p>
                         <p class="muted">{{ contact.partner_contact_role or "No partner role set" }}</p>
+                        <p class="muted">Responsible account: {{ contact.account_name or "Not assigned" }}</p>
                         <p class="muted">{{ contact.coverage_area or "No coverage area" }}</p>
                     </div>
 
@@ -301,6 +329,7 @@
 
                     <div class="partner-detail-grid full-width">
                         <p><strong>Owner:</strong> {{ contact.relationship_owner or "Not assigned" }}</p>
+                        <p><strong>Responsible Account:</strong> {{ contact.account_name or "Not assigned" }}</p>
                         <p><strong>Location:</strong> {{ contact.location or "No location" }}</p>
                         <p><strong>Next Action:</strong> {{ contact.next_action or "No next action set" }}</p>
                     </div>

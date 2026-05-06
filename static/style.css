@@ -144,6 +144,19 @@ input[type="submit"]:hover {
     grid-column: span 2;
 }
 
+.form-section-heading {
+    grid-column: 1 / -1;
+    margin: 8px 0 2px;
+    padding: 10px 12px;
+    border-left: 4px solid #2f6f4e;
+    background: #f4f8f2;
+    color: #203020;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
 label {
     margin-bottom: 6px;
     font-weight: bold;
@@ -530,6 +543,23 @@ a:hover {
     background: #ffd6d6;
     color: #b00020;
 }
+
+.accounts-table .health-pill {
+    min-width: 0;
+    max-width: 100%;
+    padding: 4px 8px;
+    font-size: 11px;
+    line-height: 1.2;
+    white-space: normal;
+}
+
+.accounts-table td:nth-child(4) small {
+    display: block;
+    margin-top: 4px;
+    font-size: 11px;
+    line-height: 1.25;
+}
+
 .metric-date {
     font-size: 18px;
 }
@@ -937,6 +967,27 @@ a:hover {
     border-bottom: 0;
 }
 
+.outreach-campaign-group-row td {
+    padding: 14px 12px 8px;
+    background: #eef6ff;
+    border-top: 1px solid #cfe0f6;
+    border-bottom: 1px solid #cfe0f6;
+}
+
+.outreach-campaign-group-row span {
+    display: block;
+    color: #4f5f4f;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.outreach-campaign-group-row strong {
+    color: #0f172a;
+    font-size: 16px;
+}
+
 .outreach-detail-row td {
     padding-top: 0;
     border-bottom: 1px solid #dbe4f0;
@@ -988,6 +1039,22 @@ a:hover {
     padding: 10px 12px;
     border-radius: 6px;
     margin: 14px 0;
+}
+
+.danger-zone-card {
+    border-color: #f3b3b3;
+    background: #fffafa;
+}
+
+.danger-zone-panel {
+    border: 1px solid #f3b3b3;
+    border-radius: 8px;
+    padding: 16px;
+    background: #fff7f7;
+}
+
+.danger-zone-panel p {
+    margin: 0 0 10px;
 }
 
 .inline-form {
@@ -2377,6 +2444,7 @@ body {
     }
 
     .outreach-main-row td,
+    .outreach-campaign-group-row td,
     .outreach-detail-row td {
         border-bottom: 0;
         padding: 10px 0;

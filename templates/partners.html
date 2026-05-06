@@ -15,14 +15,16 @@
     <div class="section-header">
         <div>
             <h2>Add Partner Organisation</h2>
-            <p>Create the partner company once, then link it to accounts and contacts.</p>
+            <p>Create the partner company once, then link it to accounts and partner-side contacts.</p>
         </div>
     </div>
 
     <form method="POST" action="{{ url_for('add_partner') }}" class="pipeflow-form">
         <div class="form-grid">
+            <div class="form-section-heading full-width">Partner Account</div>
+
             <div class="form-group">
-                <label for="partner_name">Partner Name</label>
+                <label for="partner_name">Partner Account Name</label>
                 <input type="text" id="partner_name" name="partner_name" required>
             </div>
 
@@ -37,14 +39,28 @@
             </div>
 
             <div class="form-group">
-                <label for="website">Website</label>
-                <input type="text" id="website" name="website">
+                <label for="website">Account Website</label>
+                <input type="text"
+                       id="website"
+                       name="website"
+                       pattern="^(https?://|www\.).+"
+                       title="Enter a website starting with http://, https:// or www.">
+            </div>
+
+            <div class="form-section-heading full-width">Ownership</div>
+
+            <div class="form-group">
+                <label for="partner_manager">Partner Manager</label>
+                <input type="text" id="partner_manager" name="partner_manager">
             </div>
 
             <div class="form-group">
-                <label for="relationship_owner">Relationship Owner</label>
-                <input type="text" id="relationship_owner" name="relationship_owner">
+                <label for="bmc_partner_manager">BMC Partner Manager</label>
+                <input type="text" id="bmc_partner_manager" name="bmc_partner_manager">
+                <input type="hidden" name="relationship_owner" value="">
             </div>
+
+            <div class="form-section-heading full-width">Location</div>
 
             <div class="form-group">
                 <label for="city">City</label>
@@ -79,7 +95,7 @@
                     <th>Partner</th>
                     <th>Type</th>
                     <th>Coverage</th>
-                    <th>Owner</th>
+                    <th>Managers</th>
                     <th>Location</th>
                     <th>Website</th>
                     <th>Action</th>
@@ -103,7 +119,11 @@
                             <strong>{{ partner.contact_count or 0 }}</strong> partner contact(s)
                         </td>
 
-                        <td>{{ partner.relationship_owner or "Not assigned" }}</td>
+                        <td>
+                            <strong>Partner:</strong> {{ partner.partner_manager or "Not assigned" }}
+                            <br>
+                            <small><strong>BMC:</strong> {{ partner.bmc_partner_manager or partner.relationship_owner or "Not assigned" }}</small>
+                        </td>
 
                         <td>
                             {{ partner.city or "City not set" }}
@@ -113,7 +133,7 @@
 
                         <td>
                             {% if partner.website %}
-                                <a href="{{ partner.website }}" target="_blank" class="btn btn-secondary">Website</a>
+                                <a href="{% if partner.website.startswith('www.') %}https://{{ partner.website }}{% else %}{{ partner.website }}{% endif %}" target="_blank" class="btn btn-secondary">Website</a>
                             {% else %}
                                 <small>Not added</small>
                             {% endif %}

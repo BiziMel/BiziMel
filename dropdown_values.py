@@ -86,9 +86,9 @@ DROPDOWN_VALUES = {
         "Accenture",
     ],
     "partner_types": [
-        "Partner",
-        "SI",
+        "GOSI",
         "Reseller",
+        "Partner",
         "Hyperscaler",
     ],
     "partner_contact_roles": [

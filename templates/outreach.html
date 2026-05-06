@@ -107,7 +107,18 @@
                 </thead>
 
                 <tbody>
+                    {% set current_campaign = namespace(name=None) %}
                     {% for item in outreach_records %}
+                        {% set campaign_group = item.campaign or "No Campaign" %}
+                        {% if current_campaign.name != campaign_group %}
+                            {% set current_campaign.name = campaign_group %}
+                            <tr class="outreach-campaign-group-row">
+                                <td colspan="5">
+                                    <span>Campaign</span>
+                                    <strong>{{ campaign_group }}</strong>
+                                </td>
+                            </tr>
+                        {% endif %}
                         <tr class="outreach-main-row">
                             <td>
                                 <strong>

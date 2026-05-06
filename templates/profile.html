@@ -18,6 +18,14 @@
 <div class="form-card">
     <h2>Profile Details</h2>
 
+    {% if message %}
+        <div class="alert-success">{{ message }}</div>
+    {% endif %}
+
+    {% if error %}
+        <div class="alert-error">{{ error }}</div>
+    {% endif %}
+
     <form method="POST" class="pipeflow-form">
 
         <div class="form-grid">
@@ -64,6 +72,38 @@
     <p><strong>Full Name:</strong> {{ profile.full_name or "Not configured" }}</p>
     <p><strong>Team:</strong> {{ profile.team or "Not configured" }}</p>
     <p><strong>Job Title:</strong> {{ profile.job_title or "Not configured" }}</p>
+</div>
+
+<div class="form-card danger-zone-card">
+    <div class="section-header">
+        <div>
+            <h2>Delete My Workspace Data</h2>
+            <p>This deletes your private PipeFlow sales data only. Your login profile remains so you can continue using the app.</p>
+        </div>
+    </div>
+
+    <div class="danger-zone-panel">
+        <p>This will permanently delete your accounts, contacts, outreach, tasks, partners, partner contacts, account links, custom account values and timeline history.</p>
+        <p><strong>This cannot be undone.</strong></p>
+
+        <form method="POST"
+              action="{{ url_for('delete_profile_data') }}"
+              class="pipeflow-form"
+              onsubmit="return confirm('This permanently deletes your private PipeFlow workspace data. Continue?');">
+            <div class="form-group">
+                <label for="delete_confirmation">Type DELETE MY DATA to confirm</label>
+                <input type="text"
+                       id="delete_confirmation"
+                       name="delete_confirmation"
+                       autocomplete="off"
+                       required>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-danger">Delete My Workspace Data</button>
+            </div>
+        </form>
+    </div>
 </div>
 
 {% endblock %}

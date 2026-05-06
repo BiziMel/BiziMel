@@ -148,6 +148,7 @@
                 <tr>
                     <th>Date</th>
                     <th>Account</th>
+                    <th>Contact</th>
                     <th>Account Tier</th>
                     <th>Type</th>
                     <th>Outcome</th>
@@ -159,13 +160,14 @@
                     <tr>
                         <td>{{ item["activity_date"] or "Not set" }}</td>
                         <td>{{ item["account_name"] or "Unknown" }}</td>
+                        <td>{{ item["contact_name"] or "No contact" }}</td>
                         <td>{{ "Tier " ~ item["account_tier"] if item["account_tier"] else "Not set" }}</td>
                         <td>{{ item["activity_type"] or "Unknown" }}</td>
                         <td>{{ item["outcome"] or "Unknown" }}</td>
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="5">No outreach found.</td>
+                        <td colspan="6">No outreach found.</td>
                     </tr>
                 {% endfor %}
             </tbody>

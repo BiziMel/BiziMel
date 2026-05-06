@@ -161,6 +161,8 @@ def initialise_database(force=False):
             website TEXT,
             country TEXT,
             city TEXT,
+            partner_manager TEXT,
+            bmc_partner_manager TEXT,
             relationship_owner TEXT,
             notes TEXT,
             date_created TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -176,6 +178,7 @@ def initialise_database(force=False):
             job_title TEXT,
             partner_contact_role TEXT,
             coverage_area TEXT,
+            account_id INTEGER,
             relationship_owner TEXT,
             email TEXT,
             phone TEXT,
@@ -270,6 +273,8 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "partners", "website", "TEXT")
     add_column_if_missing(cursor, "partners", "country", "TEXT")
     add_column_if_missing(cursor, "partners", "city", "TEXT")
+    add_column_if_missing(cursor, "partners", "partner_manager", "TEXT")
+    add_column_if_missing(cursor, "partners", "bmc_partner_manager", "TEXT")
     add_column_if_missing(cursor, "partners", "relationship_owner", "TEXT")
     add_column_if_missing(cursor, "partners", "notes", "TEXT")
     add_column_if_missing(cursor, "partners", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
@@ -281,6 +286,7 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "partner_contacts", "job_title", "TEXT")
     add_column_if_missing(cursor, "partner_contacts", "partner_contact_role", "TEXT")
     add_column_if_missing(cursor, "partner_contacts", "coverage_area", "TEXT")
+    add_column_if_missing(cursor, "partner_contacts", "account_id", "INTEGER")
     add_column_if_missing(cursor, "partner_contacts", "relationship_owner", "TEXT")
     add_column_if_missing(cursor, "partner_contacts", "email", "TEXT")
     add_column_if_missing(cursor, "partner_contacts", "phone", "TEXT")

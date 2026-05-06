@@ -77,7 +77,7 @@ def version_health():
     from db_compat import translate_sql
     sample = "datetime(next_action_date || ' ' || IFNULL(next_action_time, '00:00')) < datetime('now', '-1 hour')"
     lines = [
-        "pipeflow_server_build=2026-05-06-dashboard-status-driven-outreach-rows-v1",
+        "pipeflow_server_build=2026-05-06-profile-workspace-delete-v1",
         f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
         f"translation_check={translate_sql(sample)}",
     ]
@@ -464,6 +464,32 @@ def add_timeline_entry(connection, related_type, related_id, entry_type, entry_t
     ))
 
 
+def delete_current_profile_workspace_data(connection):
+    tables = [
+        "timeline_entries",
+        "account_custom_values",
+        "account_partners",
+        "partner_contacts",
+        "outreach",
+        "contacts",
+        "partners",
+        "accounts",
+    ]
+
+    for table in tables:
+        connection.execute(f"DELETE FROM {table}")
+
+    connection.execute(
+        """
+        UPDATE user_profile
+        SET team = '',
+            job_title = '',
+            last_updated = CURRENT_TIMESTAMP
+        WHERE id = 1
+        """
+    )
+
+
 def build_change_log(existing_record, new_values, labels):
     changes = []
 
@@ -559,6 +585,15 @@ def get_or_create_partner(connection, partner_name):
     """, (partner_name,))
 
     return cursor.lastrowid
+
+
+def normalise_partner_website(website):
+    website = (website or "").strip()
+    if not website:
+        return ""
+    if re.match(r"^(https?://|www\.)[A-Za-z0-9][A-Za-z0-9.-]*(\.[A-Za-z]{2,})(/.*)?$", website):
+        return website
+    return None
 
 
 def calculate_account_health(contact_count, outreach_count, meeting_count, overdue_followups, latest_outreach_date):
@@ -1531,8 +1566,9 @@ def partners():
 def add_partner():
     connection = get_db_connection()
     partner_name = request.form.get("partner_name", "").strip()
+    website = normalise_partner_website(request.form.get("website"))
 
-    if partner_name:
+    if partner_name and website is not None:
         existing_partner = connection.execute("""
             SELECT id
             FROM partners
@@ -1549,17 +1585,21 @@ def add_partner():
                     website,
                     country,
                     city,
+                    partner_manager,
+                    bmc_partner_manager,
                     relationship_owner,
                     notes
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 partner_name,
                 request.form.get("partner_type"),
-                request.form.get("website"),
+                website,
                 request.form.get("country"),
                 request.form.get("city"),
-                request.form.get("relationship_owner"),
+                request.form.get("partner_manager"),
+                request.form.get("bmc_partner_manager"),
+                request.form.get("bmc_partner_manager"),
                 request.form.get("notes")
             ))
             partner_id = cursor.lastrowid
@@ -1600,10 +1640,13 @@ def view_partner(partner_id):
     """, (partner_id,)).fetchall()
 
     partner_contacts = connection.execute("""
-        SELECT *
+        SELECT
+            partner_contacts.*,
+            accounts.account_name
         FROM partner_contacts
-        WHERE partner_id = ?
-        ORDER BY name
+        LEFT JOIN accounts ON partner_contacts.account_id = accounts.id
+        WHERE partner_contacts.partner_id = ?
+        ORDER BY accounts.account_name, partner_contacts.name
     """, (partner_id,)).fetchall()
 
     partner_contact_count = connection.execute("""
@@ -1644,8 +1687,9 @@ def view_partner(partner_id):
 def edit_partner(partner_id):
     connection = get_db_connection()
     partner_name = request.form.get("partner_name", "").strip()
+    website = normalise_partner_website(request.form.get("website"))
 
-    if partner_name:
+    if partner_name and website is not None:
         connection.execute("""
             UPDATE partners
             SET partner_name = ?,
@@ -1653,6 +1697,8 @@ def edit_partner(partner_id):
                 website = ?,
                 country = ?,
                 city = ?,
+                partner_manager = ?,
+                bmc_partner_manager = ?,
                 relationship_owner = ?,
                 notes = ?,
                 last_updated = CURRENT_TIMESTAMP
@@ -1660,10 +1706,12 @@ def edit_partner(partner_id):
         """, (
             partner_name,
             request.form.get("partner_type"),
-            request.form.get("website"),
+            website,
             request.form.get("country"),
             request.form.get("city"),
-            request.form.get("relationship_owner"),
+            request.form.get("partner_manager"),
+            request.form.get("bmc_partner_manager"),
+            request.form.get("bmc_partner_manager"),
             request.form.get("notes"),
             partner_id
         ))
@@ -1693,6 +1741,7 @@ def add_partner_contact(partner_id):
                 job_title,
                 partner_contact_role,
                 coverage_area,
+                account_id,
                 relationship_owner,
                 email,
                 phone,
@@ -1702,13 +1751,14 @@ def add_partner_contact(partner_id):
                 next_action,
                 notes
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             partner_id,
             contact_name,
             request.form.get("job_title"),
             request.form.get("partner_contact_role"),
             request.form.get("coverage_area"),
+            request.form.get("account_id") or None,
             request.form.get("relationship_owner"),
             request.form.get("email"),
             request.form.get("phone"),
@@ -1906,6 +1956,7 @@ def view_account(account_id):
                 SELECT COUNT(*)
                 FROM partner_contacts
                 WHERE partner_contacts.partner_id = account_partners.partner_id
+                  AND partner_contacts.account_id = account_partners.account_id
             ) AS partner_contact_count
         FROM account_partners
         LEFT JOIN partners ON account_partners.partner_id = partners.id
@@ -2530,7 +2581,13 @@ def outreach():
         query += " AND outreach.outcome = ?"
         params.append(outcome_filter)
 
-    query += " ORDER BY outreach.activity_date DESC, outreach.activity_time DESC"
+    query += """
+        ORDER BY
+            COALESCE(NULLIF(outreach.campaign, ''), 'No Campaign'),
+            outreach.activity_date DESC,
+            outreach.activity_time DESC,
+            outreach.id DESC
+    """
 
     outreach_records = connection.execute(query, params).fetchall()
 
@@ -3055,22 +3112,26 @@ def global_search():
                OR website LIKE ?
                OR country LIKE ?
                OR city LIKE ?
+               OR partner_manager LIKE ?
+               OR bmc_partner_manager LIKE ?
                OR relationship_owner LIKE ?
                OR notes LIKE ?
             ORDER BY partner_name
         """, (
             search_term, search_term, search_term, search_term,
-            search_term, search_term, search_term
+            search_term, search_term, search_term, search_term, search_term
         )).fetchall()
 
         partner_contact_results = connection.execute("""
-            SELECT partner_contacts.*, partners.partner_name
+            SELECT partner_contacts.*, partners.partner_name, accounts.account_name
             FROM partner_contacts
             LEFT JOIN partners ON partner_contacts.partner_id = partners.id
+            LEFT JOIN accounts ON partner_contacts.account_id = accounts.id
             WHERE partner_contacts.name LIKE ?
                OR partner_contacts.job_title LIKE ?
                OR partner_contacts.partner_contact_role LIKE ?
                OR partner_contacts.coverage_area LIKE ?
+               OR accounts.account_name LIKE ?
                OR partner_contacts.relationship_owner LIKE ?
                OR partner_contacts.email LIKE ?
                OR partner_contacts.phone LIKE ?
@@ -3085,7 +3146,7 @@ def global_search():
             search_term, search_term, search_term, search_term,
             search_term, search_term, search_term, search_term,
             search_term, search_term, search_term, search_term,
-            search_term
+            search_term, search_term
         )).fetchall()
 
         outreach_results = connection.execute("""
@@ -3242,6 +3303,8 @@ def complete_task_from_tasks(outreach_id):
 @app.route("/profile", methods=("GET", "POST"))
 def profile():
     connection = get_db_connection()
+    message = request.args.get("message", "")
+    error = request.args.get("error", "")
 
     if request.method == "POST":
         connection.execute("""
@@ -3260,7 +3323,7 @@ def profile():
         connection.commit()
         connection.close()
 
-        return redirect(url_for("profile"))
+        return redirect(url_for("profile", message="Profile saved."))
 
     profile_record = connection.execute("""
         SELECT *
@@ -3270,7 +3333,28 @@ def profile():
 
     connection.close()
 
-    return render_template("profile.html", profile=profile_record)
+    return render_template("profile.html", profile=profile_record, message=message, error=error)
+
+
+@app.route("/profile/delete-data", methods=("POST",))
+def delete_profile_data():
+    confirmation = (request.form.get("delete_confirmation") or "").strip()
+
+    if confirmation != "DELETE MY DATA":
+        return redirect(url_for(
+            "profile",
+            error="Type DELETE MY DATA to confirm the workspace data deletion."
+        ))
+
+    connection = get_db_connection()
+    delete_current_profile_workspace_data(connection)
+    connection.commit()
+    connection.close()
+
+    return redirect(url_for(
+        "profile",
+        message="Your private PipeFlow workspace data has been deleted. Your login profile has been kept."
+    ))
 
 
 @app.route("/reports")
@@ -3916,9 +4000,11 @@ def outreach_reports():
             outreach.activity_type,
             outreach.outcome,
             accounts.account_name,
-            accounts.account_tier
+            accounts.account_tier,
+            contacts.name AS contact_name
         FROM outreach
         LEFT JOIN accounts ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
         ORDER BY outreach.activity_date DESC, outreach.activity_time DESC, outreach.id DESC
     """).fetchall()
 
