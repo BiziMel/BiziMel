@@ -27,8 +27,8 @@
     </section>
 {% endif %}
 
-<div class="dashboard-command-layout">
-    <main class="dashboard-command-main">
+<div class="dashboard-page-layout">
+    <div class="dashboard-metric-layout">
         <section class="form-card dashboard-week-card">
             <div class="section-header">
                 <div>
@@ -120,7 +120,94 @@
             </div>
         </section>
 
-        <section class="form-card dashboard-execution-insights-card">
+    </div>
+
+    <section class="form-card dashboard-task-card" id="dashboard-tasks">
+        <div class="section-header">
+            <div>
+                <h2>Tasks</h2>
+                <p>Update priority follow-ups directly from the dashboard.</p>
+            </div>
+        </div>
+
+        {% if dashboard_tasks %}
+            <div class="dashboard-task-table-wrap">
+                <table class="report-table dashboard-task-table no-sort">
+                    <colgroup>
+                        <col class="dashboard-task-due-col">
+                        <col class="dashboard-task-account-col">
+                        <col class="dashboard-task-action-col">
+                        <col class="dashboard-task-status-col">
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            <th>Due Date / Time</th>
+                            <th>Account / Contact</th>
+                            <th>Next Action</th>
+                            <th>Status / Outcome</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in dashboard_tasks %}
+                            <tr class="dashboard-task-main-row">
+                                <td>
+                                    <div class="dashboard-task-due-controls">
+                                        <input type="date" name="next_action_date" value="{{ item.next_action_date or '' }}" form="dashboard-task-update-{{ item.id }}" aria-label="Task due date">
+                                        <input type="time" name="next_action_time" value="{{ item.next_action_time or '' }}" form="dashboard-task-update-{{ item.id }}" aria-label="Task due time">
+                                    </div>
+                                </td>
+                                <td>
+                                    <strong>{{ item.account_name or "No account" }}</strong><br>
+                                    <span class="muted">{{ item.contact_name or "No contact" }}</span>
+                                </td>
+                                <td>{{ item.next_action or "No next action" }}</td>
+                                <td>
+                                    <div class="dashboard-task-control-grid">
+                                        <select name="task_status" form="dashboard-task-update-{{ item.id }}" aria-label="Task status">
+                                            {% for status in task_statuses %}
+                                                <option value="{{ status }}" {% if (item.task_status or 'Not Started') == status %}selected{% endif %}>{{ status }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <select name="outcome" form="dashboard-task-update-{{ item.id }}" aria-label="Outcome">
+                                            <option value="">Select outcome</option>
+                                            {% for outcome in outreach_outcomes %}
+                                                <option value="{{ outcome }}" {% if item.outcome == outcome %}selected{% endif %}>{{ outcome }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr class="dashboard-task-action-row">
+                                <td colspan="4">
+                                    <form method="POST" action="{{ url_for('update_task_from_tasks', outreach_id=item.id) }}" class="dashboard-task-update-form" id="dashboard-task-update-{{ item.id }}">
+                                        <input type="hidden" name="return_to" value="{{ url_for('home', _anchor='dashboard-tasks') }}">
+                                        <input type="hidden" name="next_action" value="{{ item.next_action or '' }}">
+                                        <input type="hidden" name="notes" value="{{ item.notes or '' }}">
+                                    </form>
+                                    <div class="dashboard-task-button-row">
+                                        <button type="submit" form="dashboard-task-update-{{ item.id }}" class="btn btn-primary btn-small">Update</button>
+                                        <a href="{{ url_for('view_outreach', outreach_id=item.id) }}" class="btn btn-secondary btn-small">Open</a>
+                                        <form method="POST" action="{{ url_for('complete_task_from_tasks', outreach_id=item.id) }}" class="dashboard-task-complete-form">
+                                            <input type="hidden" name="return_to" value="{{ url_for('home', _anchor='dashboard-tasks') }}">
+                                            <input type="hidden" name="outcome" value="{{ item.outcome or 'Follow-up Required' }}">
+                                            <button type="submit" class="btn btn-secondary btn-small">Complete</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="empty-state compact-empty-state">
+                <h3>No active tasks</h3>
+                <p>New follow-ups will appear here when outreach creates next actions.</p>
+            </div>
+        {% endif %}
+    </section>
+
+    <section class="form-card dashboard-execution-insights-card">
             <div class="section-header">
                 <div>
                     <h2>Execution Insights</h2>
@@ -165,8 +252,9 @@
                     <p>Add accounts, contacts, outreach, outcomes and campaign activity to generate recommendations.</p>
                 </div>
             {% endif %}
-        </section>
+    </section>
 
+    <div class="dashboard-support-layout">
         <section class="form-card dashboard-chart-card">
             <div class="section-header">
                 <div>
@@ -220,93 +308,6 @@
             {% else %}
                 <p>No outreach by account data yet.</p>
             {% endif %}
-        </section>
-    </main>
-
-    <aside class="dashboard-command-side">
-        <section class="form-card dashboard-task-card" id="dashboard-tasks">
-            <div class="section-header">
-                <div>
-                    <h2>Tasks</h2>
-                    <p>Update priority follow-ups directly from the dashboard.</p>
-                </div>
-            </div>
-
-            {% if dashboard_tasks %}
-                <div class="dashboard-task-table-wrap">
-                    <table class="report-table dashboard-task-table no-sort">
-                        <colgroup>
-                            <col class="dashboard-task-due-col">
-                            <col class="dashboard-task-account-col">
-                            <col class="dashboard-task-action-col">
-                        </colgroup>
-                        <thead>
-                            <tr>
-                                <th>Due</th>
-                                <th>Account</th>
-                                <th>Next Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for item in dashboard_tasks %}
-                                <tr class="dashboard-task-main-row">
-                                    <td>
-                                        <div class="dashboard-task-due-controls">
-                                            <input type="date" name="next_action_date" value="{{ item.next_action_date or '' }}" form="dashboard-task-update-{{ item.id }}" aria-label="Task due date">
-                                            <input type="time" name="next_action_time" value="{{ item.next_action_time or '' }}" form="dashboard-task-update-{{ item.id }}" aria-label="Task due time">
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <strong>{{ item.account_name or "No account" }}</strong><br>
-                                        <span class="muted">{{ item.contact_name or "No contact" }}</span>
-                                    </td>
-                                    <td>{{ item.next_action or "No next action" }}</td>
-                                </tr>
-                                <tr class="dashboard-task-action-row">
-                                    <td colspan="3">
-                                        <form method="POST" action="{{ url_for('update_task_from_tasks', outreach_id=item.id) }}" class="dashboard-task-update-form" id="dashboard-task-update-{{ item.id }}">
-                                            <input type="hidden" name="return_to" value="{{ url_for('home', _anchor='dashboard-tasks') }}">
-                                            <input type="hidden" name="next_action" value="{{ item.next_action or '' }}">
-                                            <input type="hidden" name="notes" value="{{ item.notes or '' }}">
-                                        </form>
-                                        <div class="dashboard-task-action-band">
-                                            <div class="dashboard-task-control-grid">
-                                                <select name="task_status" form="dashboard-task-update-{{ item.id }}" aria-label="Task status">
-                                                    {% for status in task_statuses %}
-                                                        <option value="{{ status }}" {% if (item.task_status or 'Not Started') == status %}selected{% endif %}>{{ status }}</option>
-                                                    {% endfor %}
-                                                </select>
-                                                <select name="outcome" form="dashboard-task-update-{{ item.id }}" aria-label="Outcome">
-                                                    <option value="">Select outcome</option>
-                                                    {% for outcome in outreach_outcomes %}
-                                                        <option value="{{ outcome }}" {% if item.outcome == outcome %}selected{% endif %}>{{ outcome }}</option>
-                                                    {% endfor %}
-                                                </select>
-                                            </div>
-                                            <div class="dashboard-task-actions">
-                                                <button type="submit" form="dashboard-task-update-{{ item.id }}" class="btn btn-primary btn-small">Update</button>
-                                                <a href="{{ url_for('view_outreach', outreach_id=item.id) }}" class="btn btn-secondary btn-small">Open</a>
-                                            </div>
-                                            <form method="POST" action="{{ url_for('complete_task_from_tasks', outreach_id=item.id) }}" class="dashboard-task-complete-form">
-                                                <input type="hidden" name="return_to" value="{{ url_for('home', _anchor='dashboard-tasks') }}">
-                                                <input type="hidden" name="outcome" value="{{ item.outcome or 'Follow-up Required' }}">
-                                                <button type="submit" class="btn btn-secondary btn-small">Complete</button>
-                                            </form>
-                                        </div>
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            {% else %}
-                <div class="empty-state compact-empty-state">
-                    <h3>No active tasks</h3>
-                    <p>New follow-ups will appear here when outreach creates next actions.</p>
-                </div>
-            {% endif %}
-        </section>
-
         <section class="form-card">
             <div class="section-header">
                 <div>
@@ -405,7 +406,7 @@
                 </div>
             </div>
         </section>
-    </aside>
+    </div>
 </div>
 
 {% endblock %}

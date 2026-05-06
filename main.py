@@ -35,13 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
-    
-    parser.add_argument(
-    "--check",
-    action="store_true",
-    help="Check inputs and template, but do not create an output file",
-)
-    
+
     try:
         if args.json:
             report = load_report_from_json(args.json)
