@@ -93,8 +93,8 @@
           action="{{ url_for('bulk_delete_partners') }}"
           onsubmit="return confirm('Delete the selected partners, partner contacts and account links? This cannot be undone.');"></form>
 
-    <div class="bulk-action-bar">
-        <span>Select partners you submitted to delete.</span>
+    <div class="bulk-action-bar" data-bulk-action-bar="bulk-delete-partners-form" hidden>
+        <span><strong data-bulk-selected-count>0</strong> partner record(s) selected.</span>
         <button type="submit" form="bulk-delete-partners-form" class="btn btn-danger btn-small">Delete Selected</button>
     </div>
 

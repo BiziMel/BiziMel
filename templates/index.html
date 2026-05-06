@@ -69,6 +69,13 @@
                 </a>
                 <a href="{{ url_for('accounts') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
+                        <h3>FY PG Target</h3>
+                        <p class="metric-number">${{ "{:,.0f}".format(total_pg_target or 0) }}</p>
+                        <p class="metric-subtext">Total account ACV target</p>
+                    </div>
+                </a>
+                <a href="{{ url_for('accounts') }}" class="metric-card-link">
+                    <div class="metric-card compact-command-card">
                         <h3>Total Accounts</h3>
                         <p class="metric-number">{{ total_accounts }}</p>
                     </div>

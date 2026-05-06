@@ -77,7 +77,7 @@ def version_health():
     from db_compat import translate_sql
     sample = "datetime(next_action_date || ' ' || IFNULL(next_action_time, '00:00')) < datetime('now', '-1 hour')"
     lines = [
-        "pipeflow_server_build=2026-05-06-partner-owner-delete-audit-v1",
+        "pipeflow_server_build=2026-05-06-outreach-account-campaign-due-sort-v1",
         f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
         f"translation_check={translate_sql(sample)}",
     ]
@@ -1202,6 +1202,7 @@ def render_dashboard_fallback():
         total_accounts=0,
         total_contacts=0,
         total_outreach=0,
+        total_pg_target=0,
         meetings_booked=0,
         follow_ups_due=0,
         latest_outreach=[],
@@ -1230,6 +1231,10 @@ def build_dashboard_response(connection):
     total_accounts = connection.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
     total_contacts = connection.execute("SELECT COUNT(*) FROM contacts").fetchone()[0]
     total_outreach = connection.execute("SELECT COUNT(*) FROM outreach").fetchone()[0]
+    total_pg_target = connection.execute("""
+        SELECT COALESCE(SUM(pipeline_target), 0)
+        FROM accounts
+    """).fetchone()[0]
     today = datetime.now().date()
     week_start = today - timedelta(days=today.weekday())
     week_end = week_start + timedelta(days=6)
@@ -1584,6 +1589,7 @@ def build_dashboard_response(connection):
         total_accounts=total_accounts,
         total_contacts=total_contacts,
         total_outreach=total_outreach,
+        total_pg_target=total_pg_target,
         meetings_booked=meetings_booked,
         follow_ups_due=follow_ups_due,
         latest_outreach=latest_outreach,
@@ -2894,9 +2900,15 @@ def outreach():
 
     query += """
         ORDER BY
+            COALESCE(NULLIF(accounts.account_name, ''), 'No Account'),
             COALESCE(NULLIF(outreach.campaign, ''), 'No Campaign'),
+            CASE
+                WHEN outreach.next_action_date IS NULL OR outreach.next_action_date = ''
+                THEN 1 ELSE 0
+            END,
+            outreach.next_action_date DESC,
+            outreach.next_action_time DESC,
             outreach.activity_date DESC,
-            outreach.activity_time DESC,
             outreach.id DESC
     """
 
