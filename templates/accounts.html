@@ -21,8 +21,8 @@
       action="{{ url_for('bulk_delete_accounts') }}"
       onsubmit="return confirm('Delete the selected accounts and their related workspace records? This cannot be undone.');"></form>
 
-<div class="bulk-action-bar">
-    <span>Select accounts to delete.</span>
+<div class="bulk-action-bar" data-bulk-action-bar="bulk-delete-accounts-form" hidden>
+    <span><strong data-bulk-selected-count>0</strong> account(s) selected.</span>
     <button type="submit" form="bulk-delete-accounts-form" class="btn btn-danger btn-small">Delete Selected</button>
 </div>
 {% endif %}

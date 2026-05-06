@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Trail | PipeFlow PG Manager{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>Audit Trail</h1>
+        <p>Structured change history for your private workspace.</p>
+    </div>
+</div>
+
+<div class="report-table-section">
+    <div class="section-header">
+        <div>
+            <h2>Recent Changes</h2>
+            <p>Date/time, record, field, old value, new value and user.</p>
+        </div>
+    </div>
+
+    {% if entries %}
+        <div class="table-container">
+            <table class="report-table">
+                <thead>
+                    <tr>
+                        <th>Date / Time</th>
+                        <th>User</th>
+                        <th>Action</th>
+                        <th>Record</th>
+                        <th>Field</th>
+                        <th>Value From</th>
+                        <th>Value To</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in entries %}
+                        <tr>
+                            <td>{{ entry.date_created }}</td>
+                            <td>
+                                <strong>{{ entry.actor_name or "Unknown user" }}</strong>
+                                <br>
+                                <span class="muted">{{ entry.actor_email or "" }}</span>
+                            </td>
+                            <td>{{ entry.action_type }}</td>
+                            <td>{{ entry.entity_type }} #{{ entry.entity_id or "-" }}</td>
+                            <td>{{ entry.field_label or entry.field_name or "Record" }}</td>
+                            <td>{{ entry.value_from or "" }}</td>
+                            <td>{{ entry.value_to or "" }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <h3>No audit entries yet</h3>
+            <p>Changes will appear here once users create, update or delete records.</p>
+        </div>
+    {% endif %}
+</div>
+
+{% endblock %}

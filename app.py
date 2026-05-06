@@ -77,7 +77,7 @@ def version_health():
     from db_compat import translate_sql
     sample = "datetime(next_action_date || ' ' || IFNULL(next_action_time, '00:00')) < datetime('now', '-1 hour')"
     lines = [
-        "pipeflow_server_build=2026-05-06-bulk-delete-records-v1",
+        "pipeflow_server_build=2026-05-06-partner-owner-delete-audit-v1",
         f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
         f"translation_check={translate_sql(sample)}",
     ]
@@ -464,8 +464,105 @@ def add_timeline_entry(connection, related_type, related_id, entry_type, entry_t
     ))
 
 
+def audit_actor():
+    user = current_user()
+    if not user:
+        return {"id": None, "name": session.get("user_name", ""), "email": session.get("user_email", "")}
+    return {
+        "id": user["id"],
+        "name": user["full_name"],
+        "email": user["email"],
+    }
+
+
+def audit_entry(connection, entity_type, entity_id, action_type, field_name="", field_label="", value_from="", value_to=""):
+    actor = audit_actor()
+    connection.execute(
+        """
+        INSERT INTO audit_entries (
+            entity_type,
+            entity_id,
+            action_type,
+            field_name,
+            field_label,
+            value_from,
+            value_to,
+            actor_user_id,
+            actor_name,
+            actor_email
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            entity_type,
+            entity_id,
+            action_type,
+            field_name,
+            field_label,
+            "" if value_from is None else str(value_from),
+            "" if value_to is None else str(value_to),
+            actor["id"],
+            actor["name"],
+            actor["email"],
+        ),
+    )
+
+
+def audit_record_create(connection, entity_type, entity_id, values, labels=None):
+    labels = labels or {}
+    for field_name, value in values.items():
+        if value not in (None, ""):
+            audit_entry(
+                connection,
+                entity_type,
+                entity_id,
+                "Create",
+                field_name,
+                labels.get(field_name, field_name),
+                "",
+                value,
+            )
+
+
+def audit_record_update(connection, entity_type, entity_id, existing_record, new_values, labels=None):
+    labels = labels or {}
+    for field_name, new_value in new_values.items():
+        old_value = existing_record[field_name] if existing_record and existing_record[field_name] is not None else ""
+        new_value = new_value if new_value is not None else ""
+        if str(old_value) != str(new_value):
+            audit_entry(
+                connection,
+                entity_type,
+                entity_id,
+                "Update",
+                field_name,
+                labels.get(field_name, field_name),
+                old_value,
+                new_value,
+            )
+
+
+def audit_record_delete(connection, entity_type, entity_id, label=""):
+    audit_entry(connection, entity_type, entity_id, "Delete", "record", "Record", label, "")
+
+
+def current_user_can_delete_partner(partner):
+    user = current_user()
+    if not user or not partner:
+        return False
+    if user["role"] == "admin":
+        return True
+    submitted_by_user_id = partner["submitted_by_user_id"] if "submitted_by_user_id" in partner.keys() else None
+    submitted_by_email = partner["submitted_by_email"] if "submitted_by_email" in partner.keys() else None
+    return (
+        submitted_by_user_id == user["id"]
+        or (submitted_by_email and submitted_by_email == user["email"])
+    )
+
+
 def delete_current_profile_workspace_data(connection):
     tables = [
+        "audit_entries",
         "timeline_entries",
         "account_custom_values",
         "account_partners",
@@ -502,6 +599,8 @@ def selected_record_ids(field_name="selected_ids"):
 
 def delete_account_records(connection, account_ids):
     for account_id in account_ids:
+        account = connection.execute("SELECT account_name FROM accounts WHERE id = ?", (account_id,)).fetchone()
+        audit_record_delete(connection, "account", account_id, account["account_name"] if account else "")
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'account' AND related_id = ?", (account_id,))
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'contact' AND related_id IN (SELECT id FROM contacts WHERE account_id = ?)", (account_id,))
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'outreach' AND related_id IN (SELECT id FROM outreach WHERE account_id = ?)", (account_id,))
@@ -515,6 +614,8 @@ def delete_account_records(connection, account_ids):
 
 def delete_contact_records(connection, contact_ids):
     for contact_id in contact_ids:
+        contact = connection.execute("SELECT name FROM contacts WHERE id = ?", (contact_id,)).fetchone()
+        audit_record_delete(connection, "contact", contact_id, contact["name"] if contact else "")
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'contact' AND related_id = ?", (contact_id,))
         connection.execute("DELETE FROM outreach WHERE contact_id = ?", (contact_id,))
         connection.execute("DELETE FROM contacts WHERE id = ?", (contact_id,))
@@ -522,12 +623,18 @@ def delete_contact_records(connection, contact_ids):
 
 def delete_outreach_records(connection, outreach_ids):
     for outreach_id in outreach_ids:
+        outreach = connection.execute("SELECT subject FROM outreach WHERE id = ?", (outreach_id,)).fetchone()
+        audit_record_delete(connection, "outreach", outreach_id, outreach["subject"] if outreach else "")
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'outreach' AND related_id = ?", (outreach_id,))
         connection.execute("DELETE FROM outreach WHERE id = ?", (outreach_id,))
 
 
 def delete_partner_records(connection, partner_ids):
     for partner_id in partner_ids:
+        partner = connection.execute("SELECT * FROM partners WHERE id = ?", (partner_id,)).fetchone()
+        if not current_user_can_delete_partner(partner):
+            continue
+        audit_record_delete(connection, "partner", partner_id, partner["partner_name"] if partner else "")
         connection.execute("DELETE FROM account_partners WHERE partner_id = ?", (partner_id,))
         connection.execute("DELETE FROM partner_contacts WHERE partner_id = ?", (partner_id,))
         connection.execute("DELETE FROM partners WHERE id = ?", (partner_id,))
@@ -622,10 +729,16 @@ def get_or_create_partner(connection, partner_name):
     if partner:
         return partner["id"]
 
+    actor = audit_actor()
     cursor = connection.execute("""
-        INSERT INTO partners (partner_name)
-        VALUES (?)
-    """, (partner_name,))
+        INSERT INTO partners (
+            partner_name,
+            submitted_by_user_id,
+            submitted_by_email,
+            submitted_by_name
+        )
+        VALUES (?, ?, ?, ?)
+    """, (partner_name, actor["id"], actor["email"], actor["name"]))
 
     return cursor.lastrowid
 
@@ -1599,10 +1712,15 @@ def partners():
         FROM partners
         ORDER BY partners.partner_name
     """).fetchall()
+    partners_with_permissions = []
+    for row in partner_rows:
+        partner = dict(row)
+        partner["can_delete"] = current_user_can_delete_partner(row)
+        partners_with_permissions.append(partner)
 
     connection.close()
 
-    return render_template("partners.html", partners=partner_rows)
+    return render_template("partners.html", partners=partners_with_permissions)
 
 
 @app.route("/partners/add", methods=("POST",))
@@ -1610,6 +1728,7 @@ def add_partner():
     connection = get_db_connection()
     partner_name = request.form.get("partner_name", "").strip()
     website = normalise_partner_website(request.form.get("website"))
+    actor = audit_actor()
 
     if partner_name and website is not None:
         existing_partner = connection.execute("""
@@ -1631,9 +1750,12 @@ def add_partner():
                     partner_manager,
                     bmc_partner_manager,
                     relationship_owner,
+                    submitted_by_user_id,
+                    submitted_by_email,
+                    submitted_by_name,
                     notes
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 partner_name,
                 request.form.get("partner_type"),
@@ -1643,9 +1765,31 @@ def add_partner():
                 request.form.get("partner_manager"),
                 request.form.get("bmc_partner_manager"),
                 request.form.get("bmc_partner_manager"),
+                actor["id"],
+                actor["email"],
+                actor["name"],
                 request.form.get("notes")
             ))
             partner_id = cursor.lastrowid
+            audit_record_create(connection, "partner", partner_id, {
+                "partner_name": partner_name,
+                "partner_type": request.form.get("partner_type"),
+                "website": website,
+                "partner_manager": request.form.get("partner_manager"),
+                "bmc_partner_manager": request.form.get("bmc_partner_manager"),
+                "city": request.form.get("city"),
+                "country": request.form.get("country"),
+                "notes": request.form.get("notes"),
+            }, {
+                "partner_name": "Partner account name",
+                "partner_type": "Partner type",
+                "website": "Account website",
+                "partner_manager": "Partner manager",
+                "bmc_partner_manager": "BMC partner manager",
+                "city": "City",
+                "country": "Country",
+                "notes": "Notes",
+            })
             connection.commit()
 
         connection.close()
@@ -1731,8 +1875,31 @@ def edit_partner(partner_id):
     connection = get_db_connection()
     partner_name = request.form.get("partner_name", "").strip()
     website = normalise_partner_website(request.form.get("website"))
+    existing_partner = connection.execute("SELECT * FROM partners WHERE id = ?", (partner_id,)).fetchone()
 
-    if partner_name and website is not None:
+    if existing_partner and partner_name and website is not None:
+        new_values = {
+            "partner_name": partner_name,
+            "partner_type": request.form.get("partner_type"),
+            "website": website,
+            "country": request.form.get("country"),
+            "city": request.form.get("city"),
+            "partner_manager": request.form.get("partner_manager"),
+            "bmc_partner_manager": request.form.get("bmc_partner_manager"),
+            "relationship_owner": request.form.get("bmc_partner_manager"),
+            "notes": request.form.get("notes"),
+        }
+        labels = {
+            "partner_name": "Partner account name",
+            "partner_type": "Partner type",
+            "website": "Account website",
+            "country": "Country",
+            "city": "City",
+            "partner_manager": "Partner manager",
+            "bmc_partner_manager": "BMC partner manager",
+            "relationship_owner": "Relationship owner",
+            "notes": "Notes",
+        }
         connection.execute("""
             UPDATE partners
             SET partner_name = ?,
@@ -1747,17 +1914,18 @@ def edit_partner(partner_id):
                 last_updated = CURRENT_TIMESTAMP
             WHERE id = ?
         """, (
-            partner_name,
-            request.form.get("partner_type"),
-            website,
-            request.form.get("country"),
-            request.form.get("city"),
-            request.form.get("partner_manager"),
-            request.form.get("bmc_partner_manager"),
-            request.form.get("bmc_partner_manager"),
-            request.form.get("notes"),
+            new_values["partner_name"],
+            new_values["partner_type"],
+            new_values["website"],
+            new_values["country"],
+            new_values["city"],
+            new_values["partner_manager"],
+            new_values["bmc_partner_manager"],
+            new_values["relationship_owner"],
+            new_values["notes"],
             partner_id
         ))
+        audit_record_update(connection, "partner", partner_id, existing_partner, new_values, labels)
 
         connection.execute("""
             UPDATE account_partners
@@ -1777,7 +1945,7 @@ def add_partner_contact(partner_id):
     contact_name = request.form.get("name", "").strip()
 
     if contact_name:
-        connection.execute("""
+        cursor = connection.execute("""
             INSERT INTO partner_contacts (
                 partner_id,
                 name,
@@ -1811,6 +1979,19 @@ def add_partner_contact(partner_id):
             request.form.get("next_action"),
             request.form.get("notes")
         ))
+        contact_id = cursor.lastrowid
+        audit_record_create(connection, "partner_contact", contact_id, {
+            "partner_id": partner_id,
+            "name": contact_name,
+            "job_title": request.form.get("job_title"),
+            "partner_contact_role": request.form.get("partner_contact_role"),
+            "coverage_area": request.form.get("coverage_area"),
+            "account_id": request.form.get("account_id") or None,
+            "relationship_owner": request.form.get("relationship_owner"),
+            "email": request.form.get("email"),
+            "relationship_status": request.form.get("relationship_status"),
+            "next_action": request.form.get("next_action"),
+        })
         connection.commit()
 
     connection.close()
@@ -1820,6 +2001,14 @@ def add_partner_contact(partner_id):
 @app.route("/partners/<int:partner_id>/contacts/<int:contact_id>/delete", methods=("POST",))
 def delete_partner_contact(partner_id, contact_id):
     connection = get_db_connection()
+    contact = connection.execute("""
+        SELECT name
+        FROM partner_contacts
+        WHERE id = ?
+          AND partner_id = ?
+    """, (contact_id, partner_id)).fetchone()
+    if contact:
+        audit_record_delete(connection, "partner_contact", contact_id, contact["name"])
     connection.execute("""
         DELETE FROM partner_contacts
         WHERE id = ?
@@ -1863,7 +2052,7 @@ def add_partner_account_relationship(partner_id):
         """, (account_id, partner_id)).fetchone()
 
         if existing_relationship is None:
-            connection.execute("""
+            cursor = connection.execute("""
                 INSERT INTO account_partners (
                     account_id,
                     partner_id,
@@ -1885,6 +2074,17 @@ def add_partner_account_relationship(partner_id):
                 request.form.get("next_action"),
                 request.form.get("notes")
             ))
+            account_partner_id = cursor.lastrowid
+            audit_record_create(connection, "account_partner", account_partner_id, {
+                "account_id": account_id,
+                "partner_id": partner_id,
+                "partner_name": partner["partner_name"],
+                "partner_role": request.form.get("partner_role"),
+                "involvement_status": request.form.get("involvement_status"),
+                "relationship_owner": request.form.get("relationship_owner"),
+                "next_action": request.form.get("next_action"),
+                "notes": request.form.get("notes"),
+            })
 
             add_timeline_entry(
                 connection,
@@ -1922,6 +2122,18 @@ def add_account():
             request.form.get("notes")
         ))
         account_id = cursor.lastrowid
+        audit_record_create(connection, "account", account_id, {
+            "account_name": request.form.get("account_name"),
+            "pg_bible_order": request.form.get("pg_bible_order") or None,
+            "account_tier": request.form.get("account_tier"),
+            "industry": request.form.get("industry"),
+            "business_unit": request.form.get("business_unit"),
+            "country": request.form.get("country"),
+            "city": request.form.get("city"),
+            "website": request.form.get("website"),
+            "pipeline_target": request.form.get("pipeline_target"),
+            "notes": request.form.get("notes"),
+        })
         save_account_custom_values(connection, account_id, custom_fields, request.form)
         connection.commit()
         connection.close()
@@ -2072,7 +2284,7 @@ def add_account_partner(account_id):
         partner_id = get_or_create_partner(connection, partner_name)
 
     if partner_name:
-        connection.execute("""
+        cursor = connection.execute("""
             INSERT INTO account_partners (
                 account_id,
                 partner_id,
@@ -2094,6 +2306,17 @@ def add_account_partner(account_id):
             request.form.get("next_action"),
             request.form.get("notes")
         ))
+        account_partner_id = cursor.lastrowid
+        audit_record_create(connection, "account_partner", account_partner_id, {
+            "account_id": account_id,
+            "partner_id": partner_id,
+            "partner_name": partner_name,
+            "partner_role": request.form.get("partner_role"),
+            "involvement_status": request.form.get("involvement_status"),
+            "relationship_owner": request.form.get("relationship_owner"),
+            "next_action": request.form.get("next_action"),
+            "notes": request.form.get("notes"),
+        })
 
         add_timeline_entry(
             connection,
@@ -2186,6 +2409,7 @@ def edit_account_partner(account_id, partner_id):
             ))
 
             if changes:
+                audit_record_update(connection, "account_partner", partner_id, existing_partner, new_values, labels)
                 add_timeline_entry(
                     connection,
                     "account",
@@ -2212,6 +2436,7 @@ def delete_account_partner(account_id, partner_id):
     """, (partner_id, account_id)).fetchone()
 
     if partner:
+        audit_record_delete(connection, "account_partner", partner_id, partner["partner_name"])
         connection.execute("""
             DELETE FROM account_partners
             WHERE id = ?
@@ -2304,6 +2529,7 @@ def edit_account(account_id):
         save_account_custom_values(connection, account_id, custom_fields, request.form)
 
         if changes:
+            audit_record_update(connection, "account", account_id, account, new_values, labels)
             add_timeline_entry(
                 connection,
                 "account",
@@ -2383,7 +2609,7 @@ def contacts():
 def add_contact():
     if request.method == "POST":
         connection = get_db_connection()
-        connection.execute("""
+        cursor = connection.execute("""
             INSERT INTO contacts (
                 account_id, category, name, job_title, org_dept, responsibilities,
                 email, phone, location, linkedin, bmc_relationship, characteristics,
@@ -2411,6 +2637,17 @@ def add_contact():
             request.form.get("social_media"),
             request.form.get("additional_notes")
         ))
+        contact_id = cursor.lastrowid
+        audit_record_create(connection, "contact", contact_id, {
+            "account_id": request.form.get("account_id"),
+            "category": request.form.get("category"),
+            "name": request.form.get("name"),
+            "job_title": request.form.get("job_title"),
+            "org_dept": request.form.get("org_dept"),
+            "email": request.form.get("email"),
+            "phone": request.form.get("phone"),
+            "bmc_relationship": request.form.get("bmc_relationship"),
+        })
         connection.commit()
         connection.close()
 
@@ -2571,6 +2808,7 @@ def edit_contact(contact_id):
         ))
 
         if changes:
+            audit_record_update(connection, "contact", contact_id, contact, new_values, labels)
             add_timeline_entry(
                 connection,
                 "contact",
@@ -2687,7 +2925,7 @@ def add_outreach():
     connection = get_db_connection()
 
     if request.method == "POST":
-        connection.execute("""
+        cursor = connection.execute("""
             INSERT INTO outreach (
                 fy, quarter, campaign, sales_play, account_id, contact_id, activity_type,
                 activity_date, activity_time, subject, notes, outcome,
@@ -2714,6 +2952,25 @@ def add_outreach():
             request.form.get("task_status", "Not Started"),
             request.form.get("assigned_to", "")
         ))
+        outreach_id = cursor.lastrowid
+        audit_record_create(connection, "outreach", outreach_id, {
+            "fy": request.form.get("fy"),
+            "quarter": request.form.get("quarter"),
+            "campaign": request.form.get("campaign"),
+            "sales_play": request.form.get("sales_play"),
+            "account_id": request.form.get("account_id"),
+            "contact_id": request.form.get("contact_id"),
+            "activity_type": request.form.get("activity_type"),
+            "activity_date": request.form.get("activity_date"),
+            "activity_time": request.form.get("activity_time"),
+            "subject": request.form.get("subject"),
+            "outcome": request.form.get("outcome"),
+            "next_action": request.form.get("next_action"),
+            "next_action_date": request.form.get("next_action_date"),
+            "next_action_time": request.form.get("next_action_time"),
+            "task_status": request.form.get("task_status", "Not Started"),
+            "assigned_to": request.form.get("assigned_to", ""),
+        })
 
         connection.commit()
         connection.close()
@@ -3103,6 +3360,7 @@ def edit_outreach(outreach_id):
         ))
 
         if changes:
+            audit_record_update(connection, "outreach", outreach_id, outreach_item, new_values, labels)
             add_timeline_entry(
                 connection,
                 "outreach",
@@ -3336,6 +3594,7 @@ def update_task_from_tasks(outreach_id):
         ),
     )
     if changes:
+        audit_record_update(connection, "outreach", outreach_id, outreach_item, new_values, labels)
         add_timeline_entry(
             connection,
             "outreach",
@@ -3371,6 +3630,13 @@ def complete_task_from_tasks(outreach_id):
         """,
         (outcome, outreach_id),
     )
+    audit_record_update(connection, "outreach", outreach_id, outreach_item, {
+        "task_status": "Closed",
+        "outcome": outcome,
+    }, {
+        "task_status": "Task status",
+        "outcome": "Outcome",
+    })
     add_timeline_entry(
         connection,
         "outreach",
@@ -3443,6 +3709,19 @@ def delete_profile_data():
 @app.route("/reports")
 def reports():
     return render_template("reports.html")
+
+
+@app.route("/audit")
+def audit_trail():
+    connection = get_db_connection()
+    entries = connection.execute("""
+        SELECT *
+        FROM audit_entries
+        ORDER BY date_created DESC, id DESC
+        LIMIT 500
+    """).fetchall()
+    connection.close()
+    return render_template("audit.html", entries=entries)
 
 
 def documented_sales_play(row):

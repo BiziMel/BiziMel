@@ -94,7 +94,7 @@
           onsubmit="return confirm('Delete the selected partners, partner contacts and account links? This cannot be undone.');"></form>
 
     <div class="bulk-action-bar">
-        <span>Select partners to delete.</span>
+        <span>Select partners you submitted to delete.</span>
         <button type="submit" form="bulk-delete-partners-form" class="btn btn-danger btn-small">Delete Selected</button>
     </div>
 
@@ -117,7 +117,11 @@
                 {% for partner in partners %}
                     <tr>
                         <td class="bulk-select-col">
-                            <input type="checkbox" name="selected_ids" value="{{ partner.id }}" form="bulk-delete-partners-form" aria-label="Select {{ partner.partner_name }}">
+                            {% if partner.can_delete %}
+                                <input type="checkbox" name="selected_ids" value="{{ partner.id }}" form="bulk-delete-partners-form" aria-label="Select {{ partner.partner_name }}">
+                            {% else %}
+                                <span class="muted">Owner only</span>
+                            {% endif %}
                         </td>
                         <td>
                             <strong>{{ partner.partner_name }}</strong>

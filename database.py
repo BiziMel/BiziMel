@@ -164,6 +164,9 @@ def initialise_database(force=False):
             partner_manager TEXT,
             bmc_partner_manager TEXT,
             relationship_owner TEXT,
+            submitted_by_user_id INTEGER,
+            submitted_by_email TEXT,
+            submitted_by_name TEXT,
             notes TEXT,
             date_created TEXT DEFAULT CURRENT_TIMESTAMP,
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP
@@ -229,6 +232,23 @@ def initialise_database(force=False):
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS audit_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entity_type TEXT NOT NULL,
+            entity_id INTEGER,
+            action_type TEXT NOT NULL,
+            field_name TEXT,
+            field_label TEXT,
+            value_from TEXT,
+            value_to TEXT,
+            actor_user_id INTEGER,
+            actor_name TEXT,
+            actor_email TEXT,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     # Safe migrations for account custom values
     add_column_if_missing(cursor, "account_custom_values", "account_id", "INTEGER")
     add_column_if_missing(cursor, "account_custom_values", "field_key", "TEXT")
@@ -276,6 +296,9 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "partners", "partner_manager", "TEXT")
     add_column_if_missing(cursor, "partners", "bmc_partner_manager", "TEXT")
     add_column_if_missing(cursor, "partners", "relationship_owner", "TEXT")
+    add_column_if_missing(cursor, "partners", "submitted_by_user_id", "INTEGER")
+    add_column_if_missing(cursor, "partners", "submitted_by_email", "TEXT")
+    add_column_if_missing(cursor, "partners", "submitted_by_name", "TEXT")
     add_column_if_missing(cursor, "partners", "notes", "TEXT")
     add_column_if_missing(cursor, "partners", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "partners", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
@@ -334,6 +357,19 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "user_profile", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "user_profile", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
 
+    # Safe migrations for structured audit entries
+    add_column_if_missing(cursor, "audit_entries", "entity_type", "TEXT")
+    add_column_if_missing(cursor, "audit_entries", "entity_id", "INTEGER")
+    add_column_if_missing(cursor, "audit_entries", "action_type", "TEXT")
+    add_column_if_missing(cursor, "audit_entries", "field_name", "TEXT")
+    add_column_if_missing(cursor, "audit_entries", "field_label", "TEXT")
+    add_column_if_missing(cursor, "audit_entries", "value_from", "TEXT")
+    add_column_if_missing(cursor, "audit_entries", "value_to", "TEXT")
+    add_column_if_missing(cursor, "audit_entries", "actor_user_id", "INTEGER")
+    add_column_if_missing(cursor, "audit_entries", "actor_name", "TEXT")
+    add_column_if_missing(cursor, "audit_entries", "actor_email", "TEXT")
+    add_column_if_missing(cursor, "audit_entries", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+
     cursor.execute("""
         INSERT INTO user_profile (
             id,
@@ -368,6 +404,7 @@ def initialise_database(force=False):
         ("idx_partner_contacts_partner", "partner_contacts", ["partner_id"]),
         ("idx_timeline_related", "timeline_entries", ["related_type", "related_id"]),
         ("idx_account_custom_values_account", "account_custom_values", ["account_id"]),
+        ("idx_audit_entity", "audit_entries", ["entity_type", "entity_id"]),
     ]
     for index_name, table_name, columns in index_definitions:
         create_index_if_missing(cursor, index_name, table_name, columns)

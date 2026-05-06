@@ -460,6 +460,10 @@ a:hover {
     background: #fffafa;
 }
 
+.bulk-action-bar[hidden] {
+    display: none;
+}
+
 .bulk-action-bar span {
     color: #4f5f4f;
     font-size: 13px;

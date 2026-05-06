@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="icon" type="image/png" href="/static/pipeflow.png?v=300">
     <script src="{{ url_for('static', filename='table_sort.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='bulk_actions.js') }}" defer></script>
 </head>
 <body>
 
@@ -26,6 +27,7 @@
     <a href="/contacts" class="btn btn-primary">Contacts</a>
     <a href="/outreach" class="btn btn-primary">Outreach</a>
     <a href="/reports" class="btn btn-primary">Reports</a>
+    <a href="/audit" class="btn btn-secondary">Audit</a>
     <a href="/profile" class="btn btn-secondary">Profile</a>
     {% if current_user and current_user["role"] == "admin" %}
     <a href="/admin/permissions" class="btn btn-secondary">Admin</a>
