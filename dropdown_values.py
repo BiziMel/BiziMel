@@ -145,8 +145,9 @@ DROPDOWN_VALUES = {
     "task_statuses": [
         "Not Started",
         "In Progress",
-        "Completed",
         "Pending",
+        "Closed",
+        "Completed",
         "Cancelled",
     ],
 }

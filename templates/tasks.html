@@ -77,7 +77,7 @@
 
                     <form method="POST" action="{{ url_for('complete_task_from_tasks', outreach_id=item.id) }}" class="task-complete-form">
                         <input type="hidden" name="outcome" value="{{ item.outcome or 'Follow-up Required' }}">
-                        <button type="submit" class="btn btn-secondary">Mark Complete</button>
+                        <button type="submit" class="btn btn-secondary">Mark Closed</button>
                     </form>
                 </article>
             {% endfor %}

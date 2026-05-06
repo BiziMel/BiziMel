@@ -28,16 +28,15 @@
 {% endif %}
 
 <div class="dashboard-page-layout">
-    <div class="dashboard-metric-layout">
-        <section class="form-card dashboard-week-card">
+    <section class="form-card dashboard-week-card dashboard-command-card">
             <div class="section-header">
                 <div>
                     <h2>This Week Command Centre</h2>
-                    <p>{{ this_week_start }} to {{ this_week_end }}</p>
+                    <p>{{ this_week_start }} to {{ this_week_end }}. Your current execution position and open follow-up workload.</p>
                 </div>
             </div>
 
-            <div class="dashboard-week-grid">
+            <div class="dashboard-command-metric-grid">
                 <a href="#dashboard-tasks" class="metric-card-link">
                     <div class="metric-card compact-command-card">
                         <h3>Due This Week</h3>
@@ -46,7 +45,7 @@
                 </a>
                 <a href="{{ url_for('reports') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
-                        <h3>Completed This Week</h3>
+                        <h3>Closed This Week</h3>
                         <p class="metric-number">{{ this_week_completed }}</p>
                     </div>
                 </a>
@@ -64,63 +63,37 @@
                 </a>
                 <a href="{{ url_for('outreach') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
-                        <h3>Meetings Booked</h3>
+                        <h3>Meetings This Week</h3>
                         <p class="metric-number">{{ this_week_meetings_booked }}</p>
                     </div>
                 </a>
-                <a href="{{ url_for('reports') }}" class="metric-card-link">
-                    <div class="metric-card compact-command-card">
-                        <h3>Pipeline Created</h3>
-                        <p class="metric-number">${{ "{:,.0f}".format(this_week_pipeline_created or 0) }}</p>
-                    </div>
-                </a>
-            </div>
-        </section>
-
-        <section class="form-card dashboard-snapshot-card dashboard-snapshot-row">
-            <div class="section-header">
-                <div>
-                    <h2>Pipeline Snapshot</h2>
-                    <p>Your current account, contact, outreach and follow-up position.</p>
-                </div>
-            </div>
-
-            <div class="pipeline-snapshot-grid compact-snapshot-grid">
                 <a href="{{ url_for('accounts') }}" class="metric-card-link">
-                    <div class="metric-card">
+                    <div class="metric-card compact-command-card">
                         <h3>Total Accounts</h3>
                         <p class="metric-number">{{ total_accounts }}</p>
                     </div>
                 </a>
                 <a href="{{ url_for('contacts') }}" class="metric-card-link">
-                    <div class="metric-card">
+                    <div class="metric-card compact-command-card">
                         <h3>Total Contacts</h3>
                         <p class="metric-number">{{ total_contacts }}</p>
                     </div>
                 </a>
                 <a href="{{ url_for('outreach') }}" class="metric-card-link">
-                    <div class="metric-card">
+                    <div class="metric-card compact-command-card">
                         <h3>Total Outreach</h3>
                         <p class="metric-number">{{ total_outreach }}</p>
                     </div>
                 </a>
-                <a href="{{ url_for('outreach') }}" class="metric-card-link">
-                    <div class="metric-card">
-                        <h3>Meetings Booked</h3>
-                        <p class="metric-number">{{ meetings_booked }}</p>
-                    </div>
-                </a>
                 <a href="#dashboard-tasks" class="metric-card-link">
-                    <div class="metric-card">
+                    <div class="metric-card compact-command-card">
                         <h3>Follow-ups Due</h3>
                         <p class="metric-number">{{ follow_ups_due }}</p>
                         <p class="metric-subtext">Overdue and next 7 days</p>
                     </div>
                 </a>
             </div>
-        </section>
-
-    </div>
+    </section>
 
     <section class="form-card dashboard-task-card" id="dashboard-tasks">
         <div class="section-header">
@@ -190,7 +163,7 @@
                                         <form method="POST" action="{{ url_for('complete_task_from_tasks', outreach_id=item.id) }}" class="dashboard-task-complete-form">
                                             <input type="hidden" name="return_to" value="{{ url_for('home', _anchor='dashboard-tasks') }}">
                                             <input type="hidden" name="outcome" value="{{ item.outcome or 'Follow-up Required' }}">
-                                            <button type="submit" class="btn btn-secondary btn-small">Complete</button>
+                                            <button type="submit" class="btn btn-secondary btn-small">Close</button>
                                         </form>
                                     </div>
                                 </td>
@@ -308,6 +281,8 @@
             {% else %}
                 <p>No outreach by account data yet.</p>
             {% endif %}
+        </section>
+
         <section class="form-card">
             <div class="section-header">
                 <div>

@@ -77,7 +77,7 @@ def version_health():
     from db_compat import translate_sql
     sample = "datetime(next_action_date || ' ' || IFNULL(next_action_time, '00:00')) < datetime('now', '-1 hour')"
     lines = [
-        "pipeflow_server_build=2026-05-06-dashboard-full-width-workspace-v1",
+        "pipeflow_server_build=2026-05-06-dashboard-single-command-centre-v2",
         f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
         f"translation_check={translate_sql(sample)}",
     ]
@@ -691,6 +691,15 @@ NEGATIVE_OUTCOMES = (
     "Not Relevant",
 )
 
+CLOSED_TASK_STATUSES = (
+    "Closed",
+    "Completed",
+)
+
+
+def is_closed_task_status(status):
+    return (status or "").strip() in CLOSED_TASK_STATUSES
+
 
 def score_learning_row(row):
     return (
@@ -782,7 +791,7 @@ def build_learning_insights(connection):
             THEN 1 ELSE 0
         END) AS negative_total,
         SUM(CASE
-            WHEN COALESCE(outreach.task_status, '') = 'Completed'
+            WHEN COALESCE(outreach.task_status, '') IN ('Closed', 'Completed')
             THEN 1 ELSE 0
         END) AS completed_total,
         SUM(CASE
@@ -792,7 +801,7 @@ def build_learning_insights(connection):
                     outreach.next_action_date || ' ' ||
                     IFNULL(outreach.next_action_time, '00:00')
                   ) < datetime('now', '-1 hour')
-              AND COALESCE(outreach.task_status, '') != 'Completed'
+              AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
             THEN 1 ELSE 0
         END) AS overdue_total
     """
@@ -997,7 +1006,6 @@ def render_dashboard_fallback():
         this_week_overdue=0,
         this_week_untouched_accounts=0,
         this_week_meetings_booked=0,
-        this_week_pipeline_created=0,
         this_week_start="",
         this_week_end="",
         total_accounts=0,
@@ -1058,27 +1066,26 @@ def build_dashboard_response(connection):
         except ValueError:
             return None
 
-    def task_completed(row):
-        return (row["task_status"] or "") == "Completed"
+    def task_closed(row):
+        return is_closed_task_status(row["task_status"])
 
     this_week_due = 0
     this_week_completed = 0
     this_week_overdue = 0
     this_week_meetings_booked = 0
-    this_week_pipeline_created = 0
     touched_account_ids = set()
 
     for row in weekly_outreach_rows:
         next_action_date = parse_dashboard_date(row["next_action_date"])
         activity_date = parse_dashboard_date(row["activity_date"])
 
-        if next_action_date and week_start <= next_action_date <= week_end and not task_completed(row):
+        if next_action_date and week_start <= next_action_date <= week_end and not task_closed(row):
             this_week_due += 1
 
-        if next_action_date and next_action_date < today and not task_completed(row):
+        if next_action_date and next_action_date < today and not task_closed(row):
             this_week_overdue += 1
 
-        if task_completed(row):
+        if task_closed(row):
             last_updated_date = parse_dashboard_date(str(row["last_updated"] or "")[:10])
             if last_updated_date and week_start <= last_updated_date <= week_end:
                 this_week_completed += 1
@@ -1088,8 +1095,6 @@ def build_dashboard_response(connection):
                 touched_account_ids.add(row["account_id"])
             if row["outcome"] == "Meeting Booked" or row["activity_type"] == "Meeting":
                 this_week_meetings_booked += 1
-            if row["outcome"] in ("Meeting Booked", "Positive Response", "Referral Made"):
-                this_week_pipeline_created += row["pipeline_target"] or 0
 
     this_week_untouched_accounts = max(
         0,
@@ -1107,7 +1112,7 @@ def build_dashboard_response(connection):
         WHERE next_action_date IS NOT NULL
           AND next_action_date != ''
           AND date(next_action_date) <= date('now', '+7 days')
-          AND COALESCE(task_status, '') != 'Completed'
+          AND COALESCE(task_status, '') NOT IN ('Closed', 'Completed')
     """).fetchone()[0]
 
     outreach_by_account = connection.execute("""
@@ -1158,7 +1163,7 @@ def build_dashboard_response(connection):
           AND outreach.next_action != ''
           AND outreach.next_action_date IS NOT NULL
           AND outreach.next_action_date != ''
-          AND COALESCE(outreach.task_status, '') != 'Completed'
+          AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
         ORDER BY
             CASE WHEN date(outreach.next_action_date) < date('now') THEN 0 ELSE 1 END,
             outreach.next_action_date ASC,
@@ -1202,7 +1207,7 @@ def build_dashboard_response(connection):
                         outreach.next_action_date || ' ' ||
                         IFNULL(outreach.next_action_time, '00:00')
                       ) < datetime('now', '-1 hour')
-                  AND COALESCE(outreach.task_status, '') != 'Completed'
+                  AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
             ) AS overdue_followups,
 
             (
@@ -1383,7 +1388,6 @@ def build_dashboard_response(connection):
         this_week_overdue=this_week_overdue,
         this_week_untouched_accounts=this_week_untouched_accounts,
         this_week_meetings_booked=this_week_meetings_booked,
-        this_week_pipeline_created=this_week_pipeline_created,
         this_week_start=week_start_key,
         this_week_end=week_end_key,
         total_accounts=total_accounts,
@@ -1446,7 +1450,7 @@ def accounts():
                         outreach.next_action_date || ' ' ||
                         IFNULL(outreach.next_action_time, '00:00')
                       ) < datetime('now', '-1 hour')
-                  AND COALESCE(outreach.task_status, '') != 'Completed'
+                  AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
             ) AS overdue_followups,
 
             (
@@ -1865,7 +1869,7 @@ def view_account(account_id):
                         outreach.next_action_date || ' ' ||
                         IFNULL(outreach.next_action_time, '00:00')
                       ) < datetime('now', '-1 hour')
-                  AND COALESCE(outreach.task_status, '') != 'Completed'
+                  AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
             ) AS overdue_followups,
 
             (
@@ -3216,7 +3220,7 @@ def complete_task_from_tasks(outreach_id):
     connection.execute(
         """
         UPDATE outreach
-        SET task_status = 'Completed',
+        SET task_status = 'Closed',
             outcome = ?,
             last_updated = CURRENT_TIMESTAMP
         WHERE id = ?
@@ -3227,8 +3231,8 @@ def complete_task_from_tasks(outreach_id):
         connection,
         "outreach",
         outreach_id,
-        "Task Completed",
-        f"Task marked completed from Tasks page with outcome: {outcome}",
+        "Task Closed",
+        f"Task marked closed from dashboard with outcome: {outcome}",
     )
     connection.commit()
     connection.close()
@@ -3440,7 +3444,7 @@ def build_pg_bible_report_from_db(connection):
             totals["nbms_booked"] += 1
             if row["category"] == "Executive":
                 totals["nbms_exec_firsts"] += 1
-            if (row["task_status"] or "") == "Completed":
+            if is_closed_task_status(row["task_status"]):
                 totals["nbms_completed"] += 1
         if is_pipeline_outcome:
             totals["pipeline_generated_vo_count"] += 1
@@ -3723,7 +3727,7 @@ def task_reports():
 
     tasks = [task for task in all_tasks if include_task(task)]
     today = datetime.now().date()
-    active_tasks = [task for task in tasks if normalised_status(task) != "Completed"]
+    active_tasks = [task for task in tasks if not is_closed_task_status(normalised_status(task))]
     overdue_tasks = sum(
         1 for task in active_tasks
         if parse_report_date(task["next_action_date"]) and parse_report_date(task["next_action_date"]) < today
