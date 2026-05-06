@@ -87,9 +87,20 @@
 
 <div class="form-card">
     {% if outreach_records %}
+        <form id="bulk-delete-outreach-form"
+              method="POST"
+              action="{{ url_for('bulk_delete_outreach') }}"
+              onsubmit="return confirm('Delete the selected outreach records? This cannot be undone.');"></form>
+
+        <div class="bulk-action-bar">
+            <span>Select outreach records to delete.</span>
+            <button type="submit" form="bulk-delete-outreach-form" class="btn btn-danger btn-small">Delete Selected</button>
+        </div>
+
         <div class="table-container outreach-table-container">
             <table class="report-table outreach-table">
                 <colgroup>
+                    <col class="bulk-select-col">
                     <col class="outreach-activity-col">
                     <col class="outreach-account-col">
                     <col class="outreach-campaign-col">
@@ -98,6 +109,7 @@
                 </colgroup>
                 <thead>
                     <tr>
+                        <th class="bulk-select-col">Select</th>
                         <th>Activity Date / Time</th>
                         <th>Account / Contact</th>
                         <th>Campaign / Sales Play</th>
@@ -113,13 +125,16 @@
                         {% if current_campaign.name != campaign_group %}
                             {% set current_campaign.name = campaign_group %}
                             <tr class="outreach-campaign-group-row">
-                                <td colspan="5">
+                                <td colspan="6">
                                     <span>Campaign</span>
                                     <strong>{{ campaign_group }}</strong>
                                 </td>
                             </tr>
                         {% endif %}
                         <tr class="outreach-main-row">
+                            <td class="bulk-select-col">
+                                <input type="checkbox" name="selected_ids" value="{{ item.id }}" form="bulk-delete-outreach-form" aria-label="Select outreach {{ item.subject or item.id }}">
+                            </td>
                             <td>
                                 <strong>
                                     {% if item.activity_date %}
@@ -157,7 +172,7 @@
                             </td>
                         </tr>
                         <tr class="outreach-detail-row">
-                            <td colspan="5">
+                            <td colspan="6">
                                 <div class="outreach-row-details">
                                     <div>
                                         <span>Subject</span>

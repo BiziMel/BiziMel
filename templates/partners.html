@@ -88,10 +88,21 @@
 </div>
 
 {% if partners %}
+    <form id="bulk-delete-partners-form"
+          method="POST"
+          action="{{ url_for('bulk_delete_partners') }}"
+          onsubmit="return confirm('Delete the selected partners, partner contacts and account links? This cannot be undone.');"></form>
+
+    <div class="bulk-action-bar">
+        <span>Select partners to delete.</span>
+        <button type="submit" form="bulk-delete-partners-form" class="btn btn-danger btn-small">Delete Selected</button>
+    </div>
+
     <div class="table-container">
         <table class="report-table">
             <thead>
                 <tr>
+                    <th class="bulk-select-col">Select</th>
                     <th>Partner</th>
                     <th>Type</th>
                     <th>Coverage</th>
@@ -105,6 +116,9 @@
             <tbody>
                 {% for partner in partners %}
                     <tr>
+                        <td class="bulk-select-col">
+                            <input type="checkbox" name="selected_ids" value="{{ partner.id }}" form="bulk-delete-partners-form" aria-label="Select {{ partner.partner_name }}">
+                        </td>
                         <td>
                             <strong>{{ partner.partner_name }}</strong>
                             <br>

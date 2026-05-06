@@ -77,7 +77,7 @@ def version_health():
     from db_compat import translate_sql
     sample = "datetime(next_action_date || ' ' || IFNULL(next_action_time, '00:00')) < datetime('now', '-1 hour')"
     lines = [
-        "pipeflow_server_build=2026-05-06-profile-workspace-delete-v1",
+        "pipeflow_server_build=2026-05-06-bulk-delete-records-v1",
         f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
         f"translation_check={translate_sql(sample)}",
     ]
@@ -488,6 +488,49 @@ def delete_current_profile_workspace_data(connection):
         WHERE id = 1
         """
     )
+
+
+def selected_record_ids(field_name="selected_ids"):
+    ids = []
+    for value in request.form.getlist(field_name):
+        try:
+            ids.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    return ids
+
+
+def delete_account_records(connection, account_ids):
+    for account_id in account_ids:
+        connection.execute("DELETE FROM timeline_entries WHERE related_type = 'account' AND related_id = ?", (account_id,))
+        connection.execute("DELETE FROM timeline_entries WHERE related_type = 'contact' AND related_id IN (SELECT id FROM contacts WHERE account_id = ?)", (account_id,))
+        connection.execute("DELETE FROM timeline_entries WHERE related_type = 'outreach' AND related_id IN (SELECT id FROM outreach WHERE account_id = ?)", (account_id,))
+        connection.execute("DELETE FROM account_partners WHERE account_id = ?", (account_id,))
+        connection.execute("DELETE FROM account_custom_values WHERE account_id = ?", (account_id,))
+        connection.execute("DELETE FROM partner_contacts WHERE account_id = ?", (account_id,))
+        connection.execute("DELETE FROM outreach WHERE account_id = ?", (account_id,))
+        connection.execute("DELETE FROM contacts WHERE account_id = ?", (account_id,))
+        connection.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+
+
+def delete_contact_records(connection, contact_ids):
+    for contact_id in contact_ids:
+        connection.execute("DELETE FROM timeline_entries WHERE related_type = 'contact' AND related_id = ?", (contact_id,))
+        connection.execute("DELETE FROM outreach WHERE contact_id = ?", (contact_id,))
+        connection.execute("DELETE FROM contacts WHERE id = ?", (contact_id,))
+
+
+def delete_outreach_records(connection, outreach_ids):
+    for outreach_id in outreach_ids:
+        connection.execute("DELETE FROM timeline_entries WHERE related_type = 'outreach' AND related_id = ?", (outreach_id,))
+        connection.execute("DELETE FROM outreach WHERE id = ?", (outreach_id,))
+
+
+def delete_partner_records(connection, partner_ids):
+    for partner_id in partner_ids:
+        connection.execute("DELETE FROM account_partners WHERE partner_id = ?", (partner_id,))
+        connection.execute("DELETE FROM partner_contacts WHERE partner_id = ?", (partner_id,))
+        connection.execute("DELETE FROM partners WHERE id = ?", (partner_id,))
 
 
 def build_change_log(existing_record, new_values, labels):
@@ -1788,6 +1831,17 @@ def delete_partner_contact(partner_id, contact_id):
     return redirect(url_for("view_partner", partner_id=partner_id))
 
 
+@app.route("/partners/bulk-delete", methods=("POST",))
+def bulk_delete_partners():
+    partner_ids = selected_record_ids()
+    if partner_ids:
+        connection = get_db_connection()
+        delete_partner_records(connection, partner_ids)
+        connection.commit()
+        connection.close()
+    return redirect(url_for("partners"))
+
+
 @app.route("/partners/<int:partner_id>/accounts/add", methods=("POST",))
 def add_partner_account_relationship(partner_id):
     connection = get_db_connection()
@@ -2276,13 +2330,22 @@ def edit_account(account_id):
 @admin_required
 def delete_account(account_id):
     connection = get_db_connection()
-    connection.execute("DELETE FROM timeline_entries WHERE related_type = 'account' AND related_id = ?", (account_id,))
-    connection.execute("DELETE FROM account_partners WHERE account_id = ?", (account_id,))
-    connection.execute("DELETE FROM account_custom_values WHERE account_id = ?", (account_id,))
-    connection.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+    delete_account_records(connection, [account_id])
     connection.commit()
     connection.close()
 
+    return redirect(url_for("accounts"))
+
+
+@app.route("/accounts/bulk-delete", methods=("POST",))
+@admin_required
+def bulk_delete_accounts():
+    account_ids = selected_record_ids()
+    if account_ids:
+        connection = get_db_connection()
+        delete_account_records(connection, account_ids)
+        connection.commit()
+        connection.close()
     return redirect(url_for("accounts"))
 
 
@@ -2533,11 +2596,21 @@ def edit_contact(contact_id):
 @app.route("/contacts/<int:contact_id>/delete", methods=("POST",))
 def delete_contact(contact_id):
     connection = get_db_connection()
-    connection.execute("DELETE FROM timeline_entries WHERE related_type = 'contact' AND related_id = ?", (contact_id,))
-    connection.execute("DELETE FROM contacts WHERE id = ?", (contact_id,))
+    delete_contact_records(connection, [contact_id])
     connection.commit()
     connection.close()
 
+    return redirect(url_for("contacts"))
+
+
+@app.route("/contacts/bulk-delete", methods=("POST",))
+def bulk_delete_contacts():
+    contact_ids = selected_record_ids()
+    if contact_ids:
+        connection = get_db_connection()
+        delete_contact_records(connection, contact_ids)
+        connection.commit()
+        connection.close()
     return redirect(url_for("contacts"))
 
 
@@ -2900,11 +2973,21 @@ def add_outreach_timeline(outreach_id):
 @app.route("/outreach/<int:outreach_id>/delete", methods=("POST",))
 def delete_outreach(outreach_id):
     connection = get_db_connection()
-    connection.execute("DELETE FROM timeline_entries WHERE related_type = 'outreach' AND related_id = ?", (outreach_id,))
-    connection.execute("DELETE FROM outreach WHERE id = ?", (outreach_id,))
+    delete_outreach_records(connection, [outreach_id])
     connection.commit()
     connection.close()
 
+    return redirect(url_for("outreach"))
+
+
+@app.route("/outreach/bulk-delete", methods=("POST",))
+def bulk_delete_outreach():
+    outreach_ids = selected_record_ids()
+    if outreach_ids:
+        connection = get_db_connection()
+        delete_outreach_records(connection, outreach_ids)
+        connection.commit()
+        connection.close()
     return redirect(url_for("outreach"))
 
 

@@ -15,10 +15,21 @@
 
 {% if contacts %}
 
+<form id="bulk-delete-contacts-form"
+      method="POST"
+      action="{{ url_for('bulk_delete_contacts') }}"
+      onsubmit="return confirm('Delete the selected contacts and their related outreach records? This cannot be undone.');"></form>
+
+<div class="bulk-action-bar">
+    <span>Select contacts to delete.</span>
+    <button type="submit" form="bulk-delete-contacts-form" class="btn btn-danger btn-small">Delete Selected</button>
+</div>
+
 <div class="table-container">
     <table class="report-table">
         <thead>
             <tr>
+                <th class="bulk-select-col">Select</th>
                 <th>Contact</th>
                 <th>Account</th>
                 <th>Account Tier</th>
@@ -32,6 +43,9 @@
         <tbody>
             {% for contact in contacts %}
                 <tr>
+                    <td class="bulk-select-col">
+                        <input type="checkbox" name="selected_ids" value="{{ contact['id'] }}" form="bulk-delete-contacts-form" aria-label="Select {{ contact['name'] }}">
+                    </td>
                     <td>
                         <strong>{{ contact["name"] or "Unknown" }}</strong>
                         <br>

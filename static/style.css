@@ -448,6 +448,35 @@ a:hover {
     flex-wrap: wrap;
 }
 
+.bulk-action-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin: 0 0 12px;
+    padding: 12px 14px;
+    border: 1px solid #f3b3b3;
+    border-radius: 8px;
+    background: #fffafa;
+}
+
+.bulk-action-bar span {
+    color: #4f5f4f;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.bulk-select-col {
+    width: 64px;
+    text-align: center;
+}
+
+.bulk-select-col input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: #b00020;
+}
+
 @media (max-width: 900px) {
     .dashboard-insight-grid {
         grid-template-columns: 1fr;
@@ -944,11 +973,11 @@ a:hover {
 }
 
 .outreach-activity-col {
-    width: 17%;
+    width: 15%;
 }
 
 .outreach-account-col {
-    width: 22%;
+    width: 21%;
 }
 
 .outreach-campaign-col {
@@ -2461,22 +2490,26 @@ body {
     }
 
     .outreach-main-row td:nth-child(1)::before {
-        content: "Activity Date / Time";
+        content: "Select";
     }
 
     .outreach-main-row td:nth-child(2)::before {
-        content: "Account / Contact";
+        content: "Activity Date / Time";
     }
 
     .outreach-main-row td:nth-child(3)::before {
-        content: "Campaign / Sales Play";
+        content: "Account / Contact";
     }
 
     .outreach-main-row td:nth-child(4)::before {
-        content: "Outcome";
+        content: "Campaign / Sales Play";
     }
 
     .outreach-main-row td:nth-child(5)::before {
+        content: "Outcome";
+    }
+
+    .outreach-main-row td:nth-child(6)::before {
         content: "Next Action";
     }
 

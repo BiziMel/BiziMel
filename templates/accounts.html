@@ -15,10 +15,25 @@
 
 {% if accounts %}
 
+{% if current_user and current_user["role"] == "admin" %}
+<form id="bulk-delete-accounts-form"
+      method="POST"
+      action="{{ url_for('bulk_delete_accounts') }}"
+      onsubmit="return confirm('Delete the selected accounts and their related workspace records? This cannot be undone.');"></form>
+
+<div class="bulk-action-bar">
+    <span>Select accounts to delete.</span>
+    <button type="submit" form="bulk-delete-accounts-form" class="btn btn-danger btn-small">Delete Selected</button>
+</div>
+{% endif %}
+
 <div class="table-container">
     <table class="report-table accounts-table">
         <thead>
             <tr>
+                {% if current_user and current_user["role"] == "admin" %}
+                    <th class="bulk-select-col">Select</th>
+                {% endif %}
                 <th>PG Order</th>
                 <th>Account</th>
                 <th>Tier</th>
@@ -34,6 +49,11 @@
         <tbody>
             {% for account in accounts %}
                 <tr>
+                    {% if current_user and current_user["role"] == "admin" %}
+                        <td class="bulk-select-col">
+                            <input type="checkbox" name="selected_ids" value="{{ account['id'] }}" form="bulk-delete-accounts-form" aria-label="Select {{ account['account_name'] }}">
+                        </td>
+                    {% endif %}
                     <td>
                         <span class="status-pill">{{ account["pg_bible_order"] or "Not set" }}</span>
                     </td>
