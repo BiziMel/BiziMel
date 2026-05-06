@@ -87,92 +87,101 @@
 
 <div class="form-card">
     {% if outreach_records %}
-        <div class="table-container">
+        <div class="table-container outreach-table-container">
             <table class="report-table outreach-table">
+                <colgroup>
+                    <col class="outreach-activity-col">
+                    <col class="outreach-account-col">
+                    <col class="outreach-campaign-col">
+                    <col class="outreach-outcome-col">
+                    <col class="outreach-next-col">
+                </colgroup>
                 <thead>
                     <tr>
-                        <th>FY</th>
-                        <th>Quarter</th>
-                        <th>Campaign</th>
-                        <th>Sales Play</th>
-                        <th>Campaign Start</th>
-                        <th>Campaign End</th>
-                        <th>Total Tasks</th>
-                        <th>Times / Week</th>
-                        <th>Date</th>
-                        <th>Time</th>
-                        <th>Account</th>
-                        <th>Tier</th>
-                        <th>Contact</th>
-                        <th>Type</th>
-                        <th>Subject</th>
+                        <th>Activity Date / Time</th>
+                        <th>Account / Contact</th>
+                        <th>Campaign / Sales Play</th>
                         <th>Outcome</th>
                         <th>Next Action</th>
-                        <th>Next Action Date</th>
-                        <th>Next Action Time</th>
-                        <th>Actions</th>
                     </tr>
                 </thead>
 
                 <tbody>
                     {% for item in outreach_records %}
-                        <tr>
-                            <td>{{ item.fy or "-" }}</td>
-                            <td>{{ item.quarter or "-" }}</td>
-                            <td>{{ item.campaign or "-" }}</td>
-                            <td>{{ item.sales_play or "-" }}</td>
+                        <tr class="outreach-main-row">
                             <td>
-                                {% if item.campaign_start_date %}
-                                    {{ item.campaign_start_date[8:10] }}-{{ item.campaign_start_date[5:7] }}-{{ item.campaign_start_date[0:4] }}
-                                {% else %}
-                                    -
-                                {% endif %}
+                                <strong>
+                                    {% if item.activity_date %}
+                                        {{ item.activity_date[8:10] }}-{{ item.activity_date[5:7] }}-{{ item.activity_date[0:4] }}
+                                    {% else %}
+                                        No date
+                                    {% endif %}
+                                </strong>
+                                <br>
+                                <span class="muted">{{ item.activity_time or "No time" }} · {{ item.activity_type or "No type" }}</span>
                             </td>
                             <td>
-                                {% if item.campaign_end_date %}
-                                    {{ item.campaign_end_date[8:10] }}-{{ item.campaign_end_date[5:7] }}-{{ item.campaign_end_date[0:4] }}
-                                {% else %}
-                                    -
-                                {% endif %}
+                                <strong>{{ item.account_name or "No account" }}</strong>
+                                {% if item.account_tier %}<span class="status-pill">Tier {{ item.account_tier }}</span>{% endif %}
+                                <br>
+                                <span class="muted">{{ item.contact_name or "No contact" }}</span>
                             </td>
-                            <td>{{ item.campaign_total_tasks or "-" }}</td>
-                            <td>{{ item.campaign_tasks_per_week or "-" }}</td>
                             <td>
-    {% if item.activity_date %}
-        {{ item.activity_date[8:10] }}-{{ item.activity_date[5:7] }}-{{ item.activity_date[0:4] }}
-    {% else %}
-        -
-    {% endif %}
-</td>
-                            <td>{{ item.activity_time or "-" }}</td>
-                            <td>{{ item.account_name or "-" }}</td>
-                            <td>{{ "Tier " ~ item.account_tier if item.account_tier else "-" }}</td>
-                            <td>{{ item.contact_name or "-" }}</td>
-                            <td>{{ item.activity_type or "-" }}</td>
-                            <td>{{ item.subject or "-" }}</td>
+                                <strong>{{ item.campaign or "No campaign" }}</strong>
+                                <br>
+                                <span class="muted">{{ item.sales_play or "No sales play" }}</span>
+                            </td>
                             <td>{{ item.outcome or "-" }}</td>
-                            <td>{{ item.next_action or "-" }}</td>
-<td>
-    {% if item.next_action_date %}
-        {{ item.next_action_date[8:10] }}-{{ item.next_action_date[5:7] }}-{{ item.next_action_date[0:4] }}
-    {% else %}
-        -
-    {% endif %}
-</td>                            <td>{{ item.next_action_time or "-" }}</td>
-
                             <td>
+                                <strong>{{ item.next_action or "No next action" }}</strong>
+                                <br>
+                                <span class="muted">
+                                    {% if item.next_action_date %}
+                                        {{ item.next_action_date[8:10] }}-{{ item.next_action_date[5:7] }}-{{ item.next_action_date[0:4] }}
+                                    {% else %}
+                                        No date
+                                    {% endif %}
+                                    · {{ item.next_action_time or "No time" }}
+                                </span>
+                            </td>
+                        </tr>
+                        <tr class="outreach-detail-row">
+                            <td colspan="5">
+                                <div class="outreach-row-details">
+                                    <div>
+                                        <span>Subject</span>
+                                        <strong>{{ item.subject or "-" }}</strong>
+                                    </div>
+                                    <div>
+                                        <span>FY / Quarter</span>
+                                        <strong>{{ item.fy or "-" }} / {{ item.quarter or "-" }}</strong>
+                                    </div>
+                                    <div>
+                                        <span>Campaign Window</span>
+                                        <strong>
+                                            {% if item.campaign_start_date %}
+                                                {{ item.campaign_start_date[8:10] }}-{{ item.campaign_start_date[5:7] }}-{{ item.campaign_start_date[0:4] }}
+                                            {% else %}
+                                                No start
+                                            {% endif %}
+                                            to
+                                            {% if item.campaign_end_date %}
+                                                {{ item.campaign_end_date[8:10] }}-{{ item.campaign_end_date[5:7] }}-{{ item.campaign_end_date[0:4] }}
+                                            {% else %}
+                                                no end
+                                            {% endif %}
+                                        </strong>
+                                    </div>
+                                    <div>
+                                        <span>Campaign Cadence</span>
+                                        <strong>{{ item.campaign_total_tasks or "-" }} tasks · {{ item.campaign_tasks_per_week or "-" }} / week</strong>
+                                    </div>
+                                </div>
                                 <div class="table-actions outreach-actions">
-                                    <a href="{{ url_for('view_outreach', outreach_id=item.id) }}" class="btn btn-secondary btn-small">
-                                        View
-                                    </a>
-
-                                    <a href="{{ url_for('edit_outreach', outreach_id=item.id) }}" class="btn btn-primary btn-small">
-                                        Edit
-                                    </a>
-
+                                    <a href="{{ url_for('view_outreach', outreach_id=item.id) }}" class="btn btn-secondary btn-small">View</a>
+                                    <a href="{{ url_for('edit_outreach', outreach_id=item.id) }}" class="btn btn-primary btn-small">Edit</a>
                                     <form method="POST"
-                                          action="{{ url_for('delete_outreach', outreach_id=item.id) }}"
-                                          style="display:inline;">
+                                          action="{{ url_for('delete_outreach', outreach_id=item.id) }}">
                                         <button type="submit"
                                                 class="btn btn-danger btn-small"
                                                 onclick="return confirm('Are you sure you want to delete this outreach record?');">
@@ -185,6 +194,7 @@
                     {% endfor %}
                 </tbody>
             </table>
+        </div>
     {% else %}
         <p>No outreach activity found for the selected filters.</p>
     {% endif %}

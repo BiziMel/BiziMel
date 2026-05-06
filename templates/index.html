@@ -125,8 +125,14 @@
                             <tr class="dashboard-task-main-row">
                                 <td>
                                     <div class="dashboard-task-due-controls">
-                                        <input type="date" name="next_action_date" value="{{ item.next_action_date or '' }}" form="dashboard-task-update-{{ item.id }}" aria-label="Task due date">
-                                        <input type="time" name="next_action_time" value="{{ item.next_action_time or '' }}" form="dashboard-task-update-{{ item.id }}" aria-label="Task due time">
+                                        <label class="dashboard-task-field">
+                                            <span>Date</span>
+                                            <input type="date" name="next_action_date" value="{{ item.next_action_date or '' }}" form="dashboard-task-update-{{ item.id }}" aria-label="Task due date">
+                                        </label>
+                                        <label class="dashboard-task-field">
+                                            <span>Time</span>
+                                            <input type="time" name="next_action_time" value="{{ item.next_action_time or '' }}" form="dashboard-task-update-{{ item.id }}" aria-label="Task due time">
+                                        </label>
                                     </div>
                                 </td>
                                 <td>
@@ -136,17 +142,23 @@
                                 <td>{{ item.next_action or "No next action" }}</td>
                                 <td>
                                     <div class="dashboard-task-control-grid">
-                                        <select name="task_status" form="dashboard-task-update-{{ item.id }}" aria-label="Task status">
-                                            {% for status in task_statuses %}
-                                                <option value="{{ status }}" {% if (item.task_status or 'Not Started') == status %}selected{% endif %}>{{ status }}</option>
-                                            {% endfor %}
-                                        </select>
-                                        <select name="outcome" form="dashboard-task-update-{{ item.id }}" aria-label="Outcome">
-                                            <option value="">Select outcome</option>
-                                            {% for outcome in outreach_outcomes %}
-                                                <option value="{{ outcome }}" {% if item.outcome == outcome %}selected{% endif %}>{{ outcome }}</option>
-                                            {% endfor %}
-                                        </select>
+                                        <label class="dashboard-task-field">
+                                            <span>Status</span>
+                                            <select name="task_status" form="dashboard-task-update-{{ item.id }}" aria-label="Task status">
+                                                {% for status in task_statuses %}
+                                                    <option value="{{ status }}" {% if (item.task_status or 'Not Started') == status %}selected{% endif %}>{{ status }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </label>
+                                        <label class="dashboard-task-field">
+                                            <span>Outcome</span>
+                                            <select name="outcome" form="dashboard-task-update-{{ item.id }}" aria-label="Outcome">
+                                                <option value="">Select outcome</option>
+                                                {% for outcome in outreach_outcomes %}
+                                                    <option value="{{ outcome }}" {% if item.outcome == outcome %}selected{% endif %}>{{ outcome }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </label>
                                     </div>
                                 </td>
                             </tr>
@@ -160,11 +172,6 @@
                                     <div class="dashboard-task-button-row">
                                         <button type="submit" form="dashboard-task-update-{{ item.id }}" class="btn btn-primary btn-small">Update</button>
                                         <a href="{{ url_for('view_outreach', outreach_id=item.id) }}" class="btn btn-secondary btn-small">Open</a>
-                                        <form method="POST" action="{{ url_for('complete_task_from_tasks', outreach_id=item.id) }}" class="dashboard-task-complete-form">
-                                            <input type="hidden" name="return_to" value="{{ url_for('home', _anchor='dashboard-tasks') }}">
-                                            <input type="hidden" name="outcome" value="{{ item.outcome or 'Follow-up Required' }}">
-                                            <button type="submit" class="btn btn-secondary btn-small">Close</button>
-                                        </form>
                                     </div>
                                 </td>
                             </tr>

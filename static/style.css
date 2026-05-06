@@ -890,14 +890,15 @@ a:hover {
 }
 .outreach-table {
     width: 100%;
-    font-size: 12px;
+    font-size: 13px;
+    table-layout: fixed;
 }
 
 .outreach-table th,
 .outreach-table td {
-    padding: 7px 8px;
+    padding: 12px;
     vertical-align: top;
-    font-size: 12px;
+    font-size: 13px;
     white-space: normal;
     overflow-wrap: normal;
     word-break: normal;
@@ -909,13 +910,75 @@ a:hover {
 }
 
 .outreach-table td {
-    line-height: 1.3;
+    line-height: 1.4;
 }
+
+.outreach-activity-col {
+    width: 17%;
+}
+
+.outreach-account-col {
+    width: 22%;
+}
+
+.outreach-campaign-col {
+    width: 22%;
+}
+
+.outreach-outcome-col {
+    width: 16%;
+}
+
+.outreach-next-col {
+    width: 23%;
+}
+
+.outreach-main-row td {
+    border-bottom: 0;
+}
+
+.outreach-detail-row td {
+    padding-top: 0;
+    border-bottom: 1px solid #dbe4f0;
+    background: #fbfdff;
+}
+
+.outreach-row-details {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.outreach-row-details div {
+    min-width: 0;
+}
+
+.outreach-row-details span {
+    display: block;
+    margin-bottom: 4px;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.outreach-row-details strong {
+    display: block;
+    font-size: 13px;
+    line-height: 1.35;
+}
+
 .outreach-actions .btn-small {
-    padding: 3px 7px;
-    font-size: 10px;
+    padding: 7px 12px;
+    font-size: 12px;
     border-radius: 6px;
     min-height: auto;
+}
+
+.outreach-actions form {
+    margin: 0;
 }
 
 .alert-success {
@@ -2208,8 +2271,22 @@ body {
 .dashboard-task-control-grid {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 6px;
+    gap: 8px;
     margin-bottom: 0;
+}
+
+.dashboard-task-field {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.dashboard-task-field span {
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
 }
 
 @media (max-width: 1180px) {
@@ -2277,6 +2354,70 @@ body {
     }
 
     .dashboard-task-due-controls {
+        grid-template-columns: 1fr;
+    }
+
+    .outreach-table,
+    .outreach-table thead,
+    .outreach-table tbody,
+    .outreach-table th,
+    .outreach-table td,
+    .outreach-table tr {
+        display: block;
+        width: 100%;
+    }
+
+    .outreach-table colgroup,
+    .outreach-table thead {
+        display: none;
+    }
+
+    .outreach-main-row {
+        border-top: 1px solid #dbe4f0;
+    }
+
+    .outreach-main-row td,
+    .outreach-detail-row td {
+        border-bottom: 0;
+        padding: 10px 0;
+    }
+
+    .outreach-main-row td::before {
+        display: block;
+        margin-bottom: 5px;
+        color: #64748b;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+
+    .outreach-main-row td:nth-child(1)::before {
+        content: "Activity Date / Time";
+    }
+
+    .outreach-main-row td:nth-child(2)::before {
+        content: "Account / Contact";
+    }
+
+    .outreach-main-row td:nth-child(3)::before {
+        content: "Campaign / Sales Play";
+    }
+
+    .outreach-main-row td:nth-child(4)::before {
+        content: "Outcome";
+    }
+
+    .outreach-main-row td:nth-child(5)::before {
+        content: "Next Action";
+    }
+
+    .outreach-detail-row {
+        border-bottom: 1px solid #dbe4f0;
+        padding-bottom: 10px;
+    }
+
+    .outreach-row-details {
         grid-template-columns: 1fr;
     }
 }
