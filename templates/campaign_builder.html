@@ -27,19 +27,24 @@
     </div>
 {% endif %}
 
+{% if error %}
+    <div class="alert-error">{{ error }}</div>
+{% endif %}
+
 <div class="form-card">
     <form method="POST" class="pipeflow-form">
         <div class="form-grid">
             <div class="form-group">
                 <label for="account_id">Account</label>
                 <select id="account_id" name="account_id" required>
-                    <option value="">Select account</option>
+                    <option value="">Select account with contacts</option>
                     {% for account in accounts %}
                         <option value="{{ account.id }}" {% if selected_account_id == account.id|string %}selected{% endif %}>
-                            {{ account.account_name }}
+                            {{ account.account_name }} ({{ account.contact_count }} contact{% if account.contact_count != 1 %}s{% endif %})
                         </option>
                     {% endfor %}
                 </select>
+                <p class="field-help">Only accounts with at least one contact can be used for campaign generation.</p>
             </div>
 
             <div class="form-group">
@@ -153,11 +158,14 @@
             {% if contacts %}
                 <div class="contact-card-grid">
                     {% for contact in contacts %}
+                        {% set is_selected_account = selected_account_id and contact.account_id|string == selected_account_id %}
                         <label class="contact-summary-card campaign-contact-option">
                             <input type="checkbox"
                                    name="contact_ids"
                                    value="{{ contact.id }}"
-                                   {% if contact.id|string in selected_contact_ids %}checked{% endif %}>
+                                   data-account-id="{{ contact.account_id }}"
+                                   {% if contact.id|string in selected_contact_ids %}checked{% endif %}
+                                   {% if selected_account_id and not is_selected_account %}disabled{% endif %}>
                             <span>
                                 <strong>{{ contact.name }}</strong>
                                 <p>{{ contact.job_title or "No job title" }}</p>
@@ -182,6 +190,8 @@
     const pgWeekInput = document.getElementById("pg_week_start");
     const campaignStartInput = document.getElementById("campaign_start_date");
     const campaignEndInput = document.getElementById("campaign_end_date");
+    const accountInput = document.getElementById("account_id");
+    const contactOptions = Array.from(document.querySelectorAll(".campaign-contact-option"));
 
     function isoDate(date) {
         return date.toISOString().slice(0, 10);
@@ -211,6 +221,27 @@
             setDefaultCampaignWindow();
         });
         setDefaultCampaignWindow();
+    }
+
+    function filterContactsForAccount() {
+        if (!accountInput) return;
+        const selectedAccountId = accountInput.value;
+        contactOptions.forEach((option) => {
+            const checkbox = option.querySelector("input[type='checkbox']");
+            const belongsToSelectedAccount = checkbox && checkbox.dataset.accountId === selectedAccountId;
+            option.hidden = Boolean(selectedAccountId) && !belongsToSelectedAccount;
+            if (checkbox) {
+                checkbox.disabled = Boolean(selectedAccountId) && !belongsToSelectedAccount;
+                if (checkbox.disabled) {
+                    checkbox.checked = false;
+                }
+            }
+        });
+    }
+
+    if (accountInput) {
+        accountInput.addEventListener("change", filterContactsForAccount);
+        filterContactsForAccount();
     }
 </script>
 {% endblock %}

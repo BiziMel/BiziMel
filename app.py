@@ -77,7 +77,7 @@ def version_health():
     from db_compat import translate_sql
     sample = "datetime(next_action_date || ' ' || IFNULL(next_action_time, '00:00')) < datetime('now', '-1 hour')"
     lines = [
-        "pipeflow_server_build=2026-05-07-single-sales-play-campaign-learning-v1",
+        "pipeflow_server_build=2026-05-07-campaign-contact-required-v1",
         f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
         f"translation_check={translate_sql(sample)}",
     ]
@@ -3222,6 +3222,7 @@ def add_outreach():
 def campaign_builder():
     connection = get_db_connection()
     generated_count = 0
+    error = ""
     selected_account_id = request.form.get("account_id") or request.args.get("account_id") or ""
     selected_contact_ids = request.form.getlist("contact_ids")
     selected_pg_week_start = request.form.get("pg_week_start", "")
@@ -3256,7 +3257,11 @@ def campaign_builder():
             sales_play = "PG week sales play"
         selected_sales_play = sales_play
 
-        if account_id and pg_week_start_raw and campaign_start_raw and campaign_end_raw and contact_ids:
+        if not account_id:
+            error = "Select an account before generating a campaign."
+        elif not contact_ids:
+            error = "Select at least one contact for the selected account before generating a campaign."
+        elif account_id and pg_week_start_raw and campaign_start_raw and campaign_end_raw and contact_ids:
             pg_week_start = datetime.strptime(pg_week_start_raw, "%Y-%m-%d").date()
             campaign_start = datetime.strptime(campaign_start_raw, "%Y-%m-%d").date()
             campaign_end = datetime.strptime(campaign_end_raw, "%Y-%m-%d").date()
@@ -3277,94 +3282,106 @@ def campaign_builder():
                 WHERE id = ?
             """, (account_id,)).fetchone()
 
-            account_name = account["account_name"] if account else "Selected account"
-            campaign_name = (request.form.get("campaign_name") or "").strip() or f"{account_name} PG Campaign"
-            selected_campaign_name = campaign_name
-            assigned_to = request.form.get("assigned_to", "")
-            fy = request.form.get("fy", "")
-            quarter = request.form.get("quarter", "")
-            success_context = build_campaign_success_context(connection, account_id, contact_ids, sales_play)
-            success_context_summary = success_context["summary"]
-            schedule_templates = success_context["templates"]
+            if not account:
+                error = "The selected account could not be found."
+            elif not contacts:
+                error = "The selected account has no matching selected contacts. Add a contact to the account first, then build the campaign."
+            else:
+                valid_contact_ids = [str(contact["id"]) for contact in contacts]
+                selected_contact_ids = valid_contact_ids
+                account_name = account["account_name"] if account else "Selected account"
+                campaign_name = (request.form.get("campaign_name") or "").strip() or f"{account_name} PG Campaign"
+                selected_campaign_name = campaign_name
+                assigned_to = request.form.get("assigned_to", "")
+                fy = request.form.get("fy", "")
+                quarter = request.form.get("quarter", "")
+                success_context = build_campaign_success_context(connection, account_id, valid_contact_ids, sales_play)
+                success_context_summary = success_context["summary"]
+                schedule_templates = success_context["templates"]
 
-            for contact in contacts:
-                for step in build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per_week, schedule_templates):
-                    action_date = step["action_date"]
-                    subject = f"{step['subject_prefix']}: {sales_play}"
-                    notes = (
-                        f"Auto-generated campaign step for {account_name}. "
-                        f"Campaign name: {campaign_name}. "
-                        f"Campaign window: {campaign_start.isoformat()} to {campaign_end.isoformat()}. "
-                        f"Total outreach tasks: {total_tasks}. "
-                        f"Times per week: {times_per_week}. "
-                        f"Sales play: {sales_play}. Contact: {contact['name']}. "
-                        f"{success_context_summary}"
-                    )
-                    next_action = f"{step['next_action']} for {contact['name']} - {sales_play}"
-
-                    connection.execute("""
-                        INSERT INTO outreach (
-                            fy,
-                            quarter,
-                            campaign,
-                            sales_play,
-                            campaign_start_date,
-                            campaign_end_date,
-                            campaign_tasks_per_week,
-                            campaign_total_tasks,
-                            account_id,
-                            contact_id,
-                            activity_type,
-                            activity_date,
-                            activity_time,
-                            subject,
-                            notes,
-                            outcome,
-                            next_action,
-                            next_action_date,
-                            next_action_time,
-                            task_status,
-                            assigned_to
+                for contact in contacts:
+                    for step in build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per_week, schedule_templates):
+                        action_date = step["action_date"]
+                        subject = f"{step['subject_prefix']}: {sales_play}"
+                        notes = (
+                            f"Auto-generated campaign step for {account_name}. "
+                            f"Campaign name: {campaign_name}. "
+                            f"Campaign window: {campaign_start.isoformat()} to {campaign_end.isoformat()}. "
+                            f"Total outreach tasks: {total_tasks}. "
+                            f"Times per week: {times_per_week}. "
+                            f"Sales play: {sales_play}. Contact: {contact['name']}. "
+                            f"{success_context_summary}"
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                            fy,
-                            quarter,
-                            campaign_name,
-                            sales_play,
-                            campaign_start.isoformat(),
-                            campaign_end.isoformat(),
-                            times_per_week,
-                            total_tasks,
-                            account_id,
-                            contact["id"],
-                            step["activity_type"],
-                            action_date.isoformat(),
-                            step["time"],
-                            subject,
-                            notes,
-                            "No Response Yet",
-                            next_action,
-                            action_date.isoformat(),
-                            step["time"],
-                            "Not Started",
-                            assigned_to
-                    ))
-                    generated_count += 1
+                        next_action = f"{step['next_action']} for {contact['name']} - {sales_play}"
 
-            add_timeline_entry(
-                connection,
-                "account",
-                account_id,
-                "Campaign Built",
-                f"Generated {generated_count} campaign outreach step(s) for sales play {sales_play} from {campaign_start.isoformat()} to {campaign_end.isoformat()} with {total_tasks} task(s) at {times_per_week} time(s) per week. {success_context_summary}"
-            )
-            connection.commit()
+                        connection.execute("""
+                            INSERT INTO outreach (
+                                fy,
+                                quarter,
+                                campaign,
+                                sales_play,
+                                campaign_start_date,
+                                campaign_end_date,
+                                campaign_tasks_per_week,
+                                campaign_total_tasks,
+                                account_id,
+                                contact_id,
+                                activity_type,
+                                activity_date,
+                                activity_time,
+                                subject,
+                                notes,
+                                outcome,
+                                next_action,
+                                next_action_date,
+                                next_action_time,
+                                task_status,
+                                assigned_to
+                            )
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                                fy,
+                                quarter,
+                                campaign_name,
+                                sales_play,
+                                campaign_start.isoformat(),
+                                campaign_end.isoformat(),
+                                times_per_week,
+                                total_tasks,
+                                account_id,
+                                contact["id"],
+                                step["activity_type"],
+                                action_date.isoformat(),
+                                step["time"],
+                                subject,
+                                notes,
+                                "No Response Yet",
+                                next_action,
+                                action_date.isoformat(),
+                                step["time"],
+                                "Not Started",
+                                assigned_to
+                        ))
+                        generated_count += 1
+
+                add_timeline_entry(
+                    connection,
+                    "account",
+                    account_id,
+                    "Campaign Built",
+                    f"Generated {generated_count} campaign outreach step(s) for sales play {sales_play} from {campaign_start.isoformat()} to {campaign_end.isoformat()} with {total_tasks} task(s) at {times_per_week} time(s) per week. {success_context_summary}"
+                )
+                connection.commit()
 
     accounts = connection.execute("""
-        SELECT *
+        SELECT
+            accounts.*,
+            COUNT(contacts.id) AS contact_count
         FROM accounts
-        ORDER BY account_name
+        LEFT JOIN contacts ON contacts.account_id = accounts.id
+        GROUP BY accounts.id
+        HAVING COUNT(contacts.id) > 0
+        ORDER BY accounts.account_name
     """).fetchall()
 
     contacts = connection.execute("""
@@ -3400,7 +3417,8 @@ def campaign_builder():
         selected_total_tasks=selected_total_tasks,
         selected_times_per_week=selected_times_per_week,
         selected_sales_play=selected_sales_play,
-        success_context_summary=success_context_summary
+        success_context_summary=success_context_summary,
+        error=error
     )
 
 
