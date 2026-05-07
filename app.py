@@ -44,6 +44,7 @@ RELEASE_NOTES = [
         ],
         "fixed": [
             "Fixed on-page instructions across PipeFlow so every page now gives clearer guidance about what to do, what matters and what to check before saving.",
+            "Fixed the Edit Outreach button so the edit form opens correctly with non-working date guidance available.",
         ],
     },
     {
@@ -4503,6 +4504,9 @@ def edit_outreach(outreach_id):
         "SELECT * FROM outreach WHERE id = ?",
         (outreach_id,)
     ).fetchone()
+    if not outreach_item:
+        connection.close()
+        return redirect(url_for("outreach", error="The selected outreach task could not be found."))
 
     accounts = connection.execute(
         "SELECT * FROM accounts ORDER BY account_name"
@@ -4520,6 +4524,11 @@ def edit_outreach(outreach_id):
         FROM user_profile
         WHERE id = 1
     """).fetchone()
+    non_working_block_rows = connection.execute("""
+        SELECT *
+        FROM non_working_blocks
+        ORDER BY start_date, end_date, id
+    """).fetchall()
     existing_campaigns = connection.execute("""
         SELECT DISTINCT campaign
         FROM outreach
