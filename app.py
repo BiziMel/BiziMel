@@ -16,26 +16,11 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema
 
 
-APP_VERSION = "1.1"
+APP_VERSION = "1.0"
 APP_RELEASE_DATE = "2026-05-07"
-APP_BUILD = "2026-05-07-campaign-date-autocomplete-v1"
+APP_BUILD = "2026-05-07-untouched-active-task-metric-v1"
 
 RELEASE_NOTES = [
-    {
-        "version": "1.1",
-        "release_date": "2026-05-07",
-        "title": "Campaign date and password manager refinement",
-        "new": [],
-        "enhanced": [
-            "Campaign Builder now prevents campaign start dates from defaulting to a date earlier than the current date.",
-            "Campaign Builder now applies the current date as the earliest selectable campaign start date in the browser.",
-            "PipeFlow now marks normal business data forms as non-credential forms so password managers are less likely to offer username or password prompts outside sign in, registration and password reset.",
-        ],
-        "fixed": [
-            "Fixed Campaign Builder default date behaviour where a PG week could cause the generated campaign start date to fall in the past.",
-            "Fixed authentication form hints so sign in uses username and current password, registration uses username and new password, and password reset uses username and new password.",
-        ],
-    },
     {
         "version": "1.0",
         "release_date": "2026-05-07",
@@ -1523,7 +1508,6 @@ def build_dashboard_response(connection):
     this_week_completed = 0
     this_week_overdue = 0
     this_week_meetings_booked = 0
-    touched_account_ids = set()
 
     for row in weekly_outreach_rows:
         next_action_date = parse_dashboard_date(row["next_action_date"])
@@ -1541,15 +1525,23 @@ def build_dashboard_response(connection):
                 this_week_completed += 1
 
         if activity_date and week_start <= activity_date <= week_end:
-            if row["account_id"]:
-                touched_account_ids.add(row["account_id"])
             if row["outcome"] == "Meeting Booked" or row["activity_type"] == "Meeting":
                 this_week_meetings_booked += 1
 
-    this_week_untouched_accounts = max(
-        0,
-        len(all_accounts) - len(touched_account_ids)
-    )
+    this_week_untouched_accounts = connection.execute("""
+        SELECT COUNT(*)
+        FROM accounts
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM outreach
+            WHERE outreach.account_id = accounts.id
+              AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
+              AND (
+                    (outreach.campaign IS NOT NULL AND outreach.campaign != '')
+                 OR (outreach.next_action IS NOT NULL AND outreach.next_action != '')
+              )
+        )
+    """).fetchone()[0]
 
     meetings_booked = connection.execute("""
         SELECT COUNT(*) FROM outreach
