@@ -16,11 +16,26 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema
 
 
-APP_VERSION = "1.0"
+APP_VERSION = "1.1"
 APP_RELEASE_DATE = "2026-05-07"
-APP_BUILD = "2026-05-07-release-notes-v1"
+APP_BUILD = "2026-05-07-campaign-date-autocomplete-v1"
 
 RELEASE_NOTES = [
+    {
+        "version": "1.1",
+        "release_date": "2026-05-07",
+        "title": "Campaign date and password manager refinement",
+        "new": [],
+        "enhanced": [
+            "Campaign Builder now prevents campaign start dates from defaulting to a date earlier than the current date.",
+            "Campaign Builder now applies the current date as the earliest selectable campaign start date in the browser.",
+            "PipeFlow now marks normal business data forms as non-credential forms so password managers are less likely to offer username or password prompts outside sign in, registration and password reset.",
+        ],
+        "fixed": [
+            "Fixed Campaign Builder default date behaviour where a PG week could cause the generated campaign start date to fall in the past.",
+            "Fixed authentication form hints so sign in uses username and current password, registration uses username and new password, and password reset uses username and new password.",
+        ],
+    },
     {
         "version": "1.0",
         "release_date": "2026-05-07",
@@ -3321,19 +3336,28 @@ def campaign_builder():
         elif not contact_ids:
             error = "Select at least one contact for the selected account before generating a campaign."
         elif account_id and pg_week_start_raw and campaign_start_raw and campaign_end_raw and contact_ids:
+            today = datetime.now().date()
             pg_week_start = datetime.strptime(pg_week_start_raw, "%Y-%m-%d").date()
             campaign_start = datetime.strptime(campaign_start_raw, "%Y-%m-%d").date()
             campaign_end = datetime.strptime(campaign_end_raw, "%Y-%m-%d").date()
             if campaign_end < campaign_start:
                 campaign_start, campaign_end = campaign_end, campaign_start
-            placeholders = ",".join("?" for _ in contact_ids)
-            contacts = connection.execute(f"""
-                SELECT *
-                FROM contacts
-                WHERE account_id = ?
-                  AND id IN ({placeholders})
-                ORDER BY name
-            """, [account_id, *contact_ids]).fetchall()
+            if campaign_start < today:
+                campaign_start = today
+                selected_campaign_start = campaign_start.isoformat()
+            if campaign_end < campaign_start:
+                error = "Campaign end date cannot be earlier than the campaign start date."
+            if error:
+                contacts = []
+            else:
+                placeholders = ",".join("?" for _ in contact_ids)
+                contacts = connection.execute(f"""
+                    SELECT *
+                    FROM contacts
+                    WHERE account_id = ?
+                      AND id IN ({placeholders})
+                    ORDER BY name
+                """, [account_id, *contact_ids]).fetchall()
 
             account = connection.execute("""
                 SELECT account_name
@@ -3343,9 +3367,9 @@ def campaign_builder():
 
             if not account:
                 error = "The selected account could not be found."
-            elif not contacts:
+            elif not error and not contacts:
                 error = "The selected account has no matching selected contacts. Add a contact to the account first, then build the campaign."
-            else:
+            elif not error:
                 valid_contact_ids = [str(contact["id"]) for contact in contacts]
                 selected_contact_ids = valid_contact_ids
                 account_name = account["account_name"] if account else "Selected account"

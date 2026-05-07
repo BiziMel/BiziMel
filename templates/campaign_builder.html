@@ -73,6 +73,7 @@
                        name="campaign_start_date"
                        value="{{ selected_campaign_start }}"
                        required>
+                <p class="field-help">Campaigns cannot start before today's date.</p>
             </div>
 
             <div class="form-group">
@@ -197,6 +198,17 @@
         return date.toISOString().slice(0, 10);
     }
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayIso = isoDate(today);
+
+    if (campaignStartInput) {
+        campaignStartInput.min = todayIso;
+        if (campaignStartInput.value && campaignStartInput.value < todayIso) {
+            campaignStartInput.value = todayIso;
+        }
+    }
+
     function setDefaultCampaignWindow() {
         if (!pgWeekInput || !pgWeekInput.value) {
             return;
@@ -205,11 +217,17 @@
         if (!campaignStartInput.value) {
             const startDate = new Date(pgWeekStart);
             startDate.setDate(startDate.getDate() - 28);
+            if (startDate < today) {
+                startDate.setTime(today.getTime());
+            }
             campaignStartInput.value = isoDate(startDate);
         }
         if (!campaignEndInput.value) {
             const endDate = new Date(pgWeekStart);
             endDate.setDate(endDate.getDate() - 1);
+            if (endDate < today) {
+                endDate.setTime(today.getTime());
+            }
             campaignEndInput.value = isoDate(endDate);
         }
     }

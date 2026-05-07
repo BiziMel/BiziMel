@@ -11,18 +11,18 @@
         <div class="alert-error">{{ error }}</div>
     {% endif %}
 
-    <form method="POST" class="form-grid">
+    <form method="POST" class="form-grid auth-form" autocomplete="on">
         <label for="full_name">Full Name</label>
-        <input type="text" id="full_name" name="full_name" required autofocus>
+        <input type="text" id="full_name" name="full_name" autocomplete="name" required autofocus>
 
         <label for="email">Email</label>
-        <input type="email" id="email" name="email" required>
+        <input type="email" id="email" name="email" autocomplete="username" required>
 
         <label for="password">Password</label>
-        <input type="password" id="password" name="password" minlength="8" required>
+        <input type="password" id="password" name="password" autocomplete="new-password" minlength="8" required>
 
         <label for="reset_phrase">Secret Reset Phrase</label>
-        <input type="password" id="reset_phrase" name="reset_phrase" minlength="12" required>
+        <input type="password" id="reset_phrase" name="reset_phrase" autocomplete="off" minlength="12" required>
         <p class="field-help">Use a private phrase only you know. It is needed if you forget your password.</p>
 
         <button type="submit" class="btn btn-primary">Create Profile</button>
