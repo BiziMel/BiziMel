@@ -186,6 +186,42 @@ input[type="submit"]:hover {
     align-items: start;
 }
 
+.page-instructions {
+    margin: 0 0 18px 0;
+}
+
+.page-instructions details {
+    border: 1px solid #cfe0cb;
+    border-radius: 8px;
+    background: #f8fbf6;
+    box-shadow: 0 8px 20px rgba(38, 58, 44, 0.06);
+}
+
+.page-instructions summary {
+    padding: 12px 14px;
+    cursor: pointer;
+    color: #1f3325;
+    font-weight: 700;
+    list-style-position: inside;
+}
+
+.page-instructions ul {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px 16px;
+    margin: 0;
+    padding: 0 16px 14px 34px;
+}
+
+.page-instructions li {
+    color: #35483b;
+    font-size: 13px;
+    line-height: 1.4;
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
+}
+
 .compact-filter-card {
     padding: 16px;
 }
@@ -261,6 +297,25 @@ input[type="submit"]:hover {
     border-top: 1px solid #dbe6d8;
 }
 
+.sharing-management-panel {
+    background: #f8fbf6;
+    border: 1px solid #cfe0cb;
+}
+
+.compact-section-header {
+    margin-bottom: 6px;
+}
+
+.compact-section-header h3 {
+    margin-bottom: 2px;
+}
+
+.compact-section-header p,
+.compact-empty-copy {
+    margin: 0;
+    font-size: 12px;
+}
+
 .sharing-permission-list h3 {
     margin: 0 0 8px 0;
     font-size: 14px;
@@ -277,6 +332,11 @@ input[type="submit"]:hover {
     justify-content: space-between;
     padding: 8px 0;
     border-top: 1px solid #edf3ec;
+}
+
+.account-sharing-list {
+    border-top: 0;
+    padding-top: 0;
 }
 
 .sharing-permission-row:first-of-type {
@@ -397,6 +457,10 @@ a:hover {
 /* Responsive */
 @media (max-width: 900px) {
     .form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .page-instructions ul {
         grid-template-columns: 1fr;
     }
 

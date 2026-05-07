@@ -100,6 +100,11 @@
         {% endif %}
     </p>
 
+    <p>
+        <strong>Account Owner:</strong>
+        {{ owner.owner_name or "Not set" }}
+    </p>
+
     <p><strong>Notes:</strong></p>
     <p>{{ account["notes"] }}</p>
 
@@ -113,6 +118,43 @@
         {% endfor %}
     {% endif %}
 </div>
+
+{% if is_account_owner %}
+    <div class="form-card sharing-management-panel">
+        <div class="section-header">
+            <div>
+                <h2>Account Sharing</h2>
+                <p>People who currently have this account shared with them. Revoke access here when needed.</p>
+            </div>
+        </div>
+
+        {% if account_shares %}
+            <div class="sharing-permission-list account-sharing-list">
+                {% for share in account_shares %}
+                    <div class="sharing-permission-row">
+                        <div>
+                            <strong>{{ share.full_name or share.email }}</strong>
+                            <span>{{ share.email or "No email recorded" }}</span>
+                        </div>
+
+                        <form method="POST"
+                              action="{{ url_for('revoke_account_share_from_outreach', share_id=share.id) }}"
+                              onsubmit="return confirm('Revoke this account share? Assigned tasks for this user will return to the account owner.');">
+                            <input type="hidden" name="return_to" value="{{ url_for('view_account', account_id=account.id) }}">
+                            <button type="submit" class="btn btn-danger btn-small">Revoke Access</button>
+                        </form>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-state compact-empty-state">
+                <h3>No active sharing</h3>
+                <p>This account has not been shared with another user yet.</p>
+                <a href="{{ url_for('outreach') }}" class="btn btn-secondary">Open Outreach Tasks to Share</a>
+            </div>
+        {% endif %}
+    </div>
+{% endif %}
 
 <div class="form-card">
     <div class="section-header">

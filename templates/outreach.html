@@ -48,10 +48,13 @@
                     <label for="share_account_id">Account</label>
                     <select id="share_account_id" name="account_id" required>
                         <option value="">Select account</option>
-                        {% for account in accounts %}
+                        {% for account in shareable_accounts %}
                             <option value="{{ account.id }}">{{ account.account_name }}</option>
                         {% endfor %}
                     </select>
+                    {% if not shareable_accounts %}
+                        <p class="field-help">Only account owners can share accounts.</p>
+                    {% endif %}
                 </div>
 
                 <div class="form-group">
@@ -78,26 +81,33 @@
             </div>
         </form>
 
-        {% if account_shares %}
-            <div class="sharing-permission-list">
-                <h3>Sharing Permissions</h3>
-                {% for share in account_shares %}
-                    {% if not current_user or not share.owner_user_id or share.owner_user_id|string == current_user["id"]|string %}
-                        <div class="sharing-permission-row">
-                            <div>
-                                <strong>{{ share.account_name }}</strong>
-                                <span>{{ share.full_name or share.email }}</span>
-                            </div>
-                            <form method="POST"
-                                  action="{{ url_for('revoke_account_share_from_outreach', share_id=share.id) }}"
-                                  onsubmit="return confirm('Revoke this account share? Assigned tasks for this user will return to the account owner.');">
-                                <button type="submit" class="btn btn-secondary btn-small">Revoke</button>
-                            </form>
-                        </div>
-                    {% endif %}
-                {% endfor %}
+        <div class="sharing-permission-list sharing-management-panel">
+            <div class="section-header compact-section-header">
+                <div>
+                    <h3>Manage Existing Sharing</h3>
+                    <p>Revoke access for people you have shared accounts with.</p>
+                </div>
             </div>
-        {% endif %}
+
+            {% for share in account_shares %}
+                <div class="sharing-permission-row">
+                    <div>
+                        <strong>{{ share.account_name }}</strong>
+                        <span>Shared with {{ share.full_name or share.email }}</span>
+                    </div>
+                    <form method="POST"
+                          action="{{ url_for('revoke_account_share_from_outreach', share_id=share.id) }}"
+                          onsubmit="return confirm('Revoke this account share? Assigned tasks for this user will return to the account owner.');">
+                        <input type="hidden" name="return_to" value="{{ url_for('outreach') }}">
+                        <button type="submit" class="btn btn-danger btn-small">Revoke Access</button>
+                    </form>
+                </div>
+            {% endfor %}
+
+            {% if not account_shares %}
+                <p class="muted compact-empty-copy">No active account shares created by you yet.</p>
+            {% endif %}
+        </div>
     </div>
 
     <div class="form-card compact-filter-card">

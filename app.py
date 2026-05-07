@@ -8,6 +8,7 @@ import io
 import re
 import traceback
 from datetime import datetime, timedelta
+from urllib.parse import urlencode
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session
 from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users
@@ -36,11 +37,14 @@ RELEASE_NOTES = [
             "Enhanced Outreach filters with a compact status menu for All Open, All Closed, All and individual statuses including Cancelled.",
             "Enhanced Outreach sharing controls so account sharing fields are smaller and easier to scan.",
             "Enhanced the User Guide so account ownership, sharing, assignment and status filtering instructions reflect the current workflow.",
+            "Enhanced the User Guide with more detailed navigation guidance and clearer admin-only access explanations.",
             "Improved grouped table colour hierarchy so top-level groups use the darkest shade, nested groups step down progressively and detail rows remain light.",
             "Improved Release Notes ordering so the latest release always appears first.",
             "Improved profile audit entries so profile changes display clear field labels in the audit trail.",
         ],
-        "fixed": [],
+        "fixed": [
+            "Fixed on-page instructions across PipeFlow so every page now gives clearer guidance about what to do, what matters and what to check before saving.",
+        ],
     },
     {
         "version": "1.0",
@@ -96,36 +100,58 @@ USER_GUIDE_SECTIONS = [
         "slug": "getting-started",
         "title": "Getting Started",
         "summary": "Set up your profile, understand navigation and get your first workspace ready.",
+        "access": "All signed-in users can use the standard navigation. Admin and Audit links only appear for users with admin permission.",
+        "navigation": [
+            "Use the top navigation from left to right as your normal workflow: Dashboard, Outreach Tasks, Accounts, Contacts, Partners, Reports, Profile and Release Notes.",
+            "Use the User Guide link in the top right whenever you need help without leaving the application structure.",
+            "Use the global search field in the header when you know the account, contact, partner, campaign or outreach text you want to find.",
+            "Use Sign Out as the final navigation option when you have finished working.",
+        ],
         "steps": [
             "Register or sign in with your PipeFlow profile.",
             "Open Profile and confirm your full name, team, job title and working hours.",
             "Add any non-working date blocks so generated campaigns avoid those days.",
-            "Use the top navigation to move between Dashboard, Outreach Tasks, Accounts, Contacts, Partners, Reports and Profile.",
+            "Create accounts first, add contacts to those accounts, then create outreach tasks or generate campaigns.",
+            "Review Dashboard and Reports regularly to check execution progress and accountability.",
         ],
         "tips": [
             "Your workspace data is private unless you explicitly share an account through Outreach Tasks.",
             "Use the global search field when you know the account, contact, partner or outreach text you are looking for.",
+            "If a menu item is missing, it is normally because your profile does not have permission for that function.",
         ],
     },
     {
         "slug": "dashboard",
         "title": "Dashboard",
         "summary": "Use the dashboard as your weekly pipeline execution command centre.",
+        "navigation": [
+            "Dashboard is the first tab and should be your starting point each day.",
+            "Click a dashboard task to open the editable outreach task when more detail is needed.",
+            "Use dashboard metrics to decide whether to move into Accounts, Outreach Tasks or Reports next.",
+        ],
         "steps": [
             "Review the command centre metrics for this week.",
             "Use the pipeline target card to see total PG target ACV across your accounts.",
             "Work active outreach tasks directly from the dashboard task table.",
             "Use Execution Insights to decide which account, campaign or sales play needs attention next.",
+            "Update task status and due dates as work progresses so the dashboard stays accurate.",
         ],
         "tips": [
             "Untouched accounts are accounts with no active campaign or outreach tasks.",
             "Closed, completed and cancelled work is removed from active execution views by default.",
+            "Pipeline generated value should be treated as a source-system metric when it belongs in SFDC rather than PipeFlow.",
         ],
     },
     {
         "slug": "accounts",
         "title": "Accounts",
         "summary": "Create account records that drive pipeline tracking, contact mapping and PG Bible output.",
+        "access": "All users can manage accounts in their workspace. Only the account owner can share that account, revoke access or view account sharing assignments.",
+        "navigation": [
+            "Open Accounts from the navigation when you need to create, cleanse or review account planning data.",
+            "Click the account name in the table to open the account record.",
+            "Use the Back to Accounts button from an account record to return to the list.",
+        ],
         "steps": [
             "Add an account with account name, business organisation, industry, geography and website.",
             "Set Account Tier to 1, 2 or 3 for prioritisation.",
@@ -133,31 +159,47 @@ USER_GUIDE_SECTIONS = [
             "Enter Pipeline Target USD ACV so the Dashboard can calculate total PG target value.",
             "Review or reassign the Account Owner on the edit account form when ownership changes.",
             "Open an account record to review contacts, partner involvement, outreach history and timeline entries.",
+            "Use Account Sharing on the account record to review and revoke access if you own the account.",
         ],
         "tips": [
             "Use business organisation to distinguish large accounts with multiple internal groups.",
             "Keep PG Bible order numeric and unique for your most important accounts.",
+            "Changing ownership is stronger than sharing because ownership rights move to the new owner.",
         ],
     },
     {
         "slug": "contacts",
         "title": "Contacts",
         "summary": "Capture stakeholder detail for account coverage and campaign targeting.",
+        "navigation": [
+            "Open Contacts when you need to add, review or clean stakeholder information.",
+            "Click the contact name to open the contact record.",
+            "Use the account link from a contact when you need to return to the wider account context.",
+        ],
         "steps": [
             "Add contacts from the Contacts page or from an account context.",
             "Select the account before entering stakeholder details.",
             "Capture job title, organisation, relationship, responsibilities and personal context where known.",
             "Use contact data to make campaign recommendations more accurate over time.",
+            "Keep contact records current when a stakeholder changes role, leaves or becomes more important to the sales play.",
         ],
         "tips": [
             "Accounts must have at least one contact before Campaign Builder can generate a campaign.",
             "Richer contact notes improve future sales play recommendations.",
+            "Do not store sensitive personal data that is not relevant to legitimate business outreach.",
         ],
     },
     {
         "slug": "outreach",
         "title": "Outreach Tasks",
         "summary": "Track campaign touchpoints, task status, outcomes, account sharing, assignment and next activity updates.",
+        "access": "All users can work their own outreach tasks. Only account owners can share accounts, revoke account access or see account sharing assignments.",
+        "navigation": [
+            "Open Outreach Tasks when you need to filter, update, assign or review outreach execution.",
+            "Use Campaign Builder from the Outreach Tasks page when you want PipeFlow to generate a sequence.",
+            "Click Edit Outreach on a row to open the task form.",
+            "Use Clear Filters if the table does not show the tasks you expect.",
+        ],
         "steps": [
             "Use Add Outreach for one-off activity or Campaign Builder for generated sequences.",
             "Use the Share Full Account panel to copy an account package to one or more users and record their access.",
@@ -171,12 +213,18 @@ USER_GUIDE_SECTIONS = [
             "The due date is the Activity Due Date, based on the next action date.",
             "Tasks can only be assigned to users who have access to the related account.",
             "Closed, completed and cancelled outreach is hidden unless you explicitly filter for it.",
+            "If a user is missing from the assignment dropdown, check that the account has been shared with them first.",
         ],
     },
     {
         "slug": "campaign-builder",
         "title": "Campaign Builder",
         "summary": "Generate four-week outreach campaigns from a single sales play.",
+        "navigation": [
+            "Open Campaign Builder from the Outreach Tasks page.",
+            "Return to Outreach Tasks after generation to review the created task rows.",
+            "Use Reports later to compare campaign activity and outcomes.",
+        ],
         "steps": [
             "Choose an account that already has contacts.",
             "Select one or more contacts for the campaign.",
@@ -184,103 +232,150 @@ USER_GUIDE_SECTIONS = [
             "Set PG Week, campaign start and campaign end dates.",
             "Set the total outreach task quantity and how many times per week activities should occur.",
             "Generate the campaign to create outreach tasks across the selected contacts.",
+            "Review the generated dates and assignee before beginning execution.",
         ],
         "tips": [
             "Generated campaigns avoid weekends and your configured non-working dates.",
             "Tasks are placed inside your working hours and avoid duplicate time slots where possible.",
+            "If no account appears, add at least one contact to the account first.",
         ],
     },
     {
         "slug": "shared-outreach",
         "title": "Sharing and Assignment",
         "summary": "Share full accounts and reassign outreach tasks from the Outreach Tasks page while preserving privacy.",
+        "access": "Only the account owner can share, revoke or see account sharing assignments. Task assignees can see and update tasks only when they have access to the related account.",
+        "navigation": [
+            "Use Outreach Tasks for sharing and assignment. There is no separate Shared Outreach tab.",
+            "Use the Share Full Account panel to grant access.",
+            "Use Manage Existing Sharing or the Account Sharing panel on an account record to revoke access.",
+        ],
         "steps": [
             "Open Outreach Tasks from the top navigation.",
             "Use Share Full Account to copy an account, contacts, outreach tasks and account details to one or more users.",
             "Use Sharing Permissions to revoke access when a user no longer needs the account.",
             "Use the Assigned To dropdown and Save Assignment button in the task table to reassign work.",
             "Review active follow-up tasks grouped by customer and campaign.",
+            "If access is revoked, tasks assigned to that user return to the account owner.",
         ],
         "tips": [
             "Other users' full names are only displayed in Outreach Tasks assignment and share dropdowns.",
             "Sharing copies the full account package into the selected user's workspace while the originator retains their own access.",
             "Revoking an account share moves any tasks assigned to that user back to the account owner.",
+            "Use sharing for collaboration. Use ownership reassignment only when responsibility for the account itself changes.",
         ],
     },
     {
         "slug": "partners",
         "title": "Partners",
         "summary": "Track partner organisations, partner contacts and account involvement.",
+        "navigation": [
+            "Open Partners when you need to manage partner organisations and their contacts.",
+            "Click the partner name to open the partner record.",
+            "Use account mappings inside the partner record to connect a partner to customer accounts.",
+        ],
         "steps": [
             "Create partner organisations with type, location, website, managers and notes.",
             "Add partner contacts who work for the partner organisation.",
             "Map partner contacts and partner involvement to accounts where they help progress opportunities.",
             "Review partner metrics and account links from the partner record.",
+            "Keep partner manager and BMC partner manager fields current so ownership is clear.",
         ],
         "tips": [
             "Partner contacts are separate from account contacts and use partner-specific role fields.",
             "Use partner notes to capture channel context and next actions.",
+            "Partner account mappings help explain who is helping sell into a customer account.",
         ],
     },
     {
         "slug": "reports",
         "title": "Reports and PG Bible",
         "summary": "Review execution data and export account, contact, outreach, task and PG Bible outputs.",
+        "navigation": [
+            "Open Reports from the main navigation, then select the report type you need.",
+            "Use Back to Reports from report pages to return to the report menu.",
+            "Use exports when you need to review or share data outside PipeFlow.",
+        ],
         "steps": [
             "Open Reports from the top navigation.",
             "Use Account Reports to review account coverage and target values.",
             "Use Contact Reports to review stakeholder coverage.",
             "Use Outreach and Task Reports to review activity volume, outcomes, due dates and ownership.",
             "Export PG Bible when you need the formatted workbook output.",
+            "Use filters before exporting when the report supports narrowing by date, account, status or assignee.",
         ],
         "tips": [
             "Reports reflect the same fields used across account, contact, outreach and task views.",
             "PG Bible uses account target and ordering fields configured in the account form.",
+            "Task Reports include SLA by assignee so timeliness is measured against the person currently assigned.",
         ],
     },
     {
         "slug": "profile",
         "title": "Profile and Scheduling",
         "summary": "Configure user details, working hours and non-working dates.",
+        "navigation": [
+            "Open Profile from the main navigation when your user details or scheduling availability changes.",
+            "Use the non-working date section to add multiple unavailable blocks.",
+            "Return to Outreach or Campaign Builder after updating scheduling settings.",
+        ],
         "steps": [
             "Set full name, team and job title.",
             "Set work day start and end times.",
             "Add multiple non-working date blocks for holidays, travel or unavailable periods.",
             "Delete outdated non-working blocks when they no longer apply.",
+            "Review these settings before using Campaign Builder because auto-scheduling uses them.",
         ],
         "tips": [
             "Saturday and Sunday are non-working by default for auto-scheduling.",
             "Manual scheduling can still override warnings for non-working dates or times.",
+            "Your full name is used in assignment fields, audit entries and ownership records.",
         ],
     },
     {
         "slug": "admin",
         "title": "Admin",
         "summary": "Manage users, permissions and broadcasts when signed in as an administrator.",
+        "access": "Admin forms are only visible to admin users. Non-admin users will not see Admin or Audit navigation links and cannot access the admin routes.",
+        "navigation": [
+            "Admin appears near the end of the navigation only for admin users.",
+            "Use Admin for user management, role changes, broadcasts and profile administration.",
+            "Use Audit to review administrative and data-change history.",
+        ],
         "steps": [
             "Open Admin from the top navigation when available.",
             "Review user profiles and update role, team or email when required.",
             "Deactivate users who should no longer access PipeFlow.",
             "Create broadcast messages with start and stop times for login and dashboard announcements.",
+            "Use admin password reset only after confirming the request with the user.",
         ],
         "tips": [
             "Admin actions are recorded in the admin audit trail.",
             "Only admins can access Admin and Audit links.",
+            "If a user cannot see an admin form, check their role before troubleshooting the page.",
         ],
     },
     {
         "slug": "audit-release-notes",
         "title": "Audit and Release Notes",
         "summary": "Review change history and understand what has changed between releases.",
+        "access": "Audit is admin-only. Release Notes are visible to all users so everyone can understand what changed.",
+        "navigation": [
+            "Open Audit from the navigation if you are an admin.",
+            "Open Release Notes from the navigation to see product changes.",
+            "Use the accordion controls to expand older release entries when needed.",
+        ],
         "steps": [
             "Open Audit as an admin to review structured workspace changes.",
             "Review date/time, user, action, record, field, old value and new value.",
             "Open Release Notes to see changes grouped by version.",
             "Use the accordion layout to keep older releases collapsed while the latest release stays open.",
+            "Use release categories to understand whether a change is New, Enhanced or Fixed.",
         ],
         "tips": [
             "Release Notes always display latest to earliest.",
             "Profile changes use readable field labels in the audit trail.",
+            "Audit is for accountability and investigation, not everyday task management.",
         ],
     },
 ]
@@ -325,6 +420,312 @@ def inject_dropdown_values():
         "app_name": "PipeFlow PG Manager",
         "app_version": APP_VERSION,
         "app_release_date": APP_RELEASE_DATE,
+        "page_instructions": page_instructions_for_endpoint(request.endpoint),
+    }
+
+
+PAGE_INSTRUCTIONS = {
+    "home": {
+        "title": "How to Use This Page",
+        "items": [
+            "Start with the command centre metrics to see what needs attention this week.",
+            "Use the task table to update due dates, activity updates and task status without leaving the dashboard.",
+            "Review execution insights for suggested next actions across accounts, campaigns and sales plays.",
+            "Use the top navigation to move into Outreach Tasks, Accounts, Contacts, Partners, Reports, Profile or Release Notes.",
+        ],
+    },
+    "outreach": {
+        "title": "Outreach Tasks Guidance",
+        "items": [
+            "Only account owners can share accounts, revoke account sharing or see account sharing assignments.",
+            "Use the filters to focus active work. All Open excludes Completed, Closed and Cancelled records.",
+            "Use Save Assignment after changing the assignee. The selected user must already have access to the account.",
+            "Open the task to complete it, add a mandatory Activity Update or create a follow-on task.",
+        ],
+    },
+    "accounts": {
+        "title": "Accounts Guidance",
+        "items": [
+            "Use accounts for PG planning data that is not already managed in SFDC, including PG Bible order and FY target ACV.",
+            "Open the account name to edit or review contacts, partner involvement, outreach history, sharing and timeline.",
+            "Bulk delete only appears after records are selected so accidental deletion is less likely.",
+        ],
+    },
+    "add_account": {
+        "title": "Add Account Guidance",
+        "items": [
+            "The creator becomes the account owner by default.",
+            "Set PG Bible Order when the account must appear in a specific export sequence.",
+            "Enter Pipeline Target USD ACV so dashboard PG target totals and PG Bible exports remain accurate.",
+        ],
+    },
+    "edit_account": {
+        "title": "Edit Account Guidance",
+        "items": [
+            "Changing Account Owner transfers ownership rights when you save.",
+            "Only the owner can share or revoke sharing for this account.",
+            "Use Cancel if you need to leave without committing changes.",
+        ],
+    },
+    "view_account": {
+        "title": "Account Review Guidance",
+        "items": [
+            "Use this page to confirm account detail, coverage, partner involvement and audit history before planning outreach.",
+            "If you are the owner, the Account Sharing panel shows who has access and lets you revoke access.",
+            "Revoking access returns any tasks assigned to that user back to the account owner.",
+        ],
+    },
+    "contacts": {
+        "title": "Contacts Guidance",
+        "items": [
+            "Use contacts to capture stakeholder context that improves future campaign and sales play recommendations.",
+            "Open the contact name to review or update the record quickly.",
+            "Accounts need at least one contact before Campaign Builder can generate a campaign.",
+        ],
+    },
+    "add_contact": {
+        "title": "Add Contact Guidance",
+        "items": [
+            "Select the account first so the contact is mapped to the right business unit or organisation.",
+            "Capture job role, relationship strength and useful personal context where known.",
+            "Good contact data improves campaign recommendations over time.",
+        ],
+    },
+    "edit_contact": {
+        "title": "Edit Contact Guidance",
+        "items": [
+            "Update stakeholder details when role, relationship or responsibilities change.",
+            "Use Save to commit changes or Cancel to leave the record untouched.",
+            "Keep personal context concise and relevant to business outreach.",
+        ],
+    },
+    "view_contact": {
+        "title": "Contact Review Guidance",
+        "items": [
+            "Review account mapping, relationship context and timeline before creating outreach.",
+            "Use Edit Contact when stakeholder responsibility or relationship quality changes.",
+            "Timeline entries help explain how the relationship has developed.",
+        ],
+    },
+    "partners": {
+        "title": "Partners Guidance",
+        "items": [
+            "Use partners for organisations supporting account progression, such as GOSI, resellers, partners and hyperscalers.",
+            "Open a partner to manage its contacts and account relationships.",
+            "Partner contacts are separate from account contacts and use partner-specific role fields.",
+        ],
+    },
+    "view_partner": {
+        "title": "Partner Review Guidance",
+        "items": [
+            "Use this page to manage partner organisation details, partner contacts and account mappings.",
+            "Map partner contacts to the specific customer accounts they support.",
+            "Keep partner next actions current when they are helping progress an account.",
+        ],
+    },
+    "add_outreach": {
+        "title": "Add Outreach Guidance",
+        "items": [
+            "Use one record per outreach task or next action.",
+            "Activity Start Date is when the work begins. Activity Due Date is when the next action must be completed.",
+            "Leave Activity Update blank until there is a real update to record.",
+        ],
+    },
+    "edit_outreach": {
+        "title": "Edit Outreach Guidance",
+        "items": [
+            "Add an Activity Update before completing or closing a task.",
+            "Complete Only closes the current task without creating a follow-on.",
+            "Complete and Create Follow-on saves the current task as completed, then opens a new outreach form for the next step.",
+        ],
+    },
+    "view_outreach": {
+        "title": "Outreach Review Guidance",
+        "items": [
+            "Review the full task detail, contact, account, due date and activity update history.",
+            "Use Edit Outreach when the task needs a status, outcome or due date change.",
+            "Timeline entries help explain progress over time.",
+        ],
+    },
+    "campaign_builder": {
+        "title": "Campaign Builder Guidance",
+        "items": [
+            "Campaigns use one sales play only and can be generated for multiple contacts on the selected account.",
+            "Campaign start date cannot be earlier than today and generated tasks stay on or after the configured start date.",
+            "Auto-scheduling avoids weekends, configured non-working dates and duplicate time slots where possible.",
+        ],
+    },
+    "reports": {
+        "title": "Reports Guidance",
+        "items": [
+            "Use reports to review account coverage, contacts, outreach execution, task ownership and PG Bible export readiness.",
+            "Exports reflect the current fields used across the application.",
+            "PG Bible export requires the template to be available on the server.",
+        ],
+    },
+    "account_reports": {
+        "title": "Account Reports Guidance",
+        "items": [
+            "Review tiering, target ACV, business organisation and account coverage.",
+            "Use exports when you need to reconcile PipeFlow planning data outside the app.",
+            "Keep PG Bible Order and Pipeline Target values current for accurate reporting.",
+        ],
+    },
+    "contact_reports": {
+        "title": "Contact Reports Guidance",
+        "items": [
+            "Review stakeholder coverage by account, role and relationship quality.",
+            "Use this report to spot accounts with weak or missing contact coverage.",
+            "Export when contact data needs offline review.",
+        ],
+    },
+    "outreach_reports": {
+        "title": "Outreach Reports Guidance",
+        "items": [
+            "Review outreach volume, outcomes, campaigns, sales plays and due dates.",
+            "Use filters to narrow reporting by account, date range, outcome or activity type.",
+            "Compare outcomes to improve future campaign recommendations.",
+        ],
+    },
+    "task_reports": {
+        "title": "Task Reports Guidance",
+        "items": [
+            "Use SLA by Assignee to see who owns active, overdue and closed tasks.",
+            "Task timeliness is measured against the current assignee.",
+            "Filter by account, status or assignee before exporting.",
+        ],
+    },
+    "profile": {
+        "title": "Profile Guidance",
+        "items": [
+            "Keep your full name accurate because it appears in assignment fields and audit records.",
+            "Set work day start and end times so generated campaigns schedule inside your normal day.",
+            "Add non-working date blocks for holidays, travel or unavailable periods.",
+        ],
+    },
+    "admin_permissions": {
+        "title": "Admin Guidance",
+        "items": [
+            "This page is only visible to admin users. Non-admin users do not see Admin in the navigation.",
+            "Use user permissions to manage admin access, active users and profile details.",
+            "Use broadcasts to publish timed messages on login and the dashboard.",
+            "Admin actions are recorded in the admin audit trail.",
+        ],
+    },
+    "admin_users": {
+        "title": "Profile Administration Guidance",
+        "items": [
+            "This admin form is only available to users with admin permission.",
+            "Use this page to manage user identity, role and active status.",
+            "Deactivate users who should no longer access PipeFlow.",
+            "Password resets should only be used after confirming the user request.",
+        ],
+    },
+    "audit_trail": {
+        "title": "Audit Guidance",
+        "items": [
+            "Audit is an admin-only page and is hidden from non-admin users.",
+            "Use audit records to understand who changed what, when it changed and the values before and after.",
+            "Profile and permission changes include field labels for easier reading.",
+            "Use the newest entries first when investigating recent behaviour.",
+        ],
+    },
+    "global_search": {
+        "title": "Search Guidance",
+        "items": [
+            "Search across accounts, contacts, partners, outreach and timeline text.",
+            "Use specific account, contact, campaign or partner names for best results.",
+            "Open the matching record from the result list to review or edit it.",
+        ],
+    },
+    "release_notes": {
+        "title": "Release Notes Guidance",
+        "items": [
+            "Release notes show latest to earliest.",
+            "Open a release to review New, Enhanced and Fixed changes.",
+            "Version changes are only made when the release status is agreed.",
+        ],
+    },
+    "user_guide": {
+        "title": "User Guide Guidance",
+        "items": [
+            "Use this guide when you need workflow instructions or definitions.",
+            "Select a topic from the side menu to focus on one part of PipeFlow.",
+            "The guide reflects the current hosted workflow.",
+        ],
+    },
+    "user_guide_section": {
+        "title": "User Guide Guidance",
+        "items": [
+            "Review the selected guide topic for step-by-step workflow notes.",
+            "Use the side menu to move between related topics.",
+            "Return to the app page when you are ready to apply the guidance.",
+        ],
+    },
+    "team_page": {
+        "title": "Team Guidance",
+        "items": [
+            "Team administration is only visible to users with the required admin access.",
+            "Admins can invite users to the active team.",
+            "Invitations are created in-app and acknowledged before moving to Outreach Tasks.",
+            "Shared account access is managed from Outreach Tasks and account pages.",
+        ],
+    },
+    "tasks": {
+        "title": "Tasks Guidance",
+        "items": [
+            "Tasks are managed through the dashboard and Outreach Tasks page.",
+            "Use status and due date updates to keep accountability current.",
+            "Closed, Completed and Cancelled work is hidden from active views by default.",
+        ],
+    },
+    "login": {
+        "title": "Sign In Guidance",
+        "items": [
+            "Use your registered email and password to access your private PipeFlow workspace.",
+            "Broadcast messages from admins appear here when active.",
+            "Use reset password if you know your secret reset phrase.",
+        ],
+    },
+    "register": {
+        "title": "Registration Guidance",
+        "items": [
+            "Register with your work email, full name and password.",
+            "Choose a secret reset phrase you can remember because it is required for secure password reset.",
+            "Your profile creates a private workspace for your PipeFlow data.",
+        ],
+    },
+    "forgot_password": {
+        "title": "Password Reset Guidance",
+        "items": [
+            "Use this page when you need to reset your password without email.",
+            "You must know the secret reset phrase created during registration.",
+            "If you cannot remember the phrase, ask an administrator for help.",
+        ],
+    },
+    "reset_password": {
+        "title": "Reset Password Guidance",
+        "items": [
+            "Enter your email, reset phrase and new password.",
+            "The reset phrase is checked securely and is not shown to administrators.",
+            "After reset, sign in with the new password.",
+        ],
+    },
+}
+
+
+def page_instructions_for_endpoint(endpoint):
+    if not endpoint or endpoint.startswith("export_") or endpoint.startswith("health"):
+        return None
+    if endpoint in PAGE_INSTRUCTIONS:
+        return PAGE_INSTRUCTIONS[endpoint]
+    return {
+        "title": "Page Guidance",
+        "items": [
+            "Review the page details before making changes.",
+            "Use Save to commit updates or Cancel and Back buttons to leave without changing data.",
+            "Use the User Guide link if you need more detail about the workflow.",
+        ],
     }
 
 
@@ -2810,6 +3211,18 @@ def view_account(account_id):
         ORDER BY name
     """, (account_id,)).fetchall()
 
+    owner = account_owner_payload(account)
+    is_account_owner = current_user_owns_account(account)
+    if is_account_owner:
+        account_shares = connection.execute("""
+            SELECT *
+            FROM account_shared_users
+            WHERE account_id = ?
+            ORDER BY full_name, email
+        """, (account_id,)).fetchall()
+    else:
+        account_shares = []
+
     account_partners = connection.execute("""
         SELECT
             account_partners.*,
@@ -2852,11 +3265,14 @@ def view_account(account_id):
         account_stats=account_stats,
         account_outreach=account_outreach,
         account_contacts=account_contacts,
+        account_shares=account_shares,
         account_partners=account_partners,
         partner_options=partner_options,
         timeline_entries=timeline_entries,
         custom_fields=custom_fields,
-        custom_values=custom_values
+        custom_values=custom_values,
+        owner=owner,
+        is_account_owner=is_account_owner
     )
 
 
@@ -3580,6 +3996,15 @@ def outreach():
     accounts = connection.execute(
         "SELECT * FROM accounts ORDER BY account_name"
     ).fetchall()
+    owner_account_ids = {
+        str(account["id"])
+        for account in accounts
+        if current_user_owns_account(account)
+    }
+    shareable_accounts = [
+        account for account in accounts
+        if str(account["id"]) in owner_account_ids
+    ]
     account_shares = connection.execute("""
         SELECT
             account_shared_users.*,
@@ -3588,8 +4013,10 @@ def outreach():
             accounts.owner_name
         FROM account_shared_users
         JOIN accounts ON accounts.id = account_shared_users.account_id
+        WHERE accounts.owner_user_id IS NULL
+           OR accounts.owner_user_id = ?
         ORDER BY accounts.account_name, account_shared_users.full_name
-    """).fetchall()
+    """, (user["id"] if user else None,)).fetchall()
     existing_campaigns = connection.execute("""
         SELECT DISTINCT campaign
         FROM outreach
@@ -3605,6 +4032,7 @@ def outreach():
         "outreach.html",
         outreach_records=outreach_records,
         accounts=accounts,
+        shareable_accounts=shareable_accounts,
         account_shares=account_shares,
         campaign_options=campaign_options,
         fy_filter=fy_filter,
@@ -4448,6 +4876,14 @@ def account_owner_payload(account):
     }
 
 
+def current_user_owns_account(account):
+    user = current_user()
+    if not user or not account:
+        return False
+    owner = account_owner_payload(account)
+    return not owner["owner_user_id"] or str(owner["owner_user_id"]) == str(user["id"])
+
+
 def upsert_account_share(connection, account_id, target_member):
     existing = connection.execute("""
         SELECT id
@@ -4783,6 +5219,11 @@ def share_account_from_team_outreach():
     return_to = request.form.get("return_to") or url_for("outreach")
     if not target_user_ids:
         return redirect(url_for("outreach", error="Select at least one user before sharing the account."))
+    source_connection = get_db_connection()
+    account = source_connection.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    if not account or not current_user_owns_account(account):
+        source_connection.close()
+        return redirect(url_for("outreach", error="Only the account owner can share this account."))
     target_members = [
         member for member in assignable_users
         if str(member["id"]) in target_user_ids
@@ -4794,7 +5235,6 @@ def share_account_from_team_outreach():
     source_schema = current_user_schema() if using_postgres() else ""
     errors = []
     shared_count = 0
-    source_connection = get_db_connection()
     for target_member in target_members:
         error = share_full_account_to_member(source_schema, account_id, target_member, user["full_name"] if user else "")
         if error:
@@ -4822,6 +5262,7 @@ def share_account_from_team_outreach():
 @app.route("/team-outreach/account-share/<int:share_id>/revoke", methods=("POST",))
 def revoke_account_share_from_outreach(share_id):
     user = current_user()
+    return_to = request.form.get("return_to") or url_for("outreach")
     connection = get_db_connection()
     share = connection.execute("""
         SELECT account_shared_users.*, accounts.account_name, accounts.owner_user_id, accounts.owner_name, accounts.owner_email
@@ -4859,7 +5300,8 @@ def revoke_account_share_from_outreach(share_id):
     )
     connection.commit()
     connection.close()
-    return redirect(url_for("outreach", message="Account sharing permission revoked and assigned tasks returned to the account owner."))
+    separator = "&" if "?" in return_to else "?"
+    return redirect(f"{return_to}{separator}{urlencode({'message': 'Account sharing permission revoked and assigned tasks returned to the account owner.'})}")
 
 
 @app.route("/team-outreach/reassign", methods=("POST",))

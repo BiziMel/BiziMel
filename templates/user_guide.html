@@ -33,6 +33,24 @@
             <h2>{{ selected_section.title }}</h2>
             <p class="guide-summary">{{ selected_section.summary }}</p>
 
+            {% if selected_section.access %}
+                <section>
+                    <h3>Access</h3>
+                    <p class="guide-summary">{{ selected_section.access }}</p>
+                </section>
+            {% endif %}
+
+            {% if selected_section.navigation %}
+                <section>
+                    <h3>Navigation</h3>
+                    <ul class="guide-tips">
+                        {% for item in selected_section.navigation %}
+                            <li>{{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                </section>
+            {% endif %}
+
             <section>
                 <h3>How To Use This</h3>
                 <ol class="guide-steps">
@@ -56,6 +74,7 @@
     <div class="form-card guide-intro-card">
         <h2>Choose A Topic</h2>
         <p>Use these guide pages as a quick reference while working through accounts, contacts, outreach, shared tasks, reporting and administration.</p>
+        <p>Navigate PipeFlow from left to right for the usual workflow: start at Dashboard, work Outreach Tasks, maintain Accounts and Contacts, review Partners, use Reports, then update Profile or Release Notes when needed. Admin and Audit only appear for admin users.</p>
     </div>
 
     <div class="guide-topic-grid">
