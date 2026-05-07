@@ -195,13 +195,16 @@
 <script>
     const profileWorkStart = "{{ profile.work_day_start or '09:00' }}";
     const profileWorkEnd = "{{ profile.work_day_end or '17:00' }}";
-    const nonWorkingStart = "{{ profile.non_working_start_date or '' }}";
-    const nonWorkingEnd = "{{ profile.non_working_end_date or '' }}";
+    const nonWorkingBlocks = {{ non_working_blocks | map(attribute='start_date') | list | tojson }}.map((start, index) => ({
+        start,
+        end: {{ non_working_blocks | map(attribute='end_date') | list | tojson }}[index] || start
+    }));
 
     function isNonWorkingDate(value) {
-        if (!value || !nonWorkingStart) return false;
-        const end = nonWorkingEnd || nonWorkingStart;
-        return value >= nonWorkingStart && value <= end;
+        if (!value) return false;
+        const date = new Date(`${value}T00:00:00`);
+        if (date.getDay() === 0 || date.getDay() === 6) return true;
+        return nonWorkingBlocks.some((block) => value >= block.start && value <= block.end);
     }
 
     function warnManualSchedule(dateInputId, timeInputId) {

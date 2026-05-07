@@ -75,24 +75,6 @@
                        value="{{ profile.work_day_end or '17:00' }}">
             </div>
 
-            <div class="form-section-heading">Non Working Dates</div>
-
-            <div class="form-group">
-                <label for="non_working_start_date">Non Working Start Date</label>
-                <input type="date"
-                       id="non_working_start_date"
-                       name="non_working_start_date"
-                       value="{{ profile.non_working_start_date or '' }}">
-            </div>
-
-            <div class="form-group">
-                <label for="non_working_end_date">Non Working End Date</label>
-                <input type="date"
-                       id="non_working_end_date"
-                       name="non_working_end_date"
-                       value="{{ profile.non_working_end_date or '' }}">
-            </div>
-
         </div>
 
         <div class="form-actions">
@@ -109,13 +91,69 @@
     <p><strong>Team:</strong> {{ profile.team or "Not configured" }}</p>
     <p><strong>Job Title:</strong> {{ profile.job_title or "Not configured" }}</p>
     <p><strong>Working Hours:</strong> {{ profile.work_day_start or "09:00" }} to {{ profile.work_day_end or "17:00" }}</p>
-    <p><strong>Non Working Dates:</strong>
-        {% if profile.non_working_start_date or profile.non_working_end_date %}
-            {{ profile.non_working_start_date or "Not set" }} to {{ profile.non_working_end_date or "Not set" }}
-        {% else %}
-            Not configured
-        {% endif %}
-    </p>
+    <p><strong>Weekend Days:</strong> Saturday and Sunday are always treated as non-working days for auto-scheduling.</p>
+</div>
+
+<div class="form-card">
+    <div class="section-header">
+        <div>
+            <h2>Non-Working Dates</h2>
+            <p>Add holidays, travel, annual leave or other unavailable date blocks. Weekends are already excluded automatically.</p>
+        </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('add_non_working_block') }}" class="pipeflow-form">
+        <div class="form-grid compact-filter-grid">
+            <div class="form-group">
+                <label for="start_date">Start Date</label>
+                <input type="date" id="start_date" name="start_date" required>
+            </div>
+            <div class="form-group">
+                <label for="end_date">End Date</label>
+                <input type="date" id="end_date" name="end_date">
+            </div>
+            <div class="form-group">
+                <label for="reason">Reason</label>
+                <input type="text" id="reason" name="reason" placeholder="Optional">
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Add Non-Working Block</button>
+        </div>
+    </form>
+
+    {% if non_working_blocks %}
+        <div class="table-container">
+            <table class="report-table">
+                <thead>
+                    <tr>
+                        <th>Start Date</th>
+                        <th>End Date</th>
+                        <th>Reason</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for block in non_working_blocks %}
+                        <tr>
+                            <td>{{ block.start_date }}</td>
+                            <td>{{ block.end_date }}</td>
+                            <td>{{ block.reason or "-" }}</td>
+                            <td>
+                                <form method="POST"
+                                      action="{{ url_for('delete_non_working_block', block_id=block.id) }}"
+                                      onsubmit="return confirm('Delete this non-working block?');">
+                                    <button type="submit" class="btn btn-danger btn-small">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p>No custom non-working blocks have been added.</p>
+    {% endif %}
 </div>
 
 <div class="form-card danger-zone-card">

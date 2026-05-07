@@ -21,26 +21,8 @@
 
 <div class="form-card">
     <h2>{{ team.team_name if team else "Active Team" }}</h2>
-    <div class="table-container">
-        <table class="report-table">
-            <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Role</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for member in members %}
-                    <tr>
-                        <td>{{ member.full_name }}</td>
-                        <td>{{ member.email }}</td>
-                        <td>{{ member.role }}</td>
-                    </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+    <p><strong>Members:</strong> {{ members|length }}</p>
+    <p class="muted">For privacy, other users' full names are only displayed in assignment fields on Shared Outreach.</p>
 </div>
 
 <div class="form-card">

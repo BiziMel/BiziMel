@@ -16,10 +16,54 @@
 </div>
 
 <div class="form-card">
+    {% if message %}
+        <div class="alert-success">{{ message }}</div>
+    {% endif %}
+    {% if error %}
+        <div class="alert-error">{{ error }}</div>
+    {% endif %}
+
+    <div class="section-header">
+        <div>
+            <h2>Share Full Account</h2>
+            <p>Copy the selected account, contacts, outreach tasks and account details into another user's workspace.</p>
+        </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('share_account_from_team_outreach') }}" class="pipeflow-form">
+        <div class="form-grid compact-filter-grid">
+            <div class="form-group">
+                <label for="account_id">Account</label>
+                <select id="account_id" name="account_id" required>
+                    <option value="">Select account</option>
+                    {% for account in current_accounts %}
+                        <option value="{{ account.id }}">{{ account.account_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="target_user_id">Share With</label>
+                <select id="target_user_id" name="target_user_id" required>
+                    <option value="">Select user</option>
+                    {% for member in members %}
+                        {% if current_user and member.id != current_user["id"] %}
+                            <option value="{{ member.id }}">{{ member.full_name }}</option>
+                        {% endif %}
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Share Account</button>
+        </div>
+    </form>
+</div>
+
+<div class="form-card">
     <div class="section-header">
         <div>
             <h2>{{ team.team_name if team else "Active Team" }}</h2>
-            <p>Grouped by assignee, customer and campaign. Closed, completed and cancelled tasks are hidden.</p>
+            <p>Grouped by assignment status, customer and campaign. User full names are only shown in the assignment dropdown.</p>
         </div>
     </div>
 
@@ -38,7 +82,7 @@
                 <tbody>
                     {% set current_group = namespace(assignee=None, account=None, campaign=None) %}
                     {% for item in outreach_records %}
-                        {% set assignee_group = item.assigned_to or item.owner_name or "Unassigned" %}
+                        {% set assignee_group = "Assigned" if item.assigned_to else "Unassigned" %}
                         {% set account_group = item.account_name or "No Account" %}
                         {% set campaign_group = item.campaign or "No Campaign" %}
                         {% if current_group.assignee != assignee_group %}

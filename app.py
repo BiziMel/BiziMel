@@ -18,7 +18,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "1.0"
 APP_RELEASE_DATE = "2026-05-07"
-APP_BUILD = "2026-05-07-release-accordion-outreach-scheduling-team-v1"
+APP_BUILD = "2026-05-07-shared-account-non-working-blocks-v1"
 
 RELEASE_NOTES = [
     {
@@ -47,6 +47,9 @@ RELEASE_NOTES = [
             "Improved follow-on activity flow so completed outreach opens a prefilled new outreach form instead of silently creating the next task.",
             "Improved Outreach filters with multi-select status filtering and a default All Open view.",
             "Improved auto-scheduling so generated campaign tasks avoid non-working dates, stay inside working hours and avoid duplicate time slots.",
+            "Improved non-working date management so users can configure multiple unavailable date blocks while weekends are excluded by default.",
+            "Improved Shared Outreach privacy so other users' full names only appear in assignment and share dropdowns.",
+            "Improved account collaboration so users can share a full account package, including account details, contacts and outreach tasks, with another team member.",
             "Improved Release Notes with an accordion layout so older entries can stay collapsed as the product history grows.",
             "Improved table usability by making primary record fields act as obvious edit buttons.",
             "Improved Campaign Builder so users can only build campaigns against accounts that already have contacts, while still supporting multiple selected contacts.",
@@ -1100,33 +1103,58 @@ def parse_time_value(value, fallback):
         return datetime.strptime(fallback, "%H:%M").time()
 
 
-def profile_non_working_dates(profile):
+def parse_non_working_blocks(rows):
+    blocks = []
+    for row in rows or []:
+        try:
+            start = datetime.strptime(row["start_date"], "%Y-%m-%d").date()
+            end = datetime.strptime(row["end_date"], "%Y-%m-%d").date()
+        except (KeyError, TypeError, ValueError):
+            continue
+        if end < start:
+            start, end = end, start
+        blocks.append((start, end))
+    return blocks
+
+
+def legacy_profile_non_working_block(profile):
     if not profile:
-        return None, None
+        return []
     try:
         start = datetime.strptime(profile["non_working_start_date"], "%Y-%m-%d").date() if profile["non_working_start_date"] else None
         end = datetime.strptime(profile["non_working_end_date"], "%Y-%m-%d").date() if profile["non_working_end_date"] else None
     except (KeyError, TypeError, ValueError):
-        return None, None
-    if start and end and end < start:
+        return []
+    if not start:
+        return []
+    end = end or start
+    if end < start:
         start, end = end, start
-    return start, end
+    return [(start, end)]
 
 
-def is_non_working_date(action_date, profile):
-    start, end = profile_non_working_dates(profile)
-    if start and end:
-        return start <= action_date <= end
-    if start:
-        return action_date == start
+def is_non_working_date(action_date, profile=None, non_working_blocks=None):
+    if action_date.weekday() >= 5:
+        return True
+    blocks = list(non_working_blocks or []) + legacy_profile_non_working_block(profile)
+    for start, end in blocks:
+        if start <= action_date <= end:
+            return True
     return False
 
 
-def next_working_date(action_date, campaign_end, profile):
+def next_working_date(action_date, campaign_start, campaign_end, profile=None, non_working_blocks=None):
     candidate = action_date
-    while candidate <= campaign_end and is_non_working_date(candidate, profile):
+    while candidate <= campaign_end and is_non_working_date(candidate, profile, non_working_blocks):
         candidate += timedelta(days=1)
-    return min(candidate, campaign_end)
+    if candidate <= campaign_end:
+        return candidate
+    candidate = action_date
+    while candidate >= campaign_start and is_non_working_date(candidate, profile, non_working_blocks):
+        candidate -= timedelta(days=1)
+    if candidate >= campaign_start:
+        return candidate
+    return action_date
 
 
 def available_campaign_time(action_date, preferred_time, profile=None, reserved_slots=None):
@@ -1148,7 +1176,7 @@ def available_campaign_time(action_date, preferred_time, profile=None, reserved_
     return fallback.strftime("%H:%M")
 
 
-def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per_week, templates=None, profile=None, reserved_slots=None):
+def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per_week, templates=None, profile=None, reserved_slots=None, non_working_blocks=None):
     templates = templates or campaign_step_templates()
     total_tasks = max(1, int(total_tasks or 1))
     times_per_week = max(1, min(int(times_per_week or 1), 7))
@@ -1159,7 +1187,7 @@ def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per
             action_date = campaign_start
         if action_date > campaign_end:
             action_date = campaign_end
-        action_date = next_working_date(action_date, campaign_end, profile)
+        action_date = next_working_date(action_date, campaign_start, campaign_end, profile, non_working_blocks)
         template = dict(templates[index % len(templates)])
         template["action_date"] = action_date
         template["time"] = available_campaign_time(action_date, template.get("time", "09:00"), profile, reserved_slots)
@@ -3366,6 +3394,16 @@ def add_outreach():
         FROM user_profile
         WHERE id = 1
     """).fetchone()
+    non_working_block_rows = connection.execute("""
+        SELECT *
+        FROM non_working_blocks
+        ORDER BY start_date, end_date, id
+    """).fetchall()
+    non_working_blocks = parse_non_working_blocks(connection.execute("""
+        SELECT *
+        FROM non_working_blocks
+        ORDER BY start_date, end_date, id
+    """).fetchall())
     existing_campaigns = connection.execute("""
         SELECT DISTINCT campaign
         FROM outreach
@@ -3383,6 +3421,7 @@ def add_outreach():
         contacts=contacts,
         profile=profile,
         campaign_options=campaign_options,
+        non_working_blocks=non_working_block_rows,
         prefill=prefill
     )
 
@@ -3409,6 +3448,11 @@ def campaign_builder():
         FROM user_profile
         WHERE id = 1
     """).fetchone()
+    non_working_block_rows = connection.execute("""
+        SELECT *
+        FROM non_working_blocks
+        ORDER BY start_date, end_date, id
+    """).fetchall()
 
     if request.method == "POST":
         account_id = request.form.get("account_id")
@@ -3511,7 +3555,8 @@ def campaign_builder():
                         times_per_week,
                         schedule_templates,
                         profile=profile,
-                        reserved_slots=reserved_slots
+                        reserved_slots=reserved_slots,
+                        non_working_blocks=non_working_blocks
                     ):
                         action_date = step["action_date"]
                         subject = f"{step['subject_prefix']}: {sales_play}"
@@ -3770,6 +3815,7 @@ def edit_outreach(outreach_id):
                     contacts=contacts,
                     profile=profile,
                     campaign_options=campaign_options,
+                    non_working_blocks=non_working_block_rows,
                     error=error
                 )
             new_values["task_status"] = "Completed"
@@ -3867,6 +3913,7 @@ def edit_outreach(outreach_id):
         contacts=contacts,
         profile=profile,
         campaign_options=campaign_options,
+        non_working_blocks=non_working_block_rows,
         error=error
     )
 
@@ -4027,6 +4074,165 @@ def tasks():
     return redirect(url_for("home", _anchor="dashboard-tasks"))
 
 
+def row_to_insert_values(row, columns):
+    return [row[column] if column in row.keys() else None for column in columns]
+
+
+def insert_copied_row(connection, table_name, columns, row, overrides=None):
+    values = dict(zip(columns, row_to_insert_values(row, columns)))
+    values.update(overrides or {})
+    placeholders = ", ".join("?" for _ in columns)
+    column_sql = ", ".join(columns)
+    cursor = connection.execute(
+        f"INSERT INTO {table_name} ({column_sql}) VALUES ({placeholders})",
+        [values[column] for column in columns],
+    )
+    return cursor.lastrowid
+
+
+def share_full_account_to_member(source_schema, account_id, target_member, actor_name):
+    restore_schema = session.get("workspace_schema")
+    try:
+        session["workspace_schema"] = target_member["workspace_schema"]
+        initialise_database(force=True)
+    finally:
+        if restore_schema:
+            session["workspace_schema"] = restore_schema
+        else:
+            session.pop("workspace_schema", None)
+
+    source_connection = get_schema_connection(schema=source_schema) if using_postgres() else get_db_connection()
+    target_connection = get_schema_connection(schema=target_member["workspace_schema"]) if using_postgres() else get_db_connection()
+
+    account = source_connection.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    if not account:
+        source_connection.close()
+        target_connection.close()
+        return "The selected account could not be found."
+
+    existing_account = target_connection.execute(
+        "SELECT id FROM accounts WHERE account_name = ?",
+        (account["account_name"],),
+    ).fetchone()
+    if existing_account:
+        target_account_id = existing_account["id"]
+        target_connection.execute("DELETE FROM partner_contacts WHERE account_id = ?", (target_account_id,))
+        target_connection.execute("DELETE FROM account_partners WHERE account_id = ?", (target_account_id,))
+        target_connection.execute("DELETE FROM account_custom_values WHERE account_id = ?", (target_account_id,))
+        target_connection.execute("DELETE FROM outreach WHERE account_id = ?", (target_account_id,))
+        target_connection.execute("DELETE FROM contacts WHERE account_id = ?", (target_account_id,))
+        target_connection.execute("""
+            UPDATE accounts
+            SET pg_bible_order = ?,
+                account_tier = ?,
+                industry = ?,
+                business_unit = ?,
+                country = ?,
+                city = ?,
+                website = ?,
+                pipeline_target = ?,
+                notes = ?,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (
+            account["pg_bible_order"],
+            account["account_tier"],
+            account["industry"],
+            account["business_unit"],
+            account["country"],
+            account["city"],
+            account["website"],
+            account["pipeline_target"],
+            account["notes"],
+            target_account_id,
+        ))
+    else:
+        target_account_id = insert_copied_row(
+            target_connection,
+            "accounts",
+            ["account_name", "pg_bible_order", "account_tier", "industry", "business_unit", "country", "city", "website", "pipeline_target", "notes"],
+            account,
+        )
+
+    contact_id_map = {}
+    contacts = source_connection.execute("SELECT * FROM contacts WHERE account_id = ? ORDER BY id", (account_id,)).fetchall()
+    for contact in contacts:
+        new_contact_id = insert_copied_row(
+            target_connection,
+            "contacts",
+            [
+                "account_id", "category", "photo", "name", "job_title", "org_dept", "responsibilities",
+                "email", "phone", "location", "linkedin", "bmc_relationship", "characteristics",
+                "background", "personal_interests", "personal_win", "education", "social_media",
+                "additional_notes"
+            ],
+            contact,
+            {"account_id": target_account_id},
+        )
+        contact_id_map[contact["id"]] = new_contact_id
+
+    for outreach_item in source_connection.execute("SELECT * FROM outreach WHERE account_id = ? ORDER BY id", (account_id,)).fetchall():
+        insert_copied_row(
+            target_connection,
+            "outreach",
+            [
+                "fy", "quarter", "account_id", "contact_id", "campaign", "sales_play",
+                "campaign_start_date", "campaign_end_date", "campaign_tasks_per_week",
+                "campaign_total_tasks", "activity_date", "activity_time", "activity_type",
+                "subject", "notes", "outcome", "next_action", "next_action_date",
+                "next_action_time", "task_status", "assigned_to"
+            ],
+            outreach_item,
+            {
+                "account_id": target_account_id,
+                "contact_id": contact_id_map.get(outreach_item["contact_id"]),
+            },
+        )
+
+    for custom_value in source_connection.execute("SELECT * FROM account_custom_values WHERE account_id = ? ORDER BY id", (account_id,)).fetchall():
+        insert_copied_row(
+            target_connection,
+            "account_custom_values",
+            ["account_id", "field_key", "field_value"],
+            custom_value,
+            {"account_id": target_account_id},
+        )
+
+    for partner in source_connection.execute("SELECT * FROM account_partners WHERE account_id = ? ORDER BY id", (account_id,)).fetchall():
+        insert_copied_row(
+            target_connection,
+            "account_partners",
+            ["account_id", "partner_id", "partner_name", "partner_role", "involvement_status", "relationship_owner", "next_action", "notes"],
+            partner,
+            {"account_id": target_account_id},
+        )
+
+    for partner_contact in source_connection.execute("SELECT * FROM partner_contacts WHERE account_id = ? ORDER BY id", (account_id,)).fetchall():
+        insert_copied_row(
+            target_connection,
+            "partner_contacts",
+            [
+                "partner_id", "name", "job_title", "partner_contact_role", "coverage_area",
+                "account_id", "relationship_owner", "email", "phone", "location", "linkedin",
+                "relationship_status", "next_action", "notes"
+            ],
+            partner_contact,
+            {"account_id": target_account_id},
+        )
+
+    add_timeline_entry(
+        target_connection,
+        "account",
+        target_account_id,
+        "Account Shared",
+        f"Full account shared by {actor_name or 'team member'}."
+    )
+    target_connection.commit()
+    source_connection.close()
+    target_connection.close()
+    return ""
+
+
 @app.route("/team", methods=("GET", "POST"))
 def team_page():
     user = current_user()
@@ -4056,6 +4262,7 @@ def team_outreach():
     members = list_active_team_members(user)
     member_schemas = {member["workspace_schema"]: member for member in members if member["workspace_schema"]}
     rows = []
+    current_accounts = []
 
     if using_postgres():
         for member in members:
@@ -4109,6 +4316,14 @@ def team_outreach():
             rows.append(row_dict)
         connection.close()
 
+    own_connection = get_db_connection()
+    current_accounts = own_connection.execute("""
+        SELECT id, account_name
+        FROM accounts
+        ORDER BY account_name
+    """).fetchall()
+    own_connection.close()
+
     rows.sort(key=lambda row: (
         row.get("assigned_to") or row.get("owner_name") or "Unassigned",
         row.get("account_name") or "No Account",
@@ -4122,7 +4337,28 @@ def team_outreach():
         team=team,
         members=members,
         outreach_records=rows,
+        current_accounts=current_accounts,
+        message=request.args.get("message", ""),
+        error=request.args.get("error", ""),
     )
+
+
+@app.route("/team-outreach/share-account", methods=("POST",))
+def share_account_from_team_outreach():
+    user = current_user()
+    members = list_active_team_members(user)
+    target_user_id = request.form.get("target_user_id")
+    account_id = request.form.get("account_id")
+    target_member = next((member for member in members if str(member["id"]) == str(target_user_id)), None)
+    if not target_member or not target_member["workspace_schema"]:
+        return redirect(url_for("team_outreach", error="Select a valid teammate before sharing the account."))
+    if str(target_member["id"]) == str(user["id"]):
+        return redirect(url_for("team_outreach", error="Select another user to share the account with."))
+    source_schema = current_user_schema() if using_postgres() else ""
+    error = share_full_account_to_member(source_schema, account_id, target_member, user["full_name"] if user else "")
+    if error:
+        return redirect(url_for("team_outreach", error=error))
+    return redirect(url_for("team_outreach", message="Full account shared."))
 
 
 @app.route("/team-outreach/reassign", methods=("POST",))
@@ -4315,10 +4551,47 @@ def profile():
         FROM user_profile
         WHERE id = 1
     """).fetchone()
+    non_working_blocks = connection.execute("""
+        SELECT *
+        FROM non_working_blocks
+        ORDER BY start_date, end_date, id
+    """).fetchall()
 
     connection.close()
 
-    return render_template("profile.html", profile=profile_record, message=message, error=error)
+    return render_template(
+        "profile.html",
+        profile=profile_record,
+        non_working_blocks=non_working_blocks,
+        message=message,
+        error=error
+    )
+
+
+@app.route("/profile/non-working/add", methods=("POST",))
+def add_non_working_block():
+    start_date = request.form.get("start_date")
+    end_date = request.form.get("end_date") or start_date
+    reason = request.form.get("reason", "")
+    if not start_date:
+        return redirect(url_for("profile", error="Non-working start date is required."))
+    connection = get_db_connection()
+    connection.execute("""
+        INSERT INTO non_working_blocks (start_date, end_date, reason)
+        VALUES (?, ?, ?)
+    """, (start_date, end_date, reason))
+    connection.commit()
+    connection.close()
+    return redirect(url_for("profile", message="Non-working block added."))
+
+
+@app.route("/profile/non-working/<int:block_id>/delete", methods=("POST",))
+def delete_non_working_block(block_id):
+    connection = get_db_connection()
+    connection.execute("DELETE FROM non_working_blocks WHERE id = ?", (block_id,))
+    connection.commit()
+    connection.close()
+    return redirect(url_for("profile", message="Non-working block deleted."))
 
 
 @app.route("/profile/delete-data", methods=("POST",))

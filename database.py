@@ -237,6 +237,17 @@ def initialise_database(force=False):
     """)
 
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS non_working_blocks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            reason TEXT,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS audit_entries (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             entity_type TEXT NOT NULL,
@@ -375,6 +386,13 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "user_profile", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "user_profile", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
 
+    # Safe migrations for non-working blocks
+    add_column_if_missing(cursor, "non_working_blocks", "start_date", "TEXT")
+    add_column_if_missing(cursor, "non_working_blocks", "end_date", "TEXT")
+    add_column_if_missing(cursor, "non_working_blocks", "reason", "TEXT")
+    add_column_if_missing(cursor, "non_working_blocks", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "non_working_blocks", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
+
     # Safe migrations for structured audit entries
     add_column_if_missing(cursor, "audit_entries", "team_id", "INTEGER DEFAULT 1")
     add_column_if_missing(cursor, "audit_entries", "entity_type", "TEXT")
@@ -424,6 +442,7 @@ def initialise_database(force=False):
         ("idx_timeline_related", "timeline_entries", ["related_type", "related_id"]),
         ("idx_account_custom_values_account", "account_custom_values", ["account_id"]),
         ("idx_audit_entity", "audit_entries", ["entity_type", "entity_id"]),
+        ("idx_non_working_blocks_dates", "non_working_blocks", ["start_date", "end_date"]),
     ]
     for index_name, table_name, columns in index_definitions:
         create_index_if_missing(cursor, index_name, table_name, columns)
