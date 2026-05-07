@@ -46,7 +46,10 @@
                         <input type="checkbox" name="selected_ids" value="{{ contact['id'] }}" form="bulk-delete-contacts-form" aria-label="Select {{ contact['name'] }}">
                     </td>
                     <td>
-                        <a href="{{ url_for('edit_contact', contact_id=contact['id']) }}" class="record-primary-link">
+                        <a href="{{ url_for('edit_contact', contact_id=contact['id']) }}"
+                           class="record-primary-link"
+                           title="Edit contact {{ contact['name'] or 'Unknown' }}"
+                           aria-label="Edit contact {{ contact['name'] or 'Unknown' }}">
                             {{ contact["name"] or "Unknown" }}
                         </a>
                         <br>

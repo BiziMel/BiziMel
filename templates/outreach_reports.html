@@ -159,7 +159,10 @@
                 {% for item in latest_outreach %}
                     <tr>
                         <td>
-                            <a href="{{ url_for('edit_outreach', outreach_id=item['id']) }}" class="record-primary-link">
+                            <a href="{{ url_for('edit_outreach', outreach_id=item['id']) }}"
+                               class="record-primary-link"
+                               title="Edit outreach {{ item['activity_type'] or item['activity_date'] or item['id'] }}"
+                               aria-label="Edit outreach {{ item['activity_type'] or item['activity_date'] or item['id'] }}">
                                 {{ item["activity_date"] or "Not set" }}
                             </a>
                         </td>

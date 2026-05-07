@@ -110,7 +110,7 @@
                 <thead>
                     <tr>
                         <th class="bulk-select-col">Select</th>
-                        <th>Activity Start / Due</th>
+                        <th>Activity Due Date</th>
                         <th>Account / Contact</th>
                         <th>Campaign Name</th>
                         <th>Activity Type / Subject</th>
@@ -147,24 +147,28 @@
                                 <input type="checkbox" name="selected_ids" value="{{ item.id }}" form="bulk-delete-outreach-form" aria-label="Select outreach {{ item.subject or item.id }}">
                             </td>
                             <td>
-                                <span class="date-stack-label">Start</span>
-                                <strong>
-                                    {% if item.activity_date %}
-                                        {{ item.activity_date[8:10] }}-{{ item.activity_date[5:7] }}-{{ item.activity_date[0:4] }}
-                                    {% else %}
-                                        No date
-                                    {% endif %}
-                                </strong>
-                                <span class="muted">{{ item.activity_time or "No time" }}</span>
-                                <span class="date-stack-label">Due</span>
-                                <strong>
-                                    {% if item.next_action_date %}
-                                        {{ item.next_action_date[8:10] }}-{{ item.next_action_date[5:7] }}-{{ item.next_action_date[0:4] }}
-                                    {% else %}
-                                        No due date
-                                    {% endif %}
-                                </strong>
-                                <span class="muted">{{ item.next_action_time or "No due time" }}</span>
+                                <div class="outreach-due-date-block">
+                                    <span class="date-stack-label">Due</span>
+                                    <strong>
+                                        {% if item.next_action_date %}
+                                            {{ item.next_action_date[8:10] }}-{{ item.next_action_date[5:7] }}-{{ item.next_action_date[0:4] }}
+                                        {% else %}
+                                            No due date
+                                        {% endif %}
+                                    </strong>
+                                    <span>{{ item.next_action_time or "No due time" }}</span>
+                                </div>
+                                <div class="outreach-start-date-block">
+                                    <span class="date-stack-label">Start</span>
+                                    <span>
+                                        {% if item.activity_date %}
+                                            {{ item.activity_date[8:10] }}-{{ item.activity_date[5:7] }}-{{ item.activity_date[0:4] }}
+                                        {% else %}
+                                            No start date
+                                        {% endif %}
+                                        · {{ item.activity_time or "No start time" }}
+                                    </span>
+                                </div>
                             </td>
                             <td>
                                 <strong>{{ item.account_name or "No account" }}</strong>
@@ -178,7 +182,10 @@
                                 <span class="muted">{{ item.sales_play or "No sales play" }}</span>
                             </td>
                             <td>
-                                <a href="{{ url_for('edit_outreach', outreach_id=item.id) }}" class="record-primary-link">
+                                <a href="{{ url_for('edit_outreach', outreach_id=item.id) }}"
+                                   class="record-primary-link"
+                                   title="Edit outreach {{ item.subject or item.activity_type or item.id }}"
+                                   aria-label="Edit outreach {{ item.subject or item.activity_type or item.id }}">
                                     {{ item.activity_type or "No activity type" }}
                                 </a>
                                 <br>

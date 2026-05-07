@@ -60,7 +60,10 @@
                     <tr>
                         <td>{{ account["pg_bible_order"] or "Not set" }}</td>
                         <td>
-                            <a href="{{ url_for('edit_account', account_id=account['id']) }}" class="record-primary-link">
+                            <a href="{{ url_for('edit_account', account_id=account['id']) }}"
+                               class="record-primary-link"
+                               title="Edit account {{ account['account_name'] }}"
+                               aria-label="Edit account {{ account['account_name'] }}">
                                 {{ account["account_name"] }}
                             </a>
                         </td>

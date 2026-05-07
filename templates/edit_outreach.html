@@ -168,12 +168,20 @@
         </div>
 
         <div class="form-actions">
-            <button type="submit" class="btn btn-primary">
+            <button type="submit" name="submit_action" value="save" class="btn btn-primary">
                 Save Changes
             </button>
 
+            <button type="submit" name="submit_action" value="complete_and_follow" class="btn btn-primary">
+                Complete and Create Follow-on
+            </button>
+
+            <button type="submit" name="submit_action" value="complete_only" class="btn btn-secondary">
+                Complete Only
+            </button>
+
             <a href="{{ url_for('outreach') }}" class="btn btn-secondary">
-                Cancel
+                Cancel Without Changes
             </a>
         </div>
 

@@ -59,7 +59,10 @@
                 {% for contact in contacts %}
                     <tr>
                         <td>
-                            <a href="{{ url_for('edit_contact', contact_id=contact['id']) }}" class="record-primary-link">
+                            <a href="{{ url_for('edit_contact', contact_id=contact['id']) }}"
+                               class="record-primary-link"
+                               title="Edit contact {{ contact['name'] or 'Unknown' }}"
+                               aria-label="Edit contact {{ contact['name'] or 'Unknown' }}">
                                 {{ contact["name"] or "Unknown" }}
                             </a>
                         </td>

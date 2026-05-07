@@ -478,25 +478,43 @@ a:hover {
 }
 
 .record-primary-link {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     max-width: 100%;
-    padding: 5px 8px;
-    margin: -5px -8px 2px;
-    border-radius: 7px;
-    background: #eef8ec;
+    padding: 7px 10px;
+    margin: -3px 0 4px;
+    border: 1px solid #9fcd9c;
+    border-radius: 8px;
+    background: #dfeedd;
     color: #102810 !important;
     font-weight: 800;
     line-height: 1.25;
     text-decoration: none;
     overflow-wrap: normal;
     word-break: normal;
+    box-shadow: 0 1px 3px rgba(16, 40, 16, 0.12);
 }
 
 .record-primary-link:hover,
 .record-primary-link:focus {
-    background: #d8eed5;
+    background: #b7dcb5;
+    border-color: #7fb47b;
     opacity: 1;
-    text-decoration: underline;
+    text-decoration: none;
+}
+
+.record-primary-link::before {
+    content: "Edit";
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #244524;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
 }
 
 .bulk-action-bar {
@@ -1059,6 +1077,29 @@ a:hover {
 
 .date-stack-label:first-child {
     margin-top: 0;
+}
+
+.outreach-due-date-block {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 3px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 2px solid #7fb47b;
+    border-radius: 8px;
+    background: #eef8ec;
+    color: #102810;
+}
+
+.outreach-due-date-block strong {
+    font-size: 18px;
+    line-height: 1.1;
+}
+
+.outreach-start-date-block {
+    margin-top: 8px;
+    color: #4f5f4f;
+    font-size: 12px;
 }
 
 .outreach-main-row td {
@@ -2585,7 +2626,7 @@ body {
     }
 
     .outreach-main-row td:nth-child(2)::before {
-        content: "Activity Start / Due";
+        content: "Activity Due Date";
     }
 
     .outreach-main-row td:nth-child(3)::before {

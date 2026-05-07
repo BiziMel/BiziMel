@@ -17,6 +17,9 @@
     <div class="form-card">
         <h2>Campaign Generated</h2>
         <p>{{ generated_count }} outreach step(s) were created and added to Outreach and Tasks.</p>
+        {% if success_context_summary %}
+            <p class="field-help">{{ success_context_summary }}</p>
+        {% endif %}
         <div class="button-group">
             <a href="{{ url_for('outreach') }}" class="btn btn-primary">View Outreach</a>
             <a href="{{ url_for('tasks') }}" class="btn btn-secondary">View Tasks</a>
@@ -85,7 +88,7 @@
                        max="50"
                        value="{{ selected_total_tasks or '8' }}"
                        required>
-                <p class="field-help">Total generated for each selected contact and sales play.</p>
+                <p class="field-help">Total generated for each selected contact for this one sales play.</p>
             </div>
 
             <div class="form-group">
@@ -128,12 +131,14 @@
             </div>
 
             <div class="form-group full-width">
-                <label for="sales_plays">Sales Plays</label>
-                <textarea id="sales_plays"
-                          name="sales_plays"
-                          rows="4"
-                          placeholder="One sales play per line"
-                          required>{{ selected_sales_plays }}</textarea>
+                <label for="sales_play">Sales Play</label>
+                <input type="text"
+                       id="sales_play"
+                       name="sales_play"
+                       value="{{ selected_sales_play }}"
+                       placeholder="One sales play only"
+                       required>
+                <p class="field-help">PipeFlow uses this play plus historic outcomes, industry, account details and selected contact data to shape the activity mix.</p>
             </div>
         </div>
 

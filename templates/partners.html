@@ -123,7 +123,10 @@
                             {% endif %}
                         </td>
                         <td>
-                            <a href="{{ url_for('view_partner', partner_id=partner.id) }}#partner-details-form" class="record-primary-link">
+                            <a href="{{ url_for('view_partner', partner_id=partner.id) }}#partner-details-form"
+                               class="record-primary-link"
+                               title="Edit partner {{ partner.partner_name }}"
+                               aria-label="Edit partner {{ partner.partner_name }}">
                                 {{ partner.partner_name }}
                             </a>
                             <br>

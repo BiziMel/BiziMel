@@ -77,7 +77,7 @@ def version_health():
     from db_compat import translate_sql
     sample = "datetime(next_action_date || ' ' || IFNULL(next_action_time, '00:00')) < datetime('now', '-1 hour')"
     lines = [
-        "pipeflow_server_build=2026-05-07-primary-field-edit-links-v1",
+        "pipeflow_server_build=2026-05-07-single-sales-play-campaign-learning-v1",
         f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
         f"translation_check={translate_sql(sample)}",
     ]
@@ -828,6 +828,186 @@ def campaign_step_templates():
     ]
 
 
+def normalise_match_text(value):
+    return (value or "").strip().lower()
+
+
+def build_campaign_success_context(connection, account_id, contact_ids, sales_play):
+    account = connection.execute("""
+        SELECT account_name, industry, business_unit, account_tier, country, city
+        FROM accounts
+        WHERE id = ?
+    """, (account_id,)).fetchone()
+
+    if contact_ids:
+        placeholders = ",".join("?" for _ in contact_ids)
+        selected_contacts = connection.execute(f"""
+            SELECT category, bmc_relationship, job_title, org_dept,
+                   responsibilities, characteristics, background,
+                   personal_interests, personal_win, education, social_media,
+                   additional_notes
+            FROM contacts
+            WHERE id IN ({placeholders})
+        """, contact_ids).fetchall()
+    else:
+        selected_contacts = []
+
+    industry = normalise_match_text(account["industry"] if account else "")
+    business_unit = normalise_match_text(account["business_unit"] if account else "")
+    account_tier = normalise_match_text(account["account_tier"] if account else "")
+    sales_play_text = normalise_match_text(sales_play)
+    contact_values = set()
+    contact_text = []
+    for contact in selected_contacts:
+        for field in (
+            "category",
+            "bmc_relationship",
+            "job_title",
+            "org_dept",
+            "responsibilities",
+            "characteristics",
+            "background",
+            "personal_interests",
+            "personal_win",
+            "education",
+            "social_media",
+            "additional_notes",
+        ):
+            value = normalise_match_text(contact[field])
+            if value:
+                contact_values.add(value)
+                contact_text.extend(value.split())
+
+    contact_keywords = {
+        word for word in contact_text
+        if len(word) >= 5
+    }
+
+    historical_rows = connection.execute("""
+        SELECT
+            outreach.activity_type,
+            outreach.sales_play,
+            outreach.outcome,
+            outreach.task_status,
+            accounts.industry,
+            accounts.business_unit,
+            accounts.account_tier,
+            contacts.category,
+            contacts.bmc_relationship,
+            contacts.job_title,
+            contacts.org_dept,
+            contacts.responsibilities,
+            contacts.characteristics,
+            contacts.background,
+            contacts.personal_interests,
+            contacts.personal_win,
+            contacts.education,
+            contacts.social_media,
+            contacts.additional_notes
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
+        WHERE outreach.activity_type IS NOT NULL
+          AND outreach.activity_type != ''
+          AND outreach.outcome IS NOT NULL
+          AND outreach.outcome != ''
+    """).fetchall()
+
+    template_by_type = {
+        template["activity_type"]: template
+        for template in campaign_step_templates()
+    }
+    scores = {activity_type: 0 for activity_type in template_by_type}
+    evidence = {activity_type: {"positive": 0, "meeting": 0, "matched": 0} for activity_type in template_by_type}
+
+    for row in historical_rows:
+        activity_type = row["activity_type"]
+        if activity_type not in scores:
+            continue
+
+        row_score = 1
+        if normalise_match_text(row["sales_play"]) == sales_play_text:
+            row_score += 8
+        if industry and normalise_match_text(row["industry"]) == industry:
+            row_score += 4
+        if business_unit and normalise_match_text(row["business_unit"]) == business_unit:
+            row_score += 3
+        if account_tier and normalise_match_text(row["account_tier"]) == account_tier:
+            row_score += 2
+
+        row_contact_values = {
+            normalise_match_text(row[field])
+            for field in (
+                "category",
+                "bmc_relationship",
+                "job_title",
+                "org_dept",
+            )
+            if normalise_match_text(row[field])
+        }
+        row_contact_text = " ".join(
+            normalise_match_text(row[field])
+            for field in (
+                "responsibilities",
+                "characteristics",
+                "background",
+                "personal_interests",
+                "personal_win",
+                "education",
+                "social_media",
+                "additional_notes",
+            )
+            if normalise_match_text(row[field])
+        )
+        if contact_values.intersection(row_contact_values):
+            row_score += 4
+        if contact_keywords and contact_keywords.intersection(set(row_contact_text.split())):
+            row_score += 2
+
+        if row["outcome"] in POSITIVE_OUTCOMES:
+            row_score += 8
+            evidence[activity_type]["positive"] += 1
+        if row["outcome"] == "Meeting Booked" or activity_type == "Meeting":
+            row_score += 5
+            evidence[activity_type]["meeting"] += 1
+        if row["outcome"] in NEGATIVE_OUTCOMES:
+            row_score -= 4
+
+        if row_score > 1:
+            evidence[activity_type]["matched"] += 1
+        scores[activity_type] += row_score
+
+    ranked_templates = sorted(
+        campaign_step_templates(),
+        key=lambda template: (-scores.get(template["activity_type"], 0), template["activity_type"])
+    )
+    top_templates = [
+        template for template in ranked_templates
+        if scores.get(template["activity_type"], 0) > 0
+    ] or campaign_step_templates()
+
+    strongest = top_templates[0]["activity_type"] if top_templates else "standard sequence"
+    matched_rows = sum(item["matched"] for item in evidence.values())
+    if matched_rows:
+        summary = (
+            f"Historic learning used: {matched_rows} matching signal(s). "
+            f"Strongest activity for this context: {strongest}. "
+            f"Context considered: sales play, industry, account tier, business org, contact role, relationship and personal notes."
+        )
+    else:
+        summary = (
+            "Historic learning used: no matching prior outcomes yet. "
+            "Using the standard PipeFlow activity sequence and this campaign will train future recommendations."
+        )
+
+    return {
+        "account": account,
+        "templates": top_templates,
+        "summary": summary,
+        "scores": scores,
+    }
+
+
 def evenly_spaced_dates(start_date, end_date, task_count):
     days = (end_date - start_date).days
     if task_count <= 1 or days <= 0:
@@ -847,8 +1027,8 @@ def evenly_spaced_dates(start_date, end_date, task_count):
     return sorted(dates)
 
 
-def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per_week):
-    templates = campaign_step_templates()
+def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per_week, templates=None):
+    templates = templates or campaign_step_templates()
     total_tasks = max(1, int(total_tasks or 1))
     times_per_week = max(1, min(int(times_per_week or 1), 7))
     schedule = []
@@ -3050,7 +3230,8 @@ def campaign_builder():
     selected_campaign_name = request.form.get("campaign_name", "")
     selected_total_tasks = request.form.get("total_outreach_tasks", "8")
     selected_times_per_week = request.form.get("times_per_week", "2")
-    selected_sales_plays = request.form.get("sales_plays", "")
+    selected_sales_play = request.form.get("sales_play") or request.form.get("sales_plays", "")
+    success_context_summary = ""
 
     if request.method == "POST":
         account_id = request.form.get("account_id")
@@ -3068,14 +3249,12 @@ def campaign_builder():
         selected_total_tasks = str(total_tasks)
         selected_times_per_week = str(times_per_week)
         contact_ids = request.form.getlist("contact_ids")
-        sales_plays = [
-            play.strip()
-            for play in request.form.get("sales_plays", "").splitlines()
-            if play.strip()
-        ]
-
-        if not sales_plays:
-            sales_plays = ["PG week sales play"]
+        sales_play = (request.form.get("sales_play") or request.form.get("sales_plays", "")).strip()
+        if "\n" in sales_play:
+            sales_play = next((line.strip() for line in sales_play.splitlines() if line.strip()), "")
+        if not sales_play:
+            sales_play = "PG week sales play"
+        selected_sales_play = sales_play
 
         if account_id and pg_week_start_raw and campaign_start_raw and campaign_end_raw and contact_ids:
             pg_week_start = datetime.strptime(pg_week_start_raw, "%Y-%m-%d").date()
@@ -3104,48 +3283,51 @@ def campaign_builder():
             assigned_to = request.form.get("assigned_to", "")
             fy = request.form.get("fy", "")
             quarter = request.form.get("quarter", "")
+            success_context = build_campaign_success_context(connection, account_id, contact_ids, sales_play)
+            success_context_summary = success_context["summary"]
+            schedule_templates = success_context["templates"]
 
             for contact in contacts:
-                for sales_play in sales_plays:
-                    for step in build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per_week):
-                        action_date = step["action_date"]
-                        subject = f"{step['subject_prefix']}: {sales_play}"
-                        notes = (
-                            f"Auto-generated campaign step for {account_name}. "
-                            f"Campaign name: {campaign_name}. "
-                            f"Campaign window: {campaign_start.isoformat()} to {campaign_end.isoformat()}. "
-                            f"Total outreach tasks: {total_tasks}. "
-                            f"Times per week: {times_per_week}. "
-                            f"Sales play: {sales_play}. Contact: {contact['name']}."
-                        )
-                        next_action = f"{step['next_action']} for {contact['name']} - {sales_play}"
+                for step in build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per_week, schedule_templates):
+                    action_date = step["action_date"]
+                    subject = f"{step['subject_prefix']}: {sales_play}"
+                    notes = (
+                        f"Auto-generated campaign step for {account_name}. "
+                        f"Campaign name: {campaign_name}. "
+                        f"Campaign window: {campaign_start.isoformat()} to {campaign_end.isoformat()}. "
+                        f"Total outreach tasks: {total_tasks}. "
+                        f"Times per week: {times_per_week}. "
+                        f"Sales play: {sales_play}. Contact: {contact['name']}. "
+                        f"{success_context_summary}"
+                    )
+                    next_action = f"{step['next_action']} for {contact['name']} - {sales_play}"
 
-                        connection.execute("""
-                            INSERT INTO outreach (
-                                fy,
-                                quarter,
-                                campaign,
-                                sales_play,
-                                campaign_start_date,
-                                campaign_end_date,
-                                campaign_tasks_per_week,
-                                campaign_total_tasks,
-                                account_id,
-                                contact_id,
-                                activity_type,
-                                activity_date,
-                                activity_time,
-                                subject,
-                                notes,
-                                outcome,
-                                next_action,
-                                next_action_date,
-                                next_action_time,
-                                task_status,
-                                assigned_to
-                            )
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
+                    connection.execute("""
+                        INSERT INTO outreach (
+                            fy,
+                            quarter,
+                            campaign,
+                            sales_play,
+                            campaign_start_date,
+                            campaign_end_date,
+                            campaign_tasks_per_week,
+                            campaign_total_tasks,
+                            account_id,
+                            contact_id,
+                            activity_type,
+                            activity_date,
+                            activity_time,
+                            subject,
+                            notes,
+                            outcome,
+                            next_action,
+                            next_action_date,
+                            next_action_time,
+                            task_status,
+                            assigned_to
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
                             fy,
                             quarter,
                             campaign_name,
@@ -3167,15 +3349,15 @@ def campaign_builder():
                             step["time"],
                             "Not Started",
                             assigned_to
-                        ))
-                        generated_count += 1
+                    ))
+                    generated_count += 1
 
             add_timeline_entry(
                 connection,
                 "account",
                 account_id,
                 "Campaign Built",
-                f"Generated {generated_count} campaign outreach step(s) from {campaign_start.isoformat()} to {campaign_end.isoformat()} with {total_tasks} task(s) at {times_per_week} time(s) per week"
+                f"Generated {generated_count} campaign outreach step(s) for sales play {sales_play} from {campaign_start.isoformat()} to {campaign_end.isoformat()} with {total_tasks} task(s) at {times_per_week} time(s) per week. {success_context_summary}"
             )
             connection.commit()
 
@@ -3217,7 +3399,8 @@ def campaign_builder():
         selected_campaign_name=selected_campaign_name,
         selected_total_tasks=selected_total_tasks,
         selected_times_per_week=selected_times_per_week,
-        selected_sales_plays=selected_sales_plays
+        selected_sales_play=selected_sales_play,
+        success_context_summary=success_context_summary
     )
 
 
@@ -3323,6 +3506,7 @@ def edit_outreach(outreach_id):
     campaign_options = sorted(row["campaign"] for row in existing_campaigns if row["campaign"])
 
     if request.method == "POST":
+        submit_action = request.form.get("submit_action", "save")
         new_values = {
             "fy": request.form.get("fy"),
             "quarter": request.form.get("quarter"),
@@ -3342,6 +3526,16 @@ def edit_outreach(outreach_id):
             "task_status": request.form.get("task_status", "Not Started"),
             "assigned_to": request.form.get("assigned_to", "")
         }
+        follow_on_next_action = new_values["next_action"]
+        follow_on_date = new_values["next_action_date"]
+        follow_on_time = new_values["next_action_time"]
+        follow_on_created_id = None
+
+        if submit_action in ("complete_and_follow", "complete_only"):
+            new_values["task_status"] = "Completed"
+            new_values["next_action"] = ""
+            new_values["next_action_date"] = ""
+            new_values["next_action_time"] = ""
 
         labels = {
             "fy": "FY",
@@ -3407,6 +3601,82 @@ def edit_outreach(outreach_id):
             outreach_id
         ))
 
+        if submit_action == "complete_and_follow":
+            follow_on_subject = follow_on_next_action or f"Follow-up: {new_values['subject'] or new_values['activity_type'] or 'Outreach'}"
+            follow_on_activity_date = follow_on_date or datetime.now().date().isoformat()
+            cursor = connection.execute("""
+                INSERT INTO outreach (
+                    fy,
+                    quarter,
+                    campaign,
+                    sales_play,
+                    campaign_start_date,
+                    campaign_end_date,
+                    campaign_tasks_per_week,
+                    campaign_total_tasks,
+                    account_id,
+                    contact_id,
+                    activity_type,
+                    activity_date,
+                    activity_time,
+                    subject,
+                    notes,
+                    outcome,
+                    next_action,
+                    next_action_date,
+                    next_action_time,
+                    task_status,
+                    assigned_to
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                new_values["fy"],
+                new_values["quarter"],
+                new_values["campaign"],
+                new_values["sales_play"],
+                outreach_item["campaign_start_date"],
+                outreach_item["campaign_end_date"],
+                outreach_item["campaign_tasks_per_week"],
+                outreach_item["campaign_total_tasks"],
+                new_values["account_id"],
+                new_values["contact_id"],
+                "Follow-up",
+                follow_on_activity_date,
+                follow_on_time,
+                follow_on_subject,
+                f"Follow-on task created from outreach #{outreach_id}.\n\n{new_values['notes'] or ''}",
+                "No Response Yet",
+                follow_on_next_action or follow_on_subject,
+                follow_on_date or follow_on_activity_date,
+                follow_on_time,
+                "Not Started",
+                new_values["assigned_to"],
+            ))
+            follow_on_created_id = cursor.lastrowid
+            audit_record_create(connection, "outreach", follow_on_created_id, {
+                "campaign": new_values["campaign"],
+                "sales_play": new_values["sales_play"],
+                "account_id": new_values["account_id"],
+                "contact_id": new_values["contact_id"],
+                "activity_type": "Follow-up",
+                "activity_date": follow_on_activity_date,
+                "activity_time": follow_on_time,
+                "subject": follow_on_subject,
+                "outcome": "No Response Yet",
+                "next_action": follow_on_next_action or follow_on_subject,
+                "next_action_date": follow_on_date or follow_on_activity_date,
+                "next_action_time": follow_on_time,
+                "task_status": "Not Started",
+                "assigned_to": new_values["assigned_to"],
+            })
+            add_timeline_entry(
+                connection,
+                "outreach",
+                follow_on_created_id,
+                "Follow-on Created",
+                f"Created from completed outreach #{outreach_id}"
+            )
+
         if changes:
             audit_record_update(connection, "outreach", outreach_id, outreach_item, new_values, labels)
             add_timeline_entry(
@@ -3420,7 +3690,10 @@ def edit_outreach(outreach_id):
         connection.commit()
         connection.close()
 
-        return redirect(url_for("view_outreach", outreach_id=outreach_id))
+        if follow_on_created_id:
+            return redirect(url_for("edit_outreach", outreach_id=follow_on_created_id))
+
+        return redirect(url_for("outreach"))
 
     connection.close()
 
