@@ -10,17 +10,30 @@ import traceback
 from datetime import datetime, timedelta
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection
 
 
-APP_VERSION = "1.0"
+APP_VERSION = "1.1"
 APP_RELEASE_DATE = "2026-05-07"
-APP_BUILD = "2026-05-07-shared-account-non-working-blocks-v1"
+APP_BUILD = "2026-05-07-v1.1-shared-outreach-assignment-group-colours-v1"
 
 RELEASE_NOTES = [
+    {
+        "version": "1.1",
+        "release_date": "2026-05-07",
+        "title": "Shared Outreach assignment and grouped table clarity",
+        "new": [],
+        "enhanced": [
+            "Improved grouped table colour hierarchy so top-level groups use the darkest shade, nested groups step down progressively and detail rows remain light.",
+            "Improved Release Notes ordering so the latest release always appears first.",
+        ],
+        "fixed": [
+            "Fixed Shared Outreach assignment and account-share dropdowns so all active users are available by full name in the only approved assignment location.",
+        ],
+    },
     {
         "version": "1.0",
         "release_date": "2026-05-07",
@@ -158,9 +171,17 @@ def storage_health():
 
 @app.route("/release-notes")
 def release_notes():
+    sorted_release_notes = sorted(
+        RELEASE_NOTES,
+        key=lambda release: (
+            release.get("release_date", ""),
+            release.get("version", ""),
+        ),
+        reverse=True
+    )
     return render_template(
         "release_notes.html",
-        release_notes=RELEASE_NOTES,
+        release_notes=sorted_release_notes,
         current_version=APP_VERSION,
         current_release_date=APP_RELEASE_DATE,
     )
@@ -4260,6 +4281,7 @@ def team_outreach():
     user = current_user()
     team = active_team_for_user(user)
     members = list_active_team_members(user)
+    assignable_users = list_assignable_users()
     member_schemas = {member["workspace_schema"]: member for member in members if member["workspace_schema"]}
     rows = []
     current_accounts = []
@@ -4336,6 +4358,7 @@ def team_outreach():
         "team_outreach.html",
         team=team,
         members=members,
+        assignable_users=assignable_users,
         outreach_records=rows,
         current_accounts=current_accounts,
         message=request.args.get("message", ""),
@@ -4346,10 +4369,10 @@ def team_outreach():
 @app.route("/team-outreach/share-account", methods=("POST",))
 def share_account_from_team_outreach():
     user = current_user()
-    members = list_active_team_members(user)
+    assignable_users = list_assignable_users()
     target_user_id = request.form.get("target_user_id")
     account_id = request.form.get("account_id")
-    target_member = next((member for member in members if str(member["id"]) == str(target_user_id)), None)
+    target_member = next((member for member in assignable_users if str(member["id"]) == str(target_user_id)), None)
     if not target_member or not target_member["workspace_schema"]:
         return redirect(url_for("team_outreach", error="Select a valid teammate before sharing the account."))
     if str(target_member["id"]) == str(user["id"]):
@@ -4365,8 +4388,9 @@ def share_account_from_team_outreach():
 def reassign_team_outreach():
     user = current_user()
     members = list_active_team_members(user)
+    assignable_users = list_assignable_users()
     allowed_schemas = {member["workspace_schema"] for member in members if member["workspace_schema"]}
-    allowed_assignees = {member["full_name"] for member in members if member["full_name"]}
+    allowed_assignees = {member["full_name"] for member in assignable_users if member["full_name"]}
     workspace_schema = request.form.get("workspace_schema")
     outreach_id = request.form.get("outreach_id")
     assigned_to = request.form.get("assigned_to", "")

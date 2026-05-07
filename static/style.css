@@ -1158,14 +1158,14 @@ a:hover {
 
 .outreach-account-group-row td {
     padding: 16px 12px 10px;
-    background: #eaf4e8;
-    border-top: 1px solid #cfe6cc;
-    border-bottom: 1px solid #cfe6cc;
+    background: #b7dcb5;
+    border-top: 1px solid #7fb47b;
+    border-bottom: 1px solid #7fb47b;
 }
 
 .outreach-account-group-row span {
     display: block;
-    color: #3f5f3f;
+    color: #102810;
     font-size: 11px;
     font-weight: 800;
     letter-spacing: 0.04em;
@@ -1177,16 +1177,37 @@ a:hover {
     font-size: 17px;
 }
 
+.outreach-subgroup-row td {
+    padding: 13px 12px 9px;
+    background: #dfeedd;
+    border-top: 1px solid #b7dcb5;
+    border-bottom: 1px solid #b7dcb5;
+}
+
+.outreach-subgroup-row span {
+    display: block;
+    color: #244524;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.outreach-subgroup-row strong {
+    color: #102810;
+    font-size: 16px;
+}
+
 .outreach-campaign-group-row td {
     padding: 12px 12px 8px;
-    background: #eef6ff;
-    border-top: 1px solid #cfe0f6;
-    border-bottom: 1px solid #cfe0f6;
+    background: #f1f8f0;
+    border-top: 1px solid #dfeedd;
+    border-bottom: 1px solid #dfeedd;
 }
 
 .outreach-campaign-group-row span {
     display: block;
-    color: #4f5f4f;
+    color: #3f5f3f;
     font-size: 11px;
     font-weight: 800;
     letter-spacing: 0.04em;
@@ -1194,14 +1215,14 @@ a:hover {
 }
 
 .outreach-campaign-group-row strong {
-    color: #0f172a;
+    color: #102810;
     font-size: 16px;
 }
 
 .outreach-detail-row td {
     padding-top: 0;
     border-bottom: 1px solid #dbe4f0;
-    background: #fbfdff;
+    background: #fbfdfb;
 }
 
 .outreach-row-details {
@@ -2778,6 +2799,7 @@ body {
 
     .outreach-main-row td,
     .outreach-account-group-row td,
+    .outreach-subgroup-row td,
     .outreach-campaign-group-row td,
     .outreach-detail-row td {
         border-bottom: 0;

@@ -497,6 +497,32 @@ def list_users():
     return users
 
 
+def list_assignable_users():
+    connection = get_auth_connection()
+    users = connection.execute(
+        """
+        SELECT id, email, full_name, team, role, is_active, workspace_schema, date_created, last_updated
+        FROM users
+        WHERE is_active = 1
+        ORDER BY full_name, email
+        """
+    ).fetchall()
+    connection.close()
+    for user in users:
+        ensure_user_workspace_schema(user)
+    connection = get_auth_connection()
+    users = connection.execute(
+        """
+        SELECT id, email, full_name, team, role, is_active, workspace_schema, date_created, last_updated
+        FROM users
+        WHERE is_active = 1
+        ORDER BY full_name, email
+        """
+    ).fetchall()
+    connection.close()
+    return users
+
+
 def set_user_active(user_id: int, is_active: bool):
     connection = get_auth_connection()
     connection.execute(
