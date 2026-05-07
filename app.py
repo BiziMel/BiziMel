@@ -16,6 +16,51 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema
 
 
+APP_VERSION = "1.0"
+APP_RELEASE_DATE = "2026-05-07"
+APP_BUILD = "2026-05-07-release-notes-v1"
+
+RELEASE_NOTES = [
+    {
+        "version": "1.0",
+        "release_date": "2026-05-07",
+        "title": "Initial PipeFlow PG Manager release",
+        "new": [
+            "Introduced the hosted PipeFlow PG Manager application with private user profiles, sign in, registration and profile-level data separation.",
+            "Added core workspace modules for Dashboard, Accounts, Contacts, Partners, Outreach, Tasks, Reports, Global Search, Profile and Audit.",
+            "Added account tiering, PG Bible ordering and FY PG target tracking from account Pipeline Target USD ACV values.",
+            "Added Campaign Builder for one sales play per campaign, with campaign generation across multiple contacts on the selected account.",
+            "Added campaign learning signals that use historic outcomes, sales play, account industry, account details and selected contact data to guide generated outreach.",
+            "Added partner organisation tracking, partner contacts and account-partner relationship mapping.",
+            "Added admin permissions, user management, broadcast messages and visible broadcast ticker messaging.",
+            "Added full audit trail capture for workspace record changes, including date and time, user, field, old value and new value.",
+            "Added PG Bible export support and report exports for accounts, contacts, outreach and tasks.",
+        ],
+        "enhanced": [
+            "Refined the Dashboard into a pipeline generation command centre with FY PG target, weekly execution metrics, execution insights and task visibility.",
+            "Aligned Dashboard Tasks with the Outreach table layout so task and outreach records have a consistent structure.",
+            "Improved Outreach ordering by account, campaign name and earliest activity due date while keeping the table ungrouped on the Dashboard.",
+            "Made Activity Due Date visually prominent in Outreach and Dashboard task views.",
+            "Improved table usability by making primary record fields act as obvious edit buttons.",
+            "Improved Campaign Builder so users can only build campaigns against accounts that already have contacts, while still supporting multiple selected contacts.",
+            "Improved contact creation by showing the selected account business unit or organisation.",
+            "Improved account, contact, partner, outreach and task table readability to keep content inside page margins.",
+            "Improved edit flows with clear save and cancel options, plus complete-only and complete-with-follow-on options for outreach tasks.",
+        ],
+        "fixed": [
+            "Resolved duplicate-route and endpoint risks by validating route integrity during release checks.",
+            "Resolved SQLite and Supabase/Postgres compatibility issues, including date/time SQL translation problems.",
+            "Resolved persistence issues by moving hosted data storage to Supabase/Postgres instead of temporary SQLite.",
+            "Resolved PG Bible export configuration and report route failures identified during hosted testing.",
+            "Resolved recurring malformed SQL and indentation risks through compile and smoke-test validation.",
+            "Resolved overly large or unclear delete controls by only showing bulk delete actions after records are selected.",
+            "Resolved Outreach campaign generation issues where dates could start before the configured campaign start date.",
+            "Resolved dashboard and Outreach table layout problems where tables could overflow or become too compressed.",
+        ],
+    }
+]
+
+
 for vendor_base in (
     Path(getattr(sys, "_MEIPASS", Path(__file__).parent)),
     Path(__file__).parent,
@@ -53,12 +98,14 @@ def inject_dropdown_values():
         "dropdown_values": DROPDOWN_VALUES,
         "current_user": current_user(),
         "app_name": "PipeFlow PG Manager",
+        "app_version": APP_VERSION,
+        "app_release_date": APP_RELEASE_DATE,
     }
 
 
 @app.before_request
 def require_login_and_prepare_database():
-    public_endpoints = {"login", "register", "forgot_password", "reset_password", "storage_health", "static"}
+    public_endpoints = {"login", "register", "forgot_password", "reset_password", "release_notes", "storage_health", "static"}
     if request.endpoint in public_endpoints:
         return None
 
@@ -77,7 +124,9 @@ def version_health():
     from db_compat import translate_sql
     sample = "datetime(next_action_date || ' ' || IFNULL(next_action_time, '00:00')) < datetime('now', '-1 hour')"
     lines = [
-        "pipeflow_server_build=2026-05-07-campaign-contact-required-v1",
+        f"pipeflow_version={APP_VERSION}",
+        f"pipeflow_release_date={APP_RELEASE_DATE}",
+        f"pipeflow_server_build={APP_BUILD}",
         f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
         f"translation_check={translate_sql(sample)}",
     ]
@@ -95,6 +144,16 @@ def storage_health():
         f"workspace_schema={current_user_schema() if using_postgres() else ''}",
     ]
     return Response("\n".join(lines), mimetype="text/plain")
+
+
+@app.route("/release-notes")
+def release_notes():
+    return render_template(
+        "release_notes.html",
+        release_notes=RELEASE_NOTES,
+        current_version=APP_VERSION,
+        current_release_date=APP_RELEASE_DATE,
+    )
 
 
 @app.route("/login", methods=("GET", "POST"))

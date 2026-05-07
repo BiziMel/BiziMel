@@ -68,6 +68,26 @@ h1, h2, h3, h4, h5, h6, p, label, a, span {
     flex-wrap: wrap;
 }
 
+.version-pill {
+    display: inline-block;
+    width: fit-content;
+    margin-top: 4px;
+    padding: 4px 9px;
+    border: 1px solid #cfe6cc;
+    border-radius: 999px;
+    background: #eef8ec;
+    color: #244524 !important;
+    font-size: 12px;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.version-pill:hover,
+.version-pill:focus {
+    background: #d8eed5;
+    opacity: 1;
+}
+
 /* Buttons */
 .btn,
 .button-link,
@@ -1232,6 +1252,87 @@ a:hover {
     font-size: 13px;
     color: #4a4a4a;
     margin-top: -8px;
+}
+
+.release-current-card {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 170px;
+    padding: 12px 14px;
+    border: 1px solid #cfe6cc;
+    border-radius: 8px;
+    background: #eef8ec;
+}
+
+.release-current-card span,
+.release-current-card small {
+    color: #4f5f4f;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.release-current-card strong {
+    color: #102810;
+    font-size: 24px;
+    line-height: 1;
+}
+
+.release-notes-list {
+    display: grid;
+    gap: 18px;
+}
+
+.release-card {
+    overflow: hidden;
+}
+
+.release-section-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.release-section {
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid #dbe4f0;
+    border-radius: 8px;
+    background: #fbfdff;
+}
+
+.release-section h3 {
+    margin: 0 0 10px;
+    font-size: 15px;
+}
+
+.release-section ul {
+    margin: 0;
+    padding-left: 18px;
+}
+
+.release-section li {
+    margin-bottom: 9px;
+    line-height: 1.45;
+    overflow-wrap: normal;
+    word-break: normal;
+}
+
+.release-new {
+    border-color: #cfe6cc;
+    background: #f5fbf4;
+}
+
+.release-enhanced {
+    border-color: #cfe0f6;
+    background: #f6faff;
+}
+
+.release-fixed {
+    border-color: #ead7ad;
+    background: #fffaf0;
 }
 
 
@@ -2645,6 +2746,26 @@ body {
         content: "Outcome / Next Action";
     }
 
+    .dashboard-flat-outreach-table .outreach-main-row td:nth-child(1)::before {
+        content: "Activity Due Date";
+    }
+
+    .dashboard-flat-outreach-table .outreach-main-row td:nth-child(2)::before {
+        content: "Account / Contact";
+    }
+
+    .dashboard-flat-outreach-table .outreach-main-row td:nth-child(3)::before {
+        content: "Campaign Name";
+    }
+
+    .dashboard-flat-outreach-table .outreach-main-row td:nth-child(4)::before {
+        content: "Activity Type / Subject";
+    }
+
+    .dashboard-flat-outreach-table .outreach-main-row td:nth-child(5)::before {
+        content: "Outcome / Next Action";
+    }
+
     .outreach-detail-row {
         border-bottom: 1px solid #dbe4f0;
         padding-bottom: 10px;
@@ -2698,6 +2819,14 @@ body {
     .login-layout {
         grid-template-columns: 1fr;
         margin: 20px auto;
+    }
+
+    .release-section-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .release-current-card {
+        width: 100%;
     }
 }
 

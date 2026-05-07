@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Release Notes | PipeFlow{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>Release Notes</h1>
+        <p>Version controlled change history for PipeFlow PG Manager.</p>
+    </div>
+    <div class="release-current-card">
+        <span>Current Version</span>
+        <strong>{{ current_version }}</strong>
+        <small>{{ current_release_date }}</small>
+    </div>
+</div>
+
+<div class="release-notes-list">
+    {% for release in release_notes %}
+        <article class="form-card release-card">
+            <div class="section-header">
+                <div>
+                    <h2>Version {{ release.version }}</h2>
+                    <p>{{ release.title }}</p>
+                </div>
+                <span class="status-pill">{{ release.release_date }}</span>
+            </div>
+
+            <div class="release-section-grid">
+                <section class="release-section release-new">
+                    <h3>New</h3>
+                    <ul>
+                        {% for item in release.new %}
+                            <li>{{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                </section>
+
+                <section class="release-section release-enhanced">
+                    <h3>Enhanced</h3>
+                    <ul>
+                        {% for item in release.enhanced %}
+                            <li>{{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                </section>
+
+                <section class="release-section release-fixed">
+                    <h3>Fixed</h3>
+                    <ul>
+                        {% for item in release.fixed %}
+                            <li>{{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                </section>
+            </div>
+        </article>
+    {% endfor %}
+</div>
+
+{% endblock %}

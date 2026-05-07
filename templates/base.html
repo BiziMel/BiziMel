@@ -17,7 +17,12 @@
                  alt="PipeFlow Logo"
                  class="app-logo">
 
-            <h1>{{ app_name or "PipeFlow PG Manager" }}</h1>
+            <div>
+                <h1>{{ app_name or "PipeFlow PG Manager" }}</h1>
+                <a href="{{ url_for('release_notes') }}" class="version-pill">
+                    Version {{ app_version or "1.0" }}
+                </a>
+            </div>
         </div>
 
     <nav class="button-group nav-stack">
@@ -27,6 +32,7 @@
     <a href="/contacts" class="btn btn-primary">Contacts</a>
     <a href="/outreach" class="btn btn-primary">Outreach</a>
     <a href="/reports" class="btn btn-primary">Reports</a>
+    <a href="/release-notes" class="btn btn-secondary">Release Notes</a>
     <a href="/audit" class="btn btn-secondary">Audit</a>
     <a href="/profile" class="btn btn-secondary">Profile</a>
     {% if current_user and current_user["role"] == "admin" %}
