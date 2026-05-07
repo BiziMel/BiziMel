@@ -144,6 +144,7 @@
                                             {% endif %}
                                         </strong>
                                         <span>{{ item.next_action_time or "No due time" }}</span>
+                                        <span class="status-pill compact-status-pill">{{ item.task_status or "Not Started" }}</span>
                                     </div>
                                     <div class="outreach-start-date-block">
                                         <span class="date-stack-label">Start</span>
@@ -169,12 +170,7 @@
                                     <span class="muted">{{ item.sales_play or "No sales play" }}</span>
                                 </td>
                                 <td>
-                                    <a href="{{ url_for('edit_outreach', outreach_id=item.id) }}"
-                                       class="record-primary-link"
-                                       title="Edit task {{ item.subject or item.activity_type or item.id }}"
-                                       aria-label="Edit task {{ item.subject or item.activity_type or item.id }}">
-                                        {{ item.activity_type or "No activity type" }}
-                                    </a>
+                                    <strong>{{ item.activity_type or "No activity type" }}</strong>
                                     <br>
                                     <span class="muted">{{ item.subject or "No subject" }}</span>
                                 </td>
@@ -182,6 +178,32 @@
                                     <strong>{{ item.outcome or "-" }}</strong>
                                     <br>
                                     <span class="muted">{{ item.next_action or "No next action" }}</span>
+                                </td>
+                            </tr>
+                            <tr class="outreach-detail-row">
+                                <td colspan="5">
+                                    <div class="outreach-row-details dashboard-task-button-row">
+                                        <div class="outreach-row-action">
+                                            <a href="{{ url_for('edit_outreach', outreach_id=item.id) }}"
+                                               class="btn btn-primary btn-small"
+                                               title="Edit task {{ item.subject or item.activity_type or item.id }}"
+                                               aria-label="Edit task {{ item.subject or item.activity_type or item.id }}">
+                                                Edit Task
+                                            </a>
+                                        </div>
+                                        <div>
+                                            <span>FY / Quarter</span>
+                                            <strong>{{ item.fy or "-" }} / {{ item.quarter or "-" }}</strong>
+                                        </div>
+                                        <div>
+                                            <span>Assigned To</span>
+                                            <strong>{{ item.assigned_to or "Unassigned" }}</strong>
+                                        </div>
+                                        <div>
+                                            <span>Status</span>
+                                            <strong>{{ item.task_status or "Not Started" }}</strong>
+                                        </div>
+                                    </div>
                                 </td>
                             </tr>
                         {% endfor %}

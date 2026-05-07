@@ -10,15 +10,15 @@ import traceback
 from datetime import datetime, timedelta
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
-from db_compat import using_postgres, current_user_schema
+from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection
 
 
 APP_VERSION = "1.0"
 APP_RELEASE_DATE = "2026-05-07"
-APP_BUILD = "2026-05-07-untouched-active-task-metric-v1"
+APP_BUILD = "2026-05-07-release-accordion-outreach-scheduling-team-v1"
 
 RELEASE_NOTES = [
     {
@@ -31,6 +31,8 @@ RELEASE_NOTES = [
             "Added account tiering, PG Bible ordering and FY PG target tracking from account Pipeline Target USD ACV values.",
             "Added Campaign Builder for one sales play per campaign, with campaign generation across multiple contacts on the selected account.",
             "Added campaign learning signals that use historic outcomes, sales play, account industry, account details and selected contact data to guide generated outreach.",
+            "Added profile working hours and non-working date configuration to guide campaign auto-scheduling.",
+            "Added Shared Outreach and Team foundations so users can review team follow-up ownership and reassign shared outreach tasks.",
             "Added partner organisation tracking, partner contacts and account-partner relationship mapping.",
             "Added admin permissions, user management, broadcast messages and visible broadcast ticker messaging.",
             "Added full audit trail capture for workspace record changes, including date and time, user, field, old value and new value.",
@@ -41,6 +43,11 @@ RELEASE_NOTES = [
             "Aligned Dashboard Tasks with the Outreach table layout so task and outreach records have a consistent structure.",
             "Improved Outreach ordering by account, campaign name and earliest activity due date while keeping the table ungrouped on the Dashboard.",
             "Made Activity Due Date visually prominent in Outreach and Dashboard task views.",
+            "Improved Outreach completion so users must add an Activity Update before closing work.",
+            "Improved follow-on activity flow so completed outreach opens a prefilled new outreach form instead of silently creating the next task.",
+            "Improved Outreach filters with multi-select status filtering and a default All Open view.",
+            "Improved auto-scheduling so generated campaign tasks avoid non-working dates, stay inside working hours and avoid duplicate time slots.",
+            "Improved Release Notes with an accordion layout so older entries can stay collapsed as the product history grows.",
             "Improved table usability by making primary record fields act as obvious edit buttons.",
             "Improved Campaign Builder so users can only build campaigns against accounts that already have contacts, while still supporting multiple selected contacts.",
             "Improved contact creation by showing the selected account business unit or organisation.",
@@ -1086,7 +1093,62 @@ def evenly_spaced_dates(start_date, end_date, task_count):
     return sorted(dates)
 
 
-def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per_week, templates=None):
+def parse_time_value(value, fallback):
+    try:
+        return datetime.strptime(value or fallback, "%H:%M").time()
+    except ValueError:
+        return datetime.strptime(fallback, "%H:%M").time()
+
+
+def profile_non_working_dates(profile):
+    if not profile:
+        return None, None
+    try:
+        start = datetime.strptime(profile["non_working_start_date"], "%Y-%m-%d").date() if profile["non_working_start_date"] else None
+        end = datetime.strptime(profile["non_working_end_date"], "%Y-%m-%d").date() if profile["non_working_end_date"] else None
+    except (KeyError, TypeError, ValueError):
+        return None, None
+    if start and end and end < start:
+        start, end = end, start
+    return start, end
+
+
+def is_non_working_date(action_date, profile):
+    start, end = profile_non_working_dates(profile)
+    if start and end:
+        return start <= action_date <= end
+    if start:
+        return action_date == start
+    return False
+
+
+def next_working_date(action_date, campaign_end, profile):
+    candidate = action_date
+    while candidate <= campaign_end and is_non_working_date(candidate, profile):
+        candidate += timedelta(days=1)
+    return min(candidate, campaign_end)
+
+
+def available_campaign_time(action_date, preferred_time, profile=None, reserved_slots=None):
+    reserved_slots = reserved_slots or set()
+    start_time = parse_time_value(profile["work_day_start"] if profile and profile["work_day_start"] else "", "09:00")
+    end_time = parse_time_value(profile["work_day_end"] if profile and profile["work_day_end"] else "", "17:00")
+    preferred = parse_time_value(preferred_time, "09:00")
+    current_dt = datetime.combine(action_date, max(start_time, min(preferred, end_time)))
+    end_dt = datetime.combine(action_date, end_time)
+    while current_dt <= end_dt:
+        slot = (action_date.isoformat(), current_dt.strftime("%H:%M"))
+        if slot not in reserved_slots:
+            reserved_slots.add(slot)
+            return current_dt.strftime("%H:%M")
+        current_dt += timedelta(minutes=15)
+    fallback = datetime.combine(action_date, start_time)
+    slot = (action_date.isoformat(), fallback.strftime("%H:%M"))
+    reserved_slots.add(slot)
+    return fallback.strftime("%H:%M")
+
+
+def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per_week, templates=None, profile=None, reserved_slots=None):
     templates = templates or campaign_step_templates()
     total_tasks = max(1, int(total_tasks or 1))
     times_per_week = max(1, min(int(times_per_week or 1), 7))
@@ -1097,8 +1159,10 @@ def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per
             action_date = campaign_start
         if action_date > campaign_end:
             action_date = campaign_end
+        action_date = next_working_date(action_date, campaign_end, profile)
         template = dict(templates[index % len(templates)])
         template["action_date"] = action_date
+        template["time"] = available_campaign_time(action_date, template.get("time", "09:00"), profile, reserved_slots)
         template["times_per_week"] = times_per_week
         schedule.append(template)
 
@@ -3117,6 +3181,9 @@ def outreach():
     campaign_filter = request.args.get("campaign")
     account_filter = request.args.get("account_id")
     outcome_filter = request.args.get("outcome")
+    selected_statuses = request.args.getlist("task_status")
+    if not selected_statuses:
+        selected_statuses = ["All Open"]
 
     connection = get_db_connection()
 
@@ -3149,6 +3216,13 @@ def outreach():
     if outcome_filter:
         query += " AND outreach.outcome = ?"
         params.append(outcome_filter)
+
+    if "All Open" in selected_statuses:
+        query += " AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')"
+    elif selected_statuses:
+        placeholders = ",".join("?" for _ in selected_statuses)
+        query += f" AND COALESCE(outreach.task_status, 'Not Started') IN ({placeholders})"
+        params.extend(selected_statuses)
 
     query += """
         ORDER BY
@@ -3189,13 +3263,41 @@ def outreach():
         quarter_filter=quarter_filter,
         campaign_filter=campaign_filter,
         account_filter=account_filter,
-        outcome_filter=outcome_filter
+        outcome_filter=outcome_filter,
+        selected_statuses=selected_statuses
     )
 
 
 @app.route("/outreach/add", methods=("GET", "POST"))
 def add_outreach():
     connection = get_db_connection()
+    prefill = {}
+    prefill_from_id = request.args.get("prefill_from")
+    if prefill_from_id:
+        source = connection.execute(
+            "SELECT * FROM outreach WHERE id = ?",
+            (prefill_from_id,),
+        ).fetchone()
+        if source:
+            prefill = {
+                "fy": source["fy"],
+                "quarter": source["quarter"],
+                "campaign": source["campaign"],
+                "sales_play": source["sales_play"],
+                "account_id": source["account_id"],
+                "contact_id": source["contact_id"],
+                "activity_type": "Follow-up",
+                "activity_date": datetime.now().date().isoformat(),
+                "activity_time": source["next_action_time"],
+                "subject": f"Follow-up: {source['subject'] or source['activity_type'] or 'Outreach'}",
+                "notes": f"Follow-on task from completed outreach #{source['id']}.",
+                "outcome": "No Response Yet",
+                "next_action": source["next_action"],
+                "next_action_date": source["next_action_date"] or datetime.now().date().isoformat(),
+                "next_action_time": source["next_action_time"],
+                "task_status": "Not Started",
+                "assigned_to": source["assigned_to"],
+            }
 
     if request.method == "POST":
         cursor = connection.execute("""
@@ -3280,7 +3382,8 @@ def add_outreach():
         accounts=accounts,
         contacts=contacts,
         profile=profile,
-        campaign_options=campaign_options
+        campaign_options=campaign_options,
+        prefill=prefill
     )
 
 
@@ -3298,7 +3401,14 @@ def campaign_builder():
     selected_total_tasks = request.form.get("total_outreach_tasks", "8")
     selected_times_per_week = request.form.get("times_per_week", "2")
     selected_sales_play = request.form.get("sales_play") or request.form.get("sales_plays", "")
+    selected_fy = request.form.get("fy", "")
+    selected_quarter = request.form.get("quarter", "")
     success_context_summary = ""
+    profile = connection.execute("""
+        SELECT *
+        FROM user_profile
+        WHERE id = 1
+    """).fetchone()
 
     if request.method == "POST":
         account_id = request.form.get("account_id")
@@ -3374,8 +3484,35 @@ def campaign_builder():
                 success_context_summary = success_context["summary"]
                 schedule_templates = success_context["templates"]
 
+                if not fy:
+                    fy = f"{campaign_start.year % 100:02d}"
+                if not quarter:
+                    quarter = f"Q{((campaign_start.month - 1) // 3) + 1}"
+                selected_fy = fy
+                selected_quarter = quarter
+                reserved_rows = connection.execute("""
+                    SELECT next_action_date, next_action_time
+                    FROM outreach
+                    WHERE next_action_date IS NOT NULL
+                      AND next_action_date != ''
+                      AND COALESCE(task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
+                """).fetchall()
+                reserved_slots = {
+                    (row["next_action_date"], row["next_action_time"] or "09:00")
+                    for row in reserved_rows
+                    if row["next_action_date"]
+                }
+
                 for contact in contacts:
-                    for step in build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per_week, schedule_templates):
+                    for step in build_campaign_schedule(
+                        campaign_start,
+                        campaign_end,
+                        total_tasks,
+                        times_per_week,
+                        schedule_templates,
+                        profile=profile,
+                        reserved_slots=reserved_slots
+                    ):
                         action_date = step["action_date"]
                         subject = f"{step['subject_prefix']}: {sales_play}"
                         notes = (
@@ -3470,11 +3607,6 @@ def campaign_builder():
             contacts.name
     """).fetchall()
 
-    profile = connection.execute("""
-        SELECT *
-        FROM user_profile
-        WHERE id = 1
-    """).fetchone()
     connection.close()
 
     return render_template(
@@ -3492,6 +3624,8 @@ def campaign_builder():
         selected_total_tasks=selected_total_tasks,
         selected_times_per_week=selected_times_per_week,
         selected_sales_play=selected_sales_play,
+        selected_fy=selected_fy,
+        selected_quarter=selected_quarter,
         success_context_summary=success_context_summary,
         error=error
     )
@@ -3567,6 +3701,7 @@ def bulk_delete_outreach():
 @app.route("/outreach/<int:outreach_id>/edit", methods=("GET", "POST"))
 def edit_outreach(outreach_id):
     connection = get_db_connection()
+    error = ""
 
     outreach_item = connection.execute(
         "SELECT * FROM outreach WHERE id = ?",
@@ -3622,11 +3757,22 @@ def edit_outreach(outreach_id):
         follow_on_next_action = new_values["next_action"]
         follow_on_date = new_values["next_action_date"]
         follow_on_time = new_values["next_action_time"]
-        follow_on_created_id = None
+        follow_on_requested = submit_action == "complete_and_follow"
 
         if submit_action in ("complete_and_follow", "complete_only"):
+            if not (new_values["next_action"] or "").strip():
+                error = "Activity Update is required before an outreach task can be completed."
+                connection.close()
+                return render_template(
+                    "edit_outreach.html",
+                    outreach_item=outreach_item,
+                    accounts=accounts,
+                    contacts=contacts,
+                    profile=profile,
+                    campaign_options=campaign_options,
+                    error=error
+                )
             new_values["task_status"] = "Completed"
-            new_values["next_action"] = ""
             new_values["next_action_date"] = ""
             new_values["next_action_time"] = ""
 
@@ -3643,7 +3789,7 @@ def edit_outreach(outreach_id):
             "subject": "Subject",
             "notes": "Notes",
             "outcome": "Outcome",
-            "next_action": "Next action",
+            "next_action": "Activity update",
             "next_action_date": "Activity due date",
             "next_action_time": "Activity due time",
             "task_status": "Task status",
@@ -3694,82 +3840,6 @@ def edit_outreach(outreach_id):
             outreach_id
         ))
 
-        if submit_action == "complete_and_follow":
-            follow_on_subject = follow_on_next_action or f"Follow-up: {new_values['subject'] or new_values['activity_type'] or 'Outreach'}"
-            follow_on_activity_date = follow_on_date or datetime.now().date().isoformat()
-            cursor = connection.execute("""
-                INSERT INTO outreach (
-                    fy,
-                    quarter,
-                    campaign,
-                    sales_play,
-                    campaign_start_date,
-                    campaign_end_date,
-                    campaign_tasks_per_week,
-                    campaign_total_tasks,
-                    account_id,
-                    contact_id,
-                    activity_type,
-                    activity_date,
-                    activity_time,
-                    subject,
-                    notes,
-                    outcome,
-                    next_action,
-                    next_action_date,
-                    next_action_time,
-                    task_status,
-                    assigned_to
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                new_values["fy"],
-                new_values["quarter"],
-                new_values["campaign"],
-                new_values["sales_play"],
-                outreach_item["campaign_start_date"],
-                outreach_item["campaign_end_date"],
-                outreach_item["campaign_tasks_per_week"],
-                outreach_item["campaign_total_tasks"],
-                new_values["account_id"],
-                new_values["contact_id"],
-                "Follow-up",
-                follow_on_activity_date,
-                follow_on_time,
-                follow_on_subject,
-                f"Follow-on task created from outreach #{outreach_id}.\n\n{new_values['notes'] or ''}",
-                "No Response Yet",
-                follow_on_next_action or follow_on_subject,
-                follow_on_date or follow_on_activity_date,
-                follow_on_time,
-                "Not Started",
-                new_values["assigned_to"],
-            ))
-            follow_on_created_id = cursor.lastrowid
-            audit_record_create(connection, "outreach", follow_on_created_id, {
-                "campaign": new_values["campaign"],
-                "sales_play": new_values["sales_play"],
-                "account_id": new_values["account_id"],
-                "contact_id": new_values["contact_id"],
-                "activity_type": "Follow-up",
-                "activity_date": follow_on_activity_date,
-                "activity_time": follow_on_time,
-                "subject": follow_on_subject,
-                "outcome": "No Response Yet",
-                "next_action": follow_on_next_action or follow_on_subject,
-                "next_action_date": follow_on_date or follow_on_activity_date,
-                "next_action_time": follow_on_time,
-                "task_status": "Not Started",
-                "assigned_to": new_values["assigned_to"],
-            })
-            add_timeline_entry(
-                connection,
-                "outreach",
-                follow_on_created_id,
-                "Follow-on Created",
-                f"Created from completed outreach #{outreach_id}"
-            )
-
         if changes:
             audit_record_update(connection, "outreach", outreach_id, outreach_item, new_values, labels)
             add_timeline_entry(
@@ -3783,8 +3853,8 @@ def edit_outreach(outreach_id):
         connection.commit()
         connection.close()
 
-        if follow_on_created_id:
-            return redirect(url_for("edit_outreach", outreach_id=follow_on_created_id))
+        if follow_on_requested:
+            return redirect(url_for("add_outreach", prefill_from=outreach_id))
 
         return redirect(url_for("outreach"))
 
@@ -3796,7 +3866,8 @@ def edit_outreach(outreach_id):
         accounts=accounts,
         contacts=contacts,
         profile=profile,
-        campaign_options=campaign_options
+        campaign_options=campaign_options,
+        error=error
     )
 
 
@@ -3956,6 +4027,137 @@ def tasks():
     return redirect(url_for("home", _anchor="dashboard-tasks"))
 
 
+@app.route("/team", methods=("GET", "POST"))
+def team_page():
+    user = current_user()
+    error = ""
+    invite_created = False
+    if request.method == "POST":
+        error = create_team_invite(
+            user,
+            request.form.get("invite_email", ""),
+            request.form.get("invite_role", "member"),
+        )
+        invite_created = not error
+    return render_template(
+        "team.html",
+        team=active_team_for_user(user),
+        members=list_active_team_members(user),
+        invites=list_active_team_invites(user),
+        error=error,
+        invite_created=invite_created,
+    )
+
+
+@app.route("/team-outreach")
+def team_outreach():
+    user = current_user()
+    team = active_team_for_user(user)
+    members = list_active_team_members(user)
+    member_schemas = {member["workspace_schema"]: member for member in members if member["workspace_schema"]}
+    rows = []
+
+    if using_postgres():
+        for member in members:
+            schema = member["workspace_schema"]
+            if not schema:
+                continue
+            try:
+                connection = get_schema_connection(schema=schema)
+                member_rows = connection.execute("""
+                    SELECT
+                        outreach.*,
+                        accounts.account_name,
+                        contacts.name AS contact_name
+                    FROM outreach
+                    LEFT JOIN accounts ON outreach.account_id = accounts.id
+                    LEFT JOIN contacts ON outreach.contact_id = contacts.id
+                    WHERE outreach.next_action_date IS NOT NULL
+                      AND outreach.next_action_date != ''
+                      AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
+                    ORDER BY
+                        COALESCE(NULLIF(outreach.assigned_to, ''), ?),
+                        COALESCE(NULLIF(accounts.account_name, ''), 'No Account'),
+                        COALESCE(NULLIF(outreach.campaign, ''), 'No Campaign'),
+                        outreach.next_action_date ASC,
+                        outreach.next_action_time ASC
+                """, (member["full_name"],)).fetchall()
+                for row in member_rows:
+                    row_dict = dict(row)
+                    row_dict["workspace_schema"] = schema
+                    row_dict["owner_name"] = member["full_name"]
+                    rows.append(row_dict)
+                connection.close()
+            except Exception:
+                continue
+    else:
+        connection = get_db_connection()
+        member_rows = connection.execute("""
+            SELECT outreach.*, accounts.account_name, contacts.name AS contact_name
+            FROM outreach
+            LEFT JOIN accounts ON outreach.account_id = accounts.id
+            LEFT JOIN contacts ON outreach.contact_id = contacts.id
+            WHERE outreach.next_action_date IS NOT NULL
+              AND outreach.next_action_date != ''
+              AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
+            ORDER BY outreach.next_action_date ASC, outreach.next_action_time ASC
+        """).fetchall()
+        for row in member_rows:
+            row_dict = dict(row)
+            row_dict["workspace_schema"] = current_user_schema()
+            row_dict["owner_name"] = user["full_name"] if user else ""
+            rows.append(row_dict)
+        connection.close()
+
+    rows.sort(key=lambda row: (
+        row.get("assigned_to") or row.get("owner_name") or "Unassigned",
+        row.get("account_name") or "No Account",
+        row.get("campaign") or "No Campaign",
+        row.get("next_action_date") or "",
+        row.get("next_action_time") or "",
+    ))
+
+    return render_template(
+        "team_outreach.html",
+        team=team,
+        members=members,
+        outreach_records=rows,
+    )
+
+
+@app.route("/team-outreach/reassign", methods=("POST",))
+def reassign_team_outreach():
+    user = current_user()
+    members = list_active_team_members(user)
+    allowed_schemas = {member["workspace_schema"] for member in members if member["workspace_schema"]}
+    allowed_assignees = {member["full_name"] for member in members if member["full_name"]}
+    workspace_schema = request.form.get("workspace_schema")
+    outreach_id = request.form.get("outreach_id")
+    assigned_to = request.form.get("assigned_to", "")
+    if workspace_schema not in allowed_schemas or (assigned_to and assigned_to not in allowed_assignees):
+        return redirect(url_for("team_outreach"))
+    connection = get_schema_connection(schema=workspace_schema) if using_postgres() else get_db_connection()
+    outreach_item = connection.execute("SELECT * FROM outreach WHERE id = ?", (outreach_id,)).fetchone()
+    if outreach_item:
+        connection.execute(
+            """
+            UPDATE outreach
+            SET assigned_to = ?,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (assigned_to, outreach_id),
+        )
+        audit_record_update(connection, "outreach", outreach_id, outreach_item, {
+            "assigned_to": assigned_to,
+        }, {
+            "assigned_to": "Assigned to",
+        })
+        connection.commit()
+    connection.close()
+    return redirect(url_for("team_outreach"))
+
+
 @app.route("/tasks/<int:outreach_id>/update", methods=("POST",))
 def update_task_from_tasks(outreach_id):
     connection = get_db_connection()
@@ -3976,12 +4178,15 @@ def update_task_from_tasks(outreach_id):
         "next_action_time": request.form.get("next_action_time"),
         "notes": request.form.get("notes"),
     }
+    if is_closed_task_status(new_values["task_status"]) and not (new_values["next_action"] or "").strip():
+        connection.close()
+        return redirect(return_target)
     labels = {
         "outcome": "Outcome",
         "task_status": "Task status",
-        "next_action": "Next action",
-        "next_action_date": "Next action date",
-        "next_action_time": "Next action time",
+        "next_action": "Activity update",
+        "next_action_date": "Activity due date",
+        "next_action_time": "Activity due time",
         "notes": "Notes",
     }
     changes = build_change_log(outreach_item, new_values, labels)
@@ -4034,23 +4239,31 @@ def complete_task_from_tasks(outreach_id):
         connection.close()
         return redirect(return_target)
 
+    activity_update = (request.form.get("next_action") or "").strip()
+    if not activity_update:
+        connection.close()
+        return redirect(return_target)
+
     outcome = request.form.get("outcome") or outreach_item["outcome"] or "Follow-up Required"
     connection.execute(
         """
         UPDATE outreach
         SET task_status = 'Closed',
             outcome = ?,
+            next_action = ?,
             last_updated = CURRENT_TIMESTAMP
         WHERE id = ?
         """,
-        (outcome, outreach_id),
+        (outcome, activity_update, outreach_id),
     )
     audit_record_update(connection, "outreach", outreach_id, outreach_item, {
         "task_status": "Closed",
         "outcome": outcome,
+        "next_action": activity_update,
     }, {
         "task_status": "Task status",
         "outcome": "Outcome",
+        "next_action": "Activity update",
     })
     add_timeline_entry(
         connection,
@@ -4076,12 +4289,20 @@ def profile():
             SET full_name = ?,
                 team = ?,
                 job_title = ?,
+                work_day_start = ?,
+                work_day_end = ?,
+                non_working_start_date = ?,
+                non_working_end_date = ?,
                 last_updated = CURRENT_TIMESTAMP
             WHERE id = 1
         """, (
             request.form.get("full_name"),
             request.form.get("team"),
-            request.form.get("job_title")
+            request.form.get("job_title"),
+            request.form.get("work_day_start") or "09:00",
+            request.form.get("work_day_end") or "17:00",
+            request.form.get("non_working_start_date"),
+            request.form.get("non_working_end_date")
         ))
 
         connection.commit()
@@ -4775,8 +4996,15 @@ def outreach_reports():
             outreach.account_id,
             outreach.activity_date,
             outreach.activity_time,
+            outreach.next_action_date,
+            outreach.next_action_time,
             outreach.activity_type,
             outreach.outcome,
+            outreach.task_status,
+            outreach.campaign,
+            outreach.sales_play,
+            outreach.fy,
+            outreach.quarter,
             accounts.account_name,
             accounts.account_tier,
             contacts.name AS contact_name
@@ -4894,11 +5122,20 @@ def export_outreach_reports():
     outreach_items = connection.execute("""
         SELECT
             outreach.activity_date,
+            outreach.activity_time,
+            outreach.next_action_date,
+            outreach.next_action_time,
+            outreach.task_status,
+            outreach.campaign,
+            outreach.sales_play,
+            outreach.fy,
+            outreach.quarter,
             accounts.account_name,
             accounts.account_tier,
             contacts.name AS contact_name,
             outreach.activity_type,
             outreach.outcome,
+            outreach.next_action,
             outreach.notes
         FROM outreach
         LEFT JOIN accounts ON outreach.account_id = accounts.id
@@ -4913,22 +5150,40 @@ def export_outreach_reports():
 
     writer.writerow([
         "Date",
+        "Time",
+        "Due Date",
+        "Due Time",
+        "Status",
+        "FY",
+        "Quarter",
+        "Campaign",
+        "Sales Play",
         "Account",
         "Account Tier",
         "Contact",
         "Activity Type",
         "Outcome",
+        "Activity Update",
         "Notes"
     ])
 
     for item in outreach_items:
         writer.writerow([
             item["activity_date"],
+            item["activity_time"],
+            item["next_action_date"],
+            item["next_action_time"],
+            item["task_status"],
+            item["fy"],
+            item["quarter"],
+            item["campaign"],
+            item["sales_play"],
             item["account_name"],
             item["account_tier"],
             item["contact_name"],
             item["activity_type"],
             item["outcome"],
+            item["next_action"],
             item["notes"]
         ])
 

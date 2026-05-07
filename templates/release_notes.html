@@ -18,14 +18,14 @@
 
 <div class="release-notes-list">
     {% for release in release_notes %}
-        <article class="form-card release-card">
-            <div class="section-header">
+        <details class="form-card release-card release-accordion" {% if loop.first %}open{% endif %}>
+            <summary class="release-summary">
                 <div>
                     <h2>Version {{ release.version }}</h2>
                     <p>{{ release.title }}</p>
                 </div>
                 <span class="status-pill">{{ release.release_date }}</span>
-            </div>
+            </summary>
 
             <div class="release-section-grid">
                 <section class="release-section release-new">
@@ -55,7 +55,7 @@
                     </ul>
                 </section>
             </div>
-        </article>
+        </details>
     {% endfor %}
 </div>
 

@@ -124,11 +124,46 @@ def initialise_auth_database() -> None:
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS teams (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            team_name TEXT NOT NULL UNIQUE,
+            created_by_user_id INTEGER,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS team_memberships (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            team_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            role TEXT NOT NULL DEFAULT 'member',
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(team_id, user_id)
+        )
+    """)
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS team_invites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            team_id INTEGER NOT NULL,
+            email TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'member',
+            status TEXT NOT NULL DEFAULT 'pending',
+            invited_by_user_id INTEGER,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     add_column_if_missing(connection, "users", "reset_phrase_hash", "TEXT")
     add_column_if_missing(connection, "users", "team", "TEXT")
     add_column_if_missing(connection, "users", "workspace_schema", "TEXT")
+    add_column_if_missing(connection, "users", "active_team_id", "INTEGER")
     add_column_if_missing(connection, "broadcast_messages", "start_at", "TEXT")
     add_column_if_missing(connection, "broadcast_messages", "stop_at", "TEXT")
+    add_column_if_missing(connection, "team_memberships", "role", "TEXT DEFAULT 'member'")
+    add_column_if_missing(connection, "team_invites", "status", "TEXT DEFAULT 'pending'")
     connection.commit()
     connection.close()
 
@@ -251,7 +286,7 @@ def current_user():
     connection = get_auth_connection()
     user = connection.execute(
         """
-        SELECT id, email, full_name, team, role, workspace_schema
+        SELECT id, email, full_name, team, role, workspace_schema, active_team_id
         FROM users
         WHERE id = ?
           AND is_active = 1
@@ -260,6 +295,138 @@ def current_user():
     ).fetchone()
     connection.close()
     return user
+
+
+def ensure_default_team_for_user(user):
+    if not user:
+        return None
+    connection = get_auth_connection()
+    active_team_id = user["active_team_id"] if "active_team_id" in user.keys() else None
+    if active_team_id:
+        membership = connection.execute(
+            "SELECT team_id FROM team_memberships WHERE team_id = ? AND user_id = ?",
+            (active_team_id, user["id"]),
+        ).fetchone()
+        if membership:
+            connection.close()
+            return active_team_id
+
+    team_name = user["team"] or f"{user['full_name']} Team"
+    if using_postgres():
+        row = connection.execute(
+            """
+            INSERT INTO teams (team_name, created_by_user_id)
+            VALUES (?, ?)
+            ON CONFLICT (team_name) DO UPDATE SET team_name = EXCLUDED.team_name
+            RETURNING id
+            """,
+            (team_name, user["id"]),
+        ).fetchone()
+        team_id = row["id"]
+    else:
+        connection.execute(
+            "INSERT OR IGNORE INTO teams (team_name, created_by_user_id) VALUES (?, ?)",
+            (team_name, user["id"]),
+        )
+        team_id = connection.execute("SELECT id FROM teams WHERE team_name = ?", (team_name,)).fetchone()["id"]
+    membership_role = "admin" if user["role"] == "admin" else "member"
+    if using_postgres():
+        connection.execute(
+            """
+            INSERT INTO team_memberships (team_id, user_id, role)
+            VALUES (?, ?, ?)
+            ON CONFLICT (team_id, user_id) DO UPDATE SET role = EXCLUDED.role
+            """,
+            (team_id, user["id"], membership_role),
+        )
+    else:
+        connection.execute(
+            "INSERT OR IGNORE INTO team_memberships (team_id, user_id, role) VALUES (?, ?, ?)",
+            (team_id, user["id"], membership_role),
+        )
+    connection.execute(
+        "UPDATE users SET active_team_id = ?, last_updated = CURRENT_TIMESTAMP WHERE id = ?",
+        (team_id, user["id"]),
+    )
+    connection.commit()
+    connection.close()
+    return team_id
+
+
+def active_team_for_user(user):
+    team_id = ensure_default_team_for_user(user)
+    if not team_id:
+        return None
+    connection = get_auth_connection()
+    team = connection.execute("SELECT * FROM teams WHERE id = ?", (team_id,)).fetchone()
+    connection.close()
+    return team
+
+
+def list_active_team_members(user):
+    team_id = ensure_default_team_for_user(user)
+    if not team_id:
+        return []
+    connection = get_auth_connection()
+    members = connection.execute(
+        """
+        SELECT users.id, users.email, users.full_name, users.team, users.workspace_schema, team_memberships.role
+        FROM team_memberships
+        JOIN users ON users.id = team_memberships.user_id
+        WHERE team_memberships.team_id = ?
+          AND users.is_active = 1
+        ORDER BY users.full_name, users.email
+        """,
+        (team_id,),
+    ).fetchall()
+    connection.close()
+    return members
+
+
+def list_active_team_invites(user):
+    team_id = ensure_default_team_for_user(user)
+    if not team_id:
+        return []
+    connection = get_auth_connection()
+    invites = connection.execute(
+        """
+        SELECT *
+        FROM team_invites
+        WHERE team_id = ?
+        ORDER BY date_created DESC, id DESC
+        """,
+        (team_id,),
+    ).fetchall()
+    connection.close()
+    return invites
+
+
+def create_team_invite(user, email, role="member"):
+    team_id = ensure_default_team_for_user(user)
+    email = normalise_email(email)
+    role = role if role in {"admin", "member"} else "member"
+    if not team_id or not email:
+        return "Email is required."
+    membership = None
+    connection = get_auth_connection()
+    if user:
+        membership = connection.execute(
+            "SELECT role FROM team_memberships WHERE team_id = ? AND user_id = ?",
+            (team_id, user["id"]),
+        ).fetchone()
+    if not membership or membership["role"] != "admin":
+        connection.close()
+        return "Only team admins can invite users."
+    connection.execute(
+        """
+        INSERT INTO team_invites (team_id, email, role, invited_by_user_id)
+        VALUES (?, ?, ?, ?)
+        """,
+        (team_id, email, role, user["id"]),
+    )
+    connection.commit()
+    connection.close()
+    return ""
 
 
 def login_required(view):

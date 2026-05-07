@@ -147,9 +147,13 @@
             <thead>
                 <tr>
                     <th>Date</th>
+                    <th>Due Date</th>
+                    <th>Status</th>
                     <th>Account</th>
                     <th>Contact</th>
                     <th>Account Tier</th>
+                    <th>Campaign</th>
+                    <th>Sales Play</th>
                     <th>Type</th>
                     <th>Outcome</th>
                 </tr>
@@ -166,15 +170,19 @@
                                 {{ item["activity_date"] or "Not set" }}
                             </a>
                         </td>
+                        <td>{{ item["next_action_date"] or "Not set" }}</td>
+                        <td>{{ item["task_status"] or "Not Started" }}</td>
                         <td>{{ item["account_name"] or "Unknown" }}</td>
                         <td>{{ item["contact_name"] or "No contact" }}</td>
                         <td>{{ "Tier " ~ item["account_tier"] if item["account_tier"] else "Not set" }}</td>
+                        <td>{{ item["campaign"] or "Not set" }}</td>
+                        <td>{{ item["sales_play"] or "Not set" }}</td>
                         <td>{{ item["activity_type"] or "Unknown" }}</td>
                         <td>{{ item["outcome"] or "Unknown" }}</td>
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="6">No outreach found.</td>
+                        <td colspan="10">No outreach found.</td>
                     </tr>
                 {% endfor %}
             </tbody>

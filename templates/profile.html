@@ -57,6 +57,42 @@
                        placeholder="Enter job title">
             </div>
 
+            <div class="form-section-heading">Working Hours</div>
+
+            <div class="form-group">
+                <label for="work_day_start">Work Day Start</label>
+                <input type="time"
+                       id="work_day_start"
+                       name="work_day_start"
+                       value="{{ profile.work_day_start or '09:00' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="work_day_end">Work Day End</label>
+                <input type="time"
+                       id="work_day_end"
+                       name="work_day_end"
+                       value="{{ profile.work_day_end or '17:00' }}">
+            </div>
+
+            <div class="form-section-heading">Non Working Dates</div>
+
+            <div class="form-group">
+                <label for="non_working_start_date">Non Working Start Date</label>
+                <input type="date"
+                       id="non_working_start_date"
+                       name="non_working_start_date"
+                       value="{{ profile.non_working_start_date or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="non_working_end_date">Non Working End Date</label>
+                <input type="date"
+                       id="non_working_end_date"
+                       name="non_working_end_date"
+                       value="{{ profile.non_working_end_date or '' }}">
+            </div>
+
         </div>
 
         <div class="form-actions">
@@ -72,6 +108,14 @@
     <p><strong>Full Name:</strong> {{ profile.full_name or "Not configured" }}</p>
     <p><strong>Team:</strong> {{ profile.team or "Not configured" }}</p>
     <p><strong>Job Title:</strong> {{ profile.job_title or "Not configured" }}</p>
+    <p><strong>Working Hours:</strong> {{ profile.work_day_start or "09:00" }} to {{ profile.work_day_end or "17:00" }}</p>
+    <p><strong>Non Working Dates:</strong>
+        {% if profile.non_working_start_date or profile.non_working_end_date %}
+            {{ profile.non_working_start_date or "Not set" }} to {{ profile.non_working_end_date or "Not set" }}
+        {% else %}
+            Not configured
+        {% endif %}
+    </p>
 </div>
 
 <div class="form-card danger-zone-card">

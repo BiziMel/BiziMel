@@ -227,6 +227,10 @@ def initialise_database(force=False):
             full_name TEXT,
             team TEXT,
             job_title TEXT,
+            work_day_start TEXT,
+            work_day_end TEXT,
+            non_working_start_date TEXT,
+            non_working_end_date TEXT,
             date_created TEXT DEFAULT CURRENT_TIMESTAMP,
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP
         )
@@ -250,6 +254,7 @@ def initialise_database(force=False):
     """)
 
     # Safe migrations for account custom values
+    add_column_if_missing(cursor, "account_custom_values", "team_id", "INTEGER DEFAULT 1")
     add_column_if_missing(cursor, "account_custom_values", "account_id", "INTEGER")
     add_column_if_missing(cursor, "account_custom_values", "field_key", "TEXT")
     add_column_if_missing(cursor, "account_custom_values", "field_value", "TEXT")
@@ -257,11 +262,16 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "account_custom_values", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
 
     # Safe migrations for accounts
+    add_column_if_missing(cursor, "accounts", "team_id", "INTEGER DEFAULT 1")
     add_column_if_missing(cursor, "accounts", "business_unit", "TEXT")
     add_column_if_missing(cursor, "accounts", "account_tier", "TEXT")
     add_column_if_missing(cursor, "accounts", "pg_bible_order", "INTEGER")
 
+    # Safe migrations for contacts
+    add_column_if_missing(cursor, "contacts", "team_id", "INTEGER DEFAULT 1")
+
     # Safe migrations for outreach
+    add_column_if_missing(cursor, "outreach", "team_id", "INTEGER DEFAULT 1")
     add_column_if_missing(cursor, "outreach", "fy", "TEXT")
     add_column_if_missing(cursor, "outreach", "quarter", "TEXT")
     add_column_if_missing(cursor, "outreach", "campaign", "TEXT")
@@ -276,6 +286,7 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "outreach", "assigned_to", "TEXT")
 
     # Safe migrations for account partners
+    add_column_if_missing(cursor, "account_partners", "team_id", "INTEGER DEFAULT 1")
     add_column_if_missing(cursor, "account_partners", "partner_id", "INTEGER")
     add_column_if_missing(cursor, "account_partners", "account_id", "INTEGER")
     add_column_if_missing(cursor, "account_partners", "partner_name", "TEXT")
@@ -288,6 +299,7 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "account_partners", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
 
     # Safe migrations for partner organisations
+    add_column_if_missing(cursor, "partners", "team_id", "INTEGER DEFAULT 1")
     add_column_if_missing(cursor, "partners", "partner_name", "TEXT")
     add_column_if_missing(cursor, "partners", "partner_type", "TEXT")
     add_column_if_missing(cursor, "partners", "website", "TEXT")
@@ -304,6 +316,7 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "partners", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
 
     # Safe migrations for partner contacts
+    add_column_if_missing(cursor, "partner_contacts", "team_id", "INTEGER DEFAULT 1")
     add_column_if_missing(cursor, "partner_contacts", "partner_id", "INTEGER")
     add_column_if_missing(cursor, "partner_contacts", "name", "TEXT")
     add_column_if_missing(cursor, "partner_contacts", "job_title", "TEXT")
@@ -342,6 +355,7 @@ def initialise_database(force=False):
     """)
 
     # Safe migrations for timeline
+    add_column_if_missing(cursor, "timeline_entries", "team_id", "INTEGER DEFAULT 1")
     add_column_if_missing(cursor, "timeline_entries", "related_type", "TEXT")
     add_column_if_missing(cursor, "timeline_entries", "related_id", "INTEGER")
     add_column_if_missing(cursor, "timeline_entries", "entry_type", "TEXT")
@@ -354,10 +368,15 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "user_profile", "full_name", "TEXT")
     add_column_if_missing(cursor, "user_profile", "team", "TEXT")
     add_column_if_missing(cursor, "user_profile", "job_title", "TEXT")
+    add_column_if_missing(cursor, "user_profile", "work_day_start", "TEXT")
+    add_column_if_missing(cursor, "user_profile", "work_day_end", "TEXT")
+    add_column_if_missing(cursor, "user_profile", "non_working_start_date", "TEXT")
+    add_column_if_missing(cursor, "user_profile", "non_working_end_date", "TEXT")
     add_column_if_missing(cursor, "user_profile", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "user_profile", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
 
     # Safe migrations for structured audit entries
+    add_column_if_missing(cursor, "audit_entries", "team_id", "INTEGER DEFAULT 1")
     add_column_if_missing(cursor, "audit_entries", "entity_type", "TEXT")
     add_column_if_missing(cursor, "audit_entries", "entity_id", "INTEGER")
     add_column_if_missing(cursor, "audit_entries", "action_type", "TEXT")

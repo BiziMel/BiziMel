@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}Shared Outreach | PipeFlow{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>Shared Outreach</h1>
+        <p>View active follow-up tasks across the active team and reassign ownership quickly.</p>
+    </div>
+    <div class="button-group">
+        <a href="{{ url_for('team_page') }}" class="btn btn-primary">Team</a>
+        <a href="{{ url_for('outreach') }}" class="btn btn-secondary">Back to Outreach</a>
+    </div>
+</div>
+
+<div class="form-card">
+    <div class="section-header">
+        <div>
+            <h2>{{ team.team_name if team else "Active Team" }}</h2>
+            <p>Grouped by assignee, customer and campaign. Closed, completed and cancelled tasks are hidden.</p>
+        </div>
+    </div>
+
+    {% if outreach_records %}
+        <div class="table-container outreach-table-container">
+            <table class="report-table outreach-table no-sort">
+                <thead>
+                    <tr>
+                        <th>Due Date</th>
+                        <th>Account / Contact</th>
+                        <th>Campaign</th>
+                        <th>Activity</th>
+                        <th>Assigned To</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% set current_group = namespace(assignee=None, account=None, campaign=None) %}
+                    {% for item in outreach_records %}
+                        {% set assignee_group = item.assigned_to or item.owner_name or "Unassigned" %}
+                        {% set account_group = item.account_name or "No Account" %}
+                        {% set campaign_group = item.campaign or "No Campaign" %}
+                        {% if current_group.assignee != assignee_group %}
+                            {% set current_group.assignee = assignee_group %}
+                            {% set current_group.account = None %}
+                            {% set current_group.campaign = None %}
+                            <tr class="outreach-account-group-row">
+                                <td colspan="5"><span>Assignee</span><strong>{{ assignee_group }}</strong></td>
+                            </tr>
+                        {% endif %}
+                        {% if current_group.account != account_group %}
+                            {% set current_group.account = account_group %}
+                            {% set current_group.campaign = None %}
+                            <tr class="outreach-campaign-group-row">
+                                <td colspan="5"><span>Customer</span><strong>{{ account_group }}</strong></td>
+                            </tr>
+                        {% endif %}
+                        {% if current_group.campaign != campaign_group %}
+                            {% set current_group.campaign = campaign_group %}
+                            <tr class="outreach-campaign-group-row">
+                                <td colspan="5"><span>Campaign</span><strong>{{ campaign_group }}</strong></td>
+                            </tr>
+                        {% endif %}
+                        <tr>
+                            <td>
+                                <div class="outreach-due-date-block">
+                                    <span class="date-stack-label">Due</span>
+                                    <strong>{{ item.next_action_date or "No due date" }}</strong>
+                                    <span>{{ item.next_action_time or "No due time" }}</span>
+                                    <span class="status-pill compact-status-pill">{{ item.task_status or "Not Started" }}</span>
+                                </div>
+                            </td>
+                            <td>
+                                <strong>{{ item.account_name or "No account" }}</strong><br>
+                                <span class="muted">{{ item.contact_name or "No contact" }}</span>
+                            </td>
+                            <td>
+                                <strong>{{ item.campaign or "No campaign" }}</strong><br>
+                                <span class="muted">{{ item.sales_play or "No sales play" }}</span>
+                            </td>
+                            <td>
+                                <strong>{{ item.activity_type or "No activity type" }}</strong><br>
+                                <span class="muted">{{ item.next_action or item.subject or "No activity update" }}</span>
+                            </td>
+                            <td>
+                                <form method="POST" action="{{ url_for('reassign_team_outreach') }}" class="inline-form">
+                                    <input type="hidden" name="workspace_schema" value="{{ item.workspace_schema }}">
+                                    <input type="hidden" name="outreach_id" value="{{ item.id }}">
+                                    <select name="assigned_to" onchange="this.form.submit()">
+                                        <option value="">Unassigned</option>
+                                        {% for member in members %}
+                                            <option value="{{ member.full_name }}" {% if item.assigned_to == member.full_name %}selected{% endif %}>
+                                                {{ member.full_name }}
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p>No active shared outreach tasks found for the team.</p>
+    {% endif %}
+</div>
+
+{% endblock %}

@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}Team | PipeFlow{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>Team</h1>
+        <p>Manage team membership and invite users into shared outreach execution.</p>
+    </div>
+    <div class="button-group">
+        <button type="button" class="btn btn-primary" id="openInviteModal">Invite User</button>
+        <a href="{{ url_for('team_outreach') }}" class="btn btn-secondary">Team Outreach</a>
+    </div>
+</div>
+
+{% if error %}
+    <div class="alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="form-card">
+    <h2>{{ team.team_name if team else "Active Team" }}</h2>
+    <div class="table-container">
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for member in members %}
+                    <tr>
+                        <td>{{ member.full_name }}</td>
+                        <td>{{ member.email }}</td>
+                        <td>{{ member.role }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="form-card">
+    <h2>Invitations</h2>
+    {% if invites %}
+        <div class="table-container">
+            <table class="report-table">
+                <thead>
+                    <tr>
+                        <th>Email</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for invite in invites %}
+                        <tr>
+                            <td>{{ invite.email }}</td>
+                            <td>{{ invite.role }}</td>
+                            <td>{{ invite.status }}</td>
+                            <td>{{ invite.date_created }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p>No invitations have been created yet.</p>
+    {% endif %}
+</div>
+
+<div class="modal-backdrop" id="inviteModal" {% if not invite_created %}hidden{% endif %}>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="inviteModalTitle">
+        {% if invite_created %}
+            <h2 id="inviteModalTitle">Invite Created</h2>
+            <p>The invitation has been saved. Use Team Outreach to review shared follow-up ownership.</p>
+            <a href="{{ url_for('team_outreach') }}" class="btn btn-primary">View</a>
+        {% else %}
+            <h2 id="inviteModalTitle">Invite User</h2>
+            <form method="POST" class="pipeflow-form">
+                <div class="form-group">
+                    <label for="invite_email">Email</label>
+                    <input type="email" id="invite_email" name="invite_email" required>
+                </div>
+                <div class="form-group">
+                    <label for="invite_role">Role</label>
+                    <select id="invite_role" name="invite_role">
+                        <option value="member">Member</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary">Create Invite</button>
+            </form>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+    const inviteModal = document.getElementById("inviteModal");
+    const openInviteModal = document.getElementById("openInviteModal");
+    if (openInviteModal && inviteModal) {
+        openInviteModal.addEventListener("click", () => {
+            inviteModal.hidden = false;
+        });
+    }
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && inviteModal && !inviteModal.hidden) {
+            event.preventDefault();
+        }
+    });
+</script>
+
+{% endblock %}
