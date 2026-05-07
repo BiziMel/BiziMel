@@ -77,7 +77,7 @@ def version_health():
     from db_compat import translate_sql
     sample = "datetime(next_action_date || ' ' || IFNULL(next_action_time, '00:00')) < datetime('now', '-1 hour')"
     lines = [
-        "pipeflow_server_build=2026-05-06-outreach-account-campaign-due-sort-v1",
+        "pipeflow_server_build=2026-05-07-outreach-campaign-activity-rework-v1",
         f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
         f"translation_check={translate_sql(sample)}",
     ]
@@ -792,35 +792,35 @@ def campaign_step_templates():
     return [
         {
             "campaign": "VITO",
-            "activity_type": "Email Sent",
+            "activity_type": "VITO",
             "subject_prefix": "VITO outreach",
             "next_action": "Send VITO-led message",
             "time": "09:00"
         },
         {
             "campaign": "LinkedIn",
-            "activity_type": "LinkedIn Message",
+            "activity_type": "LinkedIn",
             "subject_prefix": "LinkedIn outreach",
             "next_action": "Send LinkedIn connection or follow-up message",
             "time": "10:00"
         },
         {
             "campaign": "Content and Thought Leadership Sharing",
-            "activity_type": "Follow-up",
+            "activity_type": "Content and Thought Leadership Sharing",
             "subject_prefix": "Content share",
             "next_action": "Share relevant content or thought leadership",
             "time": "11:00"
         },
         {
-            "campaign": "Calls",
-            "activity_type": "Call",
+            "campaign": "Phone",
+            "activity_type": "Phone",
             "subject_prefix": "Phone outreach",
             "next_action": "Call contact and progress the sales play",
             "time": "14:00"
         },
         {
             "campaign": "Events",
-            "activity_type": "Event Touchpoint",
+            "activity_type": "Events",
             "subject_prefix": "Event search and attendance trigger",
             "next_action": "Search for relevant events to attend or reference",
             "time": "15:00"
@@ -2906,8 +2906,8 @@ def outreach():
                 WHEN outreach.next_action_date IS NULL OR outreach.next_action_date = ''
                 THEN 1 ELSE 0
             END,
-            outreach.next_action_date DESC,
-            outreach.next_action_time DESC,
+            outreach.next_action_date ASC,
+            outreach.next_action_time ASC,
             outreach.activity_date DESC,
             outreach.id DESC
     """
@@ -2917,6 +2917,14 @@ def outreach():
     accounts = connection.execute(
         "SELECT * FROM accounts ORDER BY account_name"
     ).fetchall()
+    existing_campaigns = connection.execute("""
+        SELECT DISTINCT campaign
+        FROM outreach
+        WHERE campaign IS NOT NULL
+          AND campaign != ''
+        ORDER BY campaign
+    """).fetchall()
+    campaign_options = sorted(row["campaign"] for row in existing_campaigns if row["campaign"])
 
     connection.close()
 
@@ -2924,6 +2932,7 @@ def outreach():
         "outreach.html",
         outreach_records=outreach_records,
         accounts=accounts,
+        campaign_options=campaign_options,
         fy_filter=fy_filter,
         quarter_filter=quarter_filter,
         campaign_filter=campaign_filter,
@@ -3003,6 +3012,14 @@ def add_outreach():
         FROM user_profile
         WHERE id = 1
     """).fetchone()
+    existing_campaigns = connection.execute("""
+        SELECT DISTINCT campaign
+        FROM outreach
+        WHERE campaign IS NOT NULL
+          AND campaign != ''
+        ORDER BY campaign
+    """).fetchall()
+    campaign_options = sorted(row["campaign"] for row in existing_campaigns if row["campaign"])
 
     connection.close()
 
@@ -3010,7 +3027,8 @@ def add_outreach():
         "add_outreach.html",
         accounts=accounts,
         contacts=contacts,
-        profile=profile
+        profile=profile,
+        campaign_options=campaign_options
     )
 
 
@@ -3023,6 +3041,7 @@ def campaign_builder():
     selected_pg_week_start = request.form.get("pg_week_start", "")
     selected_campaign_start = request.form.get("campaign_start_date", "")
     selected_campaign_end = request.form.get("campaign_end_date", "")
+    selected_campaign_name = request.form.get("campaign_name", "")
     selected_total_tasks = request.form.get("total_outreach_tasks", "8")
     selected_times_per_week = request.form.get("times_per_week", "2")
     selected_sales_plays = request.form.get("sales_plays", "")
@@ -3074,6 +3093,8 @@ def campaign_builder():
             """, (account_id,)).fetchone()
 
             account_name = account["account_name"] if account else "Selected account"
+            campaign_name = (request.form.get("campaign_name") or "").strip() or f"{account_name} PG Campaign"
+            selected_campaign_name = campaign_name
             assigned_to = request.form.get("assigned_to", "")
             fy = request.form.get("fy", "")
             quarter = request.form.get("quarter", "")
@@ -3085,6 +3106,7 @@ def campaign_builder():
                         subject = f"{step['subject_prefix']}: {sales_play}"
                         notes = (
                             f"Auto-generated campaign step for {account_name}. "
+                            f"Campaign name: {campaign_name}. "
                             f"Campaign window: {campaign_start.isoformat()} to {campaign_end.isoformat()}. "
                             f"Total outreach tasks: {total_tasks}. "
                             f"Times per week: {times_per_week}. "
@@ -3120,7 +3142,7 @@ def campaign_builder():
                         """, (
                             fy,
                             quarter,
-                            step["campaign"],
+                            campaign_name,
                             sales_play,
                             campaign_start.isoformat(),
                             campaign_end.isoformat(),
@@ -3173,7 +3195,6 @@ def campaign_builder():
         FROM user_profile
         WHERE id = 1
     """).fetchone()
-
     connection.close()
 
     return render_template(
@@ -3187,6 +3208,7 @@ def campaign_builder():
         selected_pg_week_start=selected_pg_week_start,
         selected_campaign_start=selected_campaign_start,
         selected_campaign_end=selected_campaign_end,
+        selected_campaign_name=selected_campaign_name,
         selected_total_tasks=selected_total_tasks,
         selected_times_per_week=selected_times_per_week,
         selected_sales_plays=selected_sales_plays
@@ -3285,6 +3307,14 @@ def edit_outreach(outreach_id):
         FROM user_profile
         WHERE id = 1
     """).fetchone()
+    existing_campaigns = connection.execute("""
+        SELECT DISTINCT campaign
+        FROM outreach
+        WHERE campaign IS NOT NULL
+          AND campaign != ''
+        ORDER BY campaign
+    """).fetchall()
+    campaign_options = sorted(row["campaign"] for row in existing_campaigns if row["campaign"])
 
     if request.method == "POST":
         new_values = {
@@ -3310,19 +3340,19 @@ def edit_outreach(outreach_id):
         labels = {
             "fy": "FY",
             "quarter": "Quarter",
-            "campaign": "Campaign",
+            "campaign": "Campaign name",
             "sales_play": "Sales play",
             "account_id": "Account",
             "contact_id": "Contact",
             "activity_type": "Activity type",
-            "activity_date": "Activity date",
-            "activity_time": "Activity time",
+            "activity_date": "Activity start date",
+            "activity_time": "Activity start time",
             "subject": "Subject",
             "notes": "Notes",
             "outcome": "Outcome",
             "next_action": "Next action",
-            "next_action_date": "Next action date",
-            "next_action_time": "Next action time",
+            "next_action_date": "Activity due date",
+            "next_action_time": "Activity due time",
             "task_status": "Task status",
             "assigned_to": "Assigned to"
         }
@@ -3393,7 +3423,8 @@ def edit_outreach(outreach_id):
         outreach_item=outreach_item,
         accounts=accounts,
         contacts=contacts,
-        profile=profile
+        profile=profile,
+        campaign_options=campaign_options
     )
 
 
@@ -3890,7 +3921,7 @@ def build_pg_bible_report_from_db(connection):
         totals = weekly_totals[week_key]
         is_meeting_booked = row["outcome"] == "Meeting Booked"
         is_pipeline_outcome = row["outcome"] in ("Meeting Booked", "Positive Response", "Referral Made")
-        if row["campaign"] == "VITO":
+        if row["activity_type"] == "VITO" or row["campaign"] == "VITO":
             totals["vitos_sent"] += 1
             if row["outcome"] != "No Response Yet":
                 totals["vitos_chased"] += 1
@@ -4739,10 +4770,10 @@ def export_outreach():
     writer.writerow([
         "FY",
         "Quarter",
-        "Campaign",
+        "Campaign Name",
         "Sales Play",
-        "Activity Date",
-        "Activity Time",
+        "Activity Start Date",
+        "Activity Start Time",
         "Account",
         "Account Tier",
         "Contact",
@@ -4751,8 +4782,8 @@ def export_outreach():
         "Notes",
         "Outcome",
         "Next Action",
-        "Next Action Date",
-        "Next Action Time"
+        "Activity Due Date",
+        "Activity Due Time"
     ])
 
     for row in outreach_records:

@@ -131,6 +131,35 @@ input[type="submit"]:hover {
     align-items: start;
 }
 
+.compact-filter-card {
+    padding: 16px;
+}
+
+.compact-filter-form {
+    gap: 12px;
+}
+
+.compact-filter-grid {
+    grid-template-columns: repeat(5, minmax(130px, 1fr));
+    gap: 12px;
+}
+
+.compact-filter-card label {
+    font-size: 12px;
+    margin-bottom: 4px;
+}
+
+.compact-filter-card input,
+.compact-filter-card select {
+    min-height: 36px;
+    padding: 8px 10px;
+    font-size: 13px;
+}
+
+.compact-filter-card .form-actions {
+    margin-top: 2px;
+}
+
 .notes-grid {
     margin-top: 20px;
 }
@@ -976,24 +1005,38 @@ a:hover {
     line-height: 1.4;
 }
 
-.outreach-activity-col {
-    width: 15%;
+.outreach-date-col {
+    width: 17%;
 }
 
 .outreach-account-col {
-    width: 21%;
+    width: 20%;
 }
 
 .outreach-campaign-col {
     width: 22%;
 }
 
-.outreach-outcome-col {
-    width: 16%;
+.outreach-activity-col {
+    width: 20%;
 }
 
 .outreach-next-col {
-    width: 23%;
+    width: 21%;
+}
+
+.date-stack-label {
+    display: block;
+    margin-top: 8px;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.date-stack-label:first-child {
+    margin-top: 0;
 }
 
 .outreach-main-row td {
@@ -2520,7 +2563,7 @@ body {
     }
 
     .outreach-main-row td:nth-child(2)::before {
-        content: "Activity Date / Time";
+        content: "Activity Start / Due";
     }
 
     .outreach-main-row td:nth-child(3)::before {
@@ -2528,15 +2571,15 @@ body {
     }
 
     .outreach-main-row td:nth-child(4)::before {
-        content: "Campaign / Sales Play";
+        content: "Campaign Name";
     }
 
     .outreach-main-row td:nth-child(5)::before {
-        content: "Outcome";
+        content: "Activity Type / Subject";
     }
 
     .outreach-main-row td:nth-child(6)::before {
-        content: "Next Action";
+        content: "Outcome / Next Action";
     }
 
     .outreach-detail-row {

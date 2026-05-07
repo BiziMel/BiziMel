@@ -14,13 +14,13 @@
 
     <p><strong>FY:</strong> {{ outreach_item.fy }}</p>
     <p><strong>Quarter:</strong> {{ outreach_item.quarter }}</p>
-    <p><strong>Campaign:</strong> {{ outreach_item.campaign or "Not set" }}</p>
+    <p><strong>Campaign Name:</strong> {{ outreach_item.campaign or "Not set" }}</p>
     <p><strong>Sales Play:</strong> {{ outreach_item.sales_play or "Not set" }}</p>
     <p><strong>Account:</strong> {{ outreach_item.account_name }}</p>
     <p><strong>Contact:</strong> {{ outreach_item.contact_name }}</p>
     <p><strong>Activity Type:</strong> {{ outreach_item.activity_type }}</p>
-    <p><strong>Activity Date:</strong> {{ outreach_item.activity_date }}</p>
-    <p><strong>Activity Time:</strong> {{ outreach_item.activity_time }}</p>
+    <p><strong>Activity Start Date:</strong> {{ outreach_item.activity_date }}</p>
+    <p><strong>Activity Start Time:</strong> {{ outreach_item.activity_time }}</p>
     <p><strong>Outcome:</strong> {{ outreach_item.outcome }}</p>
 </div>
 
@@ -29,8 +29,8 @@
 
     <p><strong>Notes:</strong><br>{{ outreach_item.notes }}</p>
     <p><strong>Next Action:</strong><br>{{ outreach_item.next_action }}</p>
-    <p><strong>Next Action Date:</strong> {{ outreach_item.next_action_date }}</p>
-    <p><strong>Next Action Time:</strong> {{ outreach_item.next_action_time }}</p>
+    <p><strong>Activity Due Date:</strong> {{ outreach_item.next_action_date }}</p>
+    <p><strong>Activity Due Time:</strong> {{ outreach_item.next_action_time }}</p>
 </div>
 
 <div class="detail-row">

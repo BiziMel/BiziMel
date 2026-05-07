@@ -36,15 +36,18 @@
             </div>
 
             <div class="form-group">
-                <label for="campaign">Campaign</label>
-                <select id="campaign" name="campaign">
-                    <option value="">Select campaign</option>
-                    {% for campaign in dropdown_values.outreach_campaigns %}
-                        <option value="{{ campaign }}" {% if outreach_item.campaign == campaign %}selected{% endif %}>
-                            {{ campaign }}
-                        </option>
+                <label for="campaign">Campaign Name</label>
+                <input type="text"
+                       id="campaign"
+                       name="campaign"
+                       list="campaign_options"
+                       value="{{ outreach_item.campaign or '' }}"
+                       placeholder="Campaign name">
+                <datalist id="campaign_options">
+                    {% for campaign in campaign_options %}
+                        <option value="{{ campaign }}">{{ campaign }}</option>
                     {% endfor %}
-                </select>
+                </datalist>
             </div>
 
             <div class="form-group">
@@ -90,12 +93,12 @@
             </div>
 
             <div class="form-group">
-                <label for="activity_date">Activity Date</label>
+                <label for="activity_date">Activity Start Date</label>
                 <input type="date" id="activity_date" name="activity_date" value="{{ outreach_item.activity_date or '' }}" required>
             </div>
 
             <div class="form-group">
-                <label for="activity_time">Activity Time</label>
+                <label for="activity_time">Activity Start Time</label>
                 <input type="time" id="activity_time" name="activity_time" value="{{ outreach_item.activity_time or '' }}">
             </div>
 
@@ -120,12 +123,12 @@
             </div>
 
             <div class="form-group">
-                <label for="next_action_date">Next Action Date</label>
+                <label for="next_action_date">Activity Due Date</label>
                 <input type="date" id="next_action_date" name="next_action_date" value="{{ outreach_item.next_action_date or '' }}">
             </div>
 
             <div class="form-group">
-                <label for="next_action_time">Next Action Time</label>
+                <label for="next_action_time">Activity Due Time</label>
                 <input type="time" id="next_action_time" name="next_action_time" value="{{ outreach_item.next_action_time or '' }}">
             </div>
 
