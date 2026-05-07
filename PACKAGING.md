@@ -1,6 +1,6 @@
 # PipeFlow Packaging
 
-PipeFlow is packaged with PyInstaller. Current release version: `1.0`.
+PipeFlow is packaged with PyInstaller. Current release version: `1.1`.
 
 ## Mac
 
@@ -13,7 +13,7 @@ Run this on a Mac:
 The build creates:
 
 - `release/mac/PipeFlow.app`
-- `release/PipeFlow-mac-v1.0.dmg`
+- `release/PipeFlow-mac-v1.1.dmg`
 
 ## Windows
 
@@ -26,7 +26,7 @@ PyInstaller Windows executables need to be built on Windows. Copy this project t
 The build creates:
 
 - `release\windows\PipeFlow.exe`
-- `release\PipeFlow-windows-v1.0.zip`
+- `release\PipeFlow-windows-v1.1.zip`
 
 ## Data Location
 

@@ -9,6 +9,12 @@ PipeFlow PG Manager Server is the hosted, multi-user version of PipeFlow.
 - Authentication data is stored centrally.
 - Each user gets a private workspace schema for their PipeFlow data.
 - Accounts, contacts, partners, outreach, tasks, reports and PG Bible exports are isolated by user workspace.
+- Outreach Tasks is the combined workspace for outreach, shared account access and task assignment.
+- Account owners can share full account packages with one or more active users. The originator keeps access after sharing.
+- Task assignment is saved only when the user clicks `Save Assignment`.
+- Tasks can only be assigned to users who already have access to the related account.
+- Account owners can revoke sharing permissions. Revoked users have assigned outreach tasks returned to the account owner.
+- Account ownership can be reassigned from the edit account form. On hosted Postgres, the account package is copied to the new owner when the account is saved.
 - Admin users can manage profiles, permissions, broadcasts and password resets.
 
 ## Render Configuration
@@ -99,6 +105,7 @@ The smoke test creates a temporary profile and checks:
 - reports
 - CSV exports
 - PG Bible Excel export
+- release notes and core routing integrity
 
 It does not touch real user data.
 

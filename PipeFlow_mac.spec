@@ -57,9 +57,9 @@ app = BUNDLE(
     name="PipeFlow.app",
     icon="pipeflow.icns",
     bundle_identifier="local.pipeflow.app",
-    version="1.0",
+    version="1.1",
     info_plist={
-        "CFBundleShortVersionString": "1.0",
-        "CFBundleVersion": "1.0",
+        "CFBundleShortVersionString": "1.1",
+        "CFBundleVersion": "1.1",
     },
 )

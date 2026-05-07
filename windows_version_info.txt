@@ -17,11 +17,11 @@ VSVersionInfo(
         [
           StringStruct("CompanyName", "PipeFlow"),
           StringStruct("FileDescription", "PipeFlow sales execution app"),
-          StringStruct("FileVersion", "1.0.0.0"),
+          StringStruct("FileVersion", "1.1.0.0"),
           StringStruct("InternalName", "PipeFlow"),
           StringStruct("OriginalFilename", "PipeFlow.exe"),
           StringStruct("ProductName", "PipeFlow"),
-          StringStruct("ProductVersion", "1.0.0.0")
+          StringStruct("ProductVersion", "1.1.0.0")
         ],
       )
     ]),

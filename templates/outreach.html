@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}Outreach | PipeFlow{% endblock %}
+{% block title %}Outreach Tasks | PipeFlow{% endblock %}
 
 {% block content %}
 
 <div class="page-header">
     <div>
-        <h1>Outreach</h1>
-        <p>Track prospecting activity, follow-ups and next actions.</p>
+        <h1>Outreach Tasks</h1>
+        <p>Track, filter, share and assign prospecting follow-up tasks from one workspace.</p>
     </div>
 
     <div class="button-group">
@@ -25,9 +25,91 @@
     </div>
 </div>
 
-<div class="form-card compact-filter-card">
-    <form method="GET" action="{{ url_for('outreach') }}" class="pipeflow-form compact-filter-form">
-        <div class="form-grid compact-filter-grid">
+{% if message %}
+    <div class="alert-success">{{ message }}</div>
+{% endif %}
+{% if error %}
+    <div class="alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="outreach-control-grid">
+    <div class="form-card compact-filter-card">
+        <div class="section-header">
+            <div>
+                <h2>Share Full Account</h2>
+                <p>Copy an account, contacts, outreach tasks and account details to one or more users.</p>
+            </div>
+        </div>
+
+        <form method="POST" action="{{ url_for('share_account_from_team_outreach') }}" class="pipeflow-form compact-filter-form">
+            <input type="hidden" name="return_to" value="{{ url_for('outreach') }}">
+            <div class="form-grid compact-filter-grid two-column-control-grid">
+                <div class="form-group">
+                    <label for="share_account_id">Account</label>
+                    <select id="share_account_id" name="account_id" required>
+                        <option value="">Select account</option>
+                        {% for account in accounts %}
+                            <option value="{{ account.id }}">{{ account.account_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Share With</label>
+                    <details class="checkbox-dropdown compact-checkbox-dropdown">
+                        <summary>Select users</summary>
+                        <div class="checkbox-dropdown-panel">
+                        {% for assignable_user in assignable_users %}
+                            {% if current_user and assignable_user.id != current_user["id"] %}
+                                <label class="checkbox-row">
+                                    <input type="checkbox" name="target_user_ids" value="{{ assignable_user.id }}">
+                                    <span>{{ assignable_user.full_name }}</span>
+                                </label>
+                            {% endif %}
+                        {% endfor %}
+                        </div>
+                    </details>
+                    <p class="field-help">Select one or more users, then share.</p>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Share Account</button>
+            </div>
+        </form>
+
+        {% if account_shares %}
+            <div class="sharing-permission-list">
+                <h3>Sharing Permissions</h3>
+                {% for share in account_shares %}
+                    {% if not current_user or not share.owner_user_id or share.owner_user_id|string == current_user["id"]|string %}
+                        <div class="sharing-permission-row">
+                            <div>
+                                <strong>{{ share.account_name }}</strong>
+                                <span>{{ share.full_name or share.email }}</span>
+                            </div>
+                            <form method="POST"
+                                  action="{{ url_for('revoke_account_share_from_outreach', share_id=share.id) }}"
+                                  onsubmit="return confirm('Revoke this account share? Assigned tasks for this user will return to the account owner.');">
+                                <button type="submit" class="btn btn-secondary btn-small">Revoke</button>
+                            </form>
+                        </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+
+    <div class="form-card compact-filter-card">
+        <div class="section-header">
+            <div>
+                <h2>Filter Outreach Tasks</h2>
+                <p>Use filters to focus the task table below.</p>
+            </div>
+        </div>
+
+        <form method="GET" action="{{ url_for('outreach') }}" class="pipeflow-form compact-filter-form">
+            <div class="form-grid compact-filter-grid">
 
             <div class="form-group">
                 <label for="fy">FY</label>
@@ -77,22 +159,34 @@
             </div>
 
             <div class="form-group">
-                <label for="task_status">Status</label>
-                <select id="task_status" name="task_status" multiple size="4">
-                    <option value="All Open" {% if "All Open" in selected_statuses %}selected{% endif %}>All Open</option>
-                    {% for status in dropdown_values.task_statuses %}
-                        <option value="{{ status }}" {% if status in selected_statuses %}selected{% endif %}>{{ status }}</option>
-                    {% endfor %}
-                </select>
+                <label>Status</label>
+                <details class="checkbox-dropdown compact-checkbox-dropdown status-filter-dropdown" open>
+                    <summary>{{ selected_statuses | join(", ") }}</summary>
+                    <div class="checkbox-dropdown-panel">
+                        {% for status_filter in ["All Open", "All Closed", "All"] %}
+                            <label class="checkbox-row">
+                                <input type="checkbox" name="task_status" value="{{ status_filter }}" {% if status_filter in selected_statuses %}checked{% endif %}>
+                                <span>{{ status_filter }}</span>
+                            </label>
+                        {% endfor %}
+                        {% for status in dropdown_values.task_statuses %}
+                            <label class="checkbox-row">
+                                <input type="checkbox" name="task_status" value="{{ status }}" {% if status in selected_statuses %}checked{% endif %}>
+                                <span>{{ status }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                </details>
             </div>
 
-        </div>
+            </div>
 
-        <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Apply Filters</button>
-            <a href="{{ url_for('outreach') }}" class="btn btn-secondary">Clear Filters</a>
-        </div>
-    </form>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Apply Filters</button>
+                <a href="{{ url_for('outreach') }}" class="btn btn-secondary">Clear Filters</a>
+            </div>
+        </form>
+    </div>
 </div>
 
 <div class="form-card">
@@ -237,6 +331,25 @@
                                     <div>
                                         <span>Campaign Cadence</span>
                                         <strong>{{ item.campaign_total_tasks or "-" }} tasks · {{ item.campaign_tasks_per_week or "-" }} / week</strong>
+                                    </div>
+                                    <div>
+                                        <span>Assigned To</span>
+                                        <form method="POST" action="{{ url_for('reassign_team_outreach') }}" class="inline-form">
+                                            <input type="hidden" name="return_to" value="{{ url_for('outreach') }}">
+                                            <input type="hidden" name="workspace_schema" value="{{ item.workspace_schema }}">
+                                            <input type="hidden" name="outreach_id" value="{{ item.id }}">
+                                            <div class="assignment-save-control">
+                                            <select name="assigned_to_user_id">
+                                                <option value="">Unassigned</option>
+                                                {% for assignable_user in assignable_users %}
+                                                    <option value="{{ assignable_user.id }}" {% if item.assigned_to == assignable_user.full_name %}selected{% endif %}>
+                                                        {{ assignable_user.full_name }}
+                                                    </option>
+                                                {% endfor %}
+                                            </select>
+                                            <button type="submit" class="btn btn-primary btn-small">Save Assignment</button>
+                                            </div>
+                                        </form>
                                     </div>
                                 </div>
                             </td>

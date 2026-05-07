@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}User Guide | PipeFlow PG Manager{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>User Guide</h1>
+        <p>Practical guidance for using PipeFlow PG Manager to manage pipeline generation activity.</p>
+    </div>
+    {% if selected_section %}
+        <a href="{{ url_for('user_guide') }}" class="btn btn-secondary">All Guide Topics</a>
+    {% endif %}
+</div>
+
+{% if selected_section %}
+    <div class="guide-layout">
+        <aside class="guide-sidebar form-card">
+            <h2>Topics</h2>
+            <nav class="guide-topic-list">
+                {% for section in guide_sections %}
+                    <a href="{{ url_for('user_guide_section', section_slug=section.slug) }}"
+                       class="{% if section.slug == selected_section.slug %}active{% endif %}">
+                        {{ section.title }}
+                    </a>
+                {% endfor %}
+            </nav>
+        </aside>
+
+        <article class="form-card guide-article">
+            <span class="status-pill">User Guide</span>
+            <h2>{{ selected_section.title }}</h2>
+            <p class="guide-summary">{{ selected_section.summary }}</p>
+
+            <section>
+                <h3>How To Use This</h3>
+                <ol class="guide-steps">
+                    {% for step in selected_section.steps %}
+                        <li>{{ step }}</li>
+                    {% endfor %}
+                </ol>
+            </section>
+
+            <section>
+                <h3>Good To Know</h3>
+                <ul class="guide-tips">
+                    {% for tip in selected_section.tips %}
+                        <li>{{ tip }}</li>
+                    {% endfor %}
+                </ul>
+            </section>
+        </article>
+    </div>
+{% else %}
+    <div class="form-card guide-intro-card">
+        <h2>Choose A Topic</h2>
+        <p>Use these guide pages as a quick reference while working through accounts, contacts, outreach, shared tasks, reporting and administration.</p>
+    </div>
+
+    <div class="guide-topic-grid">
+        {% for section in guide_sections %}
+            <article class="report-card guide-topic-card">
+                <h3>{{ section.title }}</h3>
+                <p>{{ section.summary }}</p>
+                <a href="{{ url_for('user_guide_section', section_slug=section.slug) }}" class="btn btn-primary">
+                    Open Guide
+                </a>
+            </article>
+        {% endfor %}
+    </div>
+{% endif %}
+
+{% endblock %}

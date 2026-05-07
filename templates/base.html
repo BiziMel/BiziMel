@@ -12,6 +12,7 @@
 <body>
 
     <header class="header-stack">
+        <div class="header-top-row">
         <div class="app-brand">
             <img src="{{ url_for('static', filename='pipeflow.png') }}"
                  alt="PipeFlow Logo"
@@ -25,10 +26,12 @@
             </div>
         </div>
 
+        <a href="{{ url_for('user_guide') }}" class="btn btn-secondary user-guide-link">User Guide</a>
+        </div>
+
     <nav class="button-group nav-stack">
     <a href="/" class="btn btn-primary">Dashboard</a>
-    <a href="/outreach" class="btn btn-primary">Outreach</a>
-    <a href="/team-outreach" class="btn btn-primary">Shared Outreach</a>
+    <a href="/outreach" class="btn btn-primary">Outreach Tasks</a>
     <a href="/accounts" class="btn btn-primary">Accounts</a>
     <a href="/contacts" class="btn btn-primary">Contacts</a>
     <a href="/partners" class="btn btn-primary">Partners</a>

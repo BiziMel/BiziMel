@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-version="1.0"
+version="1.1"
 export PYINSTALLER_CONFIG_DIR="${PWD}/release/pyinstaller-cache"
 mkdir -p "${PYINSTALLER_CONFIG_DIR}"
 

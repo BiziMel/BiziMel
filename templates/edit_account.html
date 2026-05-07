@@ -47,6 +47,16 @@
     <input type="number" name="pipeline_target" step="0.01" min="0"
            value="{{ '%.2f'|format(account['pipeline_target']|float) if account['pipeline_target'] else '' }}">
 
+    <label>Account Owner</label>
+    <select name="owner_user_id">
+        {% for assignable_user in assignable_users %}
+            <option value="{{ assignable_user.id }}" {% if owner.owner_user_id and assignable_user.id|string == owner.owner_user_id|string %}selected{% endif %}>
+                {{ assignable_user.full_name }}{% if assignable_user.email %} ({{ assignable_user.email }}){% endif %}
+            </option>
+        {% endfor %}
+    </select>
+    <p class="field-help">Changing owner transfers account ownership rights when you save the account.</p>
+
     <label>Notes</label>
     <textarea name="notes">{{ account['notes'] }}</textarea>
 

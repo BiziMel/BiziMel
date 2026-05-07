@@ -18,23 +18,29 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "1.1"
 APP_RELEASE_DATE = "2026-05-07"
-APP_BUILD = "2026-05-07-v1.1-shared-outreach-assignment-group-colours-v1"
+APP_BUILD = "2026-05-07-v1.1-account-sharing-task-assignment-v1"
 
 RELEASE_NOTES = [
     {
         "version": "1.1",
         "release_date": "2026-05-07",
-        "title": "Shared Outreach assignment and grouped table clarity",
+        "title": "Outreach ownership, sharing and task assignment controls",
         "new": [],
         "enhanced": [
+            "Enhanced Outreach Tasks so task-level reassignment now requires an explicit Save Assignment button before the database is updated.",
+            "Enhanced account collaboration so the account originator keeps visibility when an account package is shared with other users.",
+            "Enhanced account sharing rules so tasks can only be assigned to users who already have access to the related account.",
+            "Enhanced account ownership so each account records an owner by default and the edit account form can transfer ownership to another active user.",
+            "Enhanced sharing management so account owners can revoke shared access and assigned outreach tasks are returned to the account owner.",
+            "Enhanced task responsibility reporting so SLA-style task measures are grouped by assigned user.",
+            "Enhanced Outreach filters with a compact status menu for All Open, All Closed, All and individual statuses including Cancelled.",
+            "Enhanced Outreach sharing controls so account sharing fields are smaller and easier to scan.",
+            "Enhanced the User Guide so account ownership, sharing, assignment and status filtering instructions reflect the current workflow.",
             "Improved grouped table colour hierarchy so top-level groups use the darkest shade, nested groups step down progressively and detail rows remain light.",
             "Improved Release Notes ordering so the latest release always appears first.",
             "Improved profile audit entries so profile changes display clear field labels in the audit trail.",
         ],
-        "fixed": [
-            "Fixed Shared Outreach assignment and account-share dropdowns so all active users are available by full name in the only approved assignment location.",
-            "Fixed account sharing so a full account can be assigned to multiple selected users in one action.",
-        ],
+        "fixed": [],
     },
     {
         "version": "1.0",
@@ -85,6 +91,200 @@ RELEASE_NOTES = [
     }
 ]
 
+USER_GUIDE_SECTIONS = [
+    {
+        "slug": "getting-started",
+        "title": "Getting Started",
+        "summary": "Set up your profile, understand navigation and get your first workspace ready.",
+        "steps": [
+            "Register or sign in with your PipeFlow profile.",
+            "Open Profile and confirm your full name, team, job title and working hours.",
+            "Add any non-working date blocks so generated campaigns avoid those days.",
+            "Use the top navigation to move between Dashboard, Outreach Tasks, Accounts, Contacts, Partners, Reports and Profile.",
+        ],
+        "tips": [
+            "Your workspace data is private unless you explicitly share an account through Outreach Tasks.",
+            "Use the global search field when you know the account, contact, partner or outreach text you are looking for.",
+        ],
+    },
+    {
+        "slug": "dashboard",
+        "title": "Dashboard",
+        "summary": "Use the dashboard as your weekly pipeline execution command centre.",
+        "steps": [
+            "Review the command centre metrics for this week.",
+            "Use the pipeline target card to see total PG target ACV across your accounts.",
+            "Work active outreach tasks directly from the dashboard task table.",
+            "Use Execution Insights to decide which account, campaign or sales play needs attention next.",
+        ],
+        "tips": [
+            "Untouched accounts are accounts with no active campaign or outreach tasks.",
+            "Closed, completed and cancelled work is removed from active execution views by default.",
+        ],
+    },
+    {
+        "slug": "accounts",
+        "title": "Accounts",
+        "summary": "Create account records that drive pipeline tracking, contact mapping and PG Bible output.",
+        "steps": [
+            "Add an account with account name, business organisation, industry, geography and website.",
+            "Set Account Tier to 1, 2 or 3 for prioritisation.",
+            "Set PG Bible Order when the account must appear in a specific sequence in exports.",
+            "Enter Pipeline Target USD ACV so the Dashboard can calculate total PG target value.",
+            "Review or reassign the Account Owner on the edit account form when ownership changes.",
+            "Open an account record to review contacts, partner involvement, outreach history and timeline entries.",
+        ],
+        "tips": [
+            "Use business organisation to distinguish large accounts with multiple internal groups.",
+            "Keep PG Bible order numeric and unique for your most important accounts.",
+        ],
+    },
+    {
+        "slug": "contacts",
+        "title": "Contacts",
+        "summary": "Capture stakeholder detail for account coverage and campaign targeting.",
+        "steps": [
+            "Add contacts from the Contacts page or from an account context.",
+            "Select the account before entering stakeholder details.",
+            "Capture job title, organisation, relationship, responsibilities and personal context where known.",
+            "Use contact data to make campaign recommendations more accurate over time.",
+        ],
+        "tips": [
+            "Accounts must have at least one contact before Campaign Builder can generate a campaign.",
+            "Richer contact notes improve future sales play recommendations.",
+        ],
+    },
+    {
+        "slug": "outreach",
+        "title": "Outreach Tasks",
+        "summary": "Track campaign touchpoints, task status, outcomes, account sharing, assignment and next activity updates.",
+        "steps": [
+            "Use Add Outreach for one-off activity or Campaign Builder for generated sequences.",
+            "Use the Share Full Account panel to copy an account package to one or more users and record their access.",
+            "Group outreach by account and campaign to understand execution context.",
+            "Use the Assigned To dropdown in each row and click Save Assignment to commit task ownership.",
+            "Use the compact status filter to show All Open, All Closed, All or specific statuses.",
+            "Add an Activity Update before closing or completing an outreach task.",
+            "Use Complete and Create Follow-on when the current task is done but another task is needed.",
+        ],
+        "tips": [
+            "The due date is the Activity Due Date, based on the next action date.",
+            "Tasks can only be assigned to users who have access to the related account.",
+            "Closed, completed and cancelled outreach is hidden unless you explicitly filter for it.",
+        ],
+    },
+    {
+        "slug": "campaign-builder",
+        "title": "Campaign Builder",
+        "summary": "Generate four-week outreach campaigns from a single sales play.",
+        "steps": [
+            "Choose an account that already has contacts.",
+            "Select one or more contacts for the campaign.",
+            "Enter one sales play only.",
+            "Set PG Week, campaign start and campaign end dates.",
+            "Set the total outreach task quantity and how many times per week activities should occur.",
+            "Generate the campaign to create outreach tasks across the selected contacts.",
+        ],
+        "tips": [
+            "Generated campaigns avoid weekends and your configured non-working dates.",
+            "Tasks are placed inside your working hours and avoid duplicate time slots where possible.",
+        ],
+    },
+    {
+        "slug": "shared-outreach",
+        "title": "Sharing and Assignment",
+        "summary": "Share full accounts and reassign outreach tasks from the Outreach Tasks page while preserving privacy.",
+        "steps": [
+            "Open Outreach Tasks from the top navigation.",
+            "Use Share Full Account to copy an account, contacts, outreach tasks and account details to one or more users.",
+            "Use Sharing Permissions to revoke access when a user no longer needs the account.",
+            "Use the Assigned To dropdown and Save Assignment button in the task table to reassign work.",
+            "Review active follow-up tasks grouped by customer and campaign.",
+        ],
+        "tips": [
+            "Other users' full names are only displayed in Outreach Tasks assignment and share dropdowns.",
+            "Sharing copies the full account package into the selected user's workspace while the originator retains their own access.",
+            "Revoking an account share moves any tasks assigned to that user back to the account owner.",
+        ],
+    },
+    {
+        "slug": "partners",
+        "title": "Partners",
+        "summary": "Track partner organisations, partner contacts and account involvement.",
+        "steps": [
+            "Create partner organisations with type, location, website, managers and notes.",
+            "Add partner contacts who work for the partner organisation.",
+            "Map partner contacts and partner involvement to accounts where they help progress opportunities.",
+            "Review partner metrics and account links from the partner record.",
+        ],
+        "tips": [
+            "Partner contacts are separate from account contacts and use partner-specific role fields.",
+            "Use partner notes to capture channel context and next actions.",
+        ],
+    },
+    {
+        "slug": "reports",
+        "title": "Reports and PG Bible",
+        "summary": "Review execution data and export account, contact, outreach, task and PG Bible outputs.",
+        "steps": [
+            "Open Reports from the top navigation.",
+            "Use Account Reports to review account coverage and target values.",
+            "Use Contact Reports to review stakeholder coverage.",
+            "Use Outreach and Task Reports to review activity volume, outcomes, due dates and ownership.",
+            "Export PG Bible when you need the formatted workbook output.",
+        ],
+        "tips": [
+            "Reports reflect the same fields used across account, contact, outreach and task views.",
+            "PG Bible uses account target and ordering fields configured in the account form.",
+        ],
+    },
+    {
+        "slug": "profile",
+        "title": "Profile and Scheduling",
+        "summary": "Configure user details, working hours and non-working dates.",
+        "steps": [
+            "Set full name, team and job title.",
+            "Set work day start and end times.",
+            "Add multiple non-working date blocks for holidays, travel or unavailable periods.",
+            "Delete outdated non-working blocks when they no longer apply.",
+        ],
+        "tips": [
+            "Saturday and Sunday are non-working by default for auto-scheduling.",
+            "Manual scheduling can still override warnings for non-working dates or times.",
+        ],
+    },
+    {
+        "slug": "admin",
+        "title": "Admin",
+        "summary": "Manage users, permissions and broadcasts when signed in as an administrator.",
+        "steps": [
+            "Open Admin from the top navigation when available.",
+            "Review user profiles and update role, team or email when required.",
+            "Deactivate users who should no longer access PipeFlow.",
+            "Create broadcast messages with start and stop times for login and dashboard announcements.",
+        ],
+        "tips": [
+            "Admin actions are recorded in the admin audit trail.",
+            "Only admins can access Admin and Audit links.",
+        ],
+    },
+    {
+        "slug": "audit-release-notes",
+        "title": "Audit and Release Notes",
+        "summary": "Review change history and understand what has changed between releases.",
+        "steps": [
+            "Open Audit as an admin to review structured workspace changes.",
+            "Review date/time, user, action, record, field, old value and new value.",
+            "Open Release Notes to see changes grouped by version.",
+            "Use the accordion layout to keep older releases collapsed while the latest release stays open.",
+        ],
+        "tips": [
+            "Release Notes always display latest to earliest.",
+            "Profile changes use readable field labels in the audit trail.",
+        ],
+    },
+]
+
 
 for vendor_base in (
     Path(getattr(sys, "_MEIPASS", Path(__file__).parent)),
@@ -130,7 +330,7 @@ def inject_dropdown_values():
 
 @app.before_request
 def require_login_and_prepare_database():
-    public_endpoints = {"login", "register", "forgot_password", "reset_password", "release_notes", "storage_health", "static"}
+    public_endpoints = {"login", "register", "forgot_password", "reset_password", "release_notes", "user_guide", "user_guide_section", "storage_health", "static"}
     if request.endpoint in public_endpoints:
         return None
 
@@ -186,6 +386,31 @@ def release_notes():
         release_notes=sorted_release_notes,
         current_version=APP_VERSION,
         current_release_date=APP_RELEASE_DATE,
+    )
+
+
+@app.route("/user-guide")
+def user_guide():
+    return render_template(
+        "user_guide.html",
+        guide_sections=USER_GUIDE_SECTIONS,
+        selected_section=None,
+    )
+
+
+@app.route("/user-guide/<section_slug>")
+def user_guide_section(section_slug):
+    selected_section = None
+    selected_section = next(
+        (section for section in USER_GUIDE_SECTIONS if section["slug"] == section_slug),
+        None
+    )
+    if not selected_section:
+        return redirect(url_for("user_guide"))
+    return render_template(
+        "user_guide.html",
+        guide_sections=USER_GUIDE_SECTIONS,
+        selected_section=selected_section,
     )
 
 
@@ -2472,10 +2697,11 @@ def add_account():
     custom_fields = account_custom_field_payload(active_only=True)
     if request.method == "POST":
         connection = get_db_connection()
+        owner = current_user_owner_payload()
         cursor = connection.execute("""
             INSERT INTO accounts
-            (account_name, pg_bible_order, account_tier, industry, business_unit, country, city, website, pipeline_target, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (account_name, pg_bible_order, account_tier, industry, business_unit, country, city, website, pipeline_target, owner_user_id, owner_name, owner_email, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             request.form.get("account_name"),
             request.form.get("pg_bible_order") or None,
@@ -2486,6 +2712,9 @@ def add_account():
             request.form.get("city"),
             request.form.get("website"),
             request.form.get("pipeline_target"),
+            owner["owner_user_id"],
+            owner["owner_name"],
+            owner["owner_email"],
             request.form.get("notes")
         ))
         account_id = cursor.lastrowid
@@ -2499,6 +2728,7 @@ def add_account():
             "city": request.form.get("city"),
             "website": request.form.get("website"),
             "pipeline_target": request.form.get("pipeline_target"),
+            "owner_name": owner["owner_name"],
             "notes": request.form.get("notes"),
         })
         save_account_custom_values(connection, account_id, custom_fields, request.form)
@@ -2859,8 +3089,22 @@ def edit_account(account_id):
             "city": "City",
             "website": "Website",
             "pipeline_target": "Pipeline target",
+            "owner_user_id": "Account owner",
+            "owner_name": "Account owner name",
+            "owner_email": "Account owner email",
             "notes": "Notes"
         }
+        previous_owner_id = account["owner_user_id"] if "owner_user_id" in account.keys() else None
+        selected_owner = assignable_user_by_id(request.form.get("owner_user_id"))
+        if selected_owner:
+            new_values["owner_user_id"] = selected_owner["id"]
+            new_values["owner_name"] = selected_owner["full_name"]
+            new_values["owner_email"] = selected_owner["email"]
+        else:
+            existing_owner = account_owner_payload(account)
+            new_values["owner_user_id"] = existing_owner["owner_user_id"]
+            new_values["owner_name"] = existing_owner["owner_name"]
+            new_values["owner_email"] = existing_owner["owner_email"]
 
         changes = build_change_log(account, new_values, labels)
         changes.extend(build_custom_field_changes(custom_fields, custom_values, request.form))
@@ -2876,6 +3120,9 @@ def edit_account(account_id):
                 city = ?,
                 website = ?,
                 pipeline_target = ?,
+                owner_user_id = ?,
+                owner_name = ?,
+                owner_email = ?,
                 notes = ?,
                 last_updated = CURRENT_TIMESTAMP
             WHERE id = ?
@@ -2889,6 +3136,9 @@ def edit_account(account_id):
             new_values["city"],
             new_values["website"],
             new_values["pipeline_target"],
+            new_values["owner_user_id"],
+            new_values["owner_name"],
+            new_values["owner_email"],
             new_values["notes"],
             account_id
         ))
@@ -2906,6 +3156,25 @@ def edit_account(account_id):
             )
 
         connection.commit()
+
+        if selected_owner and str(previous_owner_id or "") != str(selected_owner["id"]):
+            source_schema = current_user_schema() if using_postgres() else ""
+            if using_postgres() and selected_owner["workspace_schema"]:
+                share_full_account_to_member(
+                    source_schema,
+                    account_id,
+                    selected_owner,
+                    current_user()["full_name"] if current_user() else "",
+                )
+            upsert_account_share(connection, account_id, selected_owner)
+            add_timeline_entry(
+                connection,
+                "account",
+                account_id,
+                "Account Ownership Reassigned",
+                f"Account ownership reassigned to {selected_owner['full_name']}."
+            )
+            connection.commit()
         connection.close()
 
         return redirect(url_for("view_account", account_id=account_id))
@@ -2915,7 +3184,9 @@ def edit_account(account_id):
         "edit_account.html",
         account=account,
         custom_fields=custom_fields,
-        custom_values=custom_values
+        custom_values=custom_values,
+        assignable_users=list_assignable_users(),
+        owner=account_owner_payload(account)
     )
 
 
@@ -3227,6 +3498,7 @@ def bulk_delete_contacts():
 
 @app.route("/outreach")
 def outreach():
+    user = current_user()
     fy_filter = request.args.get("fy")
     quarter_filter = request.args.get("quarter")
     campaign_filter = request.args.get("campaign")
@@ -3235,6 +3507,7 @@ def outreach():
     selected_statuses = request.args.getlist("task_status")
     if not selected_statuses:
         selected_statuses = ["All Open"]
+    closed_statuses = ["Closed", "Completed", "Cancelled"]
 
     connection = get_db_connection()
 
@@ -3268,8 +3541,16 @@ def outreach():
         query += " AND outreach.outcome = ?"
         params.append(outcome_filter)
 
-    if "All Open" in selected_statuses:
-        query += " AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')"
+    if "All" in selected_statuses:
+        pass
+    elif "All Closed" in selected_statuses:
+        placeholders = ",".join("?" for _ in closed_statuses)
+        query += f" AND COALESCE(outreach.task_status, 'Not Started') IN ({placeholders})"
+        params.extend(closed_statuses)
+    elif "All Open" in selected_statuses:
+        placeholders = ",".join("?" for _ in closed_statuses)
+        query += f" AND COALESCE(outreach.task_status, '') NOT IN ({placeholders})"
+        params.extend(closed_statuses)
     elif selected_statuses:
         placeholders = ",".join("?" for _ in selected_statuses)
         query += f" AND COALESCE(outreach.task_status, 'Not Started') IN ({placeholders})"
@@ -3289,11 +3570,26 @@ def outreach():
             outreach.id DESC
     """
 
-    outreach_records = connection.execute(query, params).fetchall()
+    workspace_schema = current_user_schema() if using_postgres() else ""
+    outreach_records = []
+    for row in connection.execute(query, params).fetchall():
+        row_dict = dict(row)
+        row_dict["workspace_schema"] = workspace_schema
+        outreach_records.append(row_dict)
 
     accounts = connection.execute(
         "SELECT * FROM accounts ORDER BY account_name"
     ).fetchall()
+    account_shares = connection.execute("""
+        SELECT
+            account_shared_users.*,
+            accounts.account_name,
+            accounts.owner_user_id,
+            accounts.owner_name
+        FROM account_shared_users
+        JOIN accounts ON accounts.id = account_shared_users.account_id
+        ORDER BY accounts.account_name, account_shared_users.full_name
+    """).fetchall()
     existing_campaigns = connection.execute("""
         SELECT DISTINCT campaign
         FROM outreach
@@ -3309,13 +3605,17 @@ def outreach():
         "outreach.html",
         outreach_records=outreach_records,
         accounts=accounts,
+        account_shares=account_shares,
         campaign_options=campaign_options,
         fy_filter=fy_filter,
         quarter_filter=quarter_filter,
         campaign_filter=campaign_filter,
         account_filter=account_filter,
         outcome_filter=outcome_filter,
-        selected_statuses=selected_statuses
+        selected_statuses=selected_statuses,
+        assignable_users=list_assignable_users(),
+        message=request.args.get("message", ""),
+        error=request.args.get("error", ""),
     )
 
 
@@ -4113,6 +4413,105 @@ def insert_copied_row(connection, table_name, columns, row, overrides=None):
     return cursor.lastrowid
 
 
+def assignable_user_by_id(user_id):
+    if not user_id:
+        return None
+    for assignable_user in list_assignable_users():
+        if str(assignable_user["id"]) == str(user_id):
+            return assignable_user
+    return None
+
+
+def current_user_owner_payload():
+    user = current_user()
+    if not user:
+        return {
+            "owner_user_id": None,
+            "owner_name": "",
+            "owner_email": "",
+        }
+    return {
+        "owner_user_id": user["id"],
+        "owner_name": user["full_name"],
+        "owner_email": user["email"],
+    }
+
+
+def account_owner_payload(account):
+    fallback = current_user_owner_payload()
+    if not account:
+        return fallback
+    return {
+        "owner_user_id": account["owner_user_id"] if "owner_user_id" in account.keys() and account["owner_user_id"] else fallback["owner_user_id"],
+        "owner_name": account["owner_name"] if "owner_name" in account.keys() and account["owner_name"] else fallback["owner_name"],
+        "owner_email": account["owner_email"] if "owner_email" in account.keys() and account["owner_email"] else fallback["owner_email"],
+    }
+
+
+def upsert_account_share(connection, account_id, target_member):
+    existing = connection.execute("""
+        SELECT id
+        FROM account_shared_users
+        WHERE account_id = ?
+          AND user_id = ?
+    """, (account_id, target_member["id"])).fetchone()
+    if existing:
+        connection.execute("""
+            UPDATE account_shared_users
+            SET full_name = ?,
+                email = ?,
+                workspace_schema = ?,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (
+            target_member["full_name"],
+            target_member["email"],
+            target_member["workspace_schema"],
+            existing["id"],
+        ))
+        return existing["id"]
+    cursor = connection.execute("""
+        INSERT INTO account_shared_users (
+            account_id,
+            user_id,
+            full_name,
+            email,
+            workspace_schema
+        )
+        VALUES (?, ?, ?, ?, ?)
+    """, (
+        account_id,
+        target_member["id"],
+        target_member["full_name"],
+        target_member["email"],
+        target_member["workspace_schema"],
+    ))
+    return cursor.lastrowid
+
+
+def account_access_user_ids(connection, account):
+    owner = account_owner_payload(account)
+    allowed_user_ids = set()
+    if owner["owner_user_id"]:
+        allowed_user_ids.add(str(owner["owner_user_id"]))
+    rows = connection.execute("""
+        SELECT user_id
+        FROM account_shared_users
+        WHERE account_id = ?
+    """, (account["id"],)).fetchall()
+    allowed_user_ids.update(str(row["user_id"]) for row in rows if row["user_id"])
+    current = current_user()
+    if current:
+        allowed_user_ids.add(str(current["id"]))
+    return allowed_user_ids
+
+
+def assignee_has_account_access(connection, account, assigned_to_user_id):
+    if not assigned_to_user_id:
+        return True
+    return str(assigned_to_user_id) in account_access_user_ids(connection, account)
+
+
 def share_full_account_to_member(source_schema, account_id, target_member, actor_name):
     restore_schema = session.get("workspace_schema")
     try:
@@ -4154,6 +4553,9 @@ def share_full_account_to_member(source_schema, account_id, target_member, actor
                 city = ?,
                 website = ?,
                 pipeline_target = ?,
+                owner_user_id = ?,
+                owner_name = ?,
+                owner_email = ?,
                 notes = ?,
                 last_updated = CURRENT_TIMESTAMP
             WHERE id = ?
@@ -4166,6 +4568,9 @@ def share_full_account_to_member(source_schema, account_id, target_member, actor
             account["city"],
             account["website"],
             account["pipeline_target"],
+            account["owner_user_id"] if "owner_user_id" in account.keys() else None,
+            account["owner_name"] if "owner_name" in account.keys() else actor_name,
+            account["owner_email"] if "owner_email" in account.keys() else "",
             account["notes"],
             target_account_id,
         ))
@@ -4173,7 +4578,7 @@ def share_full_account_to_member(source_schema, account_id, target_member, actor
         target_account_id = insert_copied_row(
             target_connection,
             "accounts",
-            ["account_name", "pg_bible_order", "account_tier", "industry", "business_unit", "country", "city", "website", "pipeline_target", "notes"],
+            ["account_name", "pg_bible_order", "account_tier", "industry", "business_unit", "country", "city", "website", "pipeline_target", "owner_user_id", "owner_name", "owner_email", "notes"],
             account,
         )
 
@@ -4280,6 +4685,10 @@ def team_page():
 
 @app.route("/team-outreach")
 def team_outreach():
+    return redirect(url_for("outreach"))
+
+
+def legacy_team_outreach_context():
     user = current_user()
     team = active_team_for_user(user)
     members = list_active_team_members(user)
@@ -4356,16 +4765,13 @@ def team_outreach():
         row.get("next_action_time") or "",
     ))
 
-    return render_template(
-        "team_outreach.html",
-        team=team,
-        members=members,
-        assignable_users=assignable_users,
-        outreach_records=rows,
-        current_accounts=current_accounts,
-        message=request.args.get("message", ""),
-        error=request.args.get("error", ""),
-    )
+    return {
+        "team": team,
+        "members": members,
+        "assignable_users": assignable_users,
+        "outreach_records": rows,
+        "current_accounts": current_accounts,
+    }
 
 
 @app.route("/team-outreach/share-account", methods=("POST",))
@@ -4374,8 +4780,9 @@ def share_account_from_team_outreach():
     assignable_users = list_assignable_users()
     target_user_ids = request.form.getlist("target_user_ids")
     account_id = request.form.get("account_id")
+    return_to = request.form.get("return_to") or url_for("outreach")
     if not target_user_ids:
-        return redirect(url_for("team_outreach", error="Select at least one user before sharing the account."))
+        return redirect(url_for("outreach", error="Select at least one user before sharing the account."))
     target_members = [
         member for member in assignable_users
         if str(member["id"]) in target_user_ids
@@ -4383,21 +4790,76 @@ def share_account_from_team_outreach():
            and (not user or str(member["id"]) != str(user["id"]))
     ]
     if not target_members:
-        return redirect(url_for("team_outreach", error="Select at least one valid user other than yourself."))
+        return redirect(url_for("outreach", error="Select at least one valid user other than yourself."))
     source_schema = current_user_schema() if using_postgres() else ""
     errors = []
     shared_count = 0
+    source_connection = get_db_connection()
     for target_member in target_members:
         error = share_full_account_to_member(source_schema, account_id, target_member, user["full_name"] if user else "")
         if error:
             errors.append(error)
         else:
+            upsert_account_share(source_connection, account_id, target_member)
             shared_count += 1
+    if shared_count:
+        add_timeline_entry(
+            source_connection,
+            "account",
+            account_id,
+            "Account Shared",
+            f"Full account shared with {shared_count} user(s)."
+        )
+        source_connection.commit()
+    source_connection.close()
     if errors and not shared_count:
-        return redirect(url_for("team_outreach", error=errors[0]))
+        return redirect(url_for("outreach", error=errors[0]))
     if errors:
-        return redirect(url_for("team_outreach", message=f"Account shared with {shared_count} user(s). Some shares could not be completed."))
-    return redirect(url_for("team_outreach", message=f"Full account shared with {shared_count} user(s)."))
+        return redirect(url_for("outreach", message=f"Account shared with {shared_count} user(s). Some shares could not be completed."))
+    return redirect(url_for("outreach", message=f"Full account shared with {shared_count} user(s)."))
+
+
+@app.route("/team-outreach/account-share/<int:share_id>/revoke", methods=("POST",))
+def revoke_account_share_from_outreach(share_id):
+    user = current_user()
+    connection = get_db_connection()
+    share = connection.execute("""
+        SELECT account_shared_users.*, accounts.account_name, accounts.owner_user_id, accounts.owner_name, accounts.owner_email
+        FROM account_shared_users
+        JOIN accounts ON accounts.id = account_shared_users.account_id
+        WHERE account_shared_users.id = ?
+    """, (share_id,)).fetchone()
+    if not share:
+        connection.close()
+        return redirect(url_for("outreach", error="The selected sharing permission could not be found."))
+
+    owner = account_owner_payload(share)
+    if user and owner["owner_user_id"] and str(owner["owner_user_id"]) != str(user["id"]):
+        connection.close()
+        return redirect(url_for("outreach", error="Only the account owner can revoke account sharing permissions."))
+
+    connection.execute("""
+        UPDATE outreach
+        SET assigned_to = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE account_id = ?
+          AND assigned_to = ?
+    """, (
+        owner["owner_name"],
+        share["account_id"],
+        share["full_name"],
+    ))
+    connection.execute("DELETE FROM account_shared_users WHERE id = ?", (share_id,))
+    add_timeline_entry(
+        connection,
+        "account",
+        share["account_id"],
+        "Account Share Revoked",
+        f"Access revoked for {share['full_name'] or share['email']}. Assigned tasks returned to {owner['owner_name'] or 'the account owner'}."
+    )
+    connection.commit()
+    connection.close()
+    return redirect(url_for("outreach", message="Account sharing permission revoked and assigned tasks returned to the account owner."))
 
 
 @app.route("/team-outreach/reassign", methods=("POST",))
@@ -4406,15 +4868,27 @@ def reassign_team_outreach():
     members = list_active_team_members(user)
     assignable_users = list_assignable_users()
     allowed_schemas = {member["workspace_schema"] for member in members if member["workspace_schema"]}
-    allowed_assignees = {member["full_name"] for member in assignable_users if member["full_name"]}
+    if not using_postgres():
+        allowed_schemas.add("")
+    allowed_user_ids = {str(member["id"]) for member in assignable_users}
     workspace_schema = request.form.get("workspace_schema")
     outreach_id = request.form.get("outreach_id")
-    assigned_to = request.form.get("assigned_to", "")
-    if workspace_schema not in allowed_schemas or (assigned_to and assigned_to not in allowed_assignees):
-        return redirect(url_for("team_outreach"))
+    assigned_to_user_id = request.form.get("assigned_to_user_id", "")
+    assigned_member = assignable_user_by_id(assigned_to_user_id) if assigned_to_user_id else None
+    assigned_to = assigned_member["full_name"] if assigned_member else ""
+    return_to = request.form.get("return_to") or request.referrer or url_for("outreach")
+    if workspace_schema not in allowed_schemas or (assigned_to_user_id and assigned_to_user_id not in allowed_user_ids):
+        return redirect(return_to)
     connection = get_schema_connection(schema=workspace_schema) if using_postgres() else get_db_connection()
     outreach_item = connection.execute("SELECT * FROM outreach WHERE id = ?", (outreach_id,)).fetchone()
     if outreach_item:
+        account = connection.execute("SELECT * FROM accounts WHERE id = ?", (outreach_item["account_id"],)).fetchone()
+        if account and not assignee_has_account_access(connection, account, assigned_to_user_id):
+            connection.close()
+            return redirect(url_for(
+                "outreach",
+                error="The selected assignee does not have access to this account. Share the account first, then assign the task."
+            ))
         connection.execute(
             """
             UPDATE outreach
@@ -4431,7 +4905,7 @@ def reassign_team_outreach():
         })
         connection.commit()
     connection.close()
-    return redirect(url_for("team_outreach"))
+    return redirect(return_to)
 
 
 @app.route("/tasks/<int:outreach_id>/update", methods=("POST",))
@@ -5183,11 +5657,27 @@ def task_reports():
 
     status_totals = {}
     account_totals = {}
+    assignee_totals = {}
     for task in tasks:
         status = normalised_status(task)
         account_name = task["account_name"] or "Unknown"
+        assignee = task["assigned_to"] or "Unassigned"
+        task_date = parse_report_date(task["next_action_date"])
         status_totals[status] = status_totals.get(status, 0) + 1
         account_totals[account_name] = account_totals.get(account_name, 0) + 1
+        if assignee not in assignee_totals:
+            assignee_totals[assignee] = {
+                "assignee": assignee,
+                "active_tasks": 0,
+                "overdue_active_tasks": 0,
+                "closed_tasks": 0,
+            }
+        if is_closed_task_status(status):
+            assignee_totals[assignee]["closed_tasks"] += 1
+        else:
+            assignee_totals[assignee]["active_tasks"] += 1
+            if task_date and task_date < today:
+                assignee_totals[assignee]["overdue_active_tasks"] += 1
 
     tasks_by_status = [
         {"status": status, "total": total}
@@ -5201,6 +5691,10 @@ def task_reports():
     status_chart_data = [item["total"] for item in tasks_by_status]
     account_chart_labels = [item["account_name"] for item in tasks_by_account]
     account_chart_data = [item["total"] for item in tasks_by_account]
+    sla_by_assignee = sorted(
+        assignee_totals.values(),
+        key=lambda item: (-item["overdue_active_tasks"], -item["active_tasks"], item["assignee"]),
+    )
 
     return render_template(
         "task_reports.html",
@@ -5210,6 +5704,7 @@ def task_reports():
         upcoming_tasks=upcoming_tasks,
         tasks_by_status=tasks_by_status,
         tasks_by_account=tasks_by_account,
+        sla_by_assignee=sla_by_assignee,
         accounts=accounts,
         task_statuses=task_statuses,
         assigned_users=assigned_users,

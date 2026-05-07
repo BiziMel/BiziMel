@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-$Version = "1.0"
+$Version = "1.1"
 $env:PYINSTALLER_CONFIG_DIR = Join-Path (Get-Location) "release\pyinstaller-cache"
 New-Item -ItemType Directory -Force -Path $env:PYINSTALLER_CONFIG_DIR | Out-Null
 
