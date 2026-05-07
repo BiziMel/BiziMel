@@ -29,9 +29,11 @@ RELEASE_NOTES = [
         "enhanced": [
             "Improved grouped table colour hierarchy so top-level groups use the darkest shade, nested groups step down progressively and detail rows remain light.",
             "Improved Release Notes ordering so the latest release always appears first.",
+            "Improved profile audit entries so profile changes display clear field labels in the audit trail.",
         ],
         "fixed": [
             "Fixed Shared Outreach assignment and account-share dropdowns so all active users are available by full name in the only approved assignment location.",
+            "Fixed account sharing so a full account can be assigned to multiple selected users in one action.",
         ],
     },
     {
@@ -4370,18 +4372,32 @@ def team_outreach():
 def share_account_from_team_outreach():
     user = current_user()
     assignable_users = list_assignable_users()
-    target_user_id = request.form.get("target_user_id")
+    target_user_ids = request.form.getlist("target_user_ids")
     account_id = request.form.get("account_id")
-    target_member = next((member for member in assignable_users if str(member["id"]) == str(target_user_id)), None)
-    if not target_member or not target_member["workspace_schema"]:
-        return redirect(url_for("team_outreach", error="Select a valid teammate before sharing the account."))
-    if str(target_member["id"]) == str(user["id"]):
-        return redirect(url_for("team_outreach", error="Select another user to share the account with."))
+    if not target_user_ids:
+        return redirect(url_for("team_outreach", error="Select at least one user before sharing the account."))
+    target_members = [
+        member for member in assignable_users
+        if str(member["id"]) in target_user_ids
+           and member["workspace_schema"]
+           and (not user or str(member["id"]) != str(user["id"]))
+    ]
+    if not target_members:
+        return redirect(url_for("team_outreach", error="Select at least one valid user other than yourself."))
     source_schema = current_user_schema() if using_postgres() else ""
-    error = share_full_account_to_member(source_schema, account_id, target_member, user["full_name"] if user else "")
-    if error:
-        return redirect(url_for("team_outreach", error=error))
-    return redirect(url_for("team_outreach", message="Full account shared."))
+    errors = []
+    shared_count = 0
+    for target_member in target_members:
+        error = share_full_account_to_member(source_schema, account_id, target_member, user["full_name"] if user else "")
+        if error:
+            errors.append(error)
+        else:
+            shared_count += 1
+    if errors and not shared_count:
+        return redirect(url_for("team_outreach", error=errors[0]))
+    if errors:
+        return redirect(url_for("team_outreach", message=f"Account shared with {shared_count} user(s). Some shares could not be completed."))
+    return redirect(url_for("team_outreach", message=f"Full account shared with {shared_count} user(s)."))
 
 
 @app.route("/team-outreach/reassign", methods=("POST",))
@@ -4544,6 +4560,29 @@ def profile():
     error = request.args.get("error", "")
 
     if request.method == "POST":
+        existing_profile = connection.execute("""
+            SELECT *
+            FROM user_profile
+            WHERE id = 1
+        """).fetchone()
+        new_values = {
+            "full_name": request.form.get("full_name"),
+            "team": request.form.get("team"),
+            "job_title": request.form.get("job_title"),
+            "work_day_start": request.form.get("work_day_start") or "09:00",
+            "work_day_end": request.form.get("work_day_end") or "17:00",
+            "non_working_start_date": request.form.get("non_working_start_date"),
+            "non_working_end_date": request.form.get("non_working_end_date"),
+        }
+        labels = {
+            "full_name": "Full Name",
+            "team": "Team",
+            "job_title": "Job Title",
+            "work_day_start": "Work Day Start",
+            "work_day_end": "Work Day End",
+            "non_working_start_date": "Legacy Non-Working Start Date",
+            "non_working_end_date": "Legacy Non-Working End Date",
+        }
         connection.execute("""
             UPDATE user_profile
             SET full_name = ?,
@@ -4556,14 +4595,16 @@ def profile():
                 last_updated = CURRENT_TIMESTAMP
             WHERE id = 1
         """, (
-            request.form.get("full_name"),
-            request.form.get("team"),
-            request.form.get("job_title"),
-            request.form.get("work_day_start") or "09:00",
-            request.form.get("work_day_end") or "17:00",
-            request.form.get("non_working_start_date"),
-            request.form.get("non_working_end_date")
+            new_values["full_name"],
+            new_values["team"],
+            new_values["job_title"],
+            new_values["work_day_start"],
+            new_values["work_day_end"],
+            new_values["non_working_start_date"],
+            new_values["non_working_end_date"]
         ))
+        if existing_profile:
+            audit_record_update(connection, "profile", 1, existing_profile, new_values, labels)
 
         connection.commit()
         connection.close()
@@ -4600,10 +4641,17 @@ def add_non_working_block():
     if not start_date:
         return redirect(url_for("profile", error="Non-working start date is required."))
     connection = get_db_connection()
-    connection.execute("""
+    cursor = connection.execute("""
         INSERT INTO non_working_blocks (start_date, end_date, reason)
         VALUES (?, ?, ?)
     """, (start_date, end_date, reason))
+    audit_record_create(connection, "profile", 1, {
+        "non_working_block": f"{start_date} to {end_date}",
+        "non_working_reason": reason,
+    }, {
+        "non_working_block": "Non-Working Date Block",
+        "non_working_reason": "Non-Working Reason",
+    })
     connection.commit()
     connection.close()
     return redirect(url_for("profile", message="Non-working block added."))
@@ -4612,6 +4660,9 @@ def add_non_working_block():
 @app.route("/profile/non-working/<int:block_id>/delete", methods=("POST",))
 def delete_non_working_block(block_id):
     connection = get_db_connection()
+    block = connection.execute("SELECT * FROM non_working_blocks WHERE id = ?", (block_id,)).fetchone()
+    if block:
+        audit_record_delete(connection, "profile", 1, f"Non-working block {block['start_date']} to {block['end_date']}")
     connection.execute("DELETE FROM non_working_blocks WHERE id = ?", (block_id,))
     connection.commit()
     connection.close()
