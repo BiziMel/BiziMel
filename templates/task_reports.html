@@ -118,7 +118,11 @@
             <tbody>
                 {% for task in tasks %}
                     <tr>
-                        <td>{{ task["next_action"] or "Not set" }}</td>
+                        <td>
+                            <a href="{{ url_for('edit_outreach', outreach_id=task['id']) }}" class="record-primary-link">
+                                {{ task["next_action"] or "Not set" }}
+                            </a>
+                        </td>
                         <td>{{ task["next_action_date"] or "Not set" }}</td>
                         <td>{{ task["next_action_time"] or "Not set" }}</td>
                         <td>{{ task["task_status"] or "Not Started" }}</td>

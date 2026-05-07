@@ -58,7 +58,11 @@
             <tbody>
                 {% for contact in contacts %}
                     <tr>
-                        <td>{{ contact["name"] or "Unknown" }}</td>
+                        <td>
+                            <a href="{{ url_for('edit_contact', contact_id=contact['id']) }}" class="record-primary-link">
+                                {{ contact["name"] or "Unknown" }}
+                            </a>
+                        </td>
                         <td>{{ contact["job_title"] or "Not set" }}</td>
                         <td>{{ contact["category"] or "Unknown" }}</td>
                         <td>{{ contact["bmc_relationship"] or "Unknown" }}</td>

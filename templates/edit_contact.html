@@ -12,11 +12,18 @@
     <select id="account_id" name="account_id" required>
         <option value="">Select company / account</option>
         {% for account in accounts %}
-            <option value="{{ account.id }}" {% if contact.account_id == account.id %}selected{% endif %}>
-                {{ account.account_name }}
+            <option value="{{ account.id }}" data-business-unit="{{ account.business_unit or '' }}" {% if contact.account_id == account.id %}selected{% endif %}>
+                {{ account.account_name }}{% if account.business_unit %} - {{ account.business_unit }}{% endif %}
             </option>
         {% endfor %}
     </select>
+
+    <label for="selected_account_business_unit">Account Business Unit / Org</label>
+    <input type="text"
+           id="selected_account_business_unit"
+           value=""
+           placeholder="Select an account to show its business org"
+           readonly>
 
     <label for="category">Category</label>
     <select id="category" name="category" required>
@@ -85,5 +92,21 @@
     </div>
 
 </form>
+
+<script>
+    const accountSelect = document.getElementById("account_id");
+    const businessUnitField = document.getElementById("selected_account_business_unit");
+
+    function updateSelectedBusinessUnit() {
+        if (!accountSelect || !businessUnitField) return;
+        const selectedOption = accountSelect.options[accountSelect.selectedIndex];
+        businessUnitField.value = selectedOption ? selectedOption.dataset.businessUnit || "Business org not set" : "";
+    }
+
+    if (accountSelect) {
+        accountSelect.addEventListener("change", updateSelectedBusinessUnit);
+        updateSelectedBusinessUnit();
+    }
+</script>
 
 {% endblock %}

@@ -158,7 +158,11 @@
             <tbody>
                 {% for item in latest_outreach %}
                     <tr>
-                        <td>{{ item["activity_date"] or "Not set" }}</td>
+                        <td>
+                            <a href="{{ url_for('edit_outreach', outreach_id=item['id']) }}" class="record-primary-link">
+                                {{ item["activity_date"] or "Not set" }}
+                            </a>
+                        </td>
                         <td>{{ item["account_name"] or "Unknown" }}</td>
                         <td>{{ item["contact_name"] or "No contact" }}</td>
                         <td>{{ "Tier " ~ item["account_tier"] if item["account_tier"] else "Not set" }}</td>

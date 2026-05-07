@@ -109,7 +109,6 @@
                     <th>Managers</th>
                     <th>Location</th>
                     <th>Website</th>
-                    <th>Action</th>
                 </tr>
             </thead>
 
@@ -124,7 +123,9 @@
                             {% endif %}
                         </td>
                         <td>
-                            <strong>{{ partner.partner_name }}</strong>
+                            <a href="{{ url_for('view_partner', partner_id=partner.id) }}#partner-details-form" class="record-primary-link">
+                                {{ partner.partner_name }}
+                            </a>
                             <br>
                             <small>{{ partner.notes or "No notes added" }}</small>
                         </td>
@@ -155,12 +156,6 @@
                             {% else %}
                                 <small>Not added</small>
                             {% endif %}
-                        </td>
-
-                        <td>
-                            <a href="{{ url_for('view_partner', partner_id=partner.id) }}" class="btn btn-primary">
-                                View
-                            </a>
                         </td>
                     </tr>
                 {% endfor %}

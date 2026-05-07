@@ -77,7 +77,7 @@ def version_health():
     from db_compat import translate_sql
     sample = "datetime(next_action_date || ' ' || IFNULL(next_action_time, '00:00')) < datetime('now', '-1 hour')"
     lines = [
-        "pipeflow_server_build=2026-05-07-outreach-campaign-activity-rework-v1",
+        "pipeflow_server_build=2026-05-07-primary-field-edit-links-v1",
         f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
         f"translation_check={translate_sql(sample)}",
     ]
@@ -2602,7 +2602,7 @@ def add_account_timeline(account_id):
 def contacts():
     connection = get_db_connection()
     contacts = connection.execute("""
-        SELECT contacts.*, accounts.account_name, accounts.account_tier
+        SELECT contacts.*, accounts.account_name, accounts.account_tier, accounts.business_unit
         FROM contacts
         LEFT JOIN accounts ON contacts.account_id = accounts.id
         ORDER BY contacts.name
@@ -2660,7 +2660,11 @@ def add_contact():
         return redirect(url_for("contacts"))
 
     connection = get_db_connection()
-    accounts = connection.execute("SELECT * FROM accounts ORDER BY account_name").fetchall()
+    accounts = connection.execute("""
+        SELECT *
+        FROM accounts
+        ORDER BY account_name, business_unit
+    """).fetchall()
     connection.close()
 
     return render_template("add_contact.html", accounts=accounts)
@@ -2720,9 +2724,11 @@ def edit_contact(contact_id):
         (contact_id,)
     ).fetchone()
 
-    accounts = connection.execute(
-        "SELECT * FROM accounts ORDER BY account_name"
-    ).fetchall()
+    accounts = connection.execute("""
+        SELECT *
+        FROM accounts
+        ORDER BY account_name, business_unit
+    """).fetchall()
 
     if request.method == "POST":
         new_values = {
@@ -4026,6 +4032,7 @@ def account_reports():
 
     accounts = connection.execute("""
         SELECT
+            id,
             pg_bible_order,
             account_name,
             account_tier,
@@ -4578,6 +4585,7 @@ def contact_reports():
 
     contacts = connection.execute("""
         SELECT
+            contacts.id,
             contacts.name,
             contacts.job_title,
             contacts.category,

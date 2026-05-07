@@ -36,7 +36,6 @@
                 <th>Role</th>
                 <th>Relationship</th>
                 <th>Email</th>
-                <th>Action</th>
             </tr>
         </thead>
 
@@ -47,13 +46,17 @@
                         <input type="checkbox" name="selected_ids" value="{{ contact['id'] }}" form="bulk-delete-contacts-form" aria-label="Select {{ contact['name'] }}">
                     </td>
                     <td>
-                        <strong>{{ contact["name"] or "Unknown" }}</strong>
+                        <a href="{{ url_for('edit_contact', contact_id=contact['id']) }}" class="record-primary-link">
+                            {{ contact["name"] or "Unknown" }}
+                        </a>
                         <br>
                         <small>{{ contact["category"] or "Category not set" }}</small>
                     </td>
 
                     <td>
                         {{ contact["account_name"] or "Unknown account" }}
+                        <br>
+                        <small>{{ contact["business_unit"] or "Business org not set" }}</small>
                     </td>
 
                     <td>
@@ -84,12 +87,6 @@
                         {% else %}
                             <small>Not added</small>
                         {% endif %}
-                    </td>
-
-                    <td>
-                        <a href="{{ url_for('view_contact', contact_id=contact['id']) }}" class="btn btn-primary">
-                            View
-                        </a>
                     </td>
                 </tr>
             {% endfor %}

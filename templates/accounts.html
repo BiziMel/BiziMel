@@ -42,7 +42,6 @@
                 <th>Coverage</th>
                 <th>Location</th>
                 <th>Website</th>
-                <th>Action</th>
             </tr>
         </thead>
 
@@ -59,7 +58,9 @@
                     </td>
 
                     <td>
-                        <strong>{{ account["account_name"] or "Unknown" }}</strong>
+                        <a href="{{ url_for('edit_account', account_id=account['id']) }}" class="record-primary-link">
+                            {{ account["account_name"] or "Unknown" }}
+                        </a>
                         <br>
                         <small>{{ account["business_unit"] or "Business org not set" }}</small>
                         <br>
@@ -115,11 +116,6 @@
                         {% endif %}
                     </td>
 
-                    <td>
-                        <a href="{{ url_for('view_account', account_id=account['id']) }}" class="btn btn-primary">
-                            View
-                        </a>
-                    </td>
                 </tr>
             {% endfor %}
         </tbody>
