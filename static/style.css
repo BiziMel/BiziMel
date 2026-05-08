@@ -1338,20 +1338,33 @@ a:hover {
     line-height: 1.4;
 }
 
-.outreach-date-col {
-    width: 17%;
+.outreach-date-col,
+.outreach-due-col {
+    width: 12%;
+}
+
+.outreach-start-col {
+    width: 11%;
 }
 
 .outreach-account-col {
-    width: 20%;
+    width: 16%;
 }
 
 .outreach-campaign-col {
-    width: 22%;
+    width: 17%;
 }
 
 .outreach-activity-col {
-    width: 20%;
+    width: 18%;
+}
+
+.outreach-assigned-col {
+    width: 18%;
+}
+
+.outreach-action-col {
+    width: 8%;
 }
 
 .outreach-next-col {
@@ -1398,13 +1411,35 @@ a:hover {
 }
 
 .outreach-start-date-block {
-    margin-top: 8px;
     color: #4f5f4f;
     font-size: 12px;
 }
 
+.outreach-start-date-block strong,
+.outreach-start-date-block span {
+    display: block;
+}
+
+.compact-assignment-form {
+    width: 100%;
+}
+
+.compact-assignment-form .assignment-save-control {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+}
+
+.compact-assignment-form select {
+    min-width: 0;
+    width: 100%;
+}
+
+.compact-assignment-form .btn-small {
+    width: 100%;
+}
+
 .outreach-main-row td {
-    border-bottom: 0;
+    border-bottom: 1px solid #dbe4f0;
 }
 
 .outreach-account-group-row td {
@@ -3425,15 +3460,27 @@ body {
     }
 
     .outreach-main-row td:nth-child(3)::before {
-        content: "Account / Contact";
+        content: "Activity Start Date";
     }
 
     .outreach-main-row td:nth-child(4)::before {
-        content: "Sales Play / Initiative";
+        content: "Account / Contact";
     }
 
     .outreach-main-row td:nth-child(5)::before {
+        content: "Sales Play / Initiative";
+    }
+
+    .outreach-main-row td:nth-child(6)::before {
         content: "Activity Type / Subject";
+    }
+
+    .outreach-main-row td:nth-child(7)::before {
+        content: "Assigned To";
+    }
+
+    .outreach-main-row td:nth-child(8)::before {
+        content: "Action";
     }
 
     .dashboard-flat-outreach-table .outreach-main-row td:nth-child(1)::before {

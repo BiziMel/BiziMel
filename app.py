@@ -63,6 +63,7 @@ RELEASE_NOTES = [
             "Enhanced Outreach so Activity Update is only mandatory when a task is being completed, closed or cancelled.",
             "Enhanced account partner linking so multiple partner organisations can be associated to an account at once.",
             "Enhanced PG Bible mapping so NBM Target and Related NBM Target use the account PG Bible Order.",
+            "Enhanced Outreach Tasks so the task table uses one row per task and shows Activity Start Date in its own column.",
             "Improved grouped table colour hierarchy so top-level groups use the darkest shade, nested groups step down progressively and detail rows remain light.",
             "Improved Release Notes ordering so the latest release always appears first.",
             "Improved profile audit entries so profile changes display clear field labels in the audit trail.",
