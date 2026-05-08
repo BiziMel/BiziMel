@@ -216,14 +216,14 @@
         </datalist>
 
         <div class="form-grid">
-            <div class="form-group">
-                <label for="partner_id">Partner Organisation</label>
-                <select id="partner_id" name="partner_id">
-                    <option value="">Create new partner below</option>
+            <div class="form-group full-width">
+                <label for="partner_ids">Partner Organisations</label>
+                <select id="partner_ids" name="partner_ids" multiple size="6">
                     {% for partner in partner_options %}
                         <option value="{{ partner.id }}">{{ partner.partner_name }}</option>
                     {% endfor %}
                 </select>
+                <p class="field-help">Select one or more existing partner accounts to associate with this account.</p>
             </div>
 
             <div class="form-group">

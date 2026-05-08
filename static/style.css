@@ -3436,10 +3436,6 @@ body {
         content: "Activity Type / Subject";
     }
 
-    .outreach-main-row td:nth-child(6)::before {
-        content: "Outcome / Next Action";
-    }
-
     .dashboard-flat-outreach-table .outreach-main-row td:nth-child(1)::before {
         content: "Activity Due Date";
     }
@@ -3454,10 +3450,6 @@ body {
 
     .dashboard-flat-outreach-table .outreach-main-row td:nth-child(4)::before {
         content: "Activity Type / Subject";
-    }
-
-    .dashboard-flat-outreach-table .outreach-main-row td:nth-child(5)::before {
-        content: "Outcome / Next Action";
     }
 
     .outreach-detail-row {

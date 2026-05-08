@@ -19,7 +19,6 @@
                             </h3>
                             <p>
                                 {{ item.contact_name or "No contact" }}
-                                {% if item.account_tier %} · Tier {{ item.account_tier }}{% endif %}
                             </p>
                         </div>
                         <div class="task-due-block">
@@ -67,7 +66,7 @@
 
                         <div class="form-group">
                             <label>Activity Update</label>
-                            <textarea name="next_action" rows="3" minlength="5" required>{{ item.next_action or '' }}</textarea>
+                            <textarea name="next_action" rows="3">{{ item.next_action or '' }}</textarea>
                         </div>
 
                         <div class="system-metadata-panel compact-system-metadata">

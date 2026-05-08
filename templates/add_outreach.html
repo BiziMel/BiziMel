@@ -72,57 +72,6 @@
             </div>
 
             <div class="form-group">
-                <label for="activity_type">Activity Type</label>
-                <select id="activity_type" name="activity_type" required>
-                    <option value="">Select activity type</option>
-                    {% for activity in dropdown_values.outreach_activity_types %}
-                        <option value="{{ activity }}" {% if prefill.activity_type == activity %}selected{% endif %}>{{ activity }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label for="activity_date">Activity Start Date</label>
-                <input type="date" id="activity_date" name="activity_date" value="{{ prefill.activity_date or '' }}" required>
-            </div>
-
-            <div class="form-group">
-                <label for="activity_time">Activity Start Time</label>
-                <input type="time" id="activity_time" name="activity_time" value="{{ prefill.activity_time or '' }}">
-            </div>
-
-            <div class="form-group full-width">
-                <label for="subject">Subject</label>
-                <input type="text" id="subject" name="subject" value="{{ prefill.subject or '' }}" required>
-            </div>
-
-            <div class="form-group">
-                <label for="outcome">Outcome</label>
-                <select id="outcome" name="outcome">
-                    <option value="">Select outcome</option>
-                    {% for outcome in dropdown_values.outreach_outcomes %}
-                        <option value="{{ outcome }}" {% if prefill.outcome == outcome %}selected{% endif %}>{{ outcome }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label for="next_action_date">Activity Due Date</label>
-                <input type="date" id="next_action_date" name="next_action_date" value="{{ prefill.next_action_date or '' }}">
-            </div>
-
-            <div class="form-group">
-                <label for="next_action_time">Activity Due Time</label>
-                <input type="time" id="next_action_time" name="next_action_time" value="{{ prefill.next_action_time or '' }}">
-            </div>
-
-            <div class="form-group full-width">
-                <label for="next_action">Activity Update</label>
-                <textarea id="next_action" name="next_action" rows="4" minlength="5" required>{{ prefill.next_action or '' }}</textarea>
-                <p class="field-help">Add what has been done. You need at least 5 characters before the task can be saved.</p>
-            </div>
-
-            <div class="form-group">
                 <label for="task_status">Task Status</label>
                 <select id="task_status" name="task_status">
                     {% for status in dropdown_values.task_statuses %}
@@ -146,6 +95,56 @@
                 </select>
             </div>
 
+            <div class="form-group">
+                <label for="activity_type">Activity Type</label>
+                <select id="activity_type" name="activity_type" required>
+                    <option value="">Select activity type</option>
+                    {% for activity in dropdown_values.outreach_activity_types %}
+                        <option value="{{ activity }}" {% if prefill.activity_type == activity %}selected{% endif %}>{{ activity }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="activity_date">Activity Start Date</label>
+                <input type="date" id="activity_date" name="activity_date" value="{{ prefill.activity_date or '' }}" required>
+            </div>
+
+            <div class="form-group">
+                <label for="activity_time">Activity Start Time</label>
+                <input type="time" id="activity_time" name="activity_time" value="{{ prefill.activity_time or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="next_action_date">Activity Due Date</label>
+                <input type="date" id="next_action_date" name="next_action_date" value="{{ prefill.next_action_date or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="next_action_time">Activity Due Time</label>
+                <input type="time" id="next_action_time" name="next_action_time" value="{{ prefill.next_action_time or '' }}">
+            </div>
+
+            <div class="form-group full-width">
+                <label for="subject">Subject</label>
+                <input type="text" id="subject" name="subject" value="{{ prefill.subject or '' }}" required>
+            </div>
+
+            <div class="form-group">
+                <label for="outcome">Outcome</label>
+                <select id="outcome" name="outcome">
+                    <option value="">Select outcome</option>
+                    {% for outcome in dropdown_values.outreach_outcomes %}
+                        <option value="{{ outcome }}" {% if prefill.outcome == outcome %}selected{% endif %}>{{ outcome }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group full-width">
+                <label for="next_action">Activity Update</label>
+                <textarea id="next_action" name="next_action" rows="4">{{ prefill.next_action or '' }}</textarea>
+                <p class="field-help">Can stay blank while the task is open. Add at least 5 characters before completing, closing or cancelling.</p>
+            </div>
         </div>
 
         <section class="system-metadata-panel">

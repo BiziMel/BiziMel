@@ -50,7 +50,7 @@
             <div class="form-section-heading full-width">Ownership</div>
 
             <div class="form-group">
-                <label for="partner_manager">Partner Manager</label>
+                <label for="partner_manager">Partner Account Manager</label>
                 <input type="text" id="partner_manager" name="partner_manager">
             </div>
 
@@ -142,7 +142,7 @@
                         </td>
 
                         <td>
-                            <strong>Partner:</strong> {{ partner.partner_manager or "Not assigned" }}
+                            <strong>Partner Account Manager:</strong> {{ partner.partner_manager or "Not assigned" }}
                             <br>
                             <small><strong>BMC:</strong> {{ partner.bmc_partner_manager or partner.relationship_owner or "Not assigned" }}</small>
                         </td>

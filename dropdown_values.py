@@ -119,7 +119,7 @@ DROPDOWN_VALUES = {
         "VITO",
         "LinkedIn",
         "Phone",
-        "Content and Thought Leadership Sharing",
+        "White Paper / Webinar",
         "Events",
         "Email",
         "Meeting",
@@ -131,7 +131,7 @@ DROPDOWN_VALUES = {
         "VITO",
         "LinkedIn",
         "Calls",
-        "Content and Thought Leadership Sharing",
+        "White Paper / Webinar",
         "Events",
     ],
     "outreach_outcomes": [

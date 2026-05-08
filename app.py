@@ -18,13 +18,13 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 
 APP_VERSION = "1.1"
-APP_RELEASE_DATE = "2026-05-07"
-APP_BUILD = "2026-05-08-v1.1-insights-dashboard-pg-progress-actions"
+APP_RELEASE_DATE = "2026-05-08"
+APP_BUILD = "2026-05-08-v1.1-enhanced-release-notes"
 
 RELEASE_NOTES = [
     {
         "version": "1.1",
-        "release_date": "2026-05-07",
+        "release_date": "2026-05-08",
         "title": "Outreach ownership, sharing and task assignment controls",
         "new": [],
         "enhanced": [
@@ -53,20 +53,25 @@ RELEASE_NOTES = [
             "Enhanced Outreach Tasks so Activity Update is mandatory before saving, Notes is retained as read-only system metadata and follow-on creation opens a clean new task form.",
             "Enhanced PG Progress last 7 days activity so each activity update is shown on its own line with the submitted date.",
             "Enhanced PG Progress so the PG Sales Play or Initiative column maps to Outreach task Sales Play or Initiative values for each account.",
-            "Fixed PG Progress last 7 days activity display so valid activity updates render cleanly and empty accounts stay blank.",
-            "Fixed Campaign Builder so generated outreach tasks leave Activity Update blank for the user to complete before saving.",
+            "Enhanced PG Progress last 7 days activity display so valid activity updates render cleanly and empty accounts stay blank.",
+            "Enhanced Campaign Builder so generated outreach tasks leave Activity Update blank for the user to complete before saving.",
             "Enhanced PG Progress so Next Action and Notes is now a read-only view of scheduled Outreach task subjects due in the next 7 days.",
             "Enhanced the main dashboard into Insights Dashboard with needs-attention signals merged into Execution Insights, outcome breakdown moved under the top metrics and redundant latest outreach removed.",
+            "Enhanced PG Progress activity rules so Last 7 Days Activity shows only completed activity updates and scheduled actions include overdue open work plus the next 7 days.",
+            "Enhanced Outreach task pages by simplifying the table, reordering key fields and renaming Content and Thought Leadership activity to White Paper / Webinar.",
+            "Enhanced Outreach Reports so Monthly Meeting Conversion is shown as meetings booked each month.",
+            "Enhanced Outreach so Activity Update is only mandatory when a task is being completed, closed or cancelled.",
+            "Enhanced account partner linking so multiple partner organisations can be associated to an account at once.",
+            "Enhanced PG Bible mapping so NBM Target and Related NBM Target use the account PG Bible Order.",
             "Improved grouped table colour hierarchy so top-level groups use the darkest shade, nested groups step down progressively and detail rows remain light.",
             "Improved Release Notes ordering so the latest release always appears first.",
             "Improved profile audit entries so profile changes display clear field labels in the audit trail.",
+            "Enhanced on-page instructions across PipeFlow so every page now gives clearer guidance about what to do, what matters and what to check before saving.",
+            "Enhanced the Edit Outreach button so the edit form opens correctly with non-working date guidance available.",
+            "Enhanced the audit auto-delete off control so saving the off state is explicit and visibly confirmed.",
+            "Enhanced PG Progress hosted database compatibility so recent activity date filtering works correctly on Supabase Postgres.",
         ],
-        "fixed": [
-            "Fixed on-page instructions across PipeFlow so every page now gives clearer guidance about what to do, what matters and what to check before saving.",
-            "Fixed the Edit Outreach button so the edit form opens correctly with non-working date guidance available.",
-            "Fixed the audit auto-delete off control so saving the off state is explicit and visibly confirmed.",
-            "Fixed PG Progress hosted database compatibility so recent activity date filtering works correctly on Supabase Postgres.",
-        ],
+        "fixed": [],
     },
     {
         "version": "1.0",
@@ -1563,8 +1568,8 @@ def campaign_step_templates():
             "time": "10:00"
         },
         {
-            "campaign": "Content and Thought Leadership Sharing",
-            "activity_type": "Content and Thought Leadership Sharing",
+            "campaign": "White Paper / Webinar",
+            "activity_type": "White Paper / Webinar",
             "subject_prefix": "Content share",
             "next_action": "Share relevant content or thought leadership",
             "time": "11:00"
@@ -1995,6 +2000,24 @@ def build_attention_insights(needs_attention_accounts):
             "priority": "high",
         })
     return attention_insights
+
+
+def deduplicate_execution_insights(insights):
+    unique_insights = []
+    seen = set()
+
+    for insight in insights:
+        key = (
+            str(insight.get("title", "")).strip().casefold(),
+            str(insight.get("message", "")).strip().casefold(),
+            str(insight.get("link", "")).strip(),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_insights.append(insight)
+
+    return unique_insights
 
 
 def build_learning_insights(connection):
@@ -2583,7 +2606,10 @@ def build_dashboard_response(connection):
     )
 
     ai_insights = ai_insights[:6]
-    execution_insights = build_attention_insights(needs_attention_accounts) + build_execution_insights(ai_insights, learning_insights)
+    execution_insights = deduplicate_execution_insights(
+        build_attention_insights(needs_attention_accounts) +
+        build_execution_insights(ai_insights, learning_insights)
+    )
     execution_insights = execution_insights[:12]
 
     return render_template(
@@ -2662,8 +2688,12 @@ def activity_update_is_valid(value):
     return len((value or "").strip()) >= 5
 
 
+def status_requires_activity_update(status):
+    return is_closed_task_status(status)
+
+
 def activity_update_required_message():
-    return "Activity Update must be at least 5 characters before changes can be saved."
+    return "Activity Update must be at least 5 characters before a task can be completed, closed or cancelled."
 
 
 def pg_dashboard_context(connection):
@@ -2693,11 +2723,10 @@ def pg_dashboard_context(connection):
             WHERE account_id = ?
               AND next_action_date IS NOT NULL
               AND next_action_date != ''
-              AND next_action_date >= ?
               AND next_action_date <= ?
               AND COALESCE(task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
             ORDER BY next_action_date ASC, next_action_time ASC, id DESC
-        """, (account_id, today_key, seven_days_forward)).fetchall()
+        """, (account_id, seven_days_forward)).fetchall()
         recent_activity_rows = connection.execute("""
             SELECT activity_date, activity_type, subject, next_action, last_updated
             FROM outreach
@@ -2705,6 +2734,7 @@ def pg_dashboard_context(connection):
               AND last_updated >= ?
               AND next_action IS NOT NULL
               AND next_action != ''
+              AND COALESCE(task_status, '') IN ('Closed', 'Completed', 'Cancelled')
             ORDER BY last_updated DESC, id DESC
         """, (account_id, seven_days_ago)).fetchall()
         contacts = connection.execute("""
@@ -3019,7 +3049,7 @@ def add_partner():
                 "partner_name": "Partner account name",
                 "partner_type": "Partner type",
                 "website": "Account website",
-                "partner_manager": "Partner manager",
+                "partner_manager": "Partner account manager",
                 "bmc_partner_manager": "BMC partner manager",
                 "city": "City",
                 "country": "Country",
@@ -3130,7 +3160,7 @@ def edit_partner(partner_id):
             "website": "Account website",
             "country": "Country",
             "city": "City",
-            "partner_manager": "Partner manager",
+            "partner_manager": "Partner account manager",
             "bmc_partner_manager": "BMC partner manager",
             "relationship_owner": "Relationship owner",
             "notes": "Notes",
@@ -3525,24 +3555,34 @@ def view_account(account_id):
 @app.route("/accounts/<int:account_id>/partners/add", methods=("POST",))
 def add_account_partner(account_id):
     connection = get_db_connection()
-    partner_id = request.form.get("partner_id")
     partner_name = request.form.get("partner_name", "").strip()
+    partners_to_add = []
 
-    if partner_id:
+    for selected_partner_id in request.form.getlist("partner_ids"):
         partner = connection.execute("""
-            SELECT partner_name
+            SELECT id, partner_name
             FROM partners
             WHERE id = ?
-        """, (partner_id,)).fetchone()
+        """, (selected_partner_id,)).fetchone()
         if partner:
-            partner_name = partner["partner_name"]
-        else:
-            partner_id = None
-
-    if partner_name and not partner_id:
-        partner_id = get_or_create_partner(connection, partner_name)
+            partners_to_add.append((partner["id"], partner["partner_name"]))
 
     if partner_name:
+        partners_to_add.append((get_or_create_partner(connection, partner_name), partner_name))
+
+    seen_partner_ids = set()
+    for partner_id, partner_name in partners_to_add:
+        if partner_id in seen_partner_ids:
+            continue
+        seen_partner_ids.add(partner_id)
+        existing = connection.execute("""
+            SELECT id
+            FROM account_partners
+            WHERE account_id = ?
+              AND partner_id = ?
+        """, (account_id, partner_id)).fetchone()
+        if existing:
+            continue
         cursor = connection.execute("""
             INSERT INTO account_partners (
                 account_id,
@@ -4321,7 +4361,8 @@ def add_outreach():
 
     if request.method == "POST":
         prefill = dict(request.form)
-        if not activity_update_is_valid(request.form.get("next_action")):
+        requested_status = request.form.get("task_status", "Not Started")
+        if status_requires_activity_update(requested_status) and not activity_update_is_valid(request.form.get("next_action")):
             error = activity_update_required_message()
         else:
             sales_play_value = request.form.get("sales_play")
@@ -4779,7 +4820,12 @@ def edit_outreach(outreach_id):
         }
         follow_on_requested = submit_action == "complete_and_follow"
 
-        if not activity_update_is_valid(new_values["next_action"]):
+        if submit_action in ("complete_and_follow", "complete_only"):
+            new_values["task_status"] = "Completed"
+            new_values["next_action_date"] = ""
+            new_values["next_action_time"] = ""
+
+        if status_requires_activity_update(new_values["task_status"]) and not activity_update_is_valid(new_values["next_action"]):
             error = activity_update_required_message()
             connection.close()
             return render_template(
@@ -4791,11 +4837,6 @@ def edit_outreach(outreach_id):
                 non_working_blocks=non_working_block_rows,
                 error=error
             )
-
-        if submit_action in ("complete_and_follow", "complete_only"):
-            new_values["task_status"] = "Completed"
-            new_values["next_action_date"] = ""
-            new_values["next_action_time"] = ""
 
         labels = {
             "fy": "FY",
@@ -5591,7 +5632,7 @@ def update_task_from_tasks(outreach_id):
         "next_action_time": request.form.get("next_action_time"),
         "notes": outreach_item["notes"] or "",
     }
-    if not activity_update_is_valid(new_values["next_action"]):
+    if status_requires_activity_update(new_values["task_status"]) and not activity_update_is_valid(new_values["next_action"]):
         connection.close()
         return redirect(return_target)
     labels = {
@@ -6137,6 +6178,7 @@ def build_pg_bible_report_from_db(connection):
             account_tier=account["account_tier"] or "",
             pipeline_target_value=account["pipeline_target"] or 0,
             notes=account["notes"] or "",
+            nbm_target=str(account["pg_bible_order"] or ""),
             customer=account["account_name"] or "",
             sales_play="; ".join(sales_plays),
             estimated_value=account["pipeline_target"] or 0,
@@ -6146,7 +6188,8 @@ def build_pg_bible_report_from_db(connection):
         SELECT
             contacts.*,
             accounts.pipeline_target,
-            accounts.account_name
+            accounts.account_name,
+            accounts.pg_bible_order
         FROM contacts
         LEFT JOIN accounts ON contacts.account_id = accounts.id
         ORDER BY
@@ -6179,7 +6222,7 @@ def build_pg_bible_report_from_db(connection):
         action_items.append(ActionItem(
             person_name=contact["name"] or "",
             person_title=contact["job_title"] or "",
-            related_nbm_target=str(contact["account_id"] or ""),
+            related_nbm_target=str(contact["pg_bible_order"] or ""),
             discovery_target_name_title=", ".join(
                 part for part in [contact["name"], contact["job_title"]] if part
             ),
@@ -6788,7 +6831,7 @@ def outreach_reports():
         1 for item in filtered_outreach
         if item["outcome"] == "Meeting Booked" or item["activity_type"] == "Meeting"
     )
-    conversion_rate = round((meetings_booked / total_outreach) * 100, 2) if total_outreach else 0
+    meeting_conversion_total = meetings_booked
 
     outcome_totals = {}
     type_totals = {}
@@ -6825,14 +6868,14 @@ def outreach_reports():
             "month": month,
             "total_outreach": total,
             "meetings_booked": meetings,
-            "conversion_rate": round((meetings / total) * 100, 2) if total else 0,
+            "meeting_conversion": meetings,
         })
 
     return render_template(
         "outreach_reports.html",
         total_outreach=total_outreach,
         meetings_booked=meetings_booked,
-        conversion_rate=conversion_rate,
+        conversion_rate=meeting_conversion_total,
         outcome_breakdown=outcome_breakdown,
         outreach_by_type=outreach_by_type,
         latest_outreach=latest_outreach,
@@ -6852,7 +6895,7 @@ def outreach_reports():
         monthly_chart_labels=[item["month"] for item in monthly_trends],
         monthly_outreach_data=[item["total_outreach"] for item in monthly_trends],
         monthly_meetings_data=[item["meetings_booked"] for item in monthly_trends],
-        monthly_conversion_data=[item["conversion_rate"] for item in monthly_trends],
+        monthly_conversion_data=[item["meeting_conversion"] for item in monthly_trends],
     )
 
 

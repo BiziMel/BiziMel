@@ -170,7 +170,7 @@
 
             <div class="form-group">
                 <label>Status</label>
-                <details class="checkbox-dropdown compact-checkbox-dropdown status-filter-dropdown" open>
+                <details class="checkbox-dropdown compact-checkbox-dropdown status-filter-dropdown">
                     <summary>{{ selected_statuses | join(", ") }}</summary>
                     <div class="checkbox-dropdown-panel">
                         {% for status_filter in ["All Open", "All Closed", "All"] %}
@@ -219,7 +219,6 @@
                     <col class="outreach-account-col">
                     <col class="outreach-campaign-col">
                     <col class="outreach-activity-col">
-                    <col class="outreach-next-col">
                 </colgroup>
                 <thead>
                     <tr>
@@ -228,7 +227,6 @@
                         <th>Account / Contact</th>
                         <th>Sales Play / Initiative</th>
                         <th>Activity Type / Subject</th>
-                        <th>Outcome / Next Action</th>
                     </tr>
                 </thead>
 
@@ -241,7 +239,7 @@
                             {% set current_group.account = account_group %}
                             {% set current_group.sales_play = None %}
                             <tr class="outreach-account-group-row">
-                                <td colspan="6">
+                                <td colspan="5">
                                     <span>Account</span>
                                     <strong>{{ account_group }}</strong>
                                 </td>
@@ -250,7 +248,7 @@
                         {% if current_group.sales_play != sales_play_group %}
                             {% set current_group.sales_play = sales_play_group %}
                             <tr class="outreach-campaign-group-row">
-                                <td colspan="6">
+                                <td colspan="5">
                                     <span>Sales Play / Initiative</span>
                                     <strong>{{ sales_play_group }}</strong>
                                 </td>
@@ -287,7 +285,6 @@
                             </td>
                             <td>
                                 <strong>{{ item.account_name or "No account" }}</strong>
-                                {% if item.account_tier %}<span class="status-pill">Tier {{ item.account_tier }}</span>{% endif %}
                                 <br>
                                 <span class="muted">{{ item.contact_name or "No contact" }}</span>
                             </td>
@@ -299,14 +296,9 @@
                                 <br>
                                 <span class="muted">{{ item.subject or "No subject" }}</span>
                             </td>
-                            <td>
-                                <strong>{{ item.outcome or "-" }}</strong>
-                                <br>
-                                <span class="muted">{{ item.next_action or "No next action" }}</span>
-                            </td>
                         </tr>
                         <tr class="outreach-detail-row">
-                            <td colspan="6">
+                            <td colspan="5">
                                 <div class="outreach-row-details">
                                     <div class="outreach-row-action">
                                         <a href="{{ url_for('edit_outreach', outreach_id=item.id) }}"
@@ -315,30 +307,6 @@
                                            aria-label="Edit outreach {{ item.subject or item.activity_type or item.id }}">
                                             Edit Outreach
                                         </a>
-                                    </div>
-                                    <div>
-                                        <span>FY / Quarter</span>
-                                        <strong>{{ item.fy or "-" }} / {{ item.quarter or "-" }}</strong>
-                                    </div>
-                                    <div>
-                                        <span>Campaign Window</span>
-                                        <strong>
-                                            {% if item.campaign_start_date %}
-                                                {{ item.campaign_start_date[8:10] }}-{{ item.campaign_start_date[5:7] }}-{{ item.campaign_start_date[0:4] }}
-                                            {% else %}
-                                                No start
-                                            {% endif %}
-                                            to
-                                            {% if item.campaign_end_date %}
-                                                {{ item.campaign_end_date[8:10] }}-{{ item.campaign_end_date[5:7] }}-{{ item.campaign_end_date[0:4] }}
-                                            {% else %}
-                                                no end
-                                            {% endif %}
-                                        </strong>
-                                    </div>
-                                    <div>
-                                        <span>Campaign Cadence</span>
-                                        <strong>{{ item.campaign_total_tasks or "-" }} tasks · {{ item.campaign_tasks_per_week or "-" }} / week</strong>
                                     </div>
                                     <div>
                                         <span>Assigned To</span>
