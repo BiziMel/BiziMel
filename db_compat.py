@@ -75,6 +75,8 @@ def translate_sql(sql):
     translated = translated.replace("IFNULL(", "COALESCE(")
     translated = translated.replace("datetime('now', '-1 hour')", "(CURRENT_TIMESTAMP - INTERVAL '1 hour')")
     translated = translated.replace("datetime('now')", "CURRENT_TIMESTAMP")
+    translated = re.sub(r"date\('now',\s*'\+(\d+) days'\)", r"(CURRENT_DATE + INTERVAL '\1 days')", translated, flags=re.IGNORECASE)
+    translated = re.sub(r"date\('now',\s*'-(\d+) days'\)", r"(CURRENT_DATE - INTERVAL '\1 days')", translated, flags=re.IGNORECASE)
     translated = translated.replace("date('now', '+7 days')", "(CURRENT_DATE + INTERVAL '7 days')")
     translated = translated.replace("date('now')", "CURRENT_DATE")
     translated = re.sub(r"strftime\s*\(\s*'%w'\s*,\s*([^)]+)\)", r"CAST(pipeflow_strftime('%w', \1) AS INTEGER)", translated, flags=re.IGNORECASE)

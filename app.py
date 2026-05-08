@@ -19,7 +19,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "1.1"
 APP_RELEASE_DATE = "2026-05-07"
-APP_BUILD = "2026-05-07-v1.1-account-sharing-task-assignment-v1"
+APP_BUILD = "2026-05-08-v1.1-dashboard-new-postgres-date-fix"
 
 RELEASE_NOTES = [
     {
@@ -56,6 +56,7 @@ RELEASE_NOTES = [
             "Fixed on-page instructions across PipeFlow so every page now gives clearer guidance about what to do, what matters and what to check before saving.",
             "Fixed the Edit Outreach button so the edit form opens correctly with non-working date guidance available.",
             "Fixed the audit auto-delete off control so saving the off state is explicit and visibly confirmed.",
+            "Fixed Dashboard_New hosted database compatibility so recent activity date filtering works correctly on Supabase Postgres.",
         ],
     },
     {
@@ -2681,6 +2682,7 @@ def pg_dashboard_context(connection):
 
     pg_plan_rows = []
     pg_action_rows = []
+    seven_days_ago = (datetime.now() - timedelta(days=7)).date().isoformat()
     for account in accounts:
         account_id = account["id"]
         pg_target_number = account["pg_bible_order"] or ""
@@ -2698,11 +2700,11 @@ def pg_dashboard_context(connection):
             SELECT activity_date, activity_type, subject, notes
             FROM outreach
             WHERE account_id = ?
-              AND activity_date >= date('now', '-7 days')
+              AND activity_date >= ?
               AND notes IS NOT NULL
               AND notes != ''
             ORDER BY activity_date DESC, activity_time DESC, id DESC
-        """, (account_id,)).fetchall()
+        """, (account_id, seven_days_ago)).fetchall()
         contacts = connection.execute("""
             SELECT name, job_title
             FROM contacts
