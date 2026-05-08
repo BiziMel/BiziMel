@@ -9,7 +9,6 @@
         <h1>PG Progress</h1>
         <p>Track PG Goals, PG Plan and PG Actions using your account and outreach data.</p>
     </div>
-    <a href="{{ url_for('home') }}" class="btn btn-secondary">Back to Current Dashboard</a>
 </div>
 
 {% if message %}
@@ -103,7 +102,7 @@
                         <th>Targeted or Booked Discovery Meeting</th>
                         <th>Completed Discovery Meeting</th>
                         <th>Last 7 Days Activity</th>
-                        <th>Next Action / Notes</th>
+                        <th>Next 7 Days Scheduled Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -135,7 +134,18 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <textarea name="next_action_{{ row.account_id }}" rows="2">{{ row.next_action }}</textarea>
+                                {% if row.next_7_days_actions %}
+                                    <div class="scheduled-action-list">
+                                        {% for action in row.next_7_days_actions %}
+                                            <div class="scheduled-action-entry">
+                                                <span>{{ action.subject }}</span>
+                                                {% if action.due %}
+                                                    <strong>{{ action.due }}</strong>
+                                                {% endif %}
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
                             </td>
                         </tr>
                     {% else %}

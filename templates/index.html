@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard | PipeFlow{% endblock %}
+{% block title %}Insights Dashboard | PipeFlow{% endblock %}
 
 {% block content %}
 
 <div class="page-header">
     <div>
-        <h1>Dashboard</h1>
-        <p>Your pipeline generation command centre.</p>
+        <h1>Insights Dashboard</h1>
+        <p>Your pipeline generation command centre and execution guidance view.</p>
     </div>
 </div>
 
@@ -100,6 +100,24 @@
                         <p class="metric-subtext">Overdue and next 7 days</p>
                     </div>
                 </a>
+            </div>
+            <div class="outcome-breakdown-strip">
+                <div class="outcome-strip-header">
+                    <h2>Outcome Breakdown</h2>
+                    <p>Current outreach outcomes across your workspace.</p>
+                </div>
+                {% if outcome_breakdown %}
+                    <div class="outcome-strip-items">
+                        {% for row in outcome_breakdown %}
+                            <div class="outcome-strip-item">
+                                <span>{{ row.outcome or "Unknown" }}</span>
+                                <strong>{{ row.total }}</strong>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p>No outcome data yet.</p>
+                {% endif %}
             </div>
     </section>
 
@@ -206,87 +224,8 @@
             {% endif %}
         </section>
 
-        <section class="form-card">
-            <div class="section-header">
-                <div>
-                    <h2>Needs Attention</h2>
-                    <p>Top accounts requiring action based on health score.</p>
-                </div>
-                <a href="{{ url_for('accounts') }}" class="btn btn-secondary">View All</a>
-            </div>
-            {% if needs_attention_accounts %}
-                <div class="needs-attention-list">
-                    {% for account in needs_attention_accounts %}
-                        <div class="needs-attention-item">
-                            <div>
-                                <strong>{{ account.account_name }}</strong>
-                                <p>{{ account.health_reason }}</p>
-                            </div>
-                            <div class="needs-attention-status">
-                                <span class="health-pill health-{{ account.health_colour }}">{{ account.health_label }}</span>
-                                <a href="{{ url_for('view_account', account_id=account.id) }}" class="btn btn-secondary">Open</a>
-                            </div>
-                        </div>
-                    {% endfor %}
-                </div>
-            {% else %}
-                <p>No accounts need attention right now.</p>
-            {% endif %}
-        </section>
-
-        <section class="form-card">
-            <div class="section-header">
-                <div>
-                    <h2>Latest Outreach</h2>
-                    <p>Your most recent prospecting activity.</p>
-                </div>
-                <a href="{{ url_for('outreach') }}" class="btn btn-secondary">View All</a>
-            </div>
-            {% if latest_outreach %}
-                <div class="latest-outreach-list">
-                    {% for item in latest_outreach %}
-                        <div class="latest-outreach-item">
-                            <div>
-                                <strong>{{ item.account_name }}</strong>
-                                <p>{{ item.contact_name or "No contact linked" }} - {{ item.activity_type }}</p>
-                                <p class="muted">
-                                    {% if item.activity_date %}
-                                        {{ item.activity_date[8:10] }}-{{ item.activity_date[5:7] }}-{{ item.activity_date[0:4] }}
-                                    {% else %}
-                                        No date
-                                    {% endif %}
-                                    {{ item.activity_time or "" }}
-                                </p>
-                            </div>
-                            <div class="latest-outreach-status">
-                                <span class="status-pill">{{ item.outcome or "No outcome" }}</span>
-                                <p>{{ item.next_action or "No next action set" }}</p>
-                            </div>
-                        </div>
-                    {% endfor %}
-                </div>
-            {% else %}
-                <p>No outreach activity added yet.</p>
-            {% endif %}
-        </section>
-
         <section class="form-card dashboard-side-summary-card">
             <div class="dashboard-mini-summary-grid">
-                <div>
-                    <h2>Outcome Breakdown</h2>
-                    {% if outcome_breakdown %}
-                        <div class="insight-list">
-                            {% for row in outcome_breakdown %}
-                                <div class="insight-row">
-                                    <span>{{ row.outcome or "Unknown" }}</span>
-                                    <strong>{{ row.total }}</strong>
-                                </div>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        <p>No outcome data yet.</p>
-                    {% endif %}
-                </div>
                 <div>
                     <h2>Top Accounts</h2>
                     {% if top_accounts %}

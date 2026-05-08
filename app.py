@@ -19,7 +19,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "1.1"
 APP_RELEASE_DATE = "2026-05-07"
-APP_BUILD = "2026-05-08-v1.1-campaign-blank-activity-update"
+APP_BUILD = "2026-05-08-v1.1-insights-dashboard-pg-progress-actions"
 
 RELEASE_NOTES = [
     {
@@ -55,6 +55,8 @@ RELEASE_NOTES = [
             "Enhanced PG Progress so the PG Sales Play or Initiative column maps to Outreach task Sales Play or Initiative values for each account.",
             "Fixed PG Progress last 7 days activity display so valid activity updates render cleanly and empty accounts stay blank.",
             "Fixed Campaign Builder so generated outreach tasks leave Activity Update blank for the user to complete before saving.",
+            "Enhanced PG Progress so Next Action and Notes is now a read-only view of scheduled Outreach task subjects due in the next 7 days.",
+            "Enhanced the main dashboard into Insights Dashboard with needs-attention signals merged into Execution Insights, outcome breakdown moved under the top metrics and redundant latest outreach removed.",
             "Improved grouped table colour hierarchy so top-level groups use the darkest shade, nested groups step down progressively and detail rows remain light.",
             "Improved Release Notes ordering so the latest release always appears first.",
             "Improved profile audit entries so profile changes display clear field labels in the audit trail.",
@@ -1980,6 +1982,21 @@ def build_execution_insights(ai_insights, learning_insights):
     return combined[:10]
 
 
+def build_attention_insights(needs_attention_accounts):
+    attention_insights = []
+    for account in needs_attention_accounts:
+        attention_insights.append({
+            "source": "Needs Attention",
+            "category": account.get("health_label", "Account Health"),
+            "title": account.get("account_name", "Account needs attention"),
+            "message": account.get("health_reason", ""),
+            "action": "Open the account and resolve the health risk before it blocks pipeline progress.",
+            "link": url_for("view_account", account_id=account["id"]),
+            "priority": "high",
+        })
+    return attention_insights
+
+
 def build_learning_insights(connection):
     positive_placeholders = ",".join("?" for _ in POSITIVE_OUTCOMES)
     negative_placeholders = ",".join("?" for _ in NEGATIVE_OUTCOMES)
@@ -2566,7 +2583,8 @@ def build_dashboard_response(connection):
     )
 
     ai_insights = ai_insights[:6]
-    execution_insights = build_execution_insights(ai_insights, learning_insights)
+    execution_insights = build_attention_insights(needs_attention_accounts) + build_execution_insights(ai_insights, learning_insights)
+    execution_insights = execution_insights[:12]
 
     return render_template(
         "index.html",
@@ -2664,19 +2682,22 @@ def pg_dashboard_context(connection):
     pg_plan_rows = []
     pg_action_rows = []
     seven_days_ago = (datetime.now() - timedelta(days=7)).date().isoformat()
+    today_key = datetime.now().date().isoformat()
+    seven_days_forward = (datetime.now() + timedelta(days=7)).date().isoformat()
     for account in accounts:
         account_id = account["id"]
         pg_target_number = account["pg_bible_order"] or ""
-        latest_action = connection.execute("""
-            SELECT subject, next_action, next_action_date, next_action_time
+        scheduled_action_rows = connection.execute("""
+            SELECT subject, next_action_date, next_action_time
             FROM outreach
             WHERE account_id = ?
               AND next_action_date IS NOT NULL
               AND next_action_date != ''
+              AND next_action_date >= ?
+              AND next_action_date <= ?
               AND COALESCE(task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
             ORDER BY next_action_date ASC, next_action_time ASC, id DESC
-            LIMIT 1
-        """, (account_id,)).fetchone()
+        """, (account_id, today_key, seven_days_forward)).fetchall()
         recent_activity_rows = connection.execute("""
             SELECT activity_date, activity_type, subject, next_action, last_updated
             FROM outreach
@@ -2715,11 +2736,14 @@ def pg_dashboard_context(connection):
             f"{contact['name']}{' - ' + contact['job_title'] if contact['job_title'] else ''}"
             for contact in contacts
         )
-        auto_next_action = ""
-        if latest_action:
-            action_text = latest_action["subject"] or latest_action["next_action"] or "Scheduled action"
-            due_parts = [latest_action["next_action_date"] or "", latest_action["next_action_time"] or ""]
-            auto_next_action = f"{action_text} due {' '.join(part for part in due_parts if part)}".strip()
+        next_7_days_actions = []
+        for action_row in scheduled_action_rows:
+            subject = action_row["subject"] or "Scheduled action"
+            due_parts = [action_row["next_action_date"] or "", action_row["next_action_time"] or ""]
+            next_7_days_actions.append({
+                "subject": subject,
+                "due": " ".join(part for part in due_parts if part),
+            })
         last_7_days_activity_entries = []
         for row in recent_activity_rows:
             submitted_date = str(row["last_updated"] or row["activity_date"] or "No date")[:10]
@@ -2743,7 +2767,7 @@ def pg_dashboard_context(connection):
             "targeted_discovery": contact_label,
             "completed_discovery_meeting": action_update["completed_discovery_meeting"] if action_update else "",
             "last_7_days_activity_entries": last_7_days_activity_entries,
-            "next_action": (action_update["next_action_override"] if action_update and action_update["next_action_override"] else auto_next_action),
+            "next_7_days_actions": next_7_days_actions,
         })
 
     return {
