@@ -19,7 +19,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "1.1"
 APP_RELEASE_DATE = "2026-05-07"
-APP_BUILD = "2026-05-08-v1.1-dashboard-new-postgres-date-fix"
+APP_BUILD = "2026-05-08-v1.1-pg-progress-sales-play-campaign"
 
 RELEASE_NOTES = [
     {
@@ -44,10 +44,12 @@ RELEASE_NOTES = [
             "Enhanced admin navigation with a Broadcast Messages sub tab so admins can jump directly to broadcast configuration.",
             "Enhanced audit auto-delete controls so admins clearly see and select Auto-delete On or Auto-delete Off.",
             "Enhanced the Audit user filter so user suggestions display full names only while still matching underlying audit email fields.",
-            "Enhanced dashboard development with an admin-only Dashboard_New tab for the temporary PG Goals dashboard build.",
+            "Enhanced dashboard development with the PG Progress tab for the PG Goals dashboard build.",
             "Enhanced account records with NBM Target and Account Sales Play or Initiative fields to support PG Goals dashboard mapping.",
             "Enhanced the main dashboard by removing the embedded tasks table so task work remains focused in Outreach Tasks.",
-            "Enhanced Dashboard_New so target numbering maps to Account PG Bible Order and PG Actions includes last 7 days outreach activity from task notes by account.",
+            "Enhanced PG Progress so target numbering maps to Account PG Bible Order and PG Actions includes last 7 days outreach activity from task notes by account.",
+            "Enhanced PG Progress and made it available to all signed-in users.",
+            "Enhanced Outreach so Sales Play or Initiative is now the campaign grouping field and the separate Campaign Name field is no longer shown on forms, dashboards or reports.",
             "Improved grouped table colour hierarchy so top-level groups use the darkest shade, nested groups step down progressively and detail rows remain light.",
             "Improved Release Notes ordering so the latest release always appears first.",
             "Improved profile audit entries so profile changes display clear field labels in the audit trail.",
@@ -56,7 +58,7 @@ RELEASE_NOTES = [
             "Fixed on-page instructions across PipeFlow so every page now gives clearer guidance about what to do, what matters and what to check before saving.",
             "Fixed the Edit Outreach button so the edit form opens correctly with non-working date guidance available.",
             "Fixed the audit auto-delete off control so saving the off state is explicit and visibly confirmed.",
-            "Fixed Dashboard_New hosted database compatibility so recent activity date filtering works correctly on Supabase Postgres.",
+            "Fixed PG Progress hosted database compatibility so recent activity date filtering works correctly on Supabase Postgres.",
         ],
     },
     {
@@ -79,7 +81,7 @@ RELEASE_NOTES = [
         "enhanced": [
             "Refined the Dashboard into a pipeline generation command centre with FY PG target, weekly execution metrics, execution insights and task visibility.",
             "Aligned Dashboard Tasks with the Outreach table layout so task and outreach records have a consistent structure.",
-            "Improved Outreach ordering by account, campaign name and earliest activity due date while keeping the table ungrouped on the Dashboard.",
+            "Improved Outreach ordering by account, sales play and earliest activity due date while keeping the table ungrouped on the Dashboard.",
             "Made Activity Due Date visually prominent in Outreach and Dashboard task views.",
             "Improved Outreach completion so users must add an Activity Update before closing work.",
             "Improved follow-on activity flow so completed outreach opens a prefilled new outreach form instead of silently creating the next task.",
@@ -2010,31 +2012,6 @@ def build_learning_insights(connection):
     learning_params = (*POSITIVE_OUTCOMES, *NEGATIVE_OUTCOMES)
     insights = []
 
-    campaign_rows = add_learning_score(connection.execute(f"""
-        SELECT
-            outreach.campaign,
-            {learning_select}
-        FROM outreach
-        WHERE outreach.campaign IS NOT NULL
-          AND outreach.campaign != ''
-        GROUP BY outreach.campaign
-    """, learning_params).fetchall())
-
-    if campaign_rows:
-        campaign = campaign_rows[0]
-        insights.append({
-            "signal": "Campaign",
-            "title": f"{campaign['campaign']} is your strongest campaign signal",
-            "message": (
-                f"{campaign['positive_total']} positive signal(s), "
-                f"{campaign['meeting_total']} meeting(s), "
-                f"{campaign['positive_rate']}% positive rate across "
-                f"{campaign['total']} touchpoint(s)."
-            ),
-            "action": "Use this campaign as the default first route when the account and contact profile are similar.",
-            "link": url_for("outreach")
-        })
-
     sales_play_rows = add_learning_score(connection.execute(f"""
         SELECT
             outreach.sales_play,
@@ -2063,23 +2040,20 @@ def build_learning_insights(connection):
         SELECT
             accounts.id AS account_id,
             accounts.account_name,
-            outreach.campaign,
             outreach.sales_play,
             {learning_select}
         FROM outreach
         LEFT JOIN accounts ON outreach.account_id = accounts.id
         WHERE accounts.account_name IS NOT NULL
-          AND (
-                (outreach.campaign IS NOT NULL AND outreach.campaign != '')
-             OR (outreach.sales_play IS NOT NULL AND outreach.sales_play != '')
-          )
-        GROUP BY accounts.id, accounts.account_name, outreach.campaign, outreach.sales_play
+          AND outreach.sales_play IS NOT NULL
+          AND outreach.sales_play != ''
+        GROUP BY accounts.id, accounts.account_name, outreach.sales_play
     """, learning_params).fetchall())
 
     if account_rows:
         account = account_rows[0]
         label_parts = [
-            part for part in [account["campaign"], account["sales_play"]]
+            part for part in [account["sales_play"]]
             if part
         ]
         insights.append({
@@ -2097,28 +2071,28 @@ def build_learning_insights(connection):
     contact_category_rows = add_learning_score(connection.execute(f"""
         SELECT
             contacts.category,
-            outreach.campaign,
+            outreach.sales_play,
             {learning_select}
         FROM outreach
         LEFT JOIN contacts ON outreach.contact_id = contacts.id
         WHERE contacts.category IS NOT NULL
           AND contacts.category != ''
-          AND outreach.campaign IS NOT NULL
-          AND outreach.campaign != ''
-        GROUP BY contacts.category, outreach.campaign
+          AND outreach.sales_play IS NOT NULL
+          AND outreach.sales_play != ''
+        GROUP BY contacts.category, outreach.sales_play
     """, learning_params).fetchall())
 
     if contact_category_rows:
         category = contact_category_rows[0]
         insights.append({
             "signal": "Contact",
-            "title": f"{category['campaign']} works best with {category['category']} contacts",
+            "title": f"{category['sales_play']} works best with {category['category']} contacts",
             "message": (
                 f"This combination has {category['positive_total']} positive signal(s), "
                 f"{category['meeting_total']} meeting(s), and "
                 f"{category['negative_total']} negative signal(s)."
             ),
-            "action": "When adding contacts in this category, start with this campaign and track the outcome.",
+            "action": "When adding contacts in this category, start with this sales play and track the outcome.",
             "link": url_for("contacts")
         })
 
@@ -2152,14 +2126,8 @@ def build_learning_insights(connection):
     outcome_gaps = connection.execute("""
         SELECT COUNT(*) AS total
         FROM outreach
-        WHERE (
-                campaign IS NOT NULL
-            AND campaign != ''
-        )
-          AND (
-                sales_play IS NOT NULL
-            AND sales_play != ''
-        )
+        WHERE sales_play IS NOT NULL
+          AND sales_play != ''
           AND (
                 outcome IS NULL
              OR outcome = ''
@@ -2171,14 +2139,14 @@ def build_learning_insights(connection):
         insights.append({
             "signal": "Learning",
             "title": "Add campaign outcomes to start learning",
-            "message": "PipeFlow will compare campaigns, sales plays, contacts and account patterns once outcomes are captured.",
+            "message": "PipeFlow will compare sales plays, contacts and account patterns once outcomes are captured.",
             "action": "Build a campaign, complete the follow-up tasks, then record the outcome on each touchpoint.",
             "link": url_for("campaign_builder")
         })
     elif outcome_gaps > 0:
         insights.append({
             "signal": "Data Quality",
-            "title": f"{outcome_gaps} campaign touchpoint(s) need outcomes",
+            "title": f"{outcome_gaps} sales play touchpoint(s) need outcomes",
             "message": "The learning model gets sharper when each campaign step has an outcome.",
             "action": "Update completed touchpoints so the dashboard can recommend what works with more confidence.",
             "link": url_for("tasks")
@@ -2309,7 +2277,7 @@ def build_dashboard_response(connection):
             WHERE outreach.account_id = accounts.id
               AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
               AND (
-                    (outreach.campaign IS NOT NULL AND outreach.campaign != '')
+                    (outreach.sales_play IS NOT NULL AND outreach.sales_play != '')
                  OR (outreach.next_action IS NOT NULL AND outreach.next_action != '')
               )
         )
@@ -2756,9 +2724,13 @@ def pg_dashboard_context(connection):
     }
 
 
-@app.route("/dashboard-new", methods=("GET", "POST"))
-@admin_required
+@app.route("/dashboard-new")
 def dashboard_new():
+    return redirect(url_for("pg_progress"))
+
+
+@app.route("/pg-progress", methods=("GET", "POST"))
+def pg_progress():
     connection = get_db_connection()
     if request.method == "POST":
         save_dashboard_setting(connection, "current_pipeline", request.form.get("current_pipeline", "0"))
@@ -2794,11 +2766,11 @@ def dashboard_new():
             "pg_goals",
             "PG Goals dashboard",
             "",
-            "Dashboard_New saved"
+            "PG Progress saved"
         )
         connection.commit()
         connection.close()
-        return redirect(url_for("dashboard_new", message="PG Goals dashboard saved."))
+        return redirect(url_for("pg_progress", message="PG Progress saved."))
 
     context = pg_dashboard_context(connection)
     connection.close()
@@ -4144,7 +4116,7 @@ def outreach():
     user = current_user()
     fy_filter = request.args.get("fy")
     quarter_filter = request.args.get("quarter")
-    campaign_filter = request.args.get("campaign")
+    sales_play_filter = request.args.get("sales_play")
     account_filter = request.args.get("account_id")
     outcome_filter = request.args.get("outcome")
     selected_statuses = request.args.getlist("task_status")
@@ -4172,9 +4144,9 @@ def outreach():
         query += " AND outreach.quarter = ?"
         params.append(quarter_filter)
 
-    if campaign_filter:
-        query += " AND outreach.campaign = ?"
-        params.append(campaign_filter)
+    if sales_play_filter:
+        query += " AND outreach.sales_play = ?"
+        params.append(sales_play_filter)
 
     if account_filter:
         query += " AND outreach.account_id = ?"
@@ -4202,7 +4174,7 @@ def outreach():
     query += """
         ORDER BY
             COALESCE(NULLIF(accounts.account_name, ''), 'No Account'),
-            COALESCE(NULLIF(outreach.campaign, ''), 'No Campaign'),
+            COALESCE(NULLIF(outreach.sales_play, ''), 'No Sales Play'),
             CASE
                 WHEN outreach.next_action_date IS NULL OR outreach.next_action_date = ''
                 THEN 1 ELSE 0
@@ -4244,14 +4216,14 @@ def outreach():
            OR accounts.owner_user_id = ?
         ORDER BY accounts.account_name, account_shared_users.full_name
     """, (user["id"] if user else None,)).fetchall()
-    existing_campaigns = connection.execute("""
-        SELECT DISTINCT campaign
+    existing_sales_plays = connection.execute("""
+        SELECT DISTINCT sales_play
         FROM outreach
-        WHERE campaign IS NOT NULL
-          AND campaign != ''
-        ORDER BY campaign
+        WHERE sales_play IS NOT NULL
+          AND sales_play != ''
+        ORDER BY sales_play
     """).fetchall()
-    campaign_options = sorted(row["campaign"] for row in existing_campaigns if row["campaign"])
+    sales_play_options = sorted(row["sales_play"] for row in existing_sales_plays if row["sales_play"])
 
     connection.close()
 
@@ -4261,10 +4233,10 @@ def outreach():
         accounts=accounts,
         shareable_accounts=shareable_accounts,
         account_shares=account_shares,
-        campaign_options=campaign_options,
+        sales_play_options=sales_play_options,
         fy_filter=fy_filter,
         quarter_filter=quarter_filter,
-        campaign_filter=campaign_filter,
+        sales_play_filter=sales_play_filter,
         account_filter=account_filter,
         outcome_filter=outcome_filter,
         selected_statuses=selected_statuses,
@@ -4288,7 +4260,6 @@ def add_outreach():
             prefill = {
                 "fy": source["fy"],
                 "quarter": source["quarter"],
-                "campaign": source["campaign"],
                 "sales_play": source["sales_play"],
                 "account_id": source["account_id"],
                 "contact_id": source["contact_id"],
@@ -4306,6 +4277,7 @@ def add_outreach():
             }
 
     if request.method == "POST":
+        sales_play_value = request.form.get("sales_play")
         cursor = connection.execute("""
             INSERT INTO outreach (
                 fy, quarter, campaign, sales_play, account_id, contact_id, activity_type,
@@ -4317,8 +4289,8 @@ def add_outreach():
         """, (
             request.form.get("fy"),
             request.form.get("quarter"),
-            request.form.get("campaign"),
-            request.form.get("sales_play"),
+            sales_play_value,
+            sales_play_value,
             request.form.get("account_id"),
             request.form.get("contact_id"),
             request.form.get("activity_type"),
@@ -4337,8 +4309,8 @@ def add_outreach():
         audit_record_create(connection, "outreach", outreach_id, {
             "fy": request.form.get("fy"),
             "quarter": request.form.get("quarter"),
-            "campaign": request.form.get("campaign"),
-            "sales_play": request.form.get("sales_play"),
+            "campaign": sales_play_value,
+            "sales_play": sales_play_value,
             "account_id": request.form.get("account_id"),
             "contact_id": request.form.get("contact_id"),
             "activity_type": request.form.get("activity_type"),
@@ -4382,15 +4354,6 @@ def add_outreach():
         FROM non_working_blocks
         ORDER BY start_date, end_date, id
     """).fetchall())
-    existing_campaigns = connection.execute("""
-        SELECT DISTINCT campaign
-        FROM outreach
-        WHERE campaign IS NOT NULL
-          AND campaign != ''
-        ORDER BY campaign
-    """).fetchall()
-    campaign_options = sorted(row["campaign"] for row in existing_campaigns if row["campaign"])
-
     connection.close()
 
     return render_template(
@@ -4398,7 +4361,6 @@ def add_outreach():
         accounts=accounts,
         contacts=contacts,
         profile=profile,
-        campaign_options=campaign_options,
         non_working_blocks=non_working_block_rows,
         prefill=prefill
     )
@@ -4414,7 +4376,6 @@ def campaign_builder():
     selected_pg_week_start = request.form.get("pg_week_start", "")
     selected_campaign_start = request.form.get("campaign_start_date", "")
     selected_campaign_end = request.form.get("campaign_end_date", "")
-    selected_campaign_name = request.form.get("campaign_name", "")
     selected_total_tasks = request.form.get("total_outreach_tasks", "8")
     selected_times_per_week = request.form.get("times_per_week", "2")
     selected_sales_play = request.form.get("sales_play") or request.form.get("sales_plays", "")
@@ -4497,8 +4458,7 @@ def campaign_builder():
                 valid_contact_ids = [str(contact["id"]) for contact in contacts]
                 selected_contact_ids = valid_contact_ids
                 account_name = account["account_name"] if account else "Selected account"
-                campaign_name = (request.form.get("campaign_name") or "").strip() or f"{account_name} PG Campaign"
-                selected_campaign_name = campaign_name
+                campaign_name = sales_play
                 assigned_to = request.form.get("assigned_to", "")
                 fy = request.form.get("fy", "")
                 quarter = request.form.get("quarter", "")
@@ -4540,7 +4500,6 @@ def campaign_builder():
                         subject = f"{step['subject_prefix']}: {sales_play}"
                         notes = (
                             f"Auto-generated campaign step for {account_name}. "
-                            f"Campaign name: {campaign_name}. "
                             f"Campaign window: {campaign_start.isoformat()} to {campaign_end.isoformat()}. "
                             f"Total outreach tasks: {total_tasks}. "
                             f"Times per week: {times_per_week}. "
@@ -4643,7 +4602,6 @@ def campaign_builder():
         selected_pg_week_start=selected_pg_week_start,
         selected_campaign_start=selected_campaign_start,
         selected_campaign_end=selected_campaign_end,
-        selected_campaign_name=selected_campaign_name,
         selected_total_tasks=selected_total_tasks,
         selected_times_per_week=selected_times_per_week,
         selected_sales_play=selected_sales_play,
@@ -4755,22 +4713,14 @@ def edit_outreach(outreach_id):
         FROM non_working_blocks
         ORDER BY start_date, end_date, id
     """).fetchall()
-    existing_campaigns = connection.execute("""
-        SELECT DISTINCT campaign
-        FROM outreach
-        WHERE campaign IS NOT NULL
-          AND campaign != ''
-        ORDER BY campaign
-    """).fetchall()
-    campaign_options = sorted(row["campaign"] for row in existing_campaigns if row["campaign"])
-
     if request.method == "POST":
         submit_action = request.form.get("submit_action", "save")
+        sales_play_value = request.form.get("sales_play")
         new_values = {
             "fy": request.form.get("fy"),
             "quarter": request.form.get("quarter"),
-            "campaign": request.form.get("campaign"),
-            "sales_play": request.form.get("sales_play"),
+            "campaign": sales_play_value,
+            "sales_play": sales_play_value,
             "account_id": request.form.get("account_id"),
             "contact_id": request.form.get("contact_id"),
             "activity_type": request.form.get("activity_type"),
@@ -4800,7 +4750,6 @@ def edit_outreach(outreach_id):
                     accounts=accounts,
                     contacts=contacts,
                     profile=profile,
-                    campaign_options=campaign_options,
                     non_working_blocks=non_working_block_rows,
                     error=error
                 )
@@ -4811,8 +4760,8 @@ def edit_outreach(outreach_id):
         labels = {
             "fy": "FY",
             "quarter": "Quarter",
-            "campaign": "Campaign name",
-            "sales_play": "Sales play",
+            "campaign": "Sales play or initiative campaign grouping",
+            "sales_play": "Sales play or initiative",
             "account_id": "Account",
             "contact_id": "Contact",
             "activity_type": "Activity type",
@@ -4898,7 +4847,6 @@ def edit_outreach(outreach_id):
         accounts=accounts,
         contacts=contacts,
         profile=profile,
-        campaign_options=campaign_options,
         non_working_blocks=non_working_block_rows,
         error=error
     )
@@ -5017,7 +4965,6 @@ def global_search():
             WHERE outreach.subject LIKE ?
                OR outreach.notes LIKE ?
                OR outreach.outcome LIKE ?
-               OR outreach.campaign LIKE ?
                OR outreach.sales_play LIKE ?
                OR outreach.next_action LIKE ?
                OR outreach.activity_type LIKE ?
@@ -5026,8 +4973,7 @@ def global_search():
             ORDER BY outreach.activity_date DESC, outreach.activity_time DESC
         """, (
             search_term, search_term, search_term, search_term,
-            search_term, search_term, search_term, search_term,
-            search_term
+            search_term, search_term, search_term, search_term
         )).fetchall()
 
         timeline_results = connection.execute("""
@@ -5389,7 +5335,7 @@ def legacy_team_outreach_context():
                     ORDER BY
                         COALESCE(NULLIF(outreach.assigned_to, ''), ?),
                         COALESCE(NULLIF(accounts.account_name, ''), 'No Account'),
-                        COALESCE(NULLIF(outreach.campaign, ''), 'No Campaign'),
+                        COALESCE(NULLIF(outreach.sales_play, ''), 'No Sales Play'),
                         outreach.next_action_date ASC,
                         outreach.next_action_time ASC
                 """, (member["full_name"],)).fetchall()
@@ -5431,7 +5377,7 @@ def legacy_team_outreach_context():
     rows.sort(key=lambda row: (
         row.get("assigned_to") or row.get("owner_name") or "Unassigned",
         row.get("account_name") or "No Account",
-        row.get("campaign") or "No Campaign",
+        row.get("sales_play") or "No Sales Play",
         row.get("next_action_date") or "",
         row.get("next_action_time") or "",
     ))
@@ -6216,7 +6162,6 @@ def build_pg_bible_report_from_db(connection):
     weekly_source_rows = connection.execute("""
         SELECT
             outreach.activity_date,
-            outreach.campaign,
             outreach.activity_type,
             outreach.outcome,
             outreach.task_status,
@@ -6252,7 +6197,7 @@ def build_pg_bible_report_from_db(connection):
         totals = weekly_totals[week_key]
         is_meeting_booked = row["outcome"] == "Meeting Booked"
         is_pipeline_outcome = row["outcome"] in ("Meeting Booked", "Positive Response", "Referral Made")
-        if row["activity_type"] == "VITO" or row["campaign"] == "VITO":
+        if row["activity_type"] == "VITO":
             totals["vitos_sent"] += 1
             if row["outcome"] != "No Response Yet":
                 totals["vitos_chased"] += 1
@@ -6760,7 +6705,6 @@ def outreach_reports():
             outreach.activity_type,
             outreach.outcome,
             outreach.task_status,
-            outreach.campaign,
             outreach.sales_play,
             outreach.fy,
             outreach.quarter,
@@ -6885,7 +6829,6 @@ def export_outreach_reports():
             outreach.next_action_date,
             outreach.next_action_time,
             outreach.task_status,
-            outreach.campaign,
             outreach.sales_play,
             outreach.fy,
             outreach.quarter,
@@ -6915,8 +6858,7 @@ def export_outreach_reports():
         "Status",
         "FY",
         "Quarter",
-        "Campaign",
-        "Sales Play",
+        "Sales Play or Initiative",
         "Account",
         "Account Tier",
         "Contact",
@@ -6935,7 +6877,6 @@ def export_outreach_reports():
             item["task_status"],
             item["fy"],
             item["quarter"],
-            item["campaign"],
             item["sales_play"],
             item["account_name"],
             item["account_tier"],
@@ -7130,7 +7071,6 @@ def export_outreach():
         SELECT
             outreach.fy,
             outreach.quarter,
-            outreach.campaign,
             outreach.sales_play,
             outreach.activity_date,
             outreach.activity_time,
@@ -7158,8 +7098,7 @@ def export_outreach():
     writer.writerow([
         "FY",
         "Quarter",
-        "Campaign Name",
-        "Sales Play",
+        "Sales Play or Initiative",
         "Activity Start Date",
         "Activity Start Time",
         "Account",
@@ -7178,7 +7117,6 @@ def export_outreach():
         writer.writerow([
             row["fy"],
             row["quarter"],
-            row["campaign"],
             row["sales_play"],
             row["activity_date"],
             row["activity_time"],

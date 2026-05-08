@@ -3313,7 +3313,7 @@ body {
     }
 
     .outreach-main-row td:nth-child(4)::before {
-        content: "Campaign Name";
+        content: "Sales Play / Initiative";
     }
 
     .outreach-main-row td:nth-child(5)::before {
@@ -3333,7 +3333,7 @@ body {
     }
 
     .dashboard-flat-outreach-table .outreach-main-row td:nth-child(3)::before {
-        content: "Campaign Name";
+        content: "Sales Play / Initiative";
     }
 
     .dashboard-flat-outreach-table .outreach-main-row td:nth-child(4)::before {

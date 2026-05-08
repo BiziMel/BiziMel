@@ -149,11 +149,11 @@
             </div>
 
             <div class="form-group">
-                <label for="campaign">Campaign</label>
-                <select id="campaign" name="campaign">
-                    <option value="">All campaigns</option>
-                    {% for campaign in campaign_options %}
-                        <option value="{{ campaign }}" {% if campaign_filter == campaign %}selected{% endif %}>{{ campaign }}</option>
+                <label for="sales_play">Sales Play / Initiative</label>
+                <select id="sales_play" name="sales_play">
+                    <option value="">All sales plays</option>
+                    {% for sales_play in sales_play_options %}
+                        <option value="{{ sales_play }}" {% if sales_play_filter == sales_play %}selected{% endif %}>{{ sales_play }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -226,20 +226,20 @@
                         <th class="bulk-select-col">Select</th>
                         <th>Activity Due Date</th>
                         <th>Account / Contact</th>
-                        <th>Campaign Name</th>
+                        <th>Sales Play / Initiative</th>
                         <th>Activity Type / Subject</th>
                         <th>Outcome / Next Action</th>
                     </tr>
                 </thead>
 
                 <tbody>
-                    {% set current_group = namespace(account=None, campaign=None) %}
+                    {% set current_group = namespace(account=None, sales_play=None) %}
                     {% for item in outreach_records %}
                         {% set account_group = item.account_name or "No Account" %}
-                        {% set campaign_group = item.campaign or "No Campaign" %}
+                        {% set sales_play_group = item.sales_play or "No Sales Play" %}
                         {% if current_group.account != account_group %}
                             {% set current_group.account = account_group %}
-                            {% set current_group.campaign = None %}
+                            {% set current_group.sales_play = None %}
                             <tr class="outreach-account-group-row">
                                 <td colspan="6">
                                     <span>Account</span>
@@ -247,12 +247,12 @@
                                 </td>
                             </tr>
                         {% endif %}
-                        {% if current_group.campaign != campaign_group %}
-                            {% set current_group.campaign = campaign_group %}
+                        {% if current_group.sales_play != sales_play_group %}
+                            {% set current_group.sales_play = sales_play_group %}
                             <tr class="outreach-campaign-group-row">
                                 <td colspan="6">
-                                    <span>Campaign</span>
-                                    <strong>{{ campaign_group }}</strong>
+                                    <span>Sales Play / Initiative</span>
+                                    <strong>{{ sales_play_group }}</strong>
                                 </td>
                             </tr>
                         {% endif %}
@@ -292,9 +292,7 @@
                                 <span class="muted">{{ item.contact_name or "No contact" }}</span>
                             </td>
                             <td>
-                                <strong>{{ item.campaign or "No campaign" }}</strong>
-                                <br>
-                                <span class="muted">{{ item.sales_play or "No sales play" }}</span>
+                                <strong>{{ item.sales_play or "No sales play" }}</strong>
                             </td>
                             <td>
                                 <strong>{{ item.activity_type or "No activity type" }}</strong>

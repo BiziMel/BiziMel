@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard_New | PipeFlow PG Manager{% endblock %}
+{% block title %}PG Progress | PipeFlow PG Manager{% endblock %}
 
 {% block content %}
 
 <div class="page-header">
     <div>
-        <h1>Dashboard_New</h1>
-        <p>Admin-only temporary build view for the new PG Goals dashboard.</p>
+        <h1>PG Progress</h1>
+        <p>Track PG Goals, PG Plan and PG Actions using your account and outreach data.</p>
     </div>
     <a href="{{ url_for('home') }}" class="btn btn-secondary">Back to Current Dashboard</a>
 </div>
@@ -23,7 +23,7 @@
                 <h2>PG Goals</h2>
                 <p>Pipeline target, current pipeline and gap position for the financial year.</p>
             </div>
-            <button type="submit" class="btn btn-primary">Save PG Goals Dashboard</button>
+            <button type="submit" class="btn btn-primary">Save PG Progress</button>
         </div>
 
         <div class="pg-goals-metric-grid">

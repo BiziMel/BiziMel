@@ -40,22 +40,7 @@
             </div>
 
             <div class="form-group">
-                <label for="campaign">Campaign Name</label>
-                <input type="text"
-                       id="campaign"
-                       name="campaign"
-                       list="campaign_options"
-                       value="{{ outreach_item.campaign or '' }}"
-                       placeholder="Campaign name">
-                <datalist id="campaign_options">
-                    {% for campaign in campaign_options %}
-                        <option value="{{ campaign }}">{{ campaign }}</option>
-                    {% endfor %}
-                </datalist>
-            </div>
-
-            <div class="form-group">
-                <label for="sales_play">Sales Play</label>
+                <label for="sales_play">Sales Play or Initiative</label>
                 <input type="text"
                        id="sales_play"
                        name="sales_play"

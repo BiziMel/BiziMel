@@ -31,9 +31,7 @@
 
     <nav class="button-group nav-stack">
     <a href="/" class="btn btn-primary">Dashboard</a>
-    {% if current_user and current_user["role"] == "admin" %}
-    <a href="{{ url_for('dashboard_new') }}" class="btn btn-secondary">Dashboard_New</a>
-    {% endif %}
+    <a href="{{ url_for('pg_progress') }}" class="btn btn-primary">PG Progress</a>
     <a href="/outreach" class="btn btn-primary">Outreach Tasks</a>
     <a href="/accounts" class="btn btn-primary">Accounts</a>
     <a href="/contacts" class="btn btn-primary">Contacts</a>
