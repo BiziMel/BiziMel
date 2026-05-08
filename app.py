@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection
@@ -38,6 +38,9 @@ RELEASE_NOTES = [
             "Enhanced Outreach sharing controls so account sharing fields are smaller and easier to scan.",
             "Enhanced the User Guide so account ownership, sharing, assignment and status filtering instructions reflect the current workflow.",
             "Enhanced the User Guide with more detailed navigation guidance and clearer admin-only access explanations.",
+            "Enhanced broadcasts so login messages and dashboard ticker items are ordered by urgency, with a more compact login page presentation.",
+            "Enhanced audit management so all audit trails are consolidated on the Audit page, grouped by month, filterable by date and user, exportable to CSV by admins and governed by an audited 6-month retention toggle.",
+            "Enhanced admin navigation by moving Audit into Admin as an admin-only sub tab with clearer admin-only explanation.",
             "Improved grouped table colour hierarchy so top-level groups use the darkest shade, nested groups step down progressively and detail rows remain light.",
             "Improved Release Notes ordering so the latest release always appears first.",
             "Improved profile audit entries so profile changes display clear field labels in the audit trail.",
@@ -101,7 +104,7 @@ USER_GUIDE_SECTIONS = [
         "slug": "getting-started",
         "title": "Getting Started",
         "summary": "Set up your profile, understand navigation and get your first workspace ready.",
-        "access": "All signed-in users can use the standard navigation. Admin and Audit links only appear for users with admin permission.",
+        "access": "All signed-in users can use the standard navigation. Admin appears only for users with admin permission, and Audit is available inside Admin as an admin-only sub tab.",
         "navigation": [
             "Use the top navigation from left to right as your normal workflow: Dashboard, Outreach Tasks, Accounts, Contacts, Partners, Reports, Profile and Release Notes.",
             "Use the User Guide link in the top right whenever you need help without leaving the application structure.",
@@ -337,11 +340,11 @@ USER_GUIDE_SECTIONS = [
         "slug": "admin",
         "title": "Admin",
         "summary": "Manage users, permissions and broadcasts when signed in as an administrator.",
-        "access": "Admin forms are only visible to admin users. Non-admin users will not see Admin or Audit navigation links and cannot access the admin routes.",
+        "access": "Admin forms are only visible to admin users. Non-admin users will not see Admin in the navigation and cannot access the admin routes.",
         "navigation": [
             "Admin appears near the end of the navigation only for admin users.",
             "Use Admin for user management, role changes, broadcasts and profile administration.",
-            "Use Audit to review administrative and data-change history.",
+            "Use the Audit Trail sub tab inside Admin to review administrative and data-change history.",
         ],
         "steps": [
             "Open Admin from the top navigation when available.",
@@ -352,7 +355,7 @@ USER_GUIDE_SECTIONS = [
         ],
         "tips": [
             "Admin actions are recorded in the admin audit trail.",
-            "Only admins can access Admin and Audit links.",
+            "Only admins can access Admin, including its Audit Trail sub tab.",
             "If a user cannot see an admin form, check their role before troubleshooting the page.",
         ],
     },
@@ -360,9 +363,9 @@ USER_GUIDE_SECTIONS = [
         "slug": "audit-release-notes",
         "title": "Audit and Release Notes",
         "summary": "Review change history and understand what has changed between releases.",
-        "access": "Audit is admin-only. Release Notes are visible to all users so everyone can understand what changed.",
+        "access": "Audit is an admin-only sub tab inside Admin. Release Notes are visible to all users so everyone can understand what changed.",
         "navigation": [
-            "Open Audit from the navigation if you are an admin.",
+            "Open Admin from the navigation, then use the Audit Trail sub tab.",
             "Open Release Notes from the navigation to see product changes.",
             "Use the accordion controls to expand older release entries when needed.",
         ],
@@ -625,7 +628,7 @@ PAGE_INSTRUCTIONS = {
     "audit_trail": {
         "title": "Audit Guidance",
         "items": [
-            "Audit is an admin-only page and is hidden from non-admin users.",
+            "Audit is an admin-only sub tab inside Admin and is hidden from non-admin users.",
             "Use audit records to understand who changed what, when it changed and the values before and after.",
             "Profile and permission changes include field labels for easier reading.",
             "Use the newest entries first when investigating recent behaviour.",
@@ -911,7 +914,7 @@ def render_admin_permissions():
         "admin_permissions.html",
         users=list_users(),
         broadcast_messages=list_broadcast_messages(active_only=False),
-        audit_entries=list_admin_audit_entries(limit=75),
+        audit_retention_enabled=audit_retention_enabled(),
         message=request.args.get("message", ""),
         error=request.args.get("error", "")
     )
@@ -985,6 +988,23 @@ def admin_reactivate_broadcast(message_id):
 def admin_delete_broadcast(message_id):
     delete_broadcast_message(message_id)
     return redirect(url_for("admin_users", message="Broadcast message deleted."))
+
+
+@app.route("/admin/audit-retention", methods=("POST",))
+@admin_required
+def admin_update_audit_retention():
+    enabled = request.form.get("audit_retention_enabled") == "1"
+    set_admin_setting("audit_retention_enabled", "1" if enabled else "0")
+    log_admin_audit(
+        current_user(),
+        "Audit retention setting updated",
+        "Admin setting",
+        "Audit auto-delete",
+        f"Audit auto-delete older than 6 months set to {'On' if enabled else 'Off'}."
+    )
+    if enabled:
+        cleanup_audit_retention()
+    return redirect(url_for("admin_users", message=f"Audit auto-delete is now {'on' if enabled else 'off'}."))
 
 
 @app.route("/admin/account-fields/add", methods=("POST",))
@@ -5620,17 +5640,245 @@ def reports():
     return render_template("reports.html")
 
 
-@app.route("/audit")
-def audit_trail():
-    connection = get_db_connection()
-    entries = connection.execute("""
+def audit_retention_cutoff():
+    return (datetime.now() - timedelta(days=183)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def cleanup_audit_retention():
+    if not audit_retention_enabled():
+        return
+    cutoff = audit_retention_cutoff()
+    cleanup_admin_audit_entries_older_than(cutoff)
+    if using_postgres():
+        for user in list_users():
+            schema = user["workspace_schema"] if "workspace_schema" in user.keys() else ""
+            if not schema:
+                continue
+            try:
+                connection = get_schema_connection(schema=schema)
+                connection.execute("DELETE FROM audit_entries WHERE date_created < ?", (cutoff,))
+                connection.commit()
+                connection.close()
+            except Exception:
+                continue
+    else:
+        connection = get_db_connection()
+        connection.execute("DELETE FROM audit_entries WHERE date_created < ?", (cutoff,))
+        connection.commit()
+        connection.close()
+
+
+def parse_audit_date(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def audit_entry_date(value):
+    if not value:
+        return None
+    text = str(value)
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text[:len(fmt)], fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def audit_month_label(value):
+    parsed = audit_entry_date(value)
+    return parsed.strftime("%B %Y") if parsed else "Unknown Month"
+
+
+def normalise_audit_row(row, source, workspace_owner=""):
+    row_dict = dict(row)
+    if source == "admin":
+        return {
+            "source": "Admin",
+            "date_created": row_dict.get("date_created", ""),
+            "actor_name": row_dict.get("actor_name", ""),
+            "actor_email": row_dict.get("actor_email", ""),
+            "action_type": row_dict.get("action_type", ""),
+            "record": row_dict.get("target_label") or row_dict.get("target_type") or "Admin change",
+            "field": row_dict.get("target_type") or "Admin",
+            "value_from": "",
+            "value_to": row_dict.get("detail", ""),
+            "workspace_owner": "Admin",
+            "month_label": audit_month_label(row_dict.get("date_created", "")),
+        }
+    return {
+        "source": "Workspace",
+        "date_created": row_dict.get("date_created", ""),
+        "actor_name": row_dict.get("actor_name", ""),
+        "actor_email": row_dict.get("actor_email", ""),
+        "action_type": row_dict.get("action_type", ""),
+        "record": f"{row_dict.get('entity_type') or 'record'} #{row_dict.get('entity_id') or '-'}",
+        "field": row_dict.get("field_label") or row_dict.get("field_name") or "Record",
+        "value_from": row_dict.get("value_from", ""),
+        "value_to": row_dict.get("value_to", ""),
+        "workspace_owner": workspace_owner or "Current workspace",
+        "month_label": audit_month_label(row_dict.get("date_created", "")),
+    }
+
+
+def collect_audit_entries():
+    cleanup_audit_retention()
+    rows = []
+    auth_connection = get_auth_connection()
+    admin_rows = auth_connection.execute("""
         SELECT *
-        FROM audit_entries
+        FROM admin_audit_entries
         ORDER BY date_created DESC, id DESC
-        LIMIT 500
     """).fetchall()
-    connection.close()
-    return render_template("audit.html", entries=entries)
+    auth_connection.close()
+    rows.extend(normalise_audit_row(row, "admin") for row in admin_rows)
+
+    if using_postgres():
+        for user in list_users():
+            schema = user["workspace_schema"] if "workspace_schema" in user.keys() else ""
+            if not schema:
+                continue
+            try:
+                connection = get_schema_connection(schema=schema)
+                workspace_rows = connection.execute("""
+                    SELECT *
+                    FROM audit_entries
+                    ORDER BY date_created DESC, id DESC
+                """).fetchall()
+                connection.close()
+            except Exception:
+                continue
+            owner = user["full_name"] or user["email"]
+            rows.extend(normalise_audit_row(row, "workspace", owner) for row in workspace_rows)
+    else:
+        connection = get_db_connection()
+        workspace_rows = connection.execute("""
+            SELECT *
+            FROM audit_entries
+            ORDER BY date_created DESC, id DESC
+        """).fetchall()
+        connection.close()
+        rows.extend(normalise_audit_row(row, "workspace", current_user()["full_name"] if current_user() else "") for row in workspace_rows)
+
+    return rows
+
+
+def filtered_audit_entries(entries, start_date=None, end_date=None, user_filter=""):
+    filtered = []
+    user_filter = (user_filter or "").strip().lower()
+    for entry in entries:
+        entry_date = audit_entry_date(entry["date_created"])
+        if start_date and (not entry_date or entry_date < start_date):
+            continue
+        if end_date and (not entry_date or entry_date > end_date):
+            continue
+        actor_blob = f"{entry['actor_name']} {entry['actor_email']} {entry['workspace_owner']}".lower()
+        if user_filter and user_filter not in actor_blob:
+            continue
+        filtered.append(entry)
+    return sorted(filtered, key=lambda row: row["date_created"] or "", reverse=True)
+
+
+def group_audit_entries_by_month(entries):
+    groups = []
+    current_label = None
+    current_rows = []
+    for entry in entries:
+        label = entry["month_label"]
+        if current_label is None:
+            current_label = label
+        if label != current_label:
+            groups.append({"month": current_label, "entries": current_rows})
+            current_label = label
+            current_rows = []
+        current_rows.append(entry)
+    if current_label is not None:
+        groups.append({"month": current_label, "entries": current_rows})
+    return groups
+
+
+@app.route("/audit")
+@admin_required
+def audit_trail():
+    start_date_raw = request.args.get("start_date", "")
+    end_date_raw = request.args.get("end_date", "")
+    user_filter = request.args.get("user", "")
+    all_entries = collect_audit_entries()
+    entries = filtered_audit_entries(
+        all_entries,
+        parse_audit_date(start_date_raw),
+        parse_audit_date(end_date_raw),
+        user_filter,
+    )
+    users = sorted({
+        value
+        for entry in all_entries
+        for value in (entry["actor_name"], entry["actor_email"], entry["workspace_owner"])
+        if value
+    })
+    return render_template(
+        "audit.html",
+        audit_groups=group_audit_entries_by_month(entries),
+        entries=entries,
+        users=users,
+        selected_start_date=start_date_raw,
+        selected_end_date=end_date_raw,
+        selected_user=user_filter,
+        audit_retention_enabled=audit_retention_enabled(),
+    )
+
+
+@app.route("/audit/export")
+@admin_required
+def export_audit_trail():
+    start_date_raw = request.args.get("start_date", "")
+    end_date_raw = request.args.get("end_date", "")
+    user_filter = request.args.get("user", "")
+    entries = filtered_audit_entries(
+        collect_audit_entries(),
+        parse_audit_date(start_date_raw),
+        parse_audit_date(end_date_raw),
+        user_filter,
+    )
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Date Created",
+        "Source",
+        "Workspace Owner",
+        "User",
+        "User Email",
+        "Action",
+        "Record",
+        "Field",
+        "Value From",
+        "Value To",
+    ])
+    for entry in entries:
+        writer.writerow([
+            entry["date_created"],
+            entry["source"],
+            entry["workspace_owner"],
+            entry["actor_name"],
+            entry["actor_email"],
+            entry["action_type"],
+            entry["record"],
+            entry["field"],
+            entry["value_from"],
+            entry["value_to"],
+        ])
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename=audit_trail_{timestamp}.csv"
+        },
+    )
 
 
 def documented_sales_play(row):

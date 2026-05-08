@@ -11,6 +11,17 @@
     </div>
 </section>
 
+<div class="admin-subnav-card">
+    <div>
+        <strong>Admin Area</strong>
+        <p>These controls are visible to admins only. Non-admin users do not see this page or the audit tools.</p>
+    </div>
+    <div class="admin-subnav-actions">
+        <a href="{{ url_for('admin_permissions') }}" class="btn btn-primary btn-small">Permissions & Controls</a>
+        <a href="{{ url_for('audit_trail') }}" class="btn btn-secondary btn-small">Audit Trail</a>
+    </div>
+</div>
+
 {% if message %}
     <div class="alert-success">{{ message }}</div>
 {% endif %}
@@ -314,49 +325,22 @@
 </div>
 
 
-<div class="card admin-audit-card">
+<div class="card admin-retention-card">
     <div class="section-header">
         <div>
-            <h3>Admin Audit Trail</h3>
-            <p class="muted-text">A record of permission changes, profile access changes and password resets.</p>
+            <h3>Audit Retention</h3>
+            <p class="muted-text">Control whether audit entries older than 6 months are automatically deleted.</p>
         </div>
+        <a href="{{ url_for('audit_trail') }}" class="btn btn-secondary">Open Audit Trail</a>
     </div>
 
-    {% if audit_entries %}
-        <div class="audit-timeline">
-            {% for entry in audit_entries %}
-                <article class="audit-entry-card">
-                    <div class="audit-entry-main">
-                        <div>
-                            <span class="audit-action-pill">{{ entry.action_type }}</span>
-                            <h4>{{ entry.target_label or entry.target_type or "Admin change" }}</h4>
-                            <p>{{ entry.detail or "No details recorded." }}</p>
-                        </div>
-
-                        <div class="audit-entry-meta">
-                            <span>{{ entry.date_created }}</span>
-                        </div>
-                    </div>
-
-                    <div class="audit-entry-footer">
-                        <span>
-                            <strong>Admin</strong>
-                            {{ entry.actor_name or "System" }}{% if entry.actor_email %} · {{ entry.actor_email }}{% endif %}
-                        </span>
-                        <span>
-                            <strong>Target</strong>
-                            {{ entry.target_type or "Change" }}
-                        </span>
-                    </div>
-                </article>
-            {% endfor %}
-        </div>
-    {% else %}
-        <div class="empty-state audit-empty-state">
-            <h3>No admin changes yet</h3>
-            <p>Role, profile, password and account field control changes will appear here once admins start making updates.</p>
-        </div>
-    {% endif %}
+    <form method="POST" action="{{ url_for('admin_update_audit_retention') }}" class="retention-toggle-form">
+        <label class="checkbox-label broadcast-active-control">
+            <input type="checkbox" name="audit_retention_enabled" value="1" {% if audit_retention_enabled %}checked{% endif %}>
+            Auto-delete audit trails older than 6 months
+        </label>
+        <button type="submit" class="btn btn-primary">Save Audit Setting</button>
+    </form>
 </div>
 
 <script>

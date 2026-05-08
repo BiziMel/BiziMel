@@ -7,55 +7,123 @@
 <div class="page-header">
     <div>
         <h1>Audit Trail</h1>
-        <p>Structured change history for your private workspace.</p>
+        <p>Admin-only audit history across admin actions and workspace record changes.</p>
     </div>
+    <a href="{{ url_for('export_audit_trail', start_date=selected_start_date, end_date=selected_end_date, user=selected_user) }}" class="btn btn-primary">
+        Export CSV
+    </a>
+</div>
+
+<div class="admin-subnav-card">
+    <div>
+        <strong>Admin Area</strong>
+        <p>Audit is an admin-only sub tab. It is hidden from non-admin users and records both admin changes and workspace record changes.</p>
+    </div>
+    <div class="admin-subnav-actions">
+        <a href="{{ url_for('admin_permissions') }}" class="btn btn-secondary btn-small">Permissions & Controls</a>
+        <a href="{{ url_for('audit_trail') }}" class="btn btn-primary btn-small">Audit Trail</a>
+    </div>
+</div>
+
+<div class="form-card compact-filter-card">
+    <div class="section-header">
+        <div>
+            <h2>Filter Audit Trail</h2>
+            <p>Filter by date range and user, then export the same result set to CSV.</p>
+        </div>
+        <span class="status-pill">{{ "Retention On" if audit_retention_enabled else "Retention Off" }}</span>
+    </div>
+
+    <form method="GET" action="{{ url_for('audit_trail') }}" class="pipeflow-form compact-filter-form">
+        <div class="form-grid compact-filter-grid">
+            <div class="form-group">
+                <label for="start_date">Start Date</label>
+                <input type="date" id="start_date" name="start_date" value="{{ selected_start_date }}">
+            </div>
+
+            <div class="form-group">
+                <label for="end_date">End Date</label>
+                <input type="date" id="end_date" name="end_date" value="{{ selected_end_date }}">
+            </div>
+
+            <div class="form-group">
+                <label for="user">User</label>
+                <input type="text" id="user" name="user" list="audit_user_options" value="{{ selected_user }}" placeholder="All users">
+                <datalist id="audit_user_options">
+                    {% for user in users %}
+                        <option value="{{ user }}">
+                    {% endfor %}
+                </datalist>
+            </div>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Apply Filters</button>
+            <a href="{{ url_for('audit_trail') }}" class="btn btn-secondary">Clear Filters</a>
+        </div>
+    </form>
 </div>
 
 <div class="report-table-section">
     <div class="section-header">
         <div>
-            <h2>Recent Changes</h2>
-            <p>Date/time, record, field, old value, new value and user.</p>
+            <h2>Audit Entries</h2>
+            <p>Grouped by month and sorted latest to earliest.</p>
         </div>
     </div>
 
-    {% if entries %}
-        <div class="table-container">
-            <table class="report-table">
-                <thead>
-                    <tr>
-                        <th>Date / Time</th>
-                        <th>User</th>
-                        <th>Action</th>
-                        <th>Record</th>
-                        <th>Field</th>
-                        <th>Value From</th>
-                        <th>Value To</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for entry in entries %}
-                        <tr>
-                            <td>{{ entry.date_created }}</td>
-                            <td>
-                                <strong>{{ entry.actor_name or "Unknown user" }}</strong>
-                                <br>
-                                <span class="muted">{{ entry.actor_email or "" }}</span>
-                            </td>
-                            <td>{{ entry.action_type }}</td>
-                            <td>{{ entry.entity_type }} #{{ entry.entity_id or "-" }}</td>
-                            <td>{{ entry.field_label or entry.field_name or "Record" }}</td>
-                            <td>{{ entry.value_from or "" }}</td>
-                            <td>{{ entry.value_to or "" }}</td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    {% if audit_groups %}
+        <div class="audit-month-stack">
+            {% for group in audit_groups %}
+                <details class="audit-month-group" open>
+                    <summary>
+                        <strong>{{ group.month }}</strong>
+                        <span>{{ group.entries|length }} entr{{ "y" if group.entries|length == 1 else "ies" }}</span>
+                    </summary>
+
+                    <div class="table-container">
+                        <table class="report-table audit-table">
+                            <thead>
+                                <tr>
+                                    <th>Date / Time</th>
+                                    <th>Source</th>
+                                    <th>Workspace</th>
+                                    <th>User</th>
+                                    <th>Action</th>
+                                    <th>Record</th>
+                                    <th>Field</th>
+                                    <th>Value From</th>
+                                    <th>Value To / Detail</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for entry in group.entries %}
+                                    <tr>
+                                        <td>{{ entry.date_created }}</td>
+                                        <td>{{ entry.source }}</td>
+                                        <td>{{ entry.workspace_owner }}</td>
+                                        <td>
+                                            <strong>{{ entry.actor_name or "Unknown user" }}</strong>
+                                            <br>
+                                            <span class="muted">{{ entry.actor_email or "" }}</span>
+                                        </td>
+                                        <td>{{ entry.action_type }}</td>
+                                        <td>{{ entry.record }}</td>
+                                        <td>{{ entry.field }}</td>
+                                        <td>{{ entry.value_from or "" }}</td>
+                                        <td>{{ entry.value_to or "" }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
+            {% endfor %}
         </div>
     {% else %}
         <div class="empty-state">
-            <h3>No audit entries yet</h3>
-            <p>Changes will appear here once users create, update or delete records.</p>
+            <h3>No audit entries found</h3>
+            <p>Try clearing filters or widening the date range.</p>
         </div>
     {% endif %}
 </div>

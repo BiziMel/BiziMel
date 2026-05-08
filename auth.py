@@ -125,6 +125,13 @@ def initialise_auth_database() -> None:
         )
     """)
     connection.execute("""
+        CREATE TABLE IF NOT EXISTS admin_settings (
+            setting_key TEXT PRIMARY KEY,
+            setting_value TEXT,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    connection.execute("""
         CREATE TABLE IF NOT EXISTS teams (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             team_name TEXT NOT NULL UNIQUE,
@@ -789,7 +796,21 @@ def list_broadcast_messages(active_only: bool = False):
               AND stop_at >= ?
         """
         params.extend([1, now_key, now_key])
-    query += " ORDER BY is_active DESC, start_at ASC, last_updated DESC, date_created DESC, id DESC"
+    query += """
+        ORDER BY
+            is_active DESC,
+            CASE severity
+                WHEN 'urgent' THEN 1
+                WHEN 'warning' THEN 2
+                WHEN 'info' THEN 3
+                WHEN 'success' THEN 4
+                ELSE 5
+            END,
+            start_at ASC,
+            last_updated DESC,
+            date_created DESC,
+            id DESC
+    """
     rows = connection.execute(query, params).fetchall()
     connection.close()
     return rows
@@ -995,6 +1016,65 @@ def list_admin_audit_entries(limit: int = 50):
     ).fetchall()
     connection.close()
     return rows
+
+
+def get_admin_setting(setting_key: str, default: str = ""):
+    connection = get_auth_connection()
+    row = connection.execute(
+        """
+        SELECT setting_value
+        FROM admin_settings
+        WHERE setting_key = ?
+        """,
+        (setting_key,),
+    ).fetchone()
+    connection.close()
+    return row["setting_value"] if row else default
+
+
+def set_admin_setting(setting_key: str, setting_value: str):
+    connection = get_auth_connection()
+    existing = connection.execute(
+        "SELECT setting_key FROM admin_settings WHERE setting_key = ?",
+        (setting_key,),
+    ).fetchone()
+    if existing:
+        connection.execute(
+            """
+            UPDATE admin_settings
+            SET setting_value = ?,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE setting_key = ?
+            """,
+            (setting_value, setting_key),
+        )
+    else:
+        connection.execute(
+            """
+            INSERT INTO admin_settings (setting_key, setting_value)
+            VALUES (?, ?)
+            """,
+            (setting_key, setting_value),
+        )
+    connection.commit()
+    connection.close()
+
+
+def audit_retention_enabled():
+    return get_admin_setting("audit_retention_enabled", "0") == "1"
+
+
+def cleanup_admin_audit_entries_older_than(cutoff):
+    connection = get_auth_connection()
+    connection.execute(
+        """
+        DELETE FROM admin_audit_entries
+        WHERE date_created < ?
+        """,
+        (cutoff,),
+    )
+    connection.commit()
+    connection.close()
 
 
 

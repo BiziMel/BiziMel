@@ -44,15 +44,17 @@
         </div>
 
         {% if broadcast_messages %}
-            <div class="login-broadcast-list">
+            <div class="login-broadcast-list compact-login-broadcast-list">
                 {% for broadcast in broadcast_messages %}
                     <article class="login-broadcast-message broadcast-{{ broadcast['severity'] }}">
                         <div class="broadcast-message-topline">
                             <span>{{ broadcast['severity']|capitalize }}</span>
-                            <small>{{ broadcast['last_updated'] or broadcast['date_created'] }}</small>
+                            <small>{{ broadcast['start_at'] }} to {{ broadcast['stop_at'] }}</small>
                         </div>
-                        <h3>{{ broadcast['title'] }}</h3>
-                        <p>{{ broadcast['message'] }}</p>
+                        <div class="compact-login-broadcast-body">
+                            <h3>{{ broadcast['title'] }}</h3>
+                            <p>{{ broadcast['message'] }}</p>
+                        </div>
                     </article>
                 {% endfor %}
             </div>

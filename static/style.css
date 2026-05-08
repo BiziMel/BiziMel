@@ -222,6 +222,35 @@ input[type="submit"]:hover {
     hyphens: none;
 }
 
+.admin-subnav-card {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: center;
+    margin: 0 0 18px;
+    padding: 14px 16px;
+    border: 1px solid #cfe0cb;
+    border-radius: 8px;
+    background: #f8fbf6;
+}
+
+.admin-subnav-card strong {
+    color: #203324;
+}
+
+.admin-subnav-card p {
+    margin: 4px 0 0;
+    color: #53645a;
+    font-size: 13px;
+}
+
+.admin-subnav-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
 .compact-filter-card {
     padding: 16px;
 }
@@ -2266,6 +2295,31 @@ a:hover {
     padding: 16px;
 }
 
+.compact-login-broadcast-list {
+    gap: 8px;
+}
+
+.compact-login-broadcast-list .login-broadcast-message {
+    padding: 10px 12px;
+}
+
+.compact-login-broadcast-body {
+    display: grid;
+    grid-template-columns: minmax(120px, 0.6fr) minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    margin-top: 6px;
+}
+
+.compact-login-broadcast-body h3 {
+    margin: 0;
+    font-size: 14px;
+}
+
+.compact-login-broadcast-body p {
+    font-size: 13px;
+}
+
 .login-broadcast-message h3,
 .login-broadcast-empty h3 {
     margin: 8px 0 6px;
@@ -2287,6 +2341,49 @@ a:hover {
     justify-content: space-between;
     gap: 12px;
     align-items: center;
+    flex-wrap: wrap;
+}
+
+.audit-month-stack {
+    display: grid;
+    gap: 12px;
+}
+
+.audit-month-group {
+    border: 1px solid #dbe6d8;
+    border-radius: 8px;
+    background: #ffffff;
+    overflow: hidden;
+}
+
+.audit-month-group summary {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    padding: 12px 14px;
+    background: #eef6ec;
+    cursor: pointer;
+}
+
+.audit-month-group summary strong {
+    color: #203324;
+}
+
+.audit-month-group summary span {
+    color: #53645a;
+    font-size: 13px;
+}
+
+.audit-table th,
+.audit-table td {
+    font-size: 12px;
+}
+
+.retention-toggle-form {
+    display: flex;
+    align-items: center;
+    gap: 14px;
     flex-wrap: wrap;
 }
 
@@ -3190,6 +3287,19 @@ body {
     .assignment-save-control {
         align-items: stretch;
         flex-direction: column;
+    }
+
+    .admin-subnav-card {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .admin-subnav-actions {
+        justify-content: flex-start;
+    }
+
+    .compact-login-broadcast-body {
+        grid-template-columns: 1fr;
     }
 
     .user-guide-link {

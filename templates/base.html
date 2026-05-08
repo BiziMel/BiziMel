@@ -39,7 +39,6 @@
     <a href="/profile" class="btn btn-secondary">Profile</a>
     <a href="/release-notes" class="btn btn-secondary">Release Notes</a>
     {% if current_user and current_user["role"] == "admin" %}
-    <a href="/audit" class="btn btn-secondary">Audit</a>
     <a href="/admin/permissions" class="btn btn-secondary">Admin</a>
     {% endif %}
     {% if current_user %}
