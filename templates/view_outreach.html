@@ -26,7 +26,10 @@
 <div class="detail-card">
     <h2>Notes and Next Action</h2>
 
-    <p><strong>Notes:</strong><br>{{ outreach_item.notes }}</p>
+    <div class="system-metadata-panel">
+        <h2>System Metadata</h2>
+        <p>{{ outreach_item.notes or "No system scheduling metadata recorded." }}</p>
+    </div>
     <p><strong>Next Action:</strong><br>{{ outreach_item.next_action }}</p>
     <p><strong>Activity Due Date:</strong> {{ outreach_item.next_action_date }}</p>
     <p><strong>Activity Due Time:</strong> {{ outreach_item.next_action_time }}</p>

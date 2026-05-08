@@ -2512,6 +2512,50 @@ a:hover {
     white-space: normal;
 }
 
+.activity-update-list {
+    display: grid;
+    gap: 6px;
+}
+
+.activity-update-entry {
+    display: grid;
+    grid-template-columns: auto 18px minmax(0, 1fr);
+    gap: 6px;
+    align-items: start;
+}
+
+.activity-update-arrow {
+    color: #138a43;
+    font-size: 12px;
+    font-weight: 900;
+    line-height: 1.5;
+}
+
+.system-metadata-panel {
+    margin-top: 18px;
+    padding: 14px;
+    border: 1px solid #dbe6d8;
+    border-radius: 8px;
+    background: #f8fbf6;
+}
+
+.system-metadata-panel h2,
+.system-metadata-panel h4 {
+    margin: 0 0 8px;
+    color: #184f2a;
+}
+
+.system-metadata-panel p {
+    margin: 0;
+    color: #52645a;
+    white-space: pre-wrap;
+}
+
+.compact-system-metadata {
+    margin-top: 8px;
+    padding: 10px;
+}
+
 .sticky-dashboard-save {
     position: sticky;
     bottom: 0;

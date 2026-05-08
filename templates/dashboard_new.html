@@ -122,10 +122,18 @@
                                 </select>
                             </td>
                             <td class="activity-notes-cell">
-                                {% if row.last_7_days_activity %}
-                                    {{ row.last_7_days_activity | replace('\n', '<br>') | safe }}
+                                {% if row.last_7_days_activity_entries %}
+                                    <div class="activity-update-list">
+                                        {% for entry in row.last_7_days_activity_entries %}
+                                            <div class="activity-update-entry">
+                                                <strong>{{ entry.date }}</strong>
+                                                <span class="activity-update-arrow" aria-hidden="true">&rarr;</span>
+                                                <span>{{ entry.update }}</span>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
                                 {% else %}
-                                    No outreach notes in the last 7 days
+                                    No activity updates in the last 7 days
                                 {% endif %}
                             </td>
                             <td>
