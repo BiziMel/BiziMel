@@ -128,12 +128,10 @@
                                             <div class="activity-update-entry">
                                                 <strong>{{ entry.date }}</strong>
                                                 <span class="activity-update-arrow" aria-hidden="true">&rarr;</span>
-                                                <span>{{ entry.update }}</span>
+                                                <span>{{ entry.activity_update }}</span>
                                             </div>
                                         {% endfor %}
                                     </div>
-                                {% else %}
-                                    No activity updates in the last 7 days
                                 {% endif %}
                             </td>
                             <td>

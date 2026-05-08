@@ -19,7 +19,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "1.1"
 APP_RELEASE_DATE = "2026-05-07"
-APP_BUILD = "2026-05-08-v1.1-pg-progress-outreach-sales-play"
+APP_BUILD = "2026-05-08-v1.1-pg-progress-activity-update-display"
 
 RELEASE_NOTES = [
     {
@@ -53,6 +53,7 @@ RELEASE_NOTES = [
             "Enhanced Outreach Tasks so Activity Update is mandatory before saving, Notes is retained as read-only system metadata and follow-on creation opens a clean new task form.",
             "Enhanced PG Progress last 7 days activity so each activity update is shown on its own line with the submitted date.",
             "Enhanced PG Progress so the PG Sales Play or Initiative column maps to Outreach task Sales Play or Initiative values for each account.",
+            "Fixed PG Progress last 7 days activity display so valid activity updates render cleanly and empty accounts stay blank.",
             "Improved grouped table colour hierarchy so top-level groups use the darkest shade, nested groups step down progressively and detail rows remain light.",
             "Improved Release Notes ordering so the latest release always appears first.",
             "Improved profile audit entries so profile changes display clear field labels in the audit trail.",
@@ -2724,7 +2725,7 @@ def pg_dashboard_context(connection):
             last_7_days_activity_entries.append({
                 "date": submitted_date,
                 "activity": row["activity_type"] or row["subject"] or "Activity",
-                "update": row["next_action"],
+                "activity_update": row["next_action"],
             })
         pg_plan_rows.append({
             "account_id": account_id,
