@@ -1417,6 +1417,10 @@ a:hover {
 }
 
 .compact-assignment-form {
+    display: block;
+    align-items: stretch;
+    gap: 0;
+    margin: 0;
     width: 100%;
 }
 
@@ -1431,7 +1435,9 @@ a:hover {
 }
 
 .compact-assignment-form .assignment-save-control {
+    display: grid;
     grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
     gap: 6px;
 }
 
@@ -1440,15 +1446,21 @@ a:hover {
     width: 100%;
 }
 
-.compact-assignment-form .btn-small {
-    width: 100%;
+.assignment-row-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
 }
 
+.assignment-row-actions .btn-small,
 .compact-row-edit-button {
     display: flex;
+    align-items: center;
     justify-content: center;
     width: 100%;
-    margin-top: 6px;
+    min-height: 30px;
+    padding: 6px 9px;
+    font-size: 11px;
 }
 
 .outreach-main-row td {

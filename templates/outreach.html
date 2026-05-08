@@ -316,15 +316,17 @@
                                                 </option>
                                             {% endfor %}
                                         </select>
-                                        <button type="submit" class="btn btn-primary btn-small">Save</button>
+                                        <div class="assignment-row-actions">
+                                            <button type="submit" class="btn btn-primary btn-small">Save</button>
+                                            <a href="{{ url_for('edit_outreach', outreach_id=item.id) }}"
+                                               class="btn btn-secondary btn-small compact-row-edit-button"
+                                               title="Edit outreach {{ item.subject or item.activity_type or item.id }}"
+                                               aria-label="Edit outreach {{ item.subject or item.activity_type or item.id }}">
+                                                Edit
+                                            </a>
+                                        </div>
                                     </div>
                                 </form>
-                                <a href="{{ url_for('edit_outreach', outreach_id=item.id) }}"
-                                   class="btn btn-secondary btn-small compact-row-edit-button"
-                                   title="Edit outreach {{ item.subject or item.activity_type or item.id }}"
-                                   aria-label="Edit outreach {{ item.subject or item.activity_type or item.id }}">
-                                    Edit
-                                </a>
                             </td>
                         </tr>
                     {% endfor %}

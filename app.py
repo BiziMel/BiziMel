@@ -74,6 +74,7 @@ RELEASE_NOTES = [
         ],
         "fixed": [
             "Fixed the Outreach Tasks table so the assignment field is clearly labelled and the Save and Edit buttons stack cleanly in the task row.",
+            "Fixed the Outreach Tasks assignment controls so Save and Edit sit side by side beneath the assigned user field.",
         ],
     },
     {
