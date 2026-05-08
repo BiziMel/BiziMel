@@ -19,7 +19,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "1.1"
 APP_RELEASE_DATE = "2026-05-07"
-APP_BUILD = "2026-05-08-v1.1-pg-progress-activity-update-display"
+APP_BUILD = "2026-05-08-v1.1-campaign-blank-activity-update"
 
 RELEASE_NOTES = [
     {
@@ -54,6 +54,7 @@ RELEASE_NOTES = [
             "Enhanced PG Progress last 7 days activity so each activity update is shown on its own line with the submitted date.",
             "Enhanced PG Progress so the PG Sales Play or Initiative column maps to Outreach task Sales Play or Initiative values for each account.",
             "Fixed PG Progress last 7 days activity display so valid activity updates render cleanly and empty accounts stay blank.",
+            "Fixed Campaign Builder so generated outreach tasks leave Activity Update blank for the user to complete before saving.",
             "Improved grouped table colour hierarchy so top-level groups use the darkest shade, nested groups step down progressively and detail rows remain light.",
             "Improved Release Notes ordering so the latest release always appears first.",
             "Improved profile audit entries so profile changes display clear field labels in the audit trail.",
@@ -4371,11 +4372,6 @@ def add_outreach():
         FROM non_working_blocks
         ORDER BY start_date, end_date, id
     """).fetchall()
-    non_working_blocks = parse_non_working_blocks(connection.execute("""
-        SELECT *
-        FROM non_working_blocks
-        ORDER BY start_date, end_date, id
-    """).fetchall())
     connection.close()
 
     return render_template(
@@ -4415,6 +4411,7 @@ def campaign_builder():
         FROM non_working_blocks
         ORDER BY start_date, end_date, id
     """).fetchall()
+    non_working_blocks = parse_non_working_blocks(non_working_block_rows)
 
     if request.method == "POST":
         account_id = request.form.get("account_id")
@@ -4529,8 +4526,6 @@ def campaign_builder():
                             f"Sales play: {sales_play}. Contact: {contact['name']}. "
                             f"{success_context_summary}"
                         )
-                        next_action = f"{step['next_action']} for {contact['name']} - {sales_play}"
-
                         connection.execute("""
                             INSERT INTO outreach (
                                 fy,
@@ -4573,7 +4568,7 @@ def campaign_builder():
                                 subject,
                                 notes,
                                 "No Response Yet",
-                                next_action,
+                                "",
                                 action_date.isoformat(),
                                 step["time"],
                                 "Not Started",
