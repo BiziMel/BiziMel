@@ -72,7 +72,9 @@ RELEASE_NOTES = [
             "Enhanced the audit auto-delete off control so saving the off state is explicit and visibly confirmed.",
             "Enhanced PG Progress hosted database compatibility so recent activity date filtering works correctly on Supabase Postgres.",
         ],
-        "fixed": [],
+        "fixed": [
+            "Fixed the Outreach Tasks table so the assignment field is clearly labelled and the Save and Edit buttons stack cleanly in the task row.",
+        ],
     },
     {
         "version": "1.0",

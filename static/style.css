@@ -1360,11 +1360,7 @@ a:hover {
 }
 
 .outreach-assigned-col {
-    width: 18%;
-}
-
-.outreach-action-col {
-    width: 8%;
+    width: 20%;
 }
 
 .outreach-next-col {
@@ -1424,6 +1420,16 @@ a:hover {
     width: 100%;
 }
 
+.table-field-label {
+    display: block;
+    margin-bottom: 5px;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
 .compact-assignment-form .assignment-save-control {
     grid-template-columns: minmax(0, 1fr);
     gap: 6px;
@@ -1436,6 +1442,13 @@ a:hover {
 
 .compact-assignment-form .btn-small {
     width: 100%;
+}
+
+.compact-row-edit-button {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    margin-top: 6px;
 }
 
 .outreach-main-row td {
@@ -3477,10 +3490,6 @@ body {
 
     .outreach-main-row td:nth-child(7)::before {
         content: "Assigned To";
-    }
-
-    .outreach-main-row td:nth-child(8)::before {
-        content: "Action";
     }
 
     .dashboard-flat-outreach-table .outreach-main-row td:nth-child(1)::before {

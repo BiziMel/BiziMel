@@ -221,7 +221,6 @@
                     <col class="outreach-campaign-col">
                     <col class="outreach-activity-col">
                     <col class="outreach-assigned-col">
-                    <col class="outreach-action-col">
                 </colgroup>
                 <thead>
                     <tr>
@@ -232,7 +231,6 @@
                         <th>Sales Play / Initiative</th>
                         <th>Activity Type / Subject</th>
                         <th>Assigned To</th>
-                        <th>Action</th>
                     </tr>
                 </thead>
 
@@ -245,7 +243,7 @@
                             {% set current_group.account = account_group %}
                             {% set current_group.sales_play = None %}
                             <tr class="outreach-account-group-row">
-                                <td colspan="8">
+                                <td colspan="7">
                                     <span>Account</span>
                                     <strong>{{ account_group }}</strong>
                                 </td>
@@ -254,7 +252,7 @@
                         {% if current_group.sales_play != sales_play_group %}
                             {% set current_group.sales_play = sales_play_group %}
                             <tr class="outreach-campaign-group-row">
-                                <td colspan="8">
+                                <td colspan="7">
                                     <span>Sales Play / Initiative</span>
                                     <strong>{{ sales_play_group }}</strong>
                                 </td>
@@ -308,8 +306,9 @@
                                     <input type="hidden" name="return_to" value="{{ url_for('outreach') }}">
                                     <input type="hidden" name="workspace_schema" value="{{ item.workspace_schema }}">
                                     <input type="hidden" name="outreach_id" value="{{ item.id }}">
+                                    <label for="assigned_to_user_{{ item.id }}" class="table-field-label">Assigned To</label>
                                     <div class="assignment-save-control">
-                                        <select name="assigned_to_user_id" aria-label="Assigned to">
+                                        <select id="assigned_to_user_{{ item.id }}" name="assigned_to_user_id">
                                             <option value="">Unassigned</option>
                                             {% for assignable_user in assignable_users %}
                                                 <option value="{{ assignable_user.id }}" {% if item.assigned_to == assignable_user.full_name %}selected{% endif %}>
@@ -320,10 +319,8 @@
                                         <button type="submit" class="btn btn-primary btn-small">Save</button>
                                     </div>
                                 </form>
-                            </td>
-                            <td>
                                 <a href="{{ url_for('edit_outreach', outreach_id=item.id) }}"
-                                   class="btn btn-primary btn-small"
+                                   class="btn btn-secondary btn-small compact-row-edit-button"
                                    title="Edit outreach {{ item.subject or item.activity_type or item.id }}"
                                    aria-label="Edit outreach {{ item.subject or item.activity_type or item.id }}">
                                     Edit
