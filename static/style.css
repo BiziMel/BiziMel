@@ -2471,7 +2471,8 @@ a:hover {
 
 .pg-plan-table td:nth-child(2),
 .pg-actions-table td:nth-child(2),
-.pg-actions-table td:nth-child(4) {
+.pg-actions-table td:nth-child(4),
+.pg-actions-table td:nth-child(5) {
     min-width: 280px;
 }
 
@@ -2503,6 +2504,12 @@ a:hover {
 .pg-actions-table textarea,
 .pg-actions-table select {
     min-width: 180px;
+}
+
+.activity-notes-cell {
+    color: #263a2b;
+    line-height: 1.35;
+    white-space: normal;
 }
 
 .sticky-dashboard-save {

@@ -47,6 +47,7 @@ RELEASE_NOTES = [
             "Enhanced dashboard development with an admin-only Dashboard_New tab for the temporary PG Goals dashboard build.",
             "Enhanced account records with NBM Target and Account Sales Play or Initiative fields to support PG Goals dashboard mapping.",
             "Enhanced the main dashboard by removing the embedded tasks table so task work remains focused in Outreach Tasks.",
+            "Enhanced Dashboard_New so target numbering maps to Account PG Bible Order and PG Actions includes last 7 days outreach activity from task notes by account.",
             "Improved grouped table colour hierarchy so top-level groups use the darkest shade, nested groups step down progressively and detail rows remain light.",
             "Improved Release Notes ordering so the latest release always appears first.",
             "Improved profile audit entries so profile changes display clear field labels in the audit trail.",
@@ -2670,8 +2671,6 @@ def pg_dashboard_context(connection):
         SELECT *
         FROM accounts
         ORDER BY
-            CASE WHEN nbm_target IS NULL OR nbm_target = '' THEN 1 ELSE 0 END,
-            CAST(COALESCE(NULLIF(nbm_target, ''), '999999') AS INTEGER),
             CASE WHEN pg_bible_order IS NULL THEN 1 ELSE 0 END,
             pg_bible_order,
             account_name
@@ -2684,7 +2683,7 @@ def pg_dashboard_context(connection):
     pg_action_rows = []
     for account in accounts:
         account_id = account["id"]
-        nbm_target = account["nbm_target"] or ""
+        pg_target_number = account["pg_bible_order"] or ""
         latest_action = connection.execute("""
             SELECT subject, next_action, next_action_date, next_action_time
             FROM outreach
@@ -2695,6 +2694,15 @@ def pg_dashboard_context(connection):
             ORDER BY next_action_date ASC, next_action_time ASC, id DESC
             LIMIT 1
         """, (account_id,)).fetchone()
+        recent_activity_rows = connection.execute("""
+            SELECT activity_date, activity_type, subject, notes
+            FROM outreach
+            WHERE account_id = ?
+              AND activity_date >= date('now', '-7 days')
+              AND notes IS NOT NULL
+              AND notes != ''
+            ORDER BY activity_date DESC, activity_time DESC, id DESC
+        """, (account_id,)).fetchall()
         contacts = connection.execute("""
             SELECT name, job_title
             FROM contacts
@@ -2715,20 +2723,25 @@ def pg_dashboard_context(connection):
             action_text = latest_action["subject"] or latest_action["next_action"] or "Scheduled action"
             due_parts = [latest_action["next_action_date"] or "", latest_action["next_action_time"] or ""]
             auto_next_action = f"{action_text} due {' '.join(part for part in due_parts if part)}".strip()
+        last_7_days_activity = "\n".join(
+            f"{row['activity_date'] or 'No date'} - {row['activity_type'] or row['subject'] or 'Activity'}: {row['notes']}"
+            for row in recent_activity_rows
+        )
         pg_plan_rows.append({
             "account_id": account_id,
-            "nbm_target": nbm_target,
-            "colour_index": nbm_colour_index(nbm_target),
+            "target_number": pg_target_number,
+            "colour_index": nbm_colour_index(pg_target_number),
             "sales_play": account["sales_play"] or "",
             "account_name": account["account_name"],
             "estimated_value": money_value(account["pipeline_target"]),
         })
         pg_action_rows.append({
             "account_id": account_id,
-            "nbm_target": nbm_target,
-            "colour_index": nbm_colour_index(nbm_target),
+            "target_number": pg_target_number,
+            "colour_index": nbm_colour_index(pg_target_number),
             "targeted_discovery": contact_label,
             "completed_discovery_meeting": action_update["completed_discovery_meeting"] if action_update else "",
+            "last_7_days_activity": last_7_days_activity,
             "next_action": (action_update["next_action_override"] if action_update and action_update["next_action_override"] else auto_next_action),
         })
 

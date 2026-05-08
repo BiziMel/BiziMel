@@ -74,7 +74,7 @@
                 <tbody>
                     {% for row in pg_plan_rows %}
                         <tr>
-                            <td class="nbm-col nbm-colour-{{ row.colour_index }}">{{ row.nbm_target or "-" }}</td>
+                            <td class="nbm-col nbm-colour-{{ row.colour_index }}">{{ row.target_number or "-" }}</td>
                             <td>{{ row.sales_play or "No sales play entered" }}</td>
                             <td>{{ row.account_name }}</td>
                             <td class="money-cell">${{ "{:,.0f}".format(row.estimated_value or 0) }}</td>
@@ -102,6 +102,7 @@
                         <th>Related NBM Target</th>
                         <th>Targeted or Booked Discovery Meeting</th>
                         <th>Completed Discovery Meeting</th>
+                        <th>Last 7 Days Activity</th>
                         <th>Next Action / Notes</th>
                     </tr>
                 </thead>
@@ -110,7 +111,7 @@
                         <tr>
                             <td class="nbm-col nbm-colour-{{ row.colour_index }}">
                                 <input type="hidden" name="pg_action_account_id" value="{{ row.account_id }}">
-                                {{ row.nbm_target or "-" }}
+                                {{ row.target_number or "-" }}
                             </td>
                             <td>{{ row.targeted_discovery or "No account contacts entered" }}</td>
                             <td>
@@ -120,13 +121,20 @@
                                     <option value="No" {% if row.completed_discovery_meeting == "No" %}selected{% endif %}>No</option>
                                 </select>
                             </td>
+                            <td class="activity-notes-cell">
+                                {% if row.last_7_days_activity %}
+                                    {{ row.last_7_days_activity | replace('\n', '<br>') | safe }}
+                                {% else %}
+                                    No outreach notes in the last 7 days
+                                {% endif %}
+                            </td>
                             <td>
                                 <textarea name="next_action_{{ row.account_id }}" rows="2">{{ row.next_action }}</textarea>
                             </td>
                         </tr>
                     {% else %}
                         <tr>
-                            <td colspan="4">No action rows found. Add accounts and contacts to populate this table.</td>
+                            <td colspan="5">No action rows found. Add accounts and contacts to populate this table.</td>
                         </tr>
                     {% endfor %}
                 </tbody>
