@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard_New | PipeFlow PG Manager{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>Dashboard_New</h1>
+        <p>Admin-only temporary build view for the new PG Goals dashboard.</p>
+    </div>
+    <a href="{{ url_for('home') }}" class="btn btn-secondary">Back to Current Dashboard</a>
+</div>
+
+{% if message %}
+    <div class="alert-success">{{ message }}</div>
+{% endif %}
+
+<form method="POST" class="pg-goals-dashboard-form">
+    <section class="pg-goals-hero form-card">
+        <div class="section-header">
+            <div>
+                <h2>PG Goals</h2>
+                <p>Pipeline target, current pipeline and gap position for the financial year.</p>
+            </div>
+            <button type="submit" class="btn btn-primary">Save PG Goals Dashboard</button>
+        </div>
+
+        <div class="pg-goals-metric-grid">
+            <div class="metric-card">
+                <h3>FY Pipeline Target $</h3>
+                <p class="metric-number">${{ "{:,.0f}".format(fy_pipeline_target or 0) }}</p>
+                <p class="metric-subtext">Sum of account Pipeline Target USD ACV</p>
+            </div>
+
+            <div class="metric-card pg-current-pipeline-card">
+                <label for="current_pipeline">Current Pipeline</label>
+                <div class="currency-input-row">
+                    <span>$</span>
+                    <input type="number"
+                           id="current_pipeline"
+                           name="current_pipeline"
+                           step="0.01"
+                           min="0"
+                           value="{{ '%.2f'|format(current_pipeline or 0) }}">
+                </div>
+                <p class="metric-subtext">Manual field for pipeline movement</p>
+            </div>
+
+            <div class="metric-card {% if pipeline_gap > 0 %}command-risk-card{% endif %}">
+                <h3>Pipeline Gap</h3>
+                <p class="metric-number">${{ "{:,.0f}".format(pipeline_gap or 0) }}</p>
+                <p class="metric-subtext">FY target minus current pipeline</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="pg-goals-table-card form-card">
+        <div class="pg-table-title-row">
+            <span>PG PLAN</span>
+            <strong>Pipeline Reconciliation Plan - Full Year</strong>
+        </div>
+
+        <div class="table-container">
+            <table class="pg-plan-table no-sort">
+                <thead>
+                    <tr>
+                        <th>NBM Target</th>
+                        <th>PG Sales Play or Initiative</th>
+                        <th>Account</th>
+                        <th>Estimated Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in pg_plan_rows %}
+                        <tr>
+                            <td class="nbm-col nbm-colour-{{ row.colour_index }}">{{ row.nbm_target or "-" }}</td>
+                            <td>{{ row.sales_play or "No sales play entered" }}</td>
+                            <td>{{ row.account_name }}</td>
+                            <td class="money-cell">${{ "{:,.0f}".format(row.estimated_value or 0) }}</td>
+                        </tr>
+                    {% else %}
+                        <tr>
+                            <td colspan="4">No account plan rows found. Add accounts with NBM Target, sales play and pipeline target values.</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="pg-goals-table-card form-card">
+        <div class="pg-table-title-row">
+            <span>PG ACTIONS</span>
+            <strong>Discovery and Next Action Tracker</strong>
+        </div>
+
+        <div class="table-container">
+            <table class="pg-actions-table no-sort">
+                <thead>
+                    <tr>
+                        <th>Related NBM Target</th>
+                        <th>Targeted or Booked Discovery Meeting</th>
+                        <th>Completed Discovery Meeting</th>
+                        <th>Next Action / Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in pg_action_rows %}
+                        <tr>
+                            <td class="nbm-col nbm-colour-{{ row.colour_index }}">
+                                <input type="hidden" name="pg_action_account_id" value="{{ row.account_id }}">
+                                {{ row.nbm_target or "-" }}
+                            </td>
+                            <td>{{ row.targeted_discovery or "No account contacts entered" }}</td>
+                            <td>
+                                <select name="completed_discovery_{{ row.account_id }}">
+                                    <option value="" {% if not row.completed_discovery_meeting %}selected{% endif %}>Select</option>
+                                    <option value="Yes" {% if row.completed_discovery_meeting == "Yes" %}selected{% endif %}>Yes</option>
+                                    <option value="No" {% if row.completed_discovery_meeting == "No" %}selected{% endif %}>No</option>
+                                </select>
+                            </td>
+                            <td>
+                                <textarea name="next_action_{{ row.account_id }}" rows="2">{{ row.next_action }}</textarea>
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr>
+                            <td colspan="4">No action rows found. Add accounts and contacts to populate this table.</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <div class="form-actions sticky-dashboard-save">
+        <button type="submit" class="btn btn-primary">Save PG Goals Dashboard</button>
+    </div>
+</form>
+
+{% endblock %}

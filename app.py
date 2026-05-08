@@ -43,6 +43,10 @@ RELEASE_NOTES = [
             "Enhanced admin navigation by moving Audit into Admin as an admin-only sub tab with clearer admin-only explanation.",
             "Enhanced admin navigation with a Broadcast Messages sub tab so admins can jump directly to broadcast configuration.",
             "Enhanced audit auto-delete controls so admins clearly see and select Auto-delete On or Auto-delete Off.",
+            "Enhanced the Audit user filter so user suggestions display full names only while still matching underlying audit email fields.",
+            "Enhanced dashboard development with an admin-only Dashboard_New tab for the temporary PG Goals dashboard build.",
+            "Enhanced account records with NBM Target and Account Sales Play or Initiative fields to support PG Goals dashboard mapping.",
+            "Enhanced the main dashboard by removing the embedded tasks table so task work remains focused in Outreach Tasks.",
             "Improved grouped table colour hierarchy so top-level groups use the darkest shade, nested groups step down progressively and detail rows remain light.",
             "Improved Release Notes ordering so the latest release always appears first.",
             "Improved profile audit entries so profile changes display clear field labels in the audit trail.",
@@ -2619,6 +2623,177 @@ def build_dashboard_response(connection):
     )
 
 
+def dashboard_setting(connection, key, default=""):
+    row = connection.execute(
+        "SELECT setting_value FROM dashboard_settings WHERE setting_key = ?",
+        (key,),
+    ).fetchone()
+    return row["setting_value"] if row else default
+
+
+def save_dashboard_setting(connection, key, value):
+    existing = connection.execute(
+        "SELECT setting_key FROM dashboard_settings WHERE setting_key = ?",
+        (key,),
+    ).fetchone()
+    if existing:
+        connection.execute("""
+            UPDATE dashboard_settings
+            SET setting_value = ?,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE setting_key = ?
+        """, (value, key))
+    else:
+        connection.execute(
+            "INSERT INTO dashboard_settings (setting_key, setting_value) VALUES (?, ?)",
+            (key, value),
+        )
+
+
+def money_value(value):
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def nbm_colour_index(value):
+    try:
+        number = int(str(value or "0"))
+    except ValueError:
+        number = 0
+    return number % 12
+
+
+def pg_dashboard_context(connection):
+    accounts = connection.execute("""
+        SELECT *
+        FROM accounts
+        ORDER BY
+            CASE WHEN nbm_target IS NULL OR nbm_target = '' THEN 1 ELSE 0 END,
+            CAST(COALESCE(NULLIF(nbm_target, ''), '999999') AS INTEGER),
+            CASE WHEN pg_bible_order IS NULL THEN 1 ELSE 0 END,
+            pg_bible_order,
+            account_name
+    """).fetchall()
+    current_pipeline = money_value(dashboard_setting(connection, "current_pipeline", "0"))
+    fy_pipeline_target = sum(money_value(account["pipeline_target"]) for account in accounts)
+    pipeline_gap = fy_pipeline_target - current_pipeline
+
+    pg_plan_rows = []
+    pg_action_rows = []
+    for account in accounts:
+        account_id = account["id"]
+        nbm_target = account["nbm_target"] or ""
+        latest_action = connection.execute("""
+            SELECT subject, next_action, next_action_date, next_action_time
+            FROM outreach
+            WHERE account_id = ?
+              AND next_action_date IS NOT NULL
+              AND next_action_date != ''
+              AND COALESCE(task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
+            ORDER BY next_action_date ASC, next_action_time ASC, id DESC
+            LIMIT 1
+        """, (account_id,)).fetchone()
+        contacts = connection.execute("""
+            SELECT name, job_title
+            FROM contacts
+            WHERE account_id = ?
+            ORDER BY name
+        """, (account_id,)).fetchall()
+        action_update = connection.execute("""
+            SELECT *
+            FROM pg_action_updates
+            WHERE account_id = ?
+        """, (account_id,)).fetchone()
+        contact_label = "; ".join(
+            f"{contact['name']}{' - ' + contact['job_title'] if contact['job_title'] else ''}"
+            for contact in contacts
+        )
+        auto_next_action = ""
+        if latest_action:
+            action_text = latest_action["subject"] or latest_action["next_action"] or "Scheduled action"
+            due_parts = [latest_action["next_action_date"] or "", latest_action["next_action_time"] or ""]
+            auto_next_action = f"{action_text} due {' '.join(part for part in due_parts if part)}".strip()
+        pg_plan_rows.append({
+            "account_id": account_id,
+            "nbm_target": nbm_target,
+            "colour_index": nbm_colour_index(nbm_target),
+            "sales_play": account["sales_play"] or "",
+            "account_name": account["account_name"],
+            "estimated_value": money_value(account["pipeline_target"]),
+        })
+        pg_action_rows.append({
+            "account_id": account_id,
+            "nbm_target": nbm_target,
+            "colour_index": nbm_colour_index(nbm_target),
+            "targeted_discovery": contact_label,
+            "completed_discovery_meeting": action_update["completed_discovery_meeting"] if action_update else "",
+            "next_action": (action_update["next_action_override"] if action_update and action_update["next_action_override"] else auto_next_action),
+        })
+
+    return {
+        "fy_pipeline_target": fy_pipeline_target,
+        "current_pipeline": current_pipeline,
+        "pipeline_gap": pipeline_gap,
+        "pg_plan_rows": pg_plan_rows,
+        "pg_action_rows": pg_action_rows,
+    }
+
+
+@app.route("/dashboard-new", methods=("GET", "POST"))
+@admin_required
+def dashboard_new():
+    connection = get_db_connection()
+    if request.method == "POST":
+        save_dashboard_setting(connection, "current_pipeline", request.form.get("current_pipeline", "0"))
+        for account_id in request.form.getlist("pg_action_account_id"):
+            completed = request.form.get(f"completed_discovery_{account_id}", "")
+            next_action = request.form.get(f"next_action_{account_id}", "")
+            existing = connection.execute(
+                "SELECT id FROM pg_action_updates WHERE account_id = ?",
+                (account_id,),
+            ).fetchone()
+            if existing:
+                connection.execute("""
+                    UPDATE pg_action_updates
+                    SET completed_discovery_meeting = ?,
+                        next_action_override = ?,
+                        last_updated = CURRENT_TIMESTAMP
+                    WHERE account_id = ?
+                """, (completed, next_action, account_id))
+            else:
+                connection.execute("""
+                    INSERT INTO pg_action_updates (
+                        account_id,
+                        completed_discovery_meeting,
+                        next_action_override
+                    )
+                    VALUES (?, ?, ?)
+                """, (account_id, completed, next_action))
+        audit_entry(
+            connection,
+            "dashboard_new",
+            None,
+            "update",
+            "pg_goals",
+            "PG Goals dashboard",
+            "",
+            "Dashboard_New saved"
+        )
+        connection.commit()
+        connection.close()
+        return redirect(url_for("dashboard_new", message="PG Goals dashboard saved."))
+
+    context = pg_dashboard_context(connection)
+    connection.close()
+    return render_template(
+        "dashboard_new.html",
+        message=request.args.get("message", ""),
+        **context,
+    )
+
+
 @app.route("/accounts")
 def accounts():
     connection = get_db_connection()
@@ -3126,8 +3301,8 @@ def add_account():
         owner = current_user_owner_payload()
         cursor = connection.execute("""
             INSERT INTO accounts
-            (account_name, pg_bible_order, account_tier, industry, business_unit, country, city, website, pipeline_target, owner_user_id, owner_name, owner_email, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (account_name, pg_bible_order, account_tier, industry, business_unit, country, city, website, pipeline_target, nbm_target, sales_play, owner_user_id, owner_name, owner_email, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             request.form.get("account_name"),
             request.form.get("pg_bible_order") or None,
@@ -3138,6 +3313,8 @@ def add_account():
             request.form.get("city"),
             request.form.get("website"),
             request.form.get("pipeline_target"),
+            request.form.get("nbm_target"),
+            request.form.get("sales_play"),
             owner["owner_user_id"],
             owner["owner_name"],
             owner["owner_email"],
@@ -3154,6 +3331,8 @@ def add_account():
             "city": request.form.get("city"),
             "website": request.form.get("website"),
             "pipeline_target": request.form.get("pipeline_target"),
+            "nbm_target": request.form.get("nbm_target"),
+            "sales_play": request.form.get("sales_play"),
             "owner_name": owner["owner_name"],
             "notes": request.form.get("notes"),
         })
@@ -3517,6 +3696,8 @@ def edit_account(account_id):
             "city": request.form.get("city"),
             "website": request.form.get("website"),
             "pipeline_target": request.form.get("pipeline_target"),
+            "nbm_target": request.form.get("nbm_target"),
+            "sales_play": request.form.get("sales_play"),
             "notes": request.form.get("notes")
         }
 
@@ -3530,6 +3711,8 @@ def edit_account(account_id):
             "city": "City",
             "website": "Website",
             "pipeline_target": "Pipeline target",
+            "nbm_target": "NBM target",
+            "sales_play": "Account sales play or initiative",
             "owner_user_id": "Account owner",
             "owner_name": "Account owner name",
             "owner_email": "Account owner email",
@@ -3561,6 +3744,8 @@ def edit_account(account_id):
                 city = ?,
                 website = ?,
                 pipeline_target = ?,
+                nbm_target = ?,
+                sales_play = ?,
                 owner_user_id = ?,
                 owner_name = ?,
                 owner_email = ?,
@@ -3577,6 +3762,8 @@ def edit_account(account_id):
             new_values["city"],
             new_values["website"],
             new_values["pipeline_target"],
+            new_values["nbm_target"],
+            new_values["sales_play"],
             new_values["owner_user_id"],
             new_values["owner_name"],
             new_values["owner_email"],
@@ -5787,6 +5974,22 @@ def filtered_audit_entries(entries, start_date=None, end_date=None, user_filter=
     return sorted(filtered, key=lambda row: row["date_created"] or "", reverse=True)
 
 
+def audit_filter_users(entries):
+    names_by_email = {}
+    standalone_names = set()
+    for entry in entries:
+        name = (entry["actor_name"] or "").strip()
+        email = (entry["actor_email"] or "").strip().lower()
+        owner = (entry["workspace_owner"] or "").strip()
+        if email and name:
+            names_by_email[email] = name
+        elif name and "@" not in name:
+            standalone_names.add(name)
+        if owner and owner != "Admin" and "@" not in owner:
+            standalone_names.add(owner)
+    return sorted(set(names_by_email.values()) | standalone_names)
+
+
 def group_audit_entries_by_month(entries):
     groups = []
     current_label = None
@@ -5818,12 +6021,7 @@ def audit_trail():
         parse_audit_date(end_date_raw),
         user_filter,
     )
-    users = sorted({
-        value
-        for entry in all_entries
-        for value in (entry["actor_name"], entry["actor_email"], entry["workspace_owner"])
-        if value
-    })
+    users = audit_filter_users(all_entries)
     return render_template(
         "audit.html",
         audit_groups=group_audit_entries_by_month(entries),

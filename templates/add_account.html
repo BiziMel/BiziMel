@@ -41,6 +41,13 @@
     <label>Pipeline Target USD $ ACV</label>
     <input type="number" id="pipeline_target" name="pipeline_target" step="0.01" min="0" placeholder="0.00">
 
+    <label>NBM Target</label>
+    <input type="number" name="nbm_target" min="1" step="1" placeholder="Example: 1">
+    <p class="field-help">Used to map this account into the PG Goals dashboard plan and actions tables.</p>
+
+    <label>Account Sales Play or Initiative</label>
+    <textarea name="sales_play" rows="3" placeholder="Document the sales play or initiative for this account."></textarea>
+
     <label>Account Owner</label>
     <input type="text" value="{{ current_user.full_name if current_user else 'Current user' }}" readonly>
     <p class="field-help">New accounts are owned by the creator by default. Ownership can be reassigned from the edit account form.</p>

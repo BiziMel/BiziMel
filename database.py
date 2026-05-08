@@ -71,6 +71,9 @@ def initialise_database(force=False):
             city TEXT,
             website TEXT,
             pipeline_target REAL,
+            current_pipeline REAL,
+            nbm_target TEXT,
+            sales_play TEXT,
             owner_user_id INTEGER,
             owner_name TEXT,
             owner_email TEXT,
@@ -91,6 +94,25 @@ def initialise_database(force=False):
             date_created TEXT DEFAULT CURRENT_TIMESTAMP,
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(account_id, user_id)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS dashboard_settings (
+            setting_key TEXT PRIMARY KEY,
+            setting_value TEXT,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS pg_action_updates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL UNIQUE,
+            completed_discovery_meeting TEXT,
+            next_action_override TEXT,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
@@ -294,9 +316,22 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "accounts", "business_unit", "TEXT")
     add_column_if_missing(cursor, "accounts", "account_tier", "TEXT")
     add_column_if_missing(cursor, "accounts", "pg_bible_order", "INTEGER")
+    add_column_if_missing(cursor, "accounts", "current_pipeline", "REAL")
+    add_column_if_missing(cursor, "accounts", "nbm_target", "TEXT")
+    add_column_if_missing(cursor, "accounts", "sales_play", "TEXT")
     add_column_if_missing(cursor, "accounts", "owner_user_id", "INTEGER")
     add_column_if_missing(cursor, "accounts", "owner_name", "TEXT")
     add_column_if_missing(cursor, "accounts", "owner_email", "TEXT")
+
+    # Safe migrations for dashboard settings and PG action dashboard overrides
+    add_column_if_missing(cursor, "dashboard_settings", "setting_key", "TEXT")
+    add_column_if_missing(cursor, "dashboard_settings", "setting_value", "TEXT")
+    add_column_if_missing(cursor, "dashboard_settings", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "pg_action_updates", "account_id", "INTEGER")
+    add_column_if_missing(cursor, "pg_action_updates", "completed_discovery_meeting", "TEXT")
+    add_column_if_missing(cursor, "pg_action_updates", "next_action_override", "TEXT")
+    add_column_if_missing(cursor, "pg_action_updates", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "pg_action_updates", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
 
     # Safe migrations for account sharing permissions
     add_column_if_missing(cursor, "account_shared_users", "account_id", "INTEGER")
@@ -457,8 +492,10 @@ def initialise_database(force=False):
         ("idx_accounts_pg_bible_order", "accounts", ["pg_bible_order", "account_name"]),
         ("idx_accounts_tier", "accounts", ["account_tier"]),
         ("idx_accounts_owner", "accounts", ["owner_user_id"]),
+        ("idx_accounts_nbm_target", "accounts", ["nbm_target"]),
         ("idx_account_shared_users_account", "account_shared_users", ["account_id"]),
         ("idx_account_shared_users_user", "account_shared_users", ["user_id"]),
+        ("idx_pg_action_updates_account", "pg_action_updates", ["account_id"]),
         ("idx_contacts_account", "contacts", ["account_id"]),
         ("idx_contacts_category", "contacts", ["category"]),
         ("idx_outreach_account", "outreach", ["account_id"]),

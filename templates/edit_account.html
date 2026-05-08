@@ -47,6 +47,13 @@
     <input type="number" name="pipeline_target" step="0.01" min="0"
            value="{{ '%.2f'|format(account['pipeline_target']|float) if account['pipeline_target'] else '' }}">
 
+    <label>NBM Target</label>
+    <input type="number" name="nbm_target" min="1" step="1" value="{{ account['nbm_target'] or '' }}" placeholder="Example: 1">
+    <p class="field-help">Used to map this account into the PG Goals dashboard plan and actions tables.</p>
+
+    <label>Account Sales Play or Initiative</label>
+    <textarea name="sales_play" rows="3">{{ account['sales_play'] or '' }}</textarea>
+
     <label>Account Owner</label>
     <select name="owner_user_id">
         {% for assignable_user in assignable_users %}

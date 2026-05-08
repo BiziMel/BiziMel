@@ -37,7 +37,7 @@
             </div>
 
             <div class="dashboard-command-metric-grid">
-                <a href="#dashboard-tasks" class="metric-card-link">
+                <a href="{{ url_for('outreach') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
                         <h3>Due This Week</h3>
                         <p class="metric-number">{{ this_week_due }}</p>
@@ -49,7 +49,7 @@
                         <p class="metric-number">{{ this_week_completed }}</p>
                     </div>
                 </a>
-                <a href="#dashboard-tasks" class="metric-card-link">
+                <a href="{{ url_for('outreach') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card command-risk-card">
                         <h3>Overdue Actions</h3>
                         <p class="metric-number">{{ this_week_overdue }}</p>
@@ -93,7 +93,7 @@
                         <p class="metric-number">{{ total_outreach }}</p>
                     </div>
                 </a>
-                <a href="#dashboard-tasks" class="metric-card-link">
+                <a href="{{ url_for('outreach') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
                         <h3>Follow-ups Due</h3>
                         <p class="metric-number">{{ follow_ups_due }}</p>
@@ -101,121 +101,6 @@
                     </div>
                 </a>
             </div>
-    </section>
-
-    <section class="form-card dashboard-task-card" id="dashboard-tasks">
-        <div class="section-header">
-            <div>
-                <h2>Tasks</h2>
-                <p>Update priority follow-ups directly from the dashboard.</p>
-            </div>
-        </div>
-
-        {% if dashboard_tasks %}
-            <div class="table-container outreach-table-container">
-                <table class="report-table outreach-table dashboard-flat-outreach-table no-sort">
-                    <colgroup>
-                        <col class="outreach-date-col">
-                        <col class="outreach-account-col">
-                        <col class="outreach-campaign-col">
-                        <col class="outreach-activity-col">
-                        <col class="outreach-next-col">
-                    </colgroup>
-                    <thead>
-                        <tr>
-                            <th>Activity Due Date</th>
-                            <th>Account / Contact</th>
-                            <th>Campaign Name</th>
-                            <th>Activity Type / Subject</th>
-                            <th>Outcome / Next Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for item in dashboard_tasks %}
-                            <tr class="outreach-main-row">
-                                <td>
-                                    <div class="outreach-due-date-block">
-                                        <span class="date-stack-label">Due</span>
-                                        <strong>
-                                            {% if item.next_action_date %}
-                                                {{ item.next_action_date[8:10] }}-{{ item.next_action_date[5:7] }}-{{ item.next_action_date[0:4] }}
-                                            {% else %}
-                                                No due date
-                                            {% endif %}
-                                        </strong>
-                                        <span>{{ item.next_action_time or "No due time" }}</span>
-                                        <span class="status-pill compact-status-pill">{{ item.task_status or "Not Started" }}</span>
-                                    </div>
-                                    <div class="outreach-start-date-block">
-                                        <span class="date-stack-label">Start</span>
-                                        <span>
-                                            {% if item.activity_date %}
-                                                {{ item.activity_date[8:10] }}-{{ item.activity_date[5:7] }}-{{ item.activity_date[0:4] }}
-                                            {% else %}
-                                                No start date
-                                            {% endif %}
-                                            · {{ item.activity_time or "No start time" }}
-                                        </span>
-                                    </div>
-                                </td>
-                                <td>
-                                    <strong>{{ item.account_name or "No account" }}</strong>
-                                    {% if item.account_tier %}<span class="status-pill">Tier {{ item.account_tier }}</span>{% endif %}
-                                    <br>
-                                    <span class="muted">{{ item.contact_name or "No contact" }}</span>
-                                </td>
-                                <td>
-                                    <strong>{{ item.campaign or "No campaign" }}</strong>
-                                    <br>
-                                    <span class="muted">{{ item.sales_play or "No sales play" }}</span>
-                                </td>
-                                <td>
-                                    <strong>{{ item.activity_type or "No activity type" }}</strong>
-                                    <br>
-                                    <span class="muted">{{ item.subject or "No subject" }}</span>
-                                </td>
-                                <td>
-                                    <strong>{{ item.outcome or "-" }}</strong>
-                                    <br>
-                                    <span class="muted">{{ item.next_action or "No next action" }}</span>
-                                </td>
-                            </tr>
-                            <tr class="outreach-detail-row">
-                                <td colspan="5">
-                                    <div class="outreach-row-details dashboard-task-button-row">
-                                        <div class="outreach-row-action">
-                                            <a href="{{ url_for('edit_outreach', outreach_id=item.id) }}"
-                                               class="btn btn-primary btn-small"
-                                               title="Edit task {{ item.subject or item.activity_type or item.id }}"
-                                               aria-label="Edit task {{ item.subject or item.activity_type or item.id }}">
-                                                Edit Task
-                                            </a>
-                                        </div>
-                                        <div>
-                                            <span>FY / Quarter</span>
-                                            <strong>{{ item.fy or "-" }} / {{ item.quarter or "-" }}</strong>
-                                        </div>
-                                        <div>
-                                            <span>Assigned To</span>
-                                            <strong>{{ item.assigned_to or "Unassigned" }}</strong>
-                                        </div>
-                                        <div>
-                                            <span>Status</span>
-                                            <strong>{{ item.task_status or "Not Started" }}</strong>
-                                        </div>
-                                    </div>
-                                </td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% else %}
-            <div class="empty-state compact-empty-state">
-                <h3>No active tasks</h3>
-                <p>New follow-ups will appear here when outreach creates next actions.</p>
-            </div>
-        {% endif %}
     </section>
 
     <section class="form-card dashboard-execution-insights-card">
