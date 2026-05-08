@@ -18,6 +18,7 @@
     </div>
     <div class="admin-subnav-actions">
         <a href="{{ url_for('admin_permissions') }}" class="btn btn-primary btn-small">Permissions & Controls</a>
+        <a href="{{ url_for('admin_permissions') }}#broadcast-messages" class="btn btn-secondary btn-small">Broadcast Messages</a>
         <a href="{{ url_for('audit_trail') }}" class="btn btn-secondary btn-small">Audit Trail</a>
     </div>
 </div>
@@ -176,7 +177,7 @@
     </div>
 </div>
 
-<div class="card admin-broadcast-card">
+<div class="card admin-broadcast-card" id="broadcast-messages">
     <div class="section-header">
         <div>
             <h3>Broadcast Messages</h3>
@@ -328,18 +329,22 @@
 <div class="card admin-retention-card">
     <div class="section-header">
         <div>
-            <h3>Audit Retention</h3>
-            <p class="muted-text">Control whether audit entries older than 6 months are automatically deleted.</p>
+            <h3>Audit Auto-delete</h3>
+            <p class="muted-text">Choose whether audit entries older than 6 months should be automatically deleted. When Auto-delete is off, audit entries are retained until an admin turns this setting on.</p>
         </div>
+        <span class="status-pill">{{ "Auto-delete On" if audit_retention_enabled else "Auto-delete Off" }}</span>
         <a href="{{ url_for('audit_trail') }}" class="btn btn-secondary">Open Audit Trail</a>
     </div>
 
     <form method="POST" action="{{ url_for('admin_update_audit_retention') }}" class="retention-toggle-form">
-        <label class="checkbox-label broadcast-active-control">
-            <input type="checkbox" name="audit_retention_enabled" value="1" {% if audit_retention_enabled %}checked{% endif %}>
-            Auto-delete audit trails older than 6 months
-        </label>
-        <button type="submit" class="btn btn-primary">Save Audit Setting</button>
+        <div class="form-group retention-select-group">
+            <label for="audit_retention_enabled">Audit auto-delete setting</label>
+            <select id="audit_retention_enabled" name="audit_retention_enabled">
+                <option value="0" {% if not audit_retention_enabled %}selected{% endif %}>Auto-delete Off</option>
+                <option value="1" {% if audit_retention_enabled %}selected{% endif %}>Auto-delete On</option>
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Save Auto-delete Setting</button>
     </form>
 </div>
 

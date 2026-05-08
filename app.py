@@ -41,6 +41,8 @@ RELEASE_NOTES = [
             "Enhanced broadcasts so login messages and dashboard ticker items are ordered by urgency, with a more compact login page presentation.",
             "Enhanced audit management so all audit trails are consolidated on the Audit page, grouped by month, filterable by date and user, exportable to CSV by admins and governed by an audited 6-month retention toggle.",
             "Enhanced admin navigation by moving Audit into Admin as an admin-only sub tab with clearer admin-only explanation.",
+            "Enhanced admin navigation with a Broadcast Messages sub tab so admins can jump directly to broadcast configuration.",
+            "Enhanced audit auto-delete controls so admins clearly see and select Auto-delete On or Auto-delete Off.",
             "Improved grouped table colour hierarchy so top-level groups use the darkest shade, nested groups step down progressively and detail rows remain light.",
             "Improved Release Notes ordering so the latest release always appears first.",
             "Improved profile audit entries so profile changes display clear field labels in the audit trail.",
@@ -48,6 +50,7 @@ RELEASE_NOTES = [
         "fixed": [
             "Fixed on-page instructions across PipeFlow so every page now gives clearer guidance about what to do, what matters and what to check before saving.",
             "Fixed the Edit Outreach button so the edit form opens correctly with non-working date guidance available.",
+            "Fixed the audit auto-delete off control so saving the off state is explicit and visibly confirmed.",
         ],
     },
     {
@@ -344,6 +347,7 @@ USER_GUIDE_SECTIONS = [
         "navigation": [
             "Admin appears near the end of the navigation only for admin users.",
             "Use Admin for user management, role changes, broadcasts and profile administration.",
+            "Use the Broadcast Messages sub tab inside Admin to create, pause, edit or delete user messages.",
             "Use the Audit Trail sub tab inside Admin to review administrative and data-change history.",
         ],
         "steps": [
@@ -1000,11 +1004,11 @@ def admin_update_audit_retention():
         "Audit retention setting updated",
         "Admin setting",
         "Audit auto-delete",
-        f"Audit auto-delete older than 6 months set to {'On' if enabled else 'Off'}."
+        f"Audit auto-delete older than 6 months set to {'Auto-delete On' if enabled else 'Auto-delete Off'}."
     )
     if enabled:
         cleanup_audit_retention()
-    return redirect(url_for("admin_users", message=f"Audit auto-delete is now {'on' if enabled else 'off'}."))
+    return redirect(url_for("admin_users", message=f"Audit auto-delete is now {'Auto-delete On' if enabled else 'Auto-delete Off'}."))
 
 
 @app.route("/admin/account-fields/add", methods=("POST",))

@@ -2387,6 +2387,10 @@ a:hover {
     flex-wrap: wrap;
 }
 
+.retention-select-group {
+    min-width: 240px;
+}
+
 .broadcast-message-topline span,
 .broadcast-type-pill,
 .broadcast-status-pill {

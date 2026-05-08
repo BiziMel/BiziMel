@@ -21,6 +21,7 @@
     </div>
     <div class="admin-subnav-actions">
         <a href="{{ url_for('admin_permissions') }}" class="btn btn-secondary btn-small">Permissions & Controls</a>
+        <a href="{{ url_for('admin_permissions') }}#broadcast-messages" class="btn btn-secondary btn-small">Broadcast Messages</a>
         <a href="{{ url_for('audit_trail') }}" class="btn btn-primary btn-small">Audit Trail</a>
     </div>
 </div>
@@ -31,7 +32,7 @@
             <h2>Filter Audit Trail</h2>
             <p>Filter by date range and user, then export the same result set to CSV.</p>
         </div>
-        <span class="status-pill">{{ "Retention On" if audit_retention_enabled else "Retention Off" }}</span>
+        <span class="status-pill">{{ "Auto-delete On" if audit_retention_enabled else "Auto-delete Off" }}</span>
     </div>
 
     <form method="GET" action="{{ url_for('audit_trail') }}" class="pipeflow-form compact-filter-form">
