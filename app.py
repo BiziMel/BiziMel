@@ -17,11 +17,21 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection
 
 
-APP_VERSION = "1.1"
-APP_RELEASE_DATE = "2026-05-08"
-APP_BUILD = "2026-05-08-v1.1-enhanced-release-notes"
+APP_VERSION = "1.2"
+APP_RELEASE_DATE = "2026-05-10"
+APP_BUILD = "2026-05-10-v1.2-outreach-table-polish"
 
 RELEASE_NOTES = [
+    {
+        "version": "1.2",
+        "release_date": "2026-05-10",
+        "title": "Outreach task table presentation improvements",
+        "new": [],
+        "enhanced": [
+            "Enhanced the Outreach Tasks table so due date, due time and task status display in a cleaner compact layout.",
+        ],
+        "fixed": [],
+    },
     {
         "version": "1.1",
         "release_date": "2026-05-08",

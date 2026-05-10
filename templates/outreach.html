@@ -264,16 +264,18 @@
                             </td>
                             <td>
                                 <div class="outreach-due-date-block">
-                                    <span class="date-stack-label">Due</span>
-                                    <strong>
+                                    <span class="outreach-date-label">Due</span>
+                                    <span class="outreach-date-value">
                                         {% if item.next_action_date %}
                                             {{ item.next_action_date[8:10] }}-{{ item.next_action_date[5:7] }}-{{ item.next_action_date[0:4] }}
                                         {% else %}
                                             No due date
                                         {% endif %}
-                                    </strong>
-                                    <span>{{ item.next_action_time or "No due time" }}</span>
-                                    <span class="status-pill compact-status-pill">{{ item.task_status or "Not Started" }}</span>
+                                    </span>
+                                    <div class="outreach-due-meta">
+                                        <span>{{ item.next_action_time or "No due time" }}</span>
+                                        <span class="outreach-status-chip">{{ item.task_status or "Not Started" }}</span>
+                                    </div>
                                 </div>
                             </td>
                             <td>
