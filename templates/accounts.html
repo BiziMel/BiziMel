@@ -28,7 +28,16 @@
 {% endif %}
 
 <div class="table-container">
-    <table class="report-table accounts-table">
+    <table class="report-table accounts-table accounts-clean-table">
+        <colgroup>
+            {% if current_user and current_user["role"] == "admin" %}
+                <col class="bulk-select-col">
+            {% endif %}
+            <col class="accounts-pg-col">
+            <col class="accounts-name-col">
+            <col class="accounts-health-col">
+            <col class="accounts-pipeline-col">
+        </colgroup>
         <thead>
             <tr>
                 {% if current_user and current_user["role"] == "admin" %}
@@ -36,12 +45,8 @@
                 {% endif %}
                 <th>PG Order</th>
                 <th>Account</th>
-                <th>Tier</th>
-                <th>Health</th>
-                <th>Pipeline</th>
-                <th>Coverage</th>
-                <th>Location</th>
-                <th>Website</th>
+                <th>Health & Coverage</th>
+                <th>Pipeline & Location</th>
             </tr>
         </thead>
 
@@ -54,69 +59,56 @@
                         </td>
                     {% endif %}
                     <td>
-                        <span class="status-pill">{{ account["pg_bible_order"] or "Not set" }}</span>
-                    </td>
-
-                    <td>
-                        <a href="{{ url_for('edit_account', account_id=account['id']) }}"
-                           class="record-primary-link"
-                           title="Edit account {{ account['account_name'] or 'Unknown' }}"
-                           aria-label="Edit account {{ account['account_name'] or 'Unknown' }}">
-                            {{ account["account_name"] or "Unknown" }}
-                        </a>
-                        <br>
-                        <small>{{ account["business_unit"] or "Business org not set" }}</small>
-                        <br>
-                        <small>{{ account["industry"] or "Industry not set" }}</small>
-                    </td>
-
-                    <td>
-                        <span class="status-pill">
+                        <span class="account-order-pill">{{ account["pg_bible_order"] or "-" }}</span>
+                        <span class="account-tier-mini">
                             {% if account["account_tier"] %}
                                 Tier {{ account["account_tier"] }}
                             {% else %}
-                                Not set
+                                No tier
                             {% endif %}
                         </span>
                     </td>
 
                     <td>
-                        <span class="health-pill health-{{ account['health_colour'] }}">
-                            {{ account["health_label"] }}
-                        </span>
-                        <br>
-                        <small>{{ account["health_reason"] }}</small>
+                        <a href="{{ url_for('edit_account', account_id=account['id']) }}"
+                           class="account-name-link"
+                           title="Edit account {{ account['account_name'] or 'Unknown' }}"
+                           aria-label="Edit account {{ account['account_name'] or 'Unknown' }}">
+                            {{ account["account_name"] or "Unknown" }}
+                        </a>
+                        <div class="account-meta-stack">
+                            <span>{{ account["business_unit"] or "Business org not set" }}</span>
+                            <span>{{ account["industry"] or "Industry not set" }}</span>
+                            {% if account["website"] %}
+                                <a href="{{ account['website'] }}" target="_blank" class="account-text-link">Website</a>
+                            {% endif %}
+                        </div>
                     </td>
 
                     <td>
-                        <strong>${{ "{:,.2f}".format(account["pipeline_target"] or 0) }}</strong>
-                        <br>
-                        <small>USD ACV target</small>
+                        <div class="account-health-stack">
+                            <span class="health-pill health-{{ account['health_colour'] }}">
+                                {{ account["health_label"] }}
+                            </span>
+                            <span class="account-health-reason">{{ account["health_reason"] }}</span>
+                        </div>
+                        <div class="account-coverage-grid">
+                            <span><strong>{{ account["contact_count"] or 0 }}</strong> Contacts</span>
+                            <span><strong>{{ account["outreach_count"] or 0 }}</strong> Outreach</span>
+                            <span><strong>{{ account["meeting_count"] or 0 }}</strong> Meetings</span>
+                            <span class="{% if account['overdue_followups'] %}account-risk-text{% endif %}">
+                                <strong>{{ account["overdue_followups"] or 0 }}</strong> Overdue
+                            </span>
+                        </div>
                     </td>
 
                     <td>
-                        <strong>{{ account["contact_count"] or 0 }}</strong> contacts
-                        <br>
-                        <strong>{{ account["outreach_count"] or 0 }}</strong> outreach ·
-                        <strong>{{ account["meeting_count"] or 0 }}</strong> meetings
-                        <br>
-                        <small>{{ account["overdue_followups"] or 0 }} overdue follow-up(s)</small>
-                    </td>
-
-                    <td>
-                        {{ account["city"] or "City not set" }}
-                        <br>
-                        <small>{{ account["country"] or "Country not set" }}</small>
-                    </td>
-
-                    <td>
-                        {% if account["website"] %}
-                            <a href="{{ account['website'] }}" target="_blank" class="btn btn-secondary">
-                                Website
-                            </a>
-                        {% else %}
-                            <small>Not added</small>
-                        {% endif %}
+                        <strong class="account-pipeline-value">${{ "{:,.0f}".format(account["pipeline_target"] or 0) }}</strong>
+                        <span class="account-meta-muted">USD ACV target</span>
+                        <div class="account-location-line">
+                            {{ account["city"] or "City not set" }}
+                            <span>{{ account["country"] or "Country not set" }}</span>
+                        </div>
                     </td>
 
                 </tr>

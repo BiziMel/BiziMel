@@ -32,6 +32,7 @@ RELEASE_NOTES = [
             "Enhanced Outreach Activity forms so the contact selector only shows contacts associated to the selected account.",
             "Enhanced Campaign Builder so multiple contact selection is constrained to contacts associated with the selected account.",
             "Enhanced Insights Dashboard so execution guidance focuses on Campaign Learning success and failure indicators plus AI Insight engagement recommendations from account and contact context.",
+            "Enhanced the Accounts page with a cleaner streamlined table layout for PG order, account detail, health, coverage, pipeline and location.",
         ],
         "fixed": [],
     },
@@ -2854,37 +2855,12 @@ def pg_dashboard_context(connection):
     for account in accounts:
         account_id = account["id"]
         pg_target_number = account["pg_bible_order"] or ""
-        scheduled_action_rows = connection.execute("""
-            SELECT subject, next_action_date, next_action_time
-            FROM outreach
-            WHERE account_id = ?
-              AND next_action_date IS NOT NULL
-              AND next_action_date != ''
-              AND next_action_date <= ?
-              AND COALESCE(task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
-            ORDER BY next_action_date ASC, next_action_time ASC, id DESC
-        """, (account_id, seven_days_forward)).fetchall()
-        recent_activity_rows = connection.execute("""
-            SELECT activity_date, activity_type, subject, next_action, last_updated
-            FROM outreach
-            WHERE account_id = ?
-              AND last_updated >= ?
-              AND next_action IS NOT NULL
-              AND next_action != ''
-              AND COALESCE(task_status, '') IN ('Closed', 'Completed', 'Cancelled')
-            ORDER BY last_updated DESC, id DESC
-        """, (account_id, seven_days_ago)).fetchall()
         contacts = connection.execute("""
-            SELECT name, job_title
+            SELECT id, name, job_title
             FROM contacts
             WHERE account_id = ?
             ORDER BY name
         """, (account_id,)).fetchall()
-        action_update = connection.execute("""
-            SELECT *
-            FROM pg_action_updates
-            WHERE account_id = ?
-        """, (account_id,)).fetchone()
         outreach_sales_play_rows = connection.execute("""
             SELECT DISTINCT sales_play
             FROM outreach
@@ -2899,26 +2875,6 @@ def pg_dashboard_context(connection):
             if row["sales_play"]
         ]
         pg_sales_play = "; ".join(outreach_sales_plays) or account["sales_play"] or ""
-        contact_label = "; ".join(
-            f"{contact['name']}{' - ' + contact['job_title'] if contact['job_title'] else ''}"
-            for contact in contacts
-        )
-        next_7_days_actions = []
-        for action_row in scheduled_action_rows:
-            subject = action_row["subject"] or "Scheduled action"
-            due_parts = [action_row["next_action_date"] or "", action_row["next_action_time"] or ""]
-            next_7_days_actions.append({
-                "subject": subject,
-                "due": " ".join(part for part in due_parts if part),
-            })
-        last_7_days_activity_entries = []
-        for row in recent_activity_rows:
-            submitted_date = str(row["last_updated"] or row["activity_date"] or "No date")[:10]
-            last_7_days_activity_entries.append({
-                "date": submitted_date,
-                "activity": row["activity_type"] or row["subject"] or "Activity",
-                "activity_update": row["next_action"],
-            })
         pg_plan_rows.append({
             "account_id": account_id,
             "target_number": pg_target_number,
@@ -2927,15 +2883,75 @@ def pg_dashboard_context(connection):
             "account_name": account["account_name"],
             "estimated_value": money_value(account["pipeline_target"]),
         })
-        pg_action_rows.append({
-            "account_id": account_id,
-            "target_number": pg_target_number,
-            "colour_index": nbm_colour_index(pg_target_number),
-            "targeted_discovery": contact_label,
-            "completed_discovery_meeting": action_update["completed_discovery_meeting"] if action_update else "",
-            "last_7_days_activity_entries": last_7_days_activity_entries,
-            "next_7_days_actions": next_7_days_actions,
-        })
+
+        legacy_action_update = connection.execute("""
+            SELECT *
+            FROM pg_action_updates
+            WHERE account_id = ?
+        """, (account_id,)).fetchone()
+
+        for contact in contacts:
+            contact_id = contact["id"]
+            scheduled_action_rows = connection.execute("""
+                SELECT subject, next_action_date, next_action_time
+                FROM outreach
+                WHERE account_id = ?
+                  AND contact_id = ?
+                  AND next_action_date IS NOT NULL
+                  AND next_action_date != ''
+                  AND next_action_date <= ?
+                  AND COALESCE(task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
+                ORDER BY next_action_date ASC, next_action_time ASC, id DESC
+            """, (account_id, contact_id, seven_days_forward)).fetchall()
+            recent_activity_rows = connection.execute("""
+                SELECT activity_date, activity_type, subject, next_action, last_updated
+                FROM outreach
+                WHERE account_id = ?
+                  AND contact_id = ?
+                  AND last_updated >= ?
+                  AND next_action IS NOT NULL
+                  AND next_action != ''
+                  AND COALESCE(task_status, '') IN ('Closed', 'Completed', 'Cancelled')
+                ORDER BY last_updated DESC, id DESC
+            """, (account_id, contact_id, seven_days_ago)).fetchall()
+            action_update = connection.execute("""
+                SELECT *
+                FROM pg_action_contact_updates
+                WHERE contact_id = ?
+            """, (contact_id,)).fetchone()
+
+            next_7_days_actions = []
+            for action_row in scheduled_action_rows:
+                subject = action_row["subject"] or "Scheduled action"
+                due_parts = [action_row["next_action_date"] or "", action_row["next_action_time"] or ""]
+                next_7_days_actions.append({
+                    "subject": subject,
+                    "due": " ".join(part for part in due_parts if part),
+                })
+            last_7_days_activity_entries = []
+            for row in recent_activity_rows:
+                submitted_date = str(row["last_updated"] or row["activity_date"] or "No date")[:10]
+                last_7_days_activity_entries.append({
+                    "date": submitted_date,
+                    "activity": row["activity_type"] or row["subject"] or "Activity",
+                    "activity_update": row["next_action"],
+                })
+
+            pg_action_rows.append({
+                "account_id": account_id,
+                "contact_id": contact_id,
+                "target_number": pg_target_number,
+                "colour_index": nbm_colour_index(pg_target_number),
+                "account_name": account["account_name"],
+                "targeted_discovery": f"{contact['name']}{' - ' + contact['job_title'] if contact['job_title'] else ''}",
+                "completed_discovery_meeting": (
+                    action_update["completed_discovery_meeting"]
+                    if action_update
+                    else (legacy_action_update["completed_discovery_meeting"] if legacy_action_update else "")
+                ),
+                "last_7_days_activity_entries": last_7_days_activity_entries,
+                "next_7_days_actions": next_7_days_actions,
+            })
 
     return {
         "fy_pipeline_target": fy_pipeline_target,
@@ -2956,30 +2972,32 @@ def pg_progress():
     connection = get_db_connection()
     if request.method == "POST":
         save_dashboard_setting(connection, "current_pipeline", request.form.get("current_pipeline", "0"))
-        for account_id in request.form.getlist("pg_action_account_id"):
-            completed = request.form.get(f"completed_discovery_{account_id}", "")
-            next_action = request.form.get(f"next_action_{account_id}", "")
+        for contact_id in request.form.getlist("pg_action_contact_id"):
+            account_id = request.form.get(f"pg_action_account_id_{contact_id}", "")
+            completed = request.form.get(f"completed_discovery_contact_{contact_id}", "")
+            next_action = request.form.get(f"next_action_contact_{contact_id}", "")
             existing = connection.execute(
-                "SELECT id FROM pg_action_updates WHERE account_id = ?",
-                (account_id,),
+                "SELECT id FROM pg_action_contact_updates WHERE contact_id = ?",
+                (contact_id,),
             ).fetchone()
             if existing:
                 connection.execute("""
-                    UPDATE pg_action_updates
+                    UPDATE pg_action_contact_updates
                     SET completed_discovery_meeting = ?,
                         next_action_override = ?,
                         last_updated = CURRENT_TIMESTAMP
-                    WHERE account_id = ?
-                """, (completed, next_action, account_id))
+                    WHERE contact_id = ?
+                """, (completed, next_action, contact_id))
             else:
                 connection.execute("""
-                    INSERT INTO pg_action_updates (
+                    INSERT INTO pg_action_contact_updates (
                         account_id,
+                        contact_id,
                         completed_discovery_meeting,
                         next_action_override
                     )
-                    VALUES (?, ?, ?)
-                """, (account_id, completed, next_action))
+                    VALUES (?, ?, ?, ?)
+                """, (account_id, contact_id, completed, next_action))
         audit_entry(
             connection,
             "dashboard_new",

@@ -109,12 +109,19 @@
                     {% for row in pg_action_rows %}
                         <tr>
                             <td class="nbm-col nbm-colour-{{ row.colour_index }}">
-                                <input type="hidden" name="pg_action_account_id" value="{{ row.account_id }}">
+                                <input type="hidden" name="pg_action_contact_id" value="{{ row.contact_id }}">
+                                <input type="hidden" name="pg_action_account_id_{{ row.contact_id }}" value="{{ row.account_id }}">
                                 {{ row.target_number or "-" }}
                             </td>
-                            <td>{{ row.targeted_discovery or "No account contacts entered" }}</td>
                             <td>
-                                <select name="completed_discovery_{{ row.account_id }}">
+                                <strong>{{ row.targeted_discovery or "No account contacts entered" }}</strong>
+                                {% if row.account_name %}
+                                    <br>
+                                    <span class="muted">{{ row.account_name }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <select name="completed_discovery_contact_{{ row.contact_id }}">
                                     <option value="" {% if not row.completed_discovery_meeting %}selected{% endif %}>Select</option>
                                     <option value="Yes" {% if row.completed_discovery_meeting == "Yes" %}selected{% endif %}>Yes</option>
                                     <option value="No" {% if row.completed_discovery_meeting == "No" %}selected{% endif %}>No</option>

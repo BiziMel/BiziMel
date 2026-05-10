@@ -117,6 +117,18 @@ def initialise_database(force=False):
     """)
 
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS pg_action_contact_updates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            contact_id INTEGER NOT NULL UNIQUE,
+            completed_discovery_meeting TEXT,
+            next_action_override TEXT,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS contacts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             account_id INTEGER,
@@ -332,6 +344,12 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "pg_action_updates", "next_action_override", "TEXT")
     add_column_if_missing(cursor, "pg_action_updates", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "pg_action_updates", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "pg_action_contact_updates", "account_id", "INTEGER")
+    add_column_if_missing(cursor, "pg_action_contact_updates", "contact_id", "INTEGER")
+    add_column_if_missing(cursor, "pg_action_contact_updates", "completed_discovery_meeting", "TEXT")
+    add_column_if_missing(cursor, "pg_action_contact_updates", "next_action_override", "TEXT")
+    add_column_if_missing(cursor, "pg_action_contact_updates", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "pg_action_contact_updates", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
 
     # Safe migrations for account sharing permissions
     add_column_if_missing(cursor, "account_shared_users", "account_id", "INTEGER")
@@ -496,6 +514,8 @@ def initialise_database(force=False):
         ("idx_account_shared_users_account", "account_shared_users", ["account_id"]),
         ("idx_account_shared_users_user", "account_shared_users", ["user_id"]),
         ("idx_pg_action_updates_account", "pg_action_updates", ["account_id"]),
+        ("idx_pg_action_contact_updates_account", "pg_action_contact_updates", ["account_id"]),
+        ("idx_pg_action_contact_updates_contact", "pg_action_contact_updates", ["contact_id"]),
         ("idx_contacts_account", "contacts", ["account_id"]),
         ("idx_contacts_category", "contacts", ["category"]),
         ("idx_outreach_account", "outreach", ["account_id"]),
