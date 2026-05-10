@@ -150,13 +150,13 @@
                 <div class="contact-card-grid">
                     {% for contact in contacts %}
                         {% set is_selected_account = selected_account_id and contact.account_id|string == selected_account_id %}
-                        <label class="contact-summary-card campaign-contact-option">
+                        <label class="contact-summary-card campaign-contact-option" {% if not is_selected_account %}hidden{% endif %}>
                             <input type="checkbox"
                                    name="contact_ids"
                                    value="{{ contact.id }}"
                                    data-account-id="{{ contact.account_id }}"
                                    {% if contact.id|string in selected_contact_ids %}checked{% endif %}
-                                   {% if selected_account_id and not is_selected_account %}disabled{% endif %}>
+                                   {% if not is_selected_account %}disabled{% endif %}>
                             <span>
                                 <strong>{{ contact.name }}</strong>
                                 <p>{{ contact.job_title or "No job title" }}</p>
@@ -247,9 +247,9 @@
         contactOptions.forEach((option) => {
             const checkbox = option.querySelector("input[type='checkbox']");
             const belongsToSelectedAccount = checkbox && checkbox.dataset.accountId === selectedAccountId;
-            option.hidden = Boolean(selectedAccountId) && !belongsToSelectedAccount;
+            option.hidden = !belongsToSelectedAccount;
             if (checkbox) {
-                checkbox.disabled = Boolean(selectedAccountId) && !belongsToSelectedAccount;
+                checkbox.disabled = !belongsToSelectedAccount;
                 if (checkbox.disabled) {
                     checkbox.checked = false;
                 }

@@ -30,6 +30,7 @@ RELEASE_NOTES = [
         "enhanced": [
             "Enhanced the Outreach Tasks table so due date, due time and task status display in a cleaner compact layout.",
             "Enhanced Outreach Activity forms so the contact selector only shows contacts associated to the selected account.",
+            "Enhanced Campaign Builder so multiple contact selection is constrained to contacts associated with the selected account.",
         ],
         "fixed": [],
     },
