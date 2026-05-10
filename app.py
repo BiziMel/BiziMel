@@ -29,6 +29,7 @@ RELEASE_NOTES = [
         "new": [],
         "enhanced": [
             "Enhanced the Outreach Tasks table so due date, due time and task status display in a cleaner compact layout.",
+            "Enhanced Outreach Activity forms so the contact selector only shows contacts associated to the selected account.",
         ],
         "fixed": [],
     },
@@ -2706,6 +2707,24 @@ def status_requires_activity_update(status):
     return is_closed_task_status(status)
 
 
+def contact_matches_account(connection, account_id, contact_id):
+    if not contact_id:
+        return True
+    if not account_id:
+        return False
+
+    match = connection.execute(
+        """
+        SELECT id
+        FROM contacts
+        WHERE id = ?
+          AND account_id = ?
+        """,
+        (contact_id, account_id),
+    ).fetchone()
+    return bool(match)
+
+
 def activity_update_required_message():
     return "Activity Update must be at least 5 characters before a task can be completed, closed or cancelled."
 
@@ -4376,7 +4395,9 @@ def add_outreach():
     if request.method == "POST":
         prefill = dict(request.form)
         requested_status = request.form.get("task_status", "Not Started")
-        if status_requires_activity_update(requested_status) and not activity_update_is_valid(request.form.get("next_action")):
+        if not contact_matches_account(connection, request.form.get("account_id"), request.form.get("contact_id")):
+            error = "Select a contact that belongs to the selected account."
+        elif status_requires_activity_update(requested_status) and not activity_update_is_valid(request.form.get("next_action")):
             error = activity_update_required_message()
         else:
             sales_play_value = request.form.get("sales_play")
@@ -4838,6 +4859,19 @@ def edit_outreach(outreach_id):
             new_values["task_status"] = "Completed"
             new_values["next_action_date"] = ""
             new_values["next_action_time"] = ""
+
+        if not contact_matches_account(connection, new_values["account_id"], new_values["contact_id"]):
+            error = "Select a contact that belongs to the selected account."
+            connection.close()
+            return render_template(
+                "edit_outreach.html",
+                outreach_item=outreach_item,
+                accounts=accounts,
+                contacts=contacts,
+                profile=profile,
+                non_working_blocks=non_working_block_rows,
+                error=error
+            )
 
         if status_requires_activity_update(new_values["task_status"]) and not activity_update_is_valid(new_values["next_action"]):
             error = activity_update_required_message()
