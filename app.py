@@ -31,6 +31,7 @@ RELEASE_NOTES = [
             "Enhanced the Outreach Tasks table so due date, due time and task status display in a cleaner compact layout.",
             "Enhanced Outreach Activity forms so the contact selector only shows contacts associated to the selected account.",
             "Enhanced Campaign Builder so multiple contact selection is constrained to contacts associated with the selected account.",
+            "Enhanced Insights Dashboard so execution guidance focuses on Campaign Learning success and failure indicators plus AI Insight engagement recommendations from account and contact context.",
         ],
         "fixed": [],
     },
@@ -2018,6 +2019,20 @@ def build_attention_insights(needs_attention_accounts):
     return attention_insights
 
 
+def compact_join(values, limit=3):
+    cleaned = []
+    seen = set()
+    for value in values:
+        text = str(value or "").strip()
+        key = text.casefold()
+        if text and key not in seen:
+            cleaned.append(text)
+            seen.add(key)
+        if len(cleaned) >= limit:
+            break
+    return ", ".join(cleaned)
+
+
 def deduplicate_execution_insights(insights):
     unique_insights = []
     seen = set()
@@ -2182,6 +2197,41 @@ def build_learning_insights(connection):
             ),
             "action": "Use this play when a similar relationship type appears in another account.",
             "link": url_for("contacts")
+        })
+
+    failure_rows = add_learning_score(connection.execute(f"""
+        SELECT
+            outreach.sales_play,
+            outreach.activity_type,
+            {learning_select}
+        FROM outreach
+        WHERE outreach.sales_play IS NOT NULL
+          AND outreach.sales_play != ''
+          AND outreach.activity_type IS NOT NULL
+          AND outreach.activity_type != ''
+        GROUP BY outreach.sales_play, outreach.activity_type
+        HAVING SUM(CASE WHEN outreach.outcome IN ({negative_placeholders}) THEN 1 ELSE 0 END) > 0
+    """, (*learning_params, *NEGATIVE_OUTCOMES)).fetchall())
+
+    if failure_rows:
+        failure_rows.sort(
+            key=lambda row: (
+                row["negative_total"] or 0,
+                row["overdue_total"] or 0,
+                row["total"] or 0,
+            ),
+            reverse=True
+        )
+        failure = failure_rows[0]
+        insights.append({
+            "signal": "Failure Indicator",
+            "title": f"{failure['activity_type']} is underperforming for {failure['sales_play']}",
+            "message": (
+                f"This pattern has {failure['negative_total']} negative signal(s) "
+                f"from {failure['total']} touchpoint(s)."
+            ),
+            "action": "Change the channel, refine the message, or switch stakeholder route before repeating this pattern.",
+            "link": url_for("outreach")
         })
 
     outcome_gaps = connection.execute("""
@@ -2535,6 +2585,60 @@ def build_dashboard_response(connection):
                 "link": url_for("view_account", account_id=account["id"])
             })
 
+        contact_context_rows = connection.execute("""
+            SELECT
+                name,
+                job_title,
+                category,
+                org_dept,
+                responsibilities,
+                bmc_relationship,
+                characteristics,
+                background,
+                personal_interests,
+                personal_win,
+                additional_notes
+            FROM contacts
+            WHERE account_id = ?
+            ORDER BY
+                CASE WHEN bmc_relationship IS NULL OR bmc_relationship = '' THEN 1 ELSE 0 END,
+                CASE WHEN responsibilities IS NULL OR responsibilities = '' THEN 1 ELSE 0 END,
+                name
+            LIMIT 5
+        """, (account["id"],)).fetchall()
+
+        if contact_context_rows:
+            contact_names = compact_join(
+                ", ".join(part for part in [row["name"], row["job_title"]] if part)
+                for row in contact_context_rows
+            )
+            relationship_context = compact_join(row["bmc_relationship"] for row in contact_context_rows)
+            responsibility_context = compact_join(row["responsibilities"] for row in contact_context_rows)
+            personal_context = compact_join(
+                row["personal_win"] or row["personal_interests"] or row["characteristics"] or row["background"] or row["additional_notes"]
+                for row in contact_context_rows
+            )
+
+            context_parts = []
+            if relationship_context:
+                context_parts.append(f"relationship context: {relationship_context}")
+            if responsibility_context:
+                context_parts.append(f"responsibilities: {responsibility_context}")
+            if personal_context:
+                context_parts.append(f"personal drivers: {personal_context}")
+
+            if context_parts:
+                ai_insights.append({
+                    "type": "Engagement Route",
+                    "severity": "medium",
+                    "title": f"Personalise {account['account_name']} engagement by stakeholder context",
+                    "message": (
+                        f"Use {contact_names or 'the mapped contacts'} and tailor the route around "
+                        f"{'; '.join(context_parts)}."
+                    ),
+                    "link": url_for("view_account", account_id=account["id"])
+                })
+
         if (account["partner_count"] or 0) == 0 and (account["outreach_count"] or 0) > 0:
             ai_insights.append({
                 "type": "Partner Gap",
@@ -2623,7 +2727,6 @@ def build_dashboard_response(connection):
 
     ai_insights = ai_insights[:6]
     execution_insights = deduplicate_execution_insights(
-        build_attention_insights(needs_attention_accounts) +
         build_execution_insights(ai_insights, learning_insights)
     )
     execution_insights = execution_insights[:12]
