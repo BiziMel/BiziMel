@@ -122,6 +122,7 @@ DROPDOWN_VALUES = {
         "White Paper / Webinar",
         "Events",
         "Email",
+        "Follow-up Email",
         "Meeting",
         "Follow-up",
         "Partner Touchpoint",

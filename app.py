@@ -33,6 +33,7 @@ RELEASE_NOTES = [
             "Enhanced Campaign Builder so multiple contact selection is constrained to contacts associated with the selected account.",
             "Enhanced Insights Dashboard so execution guidance focuses on Campaign Learning success and failure indicators plus AI Insight engagement recommendations from account and contact context.",
             "Enhanced the Accounts page with a cleaner streamlined table layout for PG order, account detail, health, coverage, pipeline and location.",
+            "Enhanced campaign autoscheduling so the first email step is VITO and later email-style steps are labelled as Follow-up Email.",
         ],
         "fixed": [],
     },
@@ -1893,6 +1894,16 @@ def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per
     total_tasks = max(1, int(total_tasks or 1))
     times_per_week = max(1, min(int(times_per_week or 1), 7))
     schedule = []
+    initial_vito_template = next(
+        (template for template in campaign_step_templates() if template["activity_type"] == "VITO"),
+        {
+            "campaign": "VITO",
+            "activity_type": "VITO",
+            "subject_prefix": "VITO outreach",
+            "next_action": "Send VITO-led message",
+            "time": "09:00",
+        },
+    )
 
     for index, action_date in enumerate(evenly_spaced_dates(campaign_start, campaign_end, total_tasks)):
         if action_date < campaign_start:
@@ -1900,7 +1911,16 @@ def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per
         if action_date > campaign_end:
             action_date = campaign_end
         action_date = next_working_date(action_date, campaign_start, campaign_end, profile, non_working_blocks)
-        template = dict(templates[index % len(templates)])
+        if index == 0:
+            template = dict(initial_vito_template)
+        else:
+            template = dict(templates[index % len(templates)])
+            if template.get("activity_type") in ("VITO", "Email"):
+                template["campaign"] = "Follow-up Email"
+                template["activity_type"] = "Follow-up Email"
+                template["subject_prefix"] = "Follow-up email"
+                template["next_action"] = "Send follow-up email"
+                template["time"] = template.get("time") or "09:00"
         template["action_date"] = action_date
         template["time"] = available_campaign_time(action_date, template.get("time", "09:00"), profile, reserved_slots)
         template["times_per_week"] = times_per_week
