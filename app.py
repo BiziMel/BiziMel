@@ -33,7 +33,8 @@ RELEASE_NOTES = [
             "Enhanced Campaign Builder so multiple contact selection is constrained to contacts associated with the selected account.",
             "Enhanced Insights Dashboard so execution guidance focuses on Campaign Learning success and failure indicators plus AI Insight engagement recommendations from account and contact context.",
             "Enhanced the Accounts page with a cleaner streamlined table layout for PG order, account detail, health, coverage, pipeline and location.",
-            "Enhanced campaign autoscheduling so the first email step is VITO and later email-style steps are labelled as Follow-up Email.",
+            "Enhanced campaign autoscheduling so the first email step is VITO and later email-style steps use the single Follow-up activity type with the subject describing the follow-up channel.",
+            "Enhanced Outreach and Campaign Builder cleanup by requiring FY and Quarter before save, removing duplicate follow-up activity values, flattening Outreach task grouping, moving account sharing to Accounts and compacting Outreach filters.",
         ],
         "fixed": [],
     },
@@ -1916,8 +1917,8 @@ def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per
         else:
             template = dict(templates[index % len(templates)])
             if template.get("activity_type") in ("VITO", "Email"):
-                template["campaign"] = "Follow-up Email"
-                template["activity_type"] = "Follow-up Email"
+                template["campaign"] = "Follow-up"
+                template["activity_type"] = "Follow-up"
                 template["subject_prefix"] = "Follow-up email"
                 template["next_action"] = "Send follow-up email"
                 template["time"] = template.get("time") or "09:00"
@@ -2854,6 +2855,14 @@ def activity_update_required_message():
     return "Activity Update must be at least 5 characters before a task can be completed, closed or cancelled."
 
 
+def fy_quarter_required_message():
+    return "FY and Quarter are required before this record can be saved."
+
+
+def fy_quarter_are_valid(fy, quarter):
+    return bool((fy or "").strip() and (quarter or "").strip())
+
+
 def pg_dashboard_context(connection):
     accounts = connection.execute("""
         SELECT *
@@ -3043,6 +3052,7 @@ def pg_progress():
 
 @app.route("/accounts")
 def accounts():
+    user = current_user()
     connection = get_db_connection()
 
     account_rows = connection.execute("""
@@ -3127,9 +3137,34 @@ def accounts():
         )
     )
 
+    shareable_accounts = [
+        account for account in accounts
+        if current_user_owns_account(account)
+    ]
+    account_shares = connection.execute("""
+        SELECT
+            account_shared_users.*,
+            accounts.account_name,
+            accounts.owner_user_id,
+            accounts.owner_name
+        FROM account_shared_users
+        JOIN accounts ON accounts.id = account_shared_users.account_id
+        WHERE accounts.owner_user_id IS NULL
+           OR accounts.owner_user_id = ?
+        ORDER BY accounts.account_name, account_shared_users.full_name
+    """, (user["id"] if user else None,)).fetchall()
+
     connection.close()
 
-    return render_template("accounts.html", accounts=accounts)
+    return render_template(
+        "accounts.html",
+        accounts=accounts,
+        shareable_accounts=shareable_accounts,
+        account_shares=account_shares,
+        assignable_users=list_assignable_users(),
+        message=request.args.get("message", ""),
+        error=request.args.get("error", ""),
+    )
 
 
 @app.route("/partners")
@@ -4443,8 +4478,6 @@ def outreach():
 
     query += """
         ORDER BY
-            COALESCE(NULLIF(accounts.account_name, ''), 'No Account'),
-            COALESCE(NULLIF(outreach.sales_play, ''), 'No Sales Play'),
             CASE
                 WHEN outreach.next_action_date IS NULL OR outreach.next_action_date = ''
                 THEN 1 ELSE 0
@@ -4465,27 +4498,6 @@ def outreach():
     accounts = connection.execute(
         "SELECT * FROM accounts ORDER BY account_name"
     ).fetchall()
-    owner_account_ids = {
-        str(account["id"])
-        for account in accounts
-        if current_user_owns_account(account)
-    }
-    shareable_accounts = [
-        account for account in accounts
-        if str(account["id"]) in owner_account_ids
-    ]
-    account_shares = connection.execute("""
-        SELECT
-            account_shared_users.*,
-            accounts.account_name,
-            accounts.owner_user_id,
-            accounts.owner_name
-        FROM account_shared_users
-        JOIN accounts ON accounts.id = account_shared_users.account_id
-        WHERE accounts.owner_user_id IS NULL
-           OR accounts.owner_user_id = ?
-        ORDER BY accounts.account_name, account_shared_users.full_name
-    """, (user["id"] if user else None,)).fetchall()
     existing_sales_plays = connection.execute("""
         SELECT DISTINCT sales_play
         FROM outreach
@@ -4501,8 +4513,6 @@ def outreach():
         "outreach.html",
         outreach_records=outreach_records,
         accounts=accounts,
-        shareable_accounts=shareable_accounts,
-        account_shares=account_shares,
         sales_play_options=sales_play_options,
         fy_filter=fy_filter,
         quarter_filter=quarter_filter,
@@ -4537,7 +4547,9 @@ def add_outreach():
     if request.method == "POST":
         prefill = dict(request.form)
         requested_status = request.form.get("task_status", "Not Started")
-        if not contact_matches_account(connection, request.form.get("account_id"), request.form.get("contact_id")):
+        if not fy_quarter_are_valid(request.form.get("fy"), request.form.get("quarter")):
+            error = fy_quarter_required_message()
+        elif not contact_matches_account(connection, request.form.get("account_id"), request.form.get("contact_id")):
             error = "Select a contact that belongs to the selected account."
         elif status_requires_activity_update(requested_status) and not activity_update_is_valid(request.form.get("next_action")):
             error = activity_update_required_message()
@@ -4677,11 +4689,15 @@ def campaign_builder():
         if not sales_play:
             sales_play = "PG week sales play"
         selected_sales_play = sales_play
+        selected_fy = request.form.get("fy", "")
+        selected_quarter = request.form.get("quarter", "")
 
         if not account_id:
             error = "Select an account before generating a campaign."
         elif not contact_ids:
             error = "Select at least one contact for the selected account before generating a campaign."
+        elif not fy_quarter_are_valid(selected_fy, selected_quarter):
+            error = fy_quarter_required_message()
         elif account_id and pg_week_start_raw and campaign_start_raw and campaign_end_raw and contact_ids:
             today = datetime.now().date()
             pg_week_start = datetime.strptime(pg_week_start_raw, "%Y-%m-%d").date()
@@ -4722,16 +4738,11 @@ def campaign_builder():
                 account_name = account["account_name"] if account else "Selected account"
                 campaign_name = sales_play
                 assigned_to = request.form.get("assigned_to", "")
-                fy = request.form.get("fy", "")
-                quarter = request.form.get("quarter", "")
+                fy = selected_fy
+                quarter = selected_quarter
                 success_context = build_campaign_success_context(connection, account_id, valid_contact_ids, sales_play)
                 success_context_summary = success_context["summary"]
                 schedule_templates = success_context["templates"]
-
-                if not fy:
-                    fy = f"{campaign_start.year % 100:02d}"
-                if not quarter:
-                    quarter = f"Q{((campaign_start.month - 1) // 3) + 1}"
                 selected_fy = fy
                 selected_quarter = quarter
                 reserved_rows = connection.execute("""
@@ -5001,6 +5012,19 @@ def edit_outreach(outreach_id):
             new_values["task_status"] = "Completed"
             new_values["next_action_date"] = ""
             new_values["next_action_time"] = ""
+
+        if not fy_quarter_are_valid(new_values["fy"], new_values["quarter"]):
+            error = fy_quarter_required_message()
+            connection.close()
+            return render_template(
+                "edit_outreach.html",
+                outreach_item=outreach_item,
+                accounts=accounts,
+                contacts=contacts,
+                profile=profile,
+                non_working_blocks=non_working_block_rows,
+                error=error
+            )
 
         if not contact_matches_account(connection, new_values["account_id"], new_values["contact_id"]):
             error = "Select a contact that belongs to the selected account."
@@ -5670,12 +5694,14 @@ def share_account_from_team_outreach():
     account_id = request.form.get("account_id")
     return_to = request.form.get("return_to") or url_for("outreach")
     if not target_user_ids:
-        return redirect(url_for("outreach", error="Select at least one user before sharing the account."))
+        separator = "&" if "?" in return_to else "?"
+        return redirect(f"{return_to}{separator}{urlencode({'error': 'Select at least one user before sharing the account.'})}")
     source_connection = get_db_connection()
     account = source_connection.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
     if not account or not current_user_owns_account(account):
         source_connection.close()
-        return redirect(url_for("outreach", error="Only the account owner can share this account."))
+        separator = "&" if "?" in return_to else "?"
+        return redirect(f"{return_to}{separator}{urlencode({'error': 'Only the account owner can share this account.'})}")
     target_members = [
         member for member in assignable_users
         if str(member["id"]) in target_user_ids
@@ -5683,7 +5709,9 @@ def share_account_from_team_outreach():
            and (not user or str(member["id"]) != str(user["id"]))
     ]
     if not target_members:
-        return redirect(url_for("outreach", error="Select at least one valid user other than yourself."))
+        source_connection.close()
+        separator = "&" if "?" in return_to else "?"
+        return redirect(f"{return_to}{separator}{urlencode({'error': 'Select at least one valid user other than yourself.'})}")
     source_schema = current_user_schema() if using_postgres() else ""
     errors = []
     shared_count = 0
@@ -5704,11 +5732,12 @@ def share_account_from_team_outreach():
         )
         source_connection.commit()
     source_connection.close()
+    separator = "&" if "?" in return_to else "?"
     if errors and not shared_count:
-        return redirect(url_for("outreach", error=errors[0]))
+        return redirect(f"{return_to}{separator}{urlencode({'error': errors[0]})}")
     if errors:
-        return redirect(url_for("outreach", message=f"Account shared with {shared_count} user(s). Some shares could not be completed."))
-    return redirect(url_for("outreach", message=f"Full account shared with {shared_count} user(s)."))
+        return redirect(f"{return_to}{separator}{urlencode({'message': f'Account shared with {shared_count} user(s). Some shares could not be completed.'})}")
+    return redirect(f"{return_to}{separator}{urlencode({'message': f'Full account shared with {shared_count} user(s).'})}")
 
 
 @app.route("/team-outreach/account-share/<int:share_id>/revoke", methods=("POST",))
@@ -5724,12 +5753,14 @@ def revoke_account_share_from_outreach(share_id):
     """, (share_id,)).fetchone()
     if not share:
         connection.close()
-        return redirect(url_for("outreach", error="The selected sharing permission could not be found."))
+        separator = "&" if "?" in return_to else "?"
+        return redirect(f"{return_to}{separator}{urlencode({'error': 'The selected sharing permission could not be found.'})}")
 
     owner = account_owner_payload(share)
     if user and owner["owner_user_id"] and str(owner["owner_user_id"]) != str(user["id"]):
         connection.close()
-        return redirect(url_for("outreach", error="Only the account owner can revoke account sharing permissions."))
+        separator = "&" if "?" in return_to else "?"
+        return redirect(f"{return_to}{separator}{urlencode({'error': 'Only the account owner can revoke account sharing permissions.'})}")
 
     connection.execute("""
         UPDATE outreach
