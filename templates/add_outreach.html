@@ -27,12 +27,12 @@
 
             <div class="form-group">
                 <label for="fy">FY</label>
-                <input type="text" id="fy" name="fy" maxlength="2" pattern="[0-9]{2}" value="{{ prefill.fy or '' }}" placeholder="00">
+                <input type="text" id="fy" name="fy" maxlength="2" pattern="[0-9]{2}" value="{{ prefill.fy or '' }}" placeholder="00" required>
             </div>
 
             <div class="form-group">
                 <label for="quarter">Quarter</label>
-                <select id="quarter" name="quarter">
+                <select id="quarter" name="quarter" required>
                     <option value="">Select quarter</option>
                     {% for quarter in dropdown_values.quarters %}
                         <option value="{{ quarter }}" {% if prefill.quarter == quarter %}selected{% endif %}>{{ quarter }}</option>

@@ -13,6 +13,90 @@
     </a>
 </div>
 
+{% if message %}
+    <div class="alert-success">{{ message }}</div>
+{% endif %}
+{% if error %}
+    <div class="alert-error">{{ error }}</div>
+{% endif %}
+
+<section class="form-card compact-filter-card account-sharing-card">
+    <div class="section-header compact-section-header">
+        <div>
+            <h2>Share Full Account</h2>
+            <p>Account owners can share account details, contacts and outreach tasks with other users.</p>
+        </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('share_account_from_team_outreach') }}" class="pipeflow-form compact-filter-form account-share-form">
+        <input type="hidden" name="return_to" value="{{ url_for('accounts') }}">
+        <div class="form-grid compact-filter-grid account-share-grid">
+            <div class="form-group">
+                <label for="share_account_id">Account</label>
+                <select id="share_account_id" name="account_id" required>
+                    <option value="">Select account</option>
+                    {% for account in shareable_accounts %}
+                        <option value="{{ account.id }}">{{ account.account_name }}</option>
+                    {% endfor %}
+                </select>
+                {% if not shareable_accounts %}
+                    <p class="field-help">Only account owners can share accounts.</p>
+                {% endif %}
+            </div>
+
+            <div class="form-group">
+                <label>Share With</label>
+                <details class="checkbox-dropdown compact-checkbox-dropdown">
+                    <summary>Select users</summary>
+                    <div class="checkbox-dropdown-panel">
+                    {% for assignable_user in assignable_users %}
+                        {% if current_user and assignable_user.id != current_user["id"] %}
+                            <label class="checkbox-row">
+                                <input type="checkbox" name="target_user_ids" value="{{ assignable_user.id }}">
+                                <span>{{ assignable_user.full_name }}</span>
+                            </label>
+                        {% endif %}
+                    {% endfor %}
+                    </div>
+                </details>
+            </div>
+
+            <div class="form-group account-share-action">
+                <label>&nbsp;</label>
+                <button type="submit" class="btn btn-primary">Share Account</button>
+            </div>
+        </div>
+    </form>
+
+    <div class="sharing-permission-list sharing-management-panel account-sharing-list">
+        <div class="section-header compact-section-header">
+            <div>
+                <h3>Manage Existing Sharing</h3>
+                <p>Revoke access for people you have shared accounts with.</p>
+            </div>
+        </div>
+
+        {% for share in account_shares %}
+            <div class="sharing-permission-row">
+                <div>
+                    <strong>{{ share.account_name }}</strong>
+                    <span>Shared with {{ share.full_name or share.email }}</span>
+                </div>
+                <form method="POST"
+                      action="{{ url_for('revoke_account_share_from_outreach', share_id=share.id) }}"
+                      onsubmit="return confirm('Revoke this account share? Assigned tasks for this user will return to the account owner.');">
+                    <input type="hidden" name="return_to" value="{{ url_for('accounts') }}">
+                    <button type="submit" class="btn btn-danger btn-small">Revoke Access</button>
+                </form>
+            </div>
+        {% endfor %}
+
+        {% if not account_shares %}
+            <p class="muted compact-empty-copy">No active account shares created by you yet.</p>
+        {% endif %}
+    </div>
+</section>
+
 {% if accounts %}
 
 {% if current_user and current_user["role"] == "admin" %}

@@ -394,8 +394,48 @@ input[type="submit"]:hover {
     margin-top: 20px;
 }
 
+.outreach-filter-only-grid {
+    grid-template-columns: 1fr;
+}
+
 .outreach-control-grid .form-card {
     margin-top: 0;
+}
+
+.outreach-filter-grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    align-items: end;
+}
+
+.outreach-filter-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.outreach-filter-actions .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    padding: 8px 10px;
+    font-size: 13px;
+}
+
+.account-sharing-card {
+    margin-top: 0;
+}
+
+.account-share-grid {
+    grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) minmax(150px, 0.6fr);
+    align-items: end;
+}
+
+.account-share-action .btn {
+    width: 100%;
+    min-height: 36px;
+    padding: 8px 12px;
+    font-size: 13px;
 }
 
 .two-column-control-grid {
@@ -3767,6 +3807,11 @@ body {
     }
 
     .two-column-control-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .outreach-filter-grid,
+    .account-share-grid {
         grid-template-columns: 1fr;
     }
 

@@ -45,7 +45,7 @@
 
     function cellText(row, columnIndex) {
         const cell = row.children[columnIndex];
-        return cell ? cell.innerText || cell.textContent || "" : "";
+        return cell ? cell.dataset.sortValue || cell.innerText || cell.textContent || "" : "";
     }
 
     function sortTable(table, columnIndex, header) {

@@ -32,84 +32,7 @@
     <div class="alert-error">{{ error }}</div>
 {% endif %}
 
-<div class="outreach-control-grid">
-    <div class="form-card compact-filter-card">
-        <div class="section-header">
-            <div>
-                <h2>Share Full Account</h2>
-                <p>Copy an account, contacts, outreach tasks and account details to one or more users.</p>
-            </div>
-        </div>
-
-        <form method="POST" action="{{ url_for('share_account_from_team_outreach') }}" class="pipeflow-form compact-filter-form">
-            <input type="hidden" name="return_to" value="{{ url_for('outreach') }}">
-            <div class="form-grid compact-filter-grid two-column-control-grid">
-                <div class="form-group">
-                    <label for="share_account_id">Account</label>
-                    <select id="share_account_id" name="account_id" required>
-                        <option value="">Select account</option>
-                        {% for account in shareable_accounts %}
-                            <option value="{{ account.id }}">{{ account.account_name }}</option>
-                        {% endfor %}
-                    </select>
-                    {% if not shareable_accounts %}
-                        <p class="field-help">Only account owners can share accounts.</p>
-                    {% endif %}
-                </div>
-
-                <div class="form-group">
-                    <label>Share With</label>
-                    <details class="checkbox-dropdown compact-checkbox-dropdown">
-                        <summary>Select users</summary>
-                        <div class="checkbox-dropdown-panel">
-                        {% for assignable_user in assignable_users %}
-                            {% if current_user and assignable_user.id != current_user["id"] %}
-                                <label class="checkbox-row">
-                                    <input type="checkbox" name="target_user_ids" value="{{ assignable_user.id }}">
-                                    <span>{{ assignable_user.full_name }}</span>
-                                </label>
-                            {% endif %}
-                        {% endfor %}
-                        </div>
-                    </details>
-                    <p class="field-help">Select one or more users, then share.</p>
-                </div>
-            </div>
-
-            <div class="form-actions">
-                <button type="submit" class="btn btn-primary">Share Account</button>
-            </div>
-        </form>
-
-        <div class="sharing-permission-list sharing-management-panel">
-            <div class="section-header compact-section-header">
-                <div>
-                    <h3>Manage Existing Sharing</h3>
-                    <p>Revoke access for people you have shared accounts with.</p>
-                </div>
-            </div>
-
-            {% for share in account_shares %}
-                <div class="sharing-permission-row">
-                    <div>
-                        <strong>{{ share.account_name }}</strong>
-                        <span>Shared with {{ share.full_name or share.email }}</span>
-                    </div>
-                    <form method="POST"
-                          action="{{ url_for('revoke_account_share_from_outreach', share_id=share.id) }}"
-                          onsubmit="return confirm('Revoke this account share? Assigned tasks for this user will return to the account owner.');">
-                        <input type="hidden" name="return_to" value="{{ url_for('outreach') }}">
-                        <button type="submit" class="btn btn-danger btn-small">Revoke Access</button>
-                    </form>
-                </div>
-            {% endfor %}
-
-            {% if not account_shares %}
-                <p class="muted compact-empty-copy">No active account shares created by you yet.</p>
-            {% endif %}
-        </div>
-    </div>
-
+<div class="outreach-control-grid outreach-filter-only-grid">
     <div class="form-card compact-filter-card">
         <div class="section-header">
             <div>
@@ -118,8 +41,8 @@
             </div>
         </div>
 
-        <form method="GET" action="{{ url_for('outreach') }}" class="pipeflow-form compact-filter-form">
-            <div class="form-grid compact-filter-grid">
+        <form method="GET" action="{{ url_for('outreach') }}" class="pipeflow-form compact-filter-form outreach-filter-form">
+            <div class="form-grid compact-filter-grid outreach-filter-grid">
 
             <div class="form-group">
                 <label for="fy">FY</label>
@@ -189,11 +112,11 @@
                 </details>
             </div>
 
-            </div>
-
-            <div class="form-actions">
+            <div class="form-group outreach-filter-actions">
+                <label>&nbsp;</label>
                 <button type="submit" class="btn btn-primary">Apply Filters</button>
                 <a href="{{ url_for('outreach') }}" class="btn btn-secondary">Clear Filters</a>
+            </div>
             </div>
         </form>
     </div>
@@ -212,7 +135,7 @@
         </div>
 
         <div class="table-container outreach-table-container">
-            <table class="report-table outreach-table no-sort">
+            <table class="report-table outreach-table">
                 <colgroup>
                     <col class="bulk-select-col">
                     <col class="outreach-due-col">
@@ -235,34 +158,12 @@
                 </thead>
 
                 <tbody>
-                    {% set current_group = namespace(account=None, sales_play=None) %}
                     {% for item in outreach_records %}
-                        {% set account_group = item.account_name or "No Account" %}
-                        {% set sales_play_group = item.sales_play or "No Sales Play" %}
-                        {% if current_group.account != account_group %}
-                            {% set current_group.account = account_group %}
-                            {% set current_group.sales_play = None %}
-                            <tr class="outreach-account-group-row">
-                                <td colspan="7">
-                                    <span>Account</span>
-                                    <strong>{{ account_group }}</strong>
-                                </td>
-                            </tr>
-                        {% endif %}
-                        {% if current_group.sales_play != sales_play_group %}
-                            {% set current_group.sales_play = sales_play_group %}
-                            <tr class="outreach-campaign-group-row">
-                                <td colspan="7">
-                                    <span>Sales Play / Initiative</span>
-                                    <strong>{{ sales_play_group }}</strong>
-                                </td>
-                            </tr>
-                        {% endif %}
                         <tr class="outreach-main-row">
                             <td class="bulk-select-col">
                                 <input type="checkbox" name="selected_ids" value="{{ item.id }}" form="bulk-delete-outreach-form" aria-label="Select outreach {{ item.subject or item.id }}">
                             </td>
-                            <td>
+                            <td data-sort-value="{{ item.next_action_date or '9999-12-31' }} {{ item.next_action_time or '99:99' }}">
                                 <div class="outreach-due-date-block">
                                     <span class="outreach-date-label">Due</span>
                                     <span class="outreach-date-value">

@@ -183,8 +183,6 @@
     const campaignEndInput = document.getElementById("campaign_end_date");
     const accountInput = document.getElementById("account_id");
     const contactOptions = Array.from(document.querySelectorAll(".campaign-contact-option"));
-    const fyInput = document.getElementById("fy");
-    const quarterInput = document.getElementById("quarter");
 
     function isoDate(date) {
         return date.toISOString().slice(0, 10);
@@ -221,14 +219,6 @@
                 endDate.setTime(today.getTime());
             }
             campaignEndInput.value = isoDate(endDate);
-        }
-        if (campaignStartInput.value && fyInput && !fyInput.value) {
-            const campaignStart = new Date(`${campaignStartInput.value}T00:00:00`);
-            fyInput.value = String(campaignStart.getFullYear()).slice(-2);
-        }
-        if (campaignStartInput.value && quarterInput && !quarterInput.value) {
-            const campaignStart = new Date(`${campaignStartInput.value}T00:00:00`);
-            quarterInput.value = `Q${Math.floor(campaignStart.getMonth() / 3) + 1}`;
         }
     }
 
