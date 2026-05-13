@@ -1,15 +1,6 @@
 services:
   - type: web
-    name: pipeflow-server
+    name: pipeflow
     env: python
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
-    envVars:
-      - key: PIPEFLOW_NO_BROWSER
-        value: "1"
-      - key: PIPEFLOW_SECRET_KEY
-        generateValue: true
-      - key: PIPEFLOW_DATA_DIR
-        value: /tmp/pipeflow-server-data
-      - key: DATABASE_URL
-        sync: false
