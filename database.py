@@ -167,6 +167,7 @@ def initialise_database(force=False):
             quarter TEXT,
             account_id INTEGER,
             contact_id INTEGER,
+            partner_contact_id INTEGER,
             campaign TEXT,
             sales_play TEXT,
             campaign_start_date TEXT,
@@ -375,6 +376,7 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "outreach", "team_id", "INTEGER DEFAULT 1")
     add_column_if_missing(cursor, "outreach", "fy", "TEXT")
     add_column_if_missing(cursor, "outreach", "quarter", "TEXT")
+    add_column_if_missing(cursor, "outreach", "partner_contact_id", "INTEGER")
     add_column_if_missing(cursor, "outreach", "campaign", "TEXT")
     add_column_if_missing(cursor, "outreach", "sales_play", "TEXT")
     add_column_if_missing(cursor, "outreach", "campaign_start_date", "TEXT")

@@ -194,7 +194,12 @@
                             <td>
                                 <strong>{{ item.account_name or "No account" }}</strong>
                                 <br>
-                                <span class="muted">{{ item.contact_name or "No contact" }}</span>
+                                <span class="muted">
+                                    {{ item.contact_name or "No contact" }}
+                                    {% if item.contact_source == "Partner" %}
+                                        · Partner{% if item.partner_name %}: {{ item.partner_name }}{% endif %}
+                                    {% endif %}
+                                </span>
                                 {% if item.contact_job_title %}
                                     <br>
                                     <span class="muted">{{ item.contact_job_title }}</span>

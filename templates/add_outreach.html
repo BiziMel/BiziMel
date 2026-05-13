@@ -74,12 +74,26 @@
                     {% for contact in contacts %}
                         <option value="{{ contact.id }}"
                                 data-account-id="{{ contact.account_id or '' }}"
+                                data-contact-url="{{ url_for('view_contact', contact_id=contact.id) }}"
                                 data-email="{{ contact.email or '' }}"
                                 data-phone="{{ contact.phone or '' }}"
                                 data-linkedin="{{ contact.linkedin or '' }}"
                                 data-job-title="{{ contact.job_title or '' }}"
                                 {% if prefill.contact_id|string == contact.id|string %}selected{% endif %}>
                             {{ contact.name }}{% if contact.account_name %} - {{ contact.account_name }}{% endif %}
+                        </option>
+                    {% endfor %}
+                    {% for partner_contact in partner_contacts %}
+                        <option value="partner_contact:{{ partner_contact.id }}"
+                                data-account-id="{{ partner_contact.account_id or '' }}"
+                                data-contact-url="{{ url_for('view_partner', partner_id=partner_contact.partner_id) }}"
+                                data-email="{{ partner_contact.email or '' }}"
+                                data-phone="{{ partner_contact.phone or '' }}"
+                                data-linkedin="{{ partner_contact.linkedin or '' }}"
+                                data-job-title="{{ partner_contact.job_title or '' }}"
+                                data-partner-name="{{ partner_contact.partner_name or '' }}"
+                                {% if prefill.contact_id|string == 'partner_contact:' ~ partner_contact.id|string %}selected{% endif %}>
+                            {{ partner_contact.name }} - Partner: {{ partner_contact.partner_name }}{% if partner_contact.account_name %} - {{ partner_contact.account_name }}{% endif %}
                         </option>
                     {% endfor %}
                 </select>
@@ -284,7 +298,8 @@
             }
             if (openContactButton) {
                 if (contactSelect.value) {
-                    openContactButton.href = `/contacts/${contactSelect.value}`;
+                    const selectedContact = contactSelect.options[contactSelect.selectedIndex];
+                    openContactButton.href = selectedContact ? selectedContact.dataset.contactUrl || "#" : "#";
                     openContactButton.hidden = false;
                 } else {
                     openContactButton.hidden = true;
@@ -296,8 +311,9 @@
                 const phone = selectedContact ? selectedContact.dataset.phone || "" : "";
                 const linkedin = selectedContact ? selectedContact.dataset.linkedin || "" : "";
                 const jobTitle = selectedContact ? selectedContact.dataset.jobTitle || "" : "";
+                const partnerName = selectedContact ? selectedContact.dataset.partnerName || "" : "";
                 contactSystemFields.innerHTML = contactSelect.value
-                    ? `<span>Job title: ${jobTitle || "Not set"}</span><span>Email: ${email || "Not set"}</span><span>Phone: ${phone || "Not set"}</span><span>LinkedIn: ${linkedin || "Not set"}</span>`
+                    ? `<span>${partnerName ? "Partner contact" : "Customer contact"}${partnerName ? `: ${partnerName}` : ""}</span><span>Job title: ${jobTitle || "Not set"}</span><span>Email: ${email || "Not set"}</span><span>Phone: ${phone || "Not set"}</span><span>LinkedIn: ${linkedin || "Not set"}</span>`
                     : "Select a contact to show phone, email and LinkedIn.";
             }
         }

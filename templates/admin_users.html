@@ -51,7 +51,10 @@
 <div class="card">
     <h3>Archive Inactive Contacts</h3>
     <p class="muted-text">Open the archive workspace to select inactive contacts by date range, export the list and archive selected records.</p>
-    <a href="{{ url_for('admin_archive_contacts') }}" class="btn btn-secondary">Open Contact Archive</a>
+    <div class="button-group">
+        <a href="{{ url_for('admin_archive_contacts') }}" class="btn btn-secondary">Open Contact Archive</a>
+        <a href="{{ url_for('admin_bulk_delete_contacts') }}" class="btn btn-danger">Bulk Delete Contacts</a>
+    </div>
 </div>
 
 <table>

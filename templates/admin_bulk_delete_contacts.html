@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Bulk Delete Contacts | PipeFlow{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>Bulk Delete Contacts</h1>
+        <p>Admins can permanently delete selected contact records and their related outreach records.</p>
+    </div>
+    <a href="{{ url_for('admin_users') }}" class="btn btn-secondary">Back to Admin</a>
+</div>
+
+{% if message %}
+    <div class="alert-success">{{ message }}</div>
+{% endif %}
+
+{% if contacts %}
+    <form id="admin-bulk-delete-contacts-form"
+          method="POST"
+          action="{{ url_for('admin_bulk_delete_contacts') }}"
+          onsubmit="return confirm('Delete the selected contacts and related outreach records? This cannot be undone.');"></form>
+
+    <div class="bulk-action-bar" data-bulk-action-bar="admin-bulk-delete-contacts-form" hidden>
+        <span><strong data-bulk-selected-count>0</strong> contact(s) selected.</span>
+        <button type="submit" form="admin-bulk-delete-contacts-form" class="btn btn-danger btn-small">Delete Selected</button>
+    </div>
+
+    <div class="table-container">
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th class="bulk-select-col">
+                        <input type="checkbox" data-select-all="admin-bulk-delete-contacts-form" aria-label="Select all contacts">
+                    </th>
+                    <th>Contact</th>
+                    <th>Account</th>
+                    <th>Email</th>
+                    <th>Status</th>
+                    <th>Last Updated</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for contact in contacts %}
+                    <tr>
+                        <td class="bulk-select-col">
+                            <input type="checkbox" name="selected_ids" value="{{ contact.id }}" form="admin-bulk-delete-contacts-form" aria-label="Select {{ contact.name }}">
+                        </td>
+                        <td>{{ contact.name or "Unknown" }}<br><small>{{ contact.job_title or "Job title not set" }}</small></td>
+                        <td>{{ contact.account_name or "Unknown account" }}</td>
+                        <td>{{ contact.email or "Not set" }}</td>
+                        <td>{{ contact.status or "Active" }}</td>
+                        <td>{{ contact.last_updated or "Not set" }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% else %}
+    <div class="empty-state">
+        <h3>No contacts found</h3>
+        <p>There are no contact records available to delete.</p>
+    </div>
+{% endif %}
+
+{% endblock %}
