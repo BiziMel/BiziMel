@@ -2775,12 +2775,17 @@ a:hover {
     background: #ffffff;
 }
 
+.pg-actions-table {
+    table-layout: fixed;
+    font-size: 12px;
+}
+
 .pg-plan-table th,
 .pg-actions-table th {
     background: #08a94f;
     color: #ffffff;
     border: 2px solid #f0a271;
-    padding: 10px;
+    padding: 8px;
     text-align: center;
     font-weight: 900;
 }
@@ -2788,15 +2793,31 @@ a:hover {
 .pg-plan-table td,
 .pg-actions-table td {
     border: 1px solid #f0b184;
-    padding: 7px 9px;
+    padding: 6px 7px;
     vertical-align: top;
 }
 
-.pg-plan-table td:nth-child(2),
-.pg-actions-table td:nth-child(2),
-.pg-actions-table td:nth-child(4),
-.pg-actions-table td:nth-child(5) {
+.pg-plan-table td:nth-child(2) {
     min-width: 280px;
+}
+
+.pg-actions-table th:nth-child(1),
+.pg-actions-table td:nth-child(1) {
+    width: 76px;
+}
+
+.pg-actions-table th:nth-child(3),
+.pg-actions-table td:nth-child(3),
+.pg-actions-table th:nth-child(4),
+.pg-actions-table td:nth-child(4),
+.pg-actions-table th:nth-child(5),
+.pg-actions-table td:nth-child(5) {
+    width: 82px;
+}
+
+.pg-actions-table th:nth-child(2),
+.pg-actions-table td:nth-child(2) {
+    width: 19%;
 }
 
 .nbm-col {
@@ -2826,7 +2847,10 @@ a:hover {
 
 .pg-actions-table textarea,
 .pg-actions-table select {
-    min-width: 180px;
+    width: 100%;
+    min-width: 0;
+    font-size: 12px;
+    padding: 6px;
 }
 
 .activity-notes-cell {
@@ -4010,10 +4034,6 @@ body {
 .pg-goals-dashboard-form {
     width: min(100%, 1760px);
     margin: 0 auto;
-}
-
-.pg-actions-table {
-    min-width: 1320px;
 }
 
 .org-chart-grid,

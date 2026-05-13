@@ -50,6 +50,9 @@ RELEASE_NOTES = [
             "Enhanced contacts with an Active or Inactive status.",
             "Enhanced Contacts with compact filters for account, contact name and status.",
             "Enhanced PG Progress with Business Org context, Exec First and NBM Completed columns, wider layout and cleaner Last 7 Days activity text.",
+            "Enhanced PG Progress so partner activity appears as its own partner row and Yes or No fields also support N/A.",
+            "Enhanced Admin contact archiving so admins open a dedicated archive page from Admin, filter inactive contacts by date range, select records and export CSV.",
+            "Enhanced Outreach partner activity selection so account partners are clearly labelled and only available for the selected account.",
             "Enhanced Profile data deletion so profile fields are cleared without deleting account-owned workspace records.",
         ],
         "fixed": [
@@ -57,6 +60,7 @@ RELEASE_NOTES = [
             "Improved form tabbing flow by keeping key fields ordered left to right and top to bottom in updated forms.",
             "Fixed Contact Reports table spacing to reduce cramped and overlapping text.",
             "Fixed Contacts table layout so the table uses the full page width and far-right columns remain visible.",
+            "Fixed PG Actions table alignment so the wider PG Progress fields fit the page more cleanly.",
         ],
     },
     {
@@ -3145,23 +3149,6 @@ def pg_dashboard_context(connection):
                   AND COALESCE(task_status, '') IN ('Closed', 'Completed', 'Cancelled')
                 ORDER BY last_updated DESC, id DESC
             """, (account_id, contact_id, seven_days_ago)).fetchall()
-            partner_activity_rows = connection.execute("""
-                SELECT
-                    partner_contacts.name AS partner_contact_name,
-                    partners.partner_name,
-                    partner_contacts.next_action,
-                    partner_contacts.notes,
-                    partner_contacts.last_updated
-                FROM partner_contacts
-                LEFT JOIN partners ON partners.id = partner_contacts.partner_id
-                WHERE partner_contacts.account_id = ?
-                  AND partner_contacts.last_updated >= ?
-                  AND (
-                      NULLIF(TRIM(COALESCE(partner_contacts.next_action, '')), '') IS NOT NULL
-                      OR NULLIF(TRIM(COALESCE(partner_contacts.notes, '')), '') IS NOT NULL
-                  )
-                ORDER BY partner_contacts.last_updated DESC, partner_contacts.id DESC
-            """, (account_id, seven_days_ago)).fetchall()
             action_update = connection.execute("""
                 SELECT *
                 FROM pg_action_contact_updates
@@ -3184,17 +3171,9 @@ def pg_dashboard_context(connection):
                     "activity": row["activity_type"] or row["subject"] or "Activity",
                     "activity_update": row["next_action"],
                 })
-            for row in partner_activity_rows:
-                submitted_date = str(row["last_updated"] or "No date")[:10]
-                update_text = row["notes"] or row["next_action"] or ""
-                if update_text:
-                    last_7_days_activity_entries.append({
-                        "date": submitted_date,
-                        "activity": f"Partner activity - {row['partner_name'] or 'Partner'}",
-                        "activity_update": f"{row['partner_contact_name'] or 'Partner contact'}: {update_text}",
-                    })
 
             pg_action_rows.append({
+                "is_partner_row": False,
                 "account_id": account_id,
                 "contact_id": contact_id,
                 "target_number": pg_target_number,
@@ -3211,6 +3190,81 @@ def pg_dashboard_context(connection):
                 "nbm_completed": action_update["nbm_completed"] if action_update and "nbm_completed" in action_update.keys() else "",
                 "last_7_days_activity_entries": last_7_days_activity_entries,
                 "next_7_days_actions": next_7_days_actions,
+            })
+
+        partner_activity_rows = connection.execute("""
+            SELECT
+                outreach.activity_date,
+                outreach.activity_type,
+                outreach.next_action,
+                outreach.subject,
+                outreach.last_updated,
+                outreach.next_action_date,
+                outreach.next_action_time,
+                outreach.task_status,
+                partners.partner_name,
+                partner_contacts.name AS partner_contact_name,
+                partner_contacts.notes AS partner_notes,
+                partner_contacts.last_updated AS partner_last_updated
+            FROM account_partners
+            LEFT JOIN partners ON partners.id = account_partners.partner_id
+            LEFT JOIN partner_contacts
+              ON partner_contacts.partner_id = account_partners.partner_id
+             AND partner_contacts.account_id = account_partners.account_id
+            LEFT JOIN outreach
+              ON outreach.account_id = account_partners.account_id
+             AND outreach.activity_type = ('Partner: ' || account_partners.partner_name)
+            WHERE account_partners.account_id = ?
+            ORDER BY account_partners.partner_name, partner_contacts.name, outreach.last_updated DESC
+        """, (account_id,)).fetchall()
+        partner_activity_entries = []
+        partner_scheduled_actions = []
+        seen_partner_entries = set()
+        for row in partner_activity_rows:
+            partner_name = row["partner_name"] or "Partner"
+            partner_contact_name = row["partner_contact_name"] or "Partner contact"
+            if row["next_action"] and row["last_updated"] and str(row["last_updated"])[:10] >= seven_days_ago and is_closed_task_status(row["task_status"]):
+                key = ("outreach", row["last_updated"], row["next_action"])
+                if key not in seen_partner_entries:
+                    seen_partner_entries.add(key)
+                    partner_activity_entries.append({
+                        "date": str(row["last_updated"])[:10],
+                        "activity": row["activity_type"] or f"Partner activity - {partner_name}",
+                        "activity_update": f"{partner_name}: {row['next_action']}",
+                    })
+            if row["partner_notes"] and row["partner_last_updated"] and str(row["partner_last_updated"])[:10] >= seven_days_ago:
+                key = ("partner_contact", row["partner_last_updated"], row["partner_notes"])
+                if key not in seen_partner_entries:
+                    seen_partner_entries.add(key)
+                    partner_activity_entries.append({
+                        "date": str(row["partner_last_updated"])[:10],
+                        "activity": f"Partner activity - {partner_name}",
+                        "activity_update": f"{partner_contact_name}: {row['partner_notes']}",
+                    })
+            if row["next_action_date"] and row["next_action_date"] <= seven_days_forward and not is_closed_task_status(row["task_status"]):
+                key = ("scheduled", row["next_action_date"], row["next_action_time"], row["subject"])
+                if key not in seen_partner_entries:
+                    seen_partner_entries.add(key)
+                    due_parts = [row["next_action_date"] or "", row["next_action_time"] or ""]
+                    partner_scheduled_actions.append({
+                        "subject": row["subject"] or f"Partner activity - {partner_name}",
+                        "due": " ".join(part for part in due_parts if part),
+                    })
+        if partner_activity_entries or partner_scheduled_actions:
+            pg_action_rows.append({
+                "is_partner_row": True,
+                "account_id": account_id,
+                "contact_id": f"partner_{account_id}",
+                "target_number": pg_target_number,
+                "colour_index": nbm_colour_index(pg_target_number),
+                "account_name": account["account_name"],
+                "targeted_discovery": "Partner activity",
+                "business_org": "",
+                "completed_discovery_meeting": "N/A",
+                "exec_first": "N/A",
+                "nbm_completed": "N/A",
+                "last_7_days_activity_entries": partner_activity_entries,
+                "next_7_days_actions": partner_scheduled_actions,
             })
 
     return {
@@ -3233,6 +3287,8 @@ def pg_progress():
     if request.method == "POST":
         save_dashboard_setting(connection, "current_pipeline", request.form.get("current_pipeline", "0"))
         for contact_id in request.form.getlist("pg_action_contact_id"):
+            if not str(contact_id).isdigit():
+                continue
             account_id = request.form.get(f"pg_action_account_id_{contact_id}", "")
             completed = request.form.get(f"completed_discovery_contact_{contact_id}", "")
             exec_first = request.form.get(f"exec_first_contact_{contact_id}", "")
@@ -7876,13 +7932,34 @@ def inactive_contacts_for_archive(connection, start_date, end_date):
     return connection.execute(query, params).fetchall()
 
 
+@app.route("/admin/contacts/archive")
+@admin_required
+def admin_archive_contacts():
+    start_date = request.args.get("archive_start_date", "")
+    end_date = request.args.get("archive_end_date", "")
+    connection = get_db_connection()
+    contacts = inactive_contacts_for_archive(connection, start_date, end_date)
+    connection.close()
+    return render_template(
+        "admin_contact_archive.html",
+        contacts=contacts,
+        selected_start_date=start_date,
+        selected_end_date=end_date,
+        message=request.args.get("message", ""),
+    )
+
+
 @app.route("/reports/contacts/archive", methods=("POST",))
 @admin_required
 def archive_inactive_contacts():
     start_date = request.form.get("archive_start_date", "")
     end_date = request.form.get("archive_end_date", "")
+    selected_contact_ids = selected_record_ids()
     connection = get_db_connection()
     contacts_to_archive = inactive_contacts_for_archive(connection, start_date, end_date)
+    if selected_contact_ids:
+        selected_set = set(selected_contact_ids)
+        contacts_to_archive = [contact for contact in contacts_to_archive if contact["id"] in selected_set]
     archived_count = 0
     for contact in contacts_to_archive:
         connection.execute("""
@@ -7903,7 +7980,9 @@ def archive_inactive_contacts():
         archived_count += 1
     connection.commit()
     connection.close()
-    return redirect(url_for("contact_reports", message=f"Archived {archived_count} inactive contact(s)."))
+    return_target = request.form.get("return_to") or url_for("contact_reports")
+    separator = "&" if "?" in return_target else "?"
+    return redirect(f"{return_target}{separator}{urlencode({'message': f'Archived {archived_count} inactive contact(s).'})}")
 
 
 @app.route("/reports/contacts/archive/export")

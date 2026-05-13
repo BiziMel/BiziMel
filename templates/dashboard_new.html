@@ -111,8 +111,10 @@
                     {% for row in pg_action_rows %}
                         <tr>
                             <td class="nbm-col nbm-colour-{{ row.colour_index }}">
-                                <input type="hidden" name="pg_action_contact_id" value="{{ row.contact_id }}">
-                                <input type="hidden" name="pg_action_account_id_{{ row.contact_id }}" value="{{ row.account_id }}">
+                                {% if not row.is_partner_row %}
+                                    <input type="hidden" name="pg_action_contact_id" value="{{ row.contact_id }}">
+                                    <input type="hidden" name="pg_action_account_id_{{ row.contact_id }}" value="{{ row.account_id }}">
+                                {% endif %}
                                 {{ row.target_number or "-" }}
                             </td>
                             <td>
@@ -127,24 +129,27 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <select name="completed_discovery_contact_{{ row.contact_id }}">
+                                <select name="completed_discovery_contact_{{ row.contact_id }}" {% if row.is_partner_row %}disabled{% endif %}>
                                     <option value="" {% if not row.completed_discovery_meeting %}selected{% endif %}>Select</option>
                                     <option value="Yes" {% if row.completed_discovery_meeting == "Yes" %}selected{% endif %}>Yes</option>
                                     <option value="No" {% if row.completed_discovery_meeting == "No" %}selected{% endif %}>No</option>
+                                    <option value="N/A" {% if row.completed_discovery_meeting == "N/A" %}selected{% endif %}>N/A</option>
                                 </select>
                             </td>
                             <td>
-                                <select name="exec_first_contact_{{ row.contact_id }}">
+                                <select name="exec_first_contact_{{ row.contact_id }}" {% if row.is_partner_row %}disabled{% endif %}>
                                     <option value="" {% if not row.exec_first %}selected{% endif %}>Select</option>
                                     <option value="Yes" {% if row.exec_first == "Yes" %}selected{% endif %}>Yes</option>
                                     <option value="No" {% if row.exec_first == "No" %}selected{% endif %}>No</option>
+                                    <option value="N/A" {% if row.exec_first == "N/A" %}selected{% endif %}>N/A</option>
                                 </select>
                             </td>
                             <td>
-                                <select name="nbm_completed_contact_{{ row.contact_id }}">
+                                <select name="nbm_completed_contact_{{ row.contact_id }}" {% if row.is_partner_row %}disabled{% endif %}>
                                     <option value="" {% if not row.nbm_completed %}selected{% endif %}>Select</option>
                                     <option value="Yes" {% if row.nbm_completed == "Yes" %}selected{% endif %}>Yes</option>
                                     <option value="No" {% if row.nbm_completed == "No" %}selected{% endif %}>No</option>
+                                    <option value="N/A" {% if row.nbm_completed == "N/A" %}selected{% endif %}>N/A</option>
                                 </select>
                             </td>
                             <td class="activity-notes-cell">

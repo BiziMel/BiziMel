@@ -50,29 +50,8 @@
 
 <div class="card">
     <h3>Archive Inactive Contacts</h3>
-    <p class="muted-text">Archive inactive contacts by last updated date range. Export first when you want a CSV record before archiving.</p>
-    <form method="POST" action="{{ url_for('archive_inactive_contacts') }}" class="pipeflow-form compact-filter-form">
-        <div class="form-grid contact-filter-grid">
-            <div class="form-group">
-                <label for="archive_start_date">Start Date</label>
-                <input type="date" id="archive_start_date" name="archive_start_date">
-            </div>
-            <div class="form-group">
-                <label for="archive_end_date">End Date</label>
-                <input type="date" id="archive_end_date" name="archive_end_date">
-            </div>
-            <div class="form-group outreach-filter-actions">
-                <label>&nbsp;</label>
-                <button type="submit" class="btn btn-danger" onclick="return confirm('Archive inactive contacts in this date range?');">Archive Inactive</button>
-                <button type="submit"
-                        class="btn btn-secondary"
-                        formaction="{{ url_for('export_inactive_contacts_for_archive') }}"
-                        formmethod="GET">
-                    Export Inactive CSV
-                </button>
-            </div>
-        </div>
-    </form>
+    <p class="muted-text">Open the archive workspace to select inactive contacts by date range, export the list and archive selected records.</p>
+    <a href="{{ url_for('admin_archive_contacts') }}" class="btn btn-secondary">Open Contact Archive</a>
 </div>
 
 <table>

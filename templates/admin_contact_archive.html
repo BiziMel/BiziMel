@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Archive Contacts | PipeFlow{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>Archive Inactive Contacts</h1>
+        <p>Select inactive contacts by date range, export the list and archive selected records.</p>
+    </div>
+    <a href="{{ url_for('admin_users') }}" class="btn btn-secondary">Back to Admin</a>
+</div>
+
+{% if message %}
+    <div class="alert-success">{{ message }}</div>
+{% endif %}
+
+<div class="form-card compact-filter-card">
+    <form method="GET" action="{{ url_for('admin_archive_contacts') }}" class="pipeflow-form compact-filter-form">
+        <div class="form-grid contact-filter-grid">
+            <div class="form-group">
+                <label for="archive_start_date">Start Date</label>
+                <input type="date" id="archive_start_date" name="archive_start_date" value="{{ selected_start_date or '' }}">
+            </div>
+            <div class="form-group">
+                <label for="archive_end_date">End Date</label>
+                <input type="date" id="archive_end_date" name="archive_end_date" value="{{ selected_end_date or '' }}">
+            </div>
+            <div class="form-group outreach-filter-actions">
+                <label>&nbsp;</label>
+                <button type="submit" class="btn btn-primary">Apply Date Range</button>
+                <a href="{{ url_for('export_inactive_contacts_for_archive', archive_start_date=selected_start_date, archive_end_date=selected_end_date) }}" class="btn btn-secondary">Export CSV</a>
+            </div>
+        </div>
+    </form>
+</div>
+
+{% if contacts %}
+    <form id="archive-inactive-contacts-form"
+          method="POST"
+          action="{{ url_for('archive_inactive_contacts') }}"
+          onsubmit="return confirm('Archive the selected inactive contacts?');">
+        <input type="hidden" name="archive_start_date" value="{{ selected_start_date or '' }}">
+        <input type="hidden" name="archive_end_date" value="{{ selected_end_date or '' }}">
+        <input type="hidden" name="return_to" value="{{ url_for('admin_archive_contacts', archive_start_date=selected_start_date, archive_end_date=selected_end_date) }}">
+    </form>
+
+    <div class="bulk-action-bar" data-bulk-action-bar="archive-inactive-contacts-form" hidden>
+        <span><strong data-bulk-selected-count>0</strong> inactive contact(s) selected.</span>
+        <button type="submit" form="archive-inactive-contacts-form" class="btn btn-danger btn-small">Archive Selected</button>
+    </div>
+
+    <div class="table-container">
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th class="bulk-select-col">
+                        <input type="checkbox" data-select-all="archive-inactive-contacts-form" aria-label="Select all inactive contacts">
+                    </th>
+                    <th>Contact</th>
+                    <th>Account</th>
+                    <th>Email</th>
+                    <th>Status</th>
+                    <th>Last Updated</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for contact in contacts %}
+                    <tr>
+                        <td class="bulk-select-col">
+                            <input type="checkbox" name="selected_ids" value="{{ contact.id }}" form="archive-inactive-contacts-form" aria-label="Select {{ contact.name }}">
+                        </td>
+                        <td>{{ contact.name or "Unknown" }}<br><small>{{ contact.job_title or "Job title not set" }}</small></td>
+                        <td>{{ contact.account_name or "Unknown account" }}</td>
+                        <td>{{ contact.email or "Not set" }}</td>
+                        <td>{{ contact.status or "Inactive" }}</td>
+                        <td>{{ contact.last_updated or "Not set" }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% else %}
+    <div class="empty-state">
+        <h3>No inactive contacts found</h3>
+        <p>Adjust the date range or mark contacts as inactive before archiving.</p>
+    </div>
+{% endif %}
+
+{% endblock %}
