@@ -195,6 +195,10 @@
                                 <strong>{{ item.account_name or "No account" }}</strong>
                                 <br>
                                 <span class="muted">{{ item.contact_name or "No contact" }}</span>
+                                {% if item.contact_job_title %}
+                                    <br>
+                                    <span class="muted">{{ item.contact_job_title }}</span>
+                                {% endif %}
                                 {% if item.contact_email or item.contact_phone or item.contact_linkedin %}
                                     <div class="outreach-contact-system-fields">
                                         {% if item.contact_email %}<span>Email: {{ item.contact_email }}</span>{% endif %}

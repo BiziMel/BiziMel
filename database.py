@@ -110,6 +110,8 @@ def initialise_database(force=False):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             account_id INTEGER NOT NULL UNIQUE,
             completed_discovery_meeting TEXT,
+            exec_first TEXT,
+            nbm_completed TEXT,
             next_action_override TEXT,
             date_created TEXT DEFAULT CURRENT_TIMESTAMP,
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP
@@ -366,6 +368,8 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "contacts", "team_id", "INTEGER DEFAULT 1")
     add_column_if_missing(cursor, "contacts", "status", "TEXT DEFAULT 'Active'")
     add_column_if_missing(cursor, "contacts", "archived_at", "TEXT")
+    add_column_if_missing(cursor, "pg_action_contact_updates", "exec_first", "TEXT")
+    add_column_if_missing(cursor, "pg_action_contact_updates", "nbm_completed", "TEXT")
 
     # Safe migrations for outreach
     add_column_if_missing(cursor, "outreach", "team_id", "INTEGER DEFAULT 1")

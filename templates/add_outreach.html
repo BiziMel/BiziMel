@@ -61,7 +61,7 @@
                        required>
                 <datalist id="sales_play_options">
                     {% for sales_play in sales_play_options %}
-                        <option value="{{ sales_play }}"></option>
+                        <option value="{{ sales_play.sales_play }}" data-account-id="{{ sales_play.account_id or '' }}"></option>
                     {% endfor %}
                 </datalist>
                 <p class="field-help">Add or select an active sales play or initiative.</p>
@@ -77,12 +77,13 @@
                                 data-email="{{ contact.email or '' }}"
                                 data-phone="{{ contact.phone or '' }}"
                                 data-linkedin="{{ contact.linkedin or '' }}"
+                                data-job-title="{{ contact.job_title or '' }}"
                                 {% if prefill.contact_id|string == contact.id|string %}selected{% endif %}>
                             {{ contact.name }}{% if contact.account_name %} - {{ contact.account_name }}{% endif %}
                         </option>
                     {% endfor %}
                 </select>
-                <a href="#" id="open_contact_record" target="_blank" class="btn btn-secondary btn-small contact-open-button" hidden>Open Contact</a>
+                <a href="#" id="open_contact_record" target="_blank" class="btn btn-secondary btn-small contact-open-button" hidden>Open</a>
             </div>
 
             <div class="form-group">
@@ -115,6 +116,14 @@
                     <option value="">Select activity type</option>
                     {% for activity in dropdown_values.outreach_activity_types %}
                         <option value="{{ activity }}" {% if prefill.activity_type == activity %}selected{% endif %}>{{ activity }}</option>
+                    {% endfor %}
+                    {% for partner in partner_activity_options %}
+                        <option value="Partner: {{ partner.partner_name }}"
+                                data-account-id="{{ partner.account_id }}"
+                                class="partner-activity-option"
+                                {% if prefill.activity_type == 'Partner: ' ~ partner.partner_name %}selected{% endif %}>
+                            Partner: {{ partner.partner_name }}{% if partner.partner_type %} ({{ partner.partner_type }}){% endif %}
+                        </option>
                     {% endfor %}
                 </select>
             </div>
@@ -217,12 +226,15 @@
         if (timeInput) timeInput.addEventListener("change", checkSchedule);
     }
 
-    warnManualSchedule("activity_date", "activity_time");
-    warnManualSchedule("next_action_date", "next_action_time");
-
     function constrainContactsByAccount() {
         const accountSelect = document.getElementById("account_id");
         const contactSelect = document.getElementById("contact_id");
+        const activityTypeSelect = document.getElementById("activity_type");
+        const salesPlayDatalist = document.getElementById("sales_play_options");
+        const allSalesPlayOptions = salesPlayDatalist ? Array.from(salesPlayDatalist.options).map((option) => ({
+            value: option.value,
+            accountId: option.dataset.accountId || ""
+        })) : [];
         const openContactButton = document.getElementById("open_contact_record");
         const contactSystemFields = document.getElementById("contact_system_fields");
         if (!accountSelect || !contactSelect) return;
@@ -251,6 +263,25 @@
             }
 
             contactSelect.disabled = !selectedAccountId;
+            if (activityTypeSelect) {
+                Array.from(activityTypeSelect.options).forEach((option) => {
+                    if (!option.classList.contains("partner-activity-option")) return;
+                    const showPartner = selectedAccountId && option.dataset.accountId === selectedAccountId;
+                    option.hidden = !showPartner;
+                    option.disabled = !showPartner;
+                    if (option.selected && !showPartner) activityTypeSelect.value = "";
+                });
+            }
+            if (salesPlayDatalist) {
+                salesPlayDatalist.innerHTML = "";
+                allSalesPlayOptions
+                    .filter((option) => selectedAccountId && option.accountId === selectedAccountId)
+                    .forEach((option) => {
+                        const element = document.createElement("option");
+                        element.value = option.value;
+                        salesPlayDatalist.appendChild(element);
+                    });
+            }
             if (openContactButton) {
                 if (contactSelect.value) {
                     openContactButton.href = `/contacts/${contactSelect.value}`;
@@ -264,8 +295,9 @@
                 const email = selectedContact ? selectedContact.dataset.email || "" : "";
                 const phone = selectedContact ? selectedContact.dataset.phone || "" : "";
                 const linkedin = selectedContact ? selectedContact.dataset.linkedin || "" : "";
+                const jobTitle = selectedContact ? selectedContact.dataset.jobTitle || "" : "";
                 contactSystemFields.innerHTML = contactSelect.value
-                    ? `<span>Email: ${email || "Not set"}</span><span>Phone: ${phone || "Not set"}</span><span>LinkedIn: ${linkedin || "Not set"}</span>`
+                    ? `<span>Job title: ${jobTitle || "Not set"}</span><span>Email: ${email || "Not set"}</span><span>Phone: ${phone || "Not set"}</span><span>LinkedIn: ${linkedin || "Not set"}</span>`
                     : "Select a contact to show phone, email and LinkedIn.";
             }
         }
@@ -276,6 +308,26 @@
     }
 
     constrainContactsByAccount();
+
+    document.querySelector(".pipeflow-form")?.addEventListener("submit", (event) => {
+        const fields = [
+            ["activity_date", "activity_time"],
+            ["next_action_date", "next_action_time"]
+        ];
+        for (const [dateId, timeId] of fields) {
+            const dateInput = document.getElementById(dateId);
+            const timeInput = document.getElementById(timeId);
+            const selectedDate = dateInput ? dateInput.value : "";
+            const selectedTime = timeInput ? timeInput.value : "";
+            if (isNonWorkingDate(selectedDate) || (selectedTime && (selectedTime < profileWorkStart || selectedTime > profileWorkEnd))) {
+                if (!confirm("This schedule is outside your configured working pattern. Select OK to save anyway, or Cancel to return to the date/time field.")) {
+                    event.preventDefault();
+                    (dateInput || timeInput)?.focus();
+                }
+                return;
+            }
+        }
+    });
 </script>
 
 {% endblock %}

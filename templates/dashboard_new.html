@@ -101,6 +101,8 @@
                         <th>Related NBM Target</th>
                         <th>Targeted or Booked Discovery Meeting</th>
                         <th>Completed Discovery Meeting</th>
+                        <th>Exec First</th>
+                        <th>NBM Completed</th>
                         <th>Last 7 Days Activity</th>
                         <th>Next 7 Days Scheduled Actions</th>
                     </tr>
@@ -119,12 +121,30 @@
                                     <br>
                                     <span class="muted">{{ row.account_name }}</span>
                                 {% endif %}
+                                {% if row.business_org %}
+                                    <br>
+                                    <span class="muted">{{ row.business_org }}</span>
+                                {% endif %}
                             </td>
                             <td>
                                 <select name="completed_discovery_contact_{{ row.contact_id }}">
                                     <option value="" {% if not row.completed_discovery_meeting %}selected{% endif %}>Select</option>
                                     <option value="Yes" {% if row.completed_discovery_meeting == "Yes" %}selected{% endif %}>Yes</option>
                                     <option value="No" {% if row.completed_discovery_meeting == "No" %}selected{% endif %}>No</option>
+                                </select>
+                            </td>
+                            <td>
+                                <select name="exec_first_contact_{{ row.contact_id }}">
+                                    <option value="" {% if not row.exec_first %}selected{% endif %}>Select</option>
+                                    <option value="Yes" {% if row.exec_first == "Yes" %}selected{% endif %}>Yes</option>
+                                    <option value="No" {% if row.exec_first == "No" %}selected{% endif %}>No</option>
+                                </select>
+                            </td>
+                            <td>
+                                <select name="nbm_completed_contact_{{ row.contact_id }}">
+                                    <option value="" {% if not row.nbm_completed %}selected{% endif %}>Select</option>
+                                    <option value="Yes" {% if row.nbm_completed == "Yes" %}selected{% endif %}>Yes</option>
+                                    <option value="No" {% if row.nbm_completed == "No" %}selected{% endif %}>No</option>
                                 </select>
                             </td>
                             <td class="activity-notes-cell">
@@ -157,7 +177,7 @@
                         </tr>
                     {% else %}
                         <tr>
-                            <td colspan="5">No action rows found. Add accounts and contacts to populate this table.</td>
+                            <td colspan="7">No action rows found. Add accounts and contacts to populate this table.</td>
                         </tr>
                     {% endfor %}
                 </tbody>

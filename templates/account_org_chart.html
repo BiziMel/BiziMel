@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Org Chart | PipeFlow{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>{{ account.account_name }} Org Chart</h1>
+        <p>Map known customer and partner contacts by business organisation or relationship group.</p>
+    </div>
+    <div class="button-group">
+        <a href="{{ url_for('view_account', account_id=account.id) }}" class="btn btn-secondary">Back to Account</a>
+        <a href="{{ url_for('add_contact') }}" class="btn btn-primary">Add Contact</a>
+    </div>
+</div>
+
+<div class="org-chart-grid">
+    {% for group_name, people in groups.items() %}
+        <section class="form-card org-chart-group">
+            <div class="section-header">
+                <div>
+                    <h2>{{ group_name }}</h2>
+                    <p>{{ people|length }} mapped contact{% if people|length != 1 %}s{% endif %}</p>
+                </div>
+            </div>
+            <div class="org-person-grid">
+                {% for person in people %}
+                    <a href="{{ person.link }}" class="org-person-card">
+                        <strong>{{ person.name }}</strong>
+                        <span>{{ person.title or "Job title not set" }}</span>
+                        <small>{{ person.type }}</small>
+                    </a>
+                {% endfor %}
+            </div>
+        </section>
+    {% endfor %}
+</div>
+
+{% if unmapped %}
+    <section class="form-card org-chart-group">
+        <div class="section-header">
+            <div>
+                <h2>Unmapped Contacts</h2>
+                <p>Contacts where the reporting line or business organisation is not yet known.</p>
+            </div>
+        </div>
+        <div class="org-person-grid">
+            {% for person in unmapped %}
+                <a href="{{ person.link }}" class="org-person-card">
+                    <strong>{{ person.name }}</strong>
+                    <span>{{ person.title or "Job title not set" }}</span>
+                    <small>{{ person.type }}</small>
+                </a>
+            {% endfor %}
+        </div>
+    </section>
+{% endif %}
+
+{% if not groups and not unmapped %}
+    <div class="empty-state">
+        <h3>No contacts mapped yet</h3>
+        <p>Add contacts to the account to start building the org chart.</p>
+    </div>
+{% endif %}
+
+{% endblock %}

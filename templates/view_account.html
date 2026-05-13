@@ -17,6 +17,10 @@
             Edit Account
         </a>
 
+        <a href="{{ url_for('account_org_chart', account_id=account.id) }}" class="btn btn-primary">
+            Org Chart
+        </a>
+
         {% if current_user and current_user["role"] == "admin" %}
             <form method="POST"
                   action="{{ url_for('delete_account', account_id=account.id) }}"
@@ -236,7 +240,7 @@
             </div>
 
             <div class="form-group">
-                <label for="involvement_status">Involvement Status</label>
+                <label for="involvement_status">Partner Engagement</label>
                 <select id="involvement_status" name="involvement_status">
                     <option value="">Select status</option>
                     {% for status in dropdown_values.partner_involvement_statuses %}
@@ -250,13 +254,6 @@
                 <input type="text"
                        id="relationship_owner"
                        name="relationship_owner">
-            </div>
-
-            <div class="form-group full-width">
-                <label for="next_action">Next Action</label>
-                <input type="text"
-                       id="next_action"
-                       name="next_action">
             </div>
 
             <div class="form-group full-width">
@@ -301,7 +298,6 @@
 
                     <div class="partner-detail-grid">
                         <p><strong>Owner:</strong> {{ partner.relationship_owner or "Not assigned" }}</p>
-                        <p><strong>Next Action:</strong> {{ partner.next_action or "No next action set" }}</p>
                         <p><strong>Responsible Partner Contacts:</strong> {{ partner.partner_contact_count or 0 }}</p>
                         <p>
                             <strong>Partner Page:</strong>
@@ -348,7 +344,7 @@
                                     </div>
 
                                     <div class="form-group">
-                                        <label for="involvement_status_{{ partner.id }}">Involvement Status</label>
+                                        <label for="involvement_status_{{ partner.id }}">Partner Engagement</label>
                                         <select id="involvement_status_{{ partner.id }}" name="involvement_status">
                                             <option value="">Select status</option>
                                             {% for status in dropdown_values.partner_involvement_statuses %}
@@ -365,14 +361,6 @@
                                                id="relationship_owner_{{ partner.id }}"
                                                name="relationship_owner"
                                                value="{{ partner.relationship_owner or '' }}">
-                                    </div>
-
-                                    <div class="form-group full-width">
-                                        <label for="next_action_{{ partner.id }}">Next Action</label>
-                                        <input type="text"
-                                               id="next_action_{{ partner.id }}"
-                                               name="next_action"
-                                               value="{{ partner.next_action or '' }}">
                                     </div>
 
                                     <div class="form-group full-width">

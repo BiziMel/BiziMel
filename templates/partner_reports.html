@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>Partner Reports</h1>
+        <p>Review partner coverage, account involvement and partner contact engagement.</p>
+    </div>
+    <div class="button-group">
+        <a href="{{ url_for('reports') }}" class="btn btn-secondary">Back to Reports</a>
+        <a href="{{ url_for('export_partner_reports') }}" class="btn btn-primary">Export Partner CSV</a>
+    </div>
+</div>
+
+<div class="dashboard-grid">
+    {% for row in engagement_rows %}
+        <div class="metric-card">
+            <h3>{{ row.engagement }}</h3>
+            <p class="metric-number">{{ row.total }}</p>
+            <p class="metric-subtext">partner account relationship{% if row.total != 1 %}s{% endif %}</p>
+        </div>
+    {% endfor %}
+</div>
+
+<div class="form-card">
+    <div class="section-header">
+        <div>
+            <h2>Partner Account Coverage</h2>
+            <p>Partners mapped to accounts, their engagement status and contact coverage.</p>
+        </div>
+    </div>
+    <div class="table-container">
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th>Partner</th>
+                    <th>Type</th>
+                    <th>Account</th>
+                    <th>Partner Engagement</th>
+                    <th>Partner Contacts</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in partner_rows %}
+                    <tr>
+                        <td><a href="{{ url_for('view_partner', partner_id=row.id) }}" class="record-primary-link">{{ row.partner_name }}</a></td>
+                        <td>{{ row.partner_type or "Not set" }}</td>
+                        <td>{{ row.account_name or "No account mapped" }}</td>
+                        <td>{{ row.involvement_status or "Not set" }}</td>
+                        <td>{{ row.contact_count or 0 }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="5">No partner data found.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% endblock %}

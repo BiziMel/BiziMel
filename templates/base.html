@@ -14,10 +14,6 @@
     <header class="header-stack">
         <div class="header-top-row">
         <div class="app-brand">
-            <img src="{{ url_for('static', filename='pipeflow.png') }}"
-                 alt="PipeFlow Logo"
-                 class="app-logo">
-
             <div>
                 <h1>{{ app_name or "PipeFlow PG Manager" }}</h1>
                 <a href="{{ url_for('release_notes') }}" class="version-pill">

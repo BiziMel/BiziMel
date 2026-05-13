@@ -16,6 +16,16 @@ document.addEventListener("DOMContentLoaded", () => {
             checkbox.addEventListener("change", updateBar);
         });
 
+        document.querySelectorAll(`[data-select-all="${formId}"]`).forEach((selectAll) => {
+            selectAll.addEventListener("change", () => {
+                checkboxes.forEach((checkbox) => {
+                    checkbox.checked = selectAll.checked;
+                    checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+                });
+                updateBar();
+            });
+        });
+
         updateBar();
     });
 });

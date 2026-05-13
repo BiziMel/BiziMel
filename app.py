@@ -28,24 +28,29 @@ RELEASE_NOTES = [
         "title": "Partner activity, contact archiving and outreach execution cleanup",
         "new": [
             "Added partner activity into PG Progress so recent partner updates against an account appear alongside other account activity.",
-            "Added admin contact archiving for inactive contacts by date range, with CSV export from Contact Reports.",
+            "Added admin contact archiving for inactive contacts by date range from Admin, with CSV export also available from Contact Reports.",
+            "Added Partner Reports to show partner account coverage, engagement status and partner contact coverage.",
+            "Added account org charts so customer and partner contacts can be viewed by business organisation or unmapped group.",
         ],
         "enhanced": [
             "Enhanced partner contacts so they can be edited directly from the partner record.",
             "Enhanced partner contact tiles by removing the separate LinkedIn button and keeping the tile focused on the editable contact record.",
-            "Enhanced partner and account relationship next actions so they create mapped partner touchpoint outreach tasks.",
+            "Enhanced partner forms by removing next action fields from partner contacts and account relationships.",
+            "Enhanced outreach activity type selection so account partners appear as selectable partner activities only when linked to the selected account.",
             "Enhanced create contact so Account Business Unit or Org only appears when the selected account has a value.",
-            "Enhanced standalone outreach creation so Account is placed before Sales Play or Initiative and the sales play field supports selecting existing plays or adding a new one.",
+            "Enhanced standalone outreach creation so Account is placed before Sales Play or Initiative and sales play suggestions only show plays previously used on the selected account.",
             "Enhanced Outreach Tasks with light green, amber and red due-date row shading as due dates approach or expire.",
-            "Enhanced Campaign Builder contact selection from tiles into a table, with selectable green rows for the selected account and grey unavailable rows for other accounts.",
+            "Enhanced Campaign Builder contact selection from tiles into a table that only presents contacts associated to the selected account.",
             "Enhanced closed, completed and cancelled outreach tasks so they can no longer be modified or reassigned.",
-            "Enhanced outreach and campaign creation with Open Contact buttons so users can inspect contact detail in a new tab.",
+            "Enhanced outreach and campaign creation with compact Open buttons that appear only after a contact is selected.",
             "Enhanced Accounts so Account Tier is the primary ordering field and PG Plan number is shown beneath it.",
             "Enhanced tables so blank Business Org values are not displayed.",
-            "Enhanced Outreach forms and task rows so contact phone, email and LinkedIn appear as system fields.",
-            "Enhanced AI Insight wording so engagement recommendations are shorter, clearer and tied to useful contact context.",
+            "Enhanced Outreach forms and task rows so contact job title, phone, email and LinkedIn appear as system fields.",
+            "Enhanced AI Insight and Campaign Learning so activity updates, human behaviour and account behaviour influence recommended engagement moves instead of replaying raw notes.",
             "Enhanced contacts with an Active or Inactive status.",
             "Enhanced Contacts with compact filters for account, contact name and status.",
+            "Enhanced PG Progress with Business Org context, Exec First and NBM Completed columns, wider layout and cleaner Last 7 Days activity text.",
+            "Enhanced Profile data deletion so profile fields are cleared without deleting account-owned workspace records.",
         ],
         "fixed": [
             "Removed partner role capture where partner type already explains the partner category.",
@@ -1378,25 +1383,26 @@ def current_user_can_delete_partner(partner):
 
 
 def delete_current_profile_workspace_data(connection):
-    tables = [
-        "audit_entries",
-        "timeline_entries",
-        "account_custom_values",
-        "account_partners",
-        "partner_contacts",
-        "outreach",
-        "contacts",
-        "partners",
-        "accounts",
-    ]
-
-    for table in tables:
-        connection.execute(f"DELETE FROM {table}")
+    admin_owner = next((user for user in list_users() if user["role"] == "admin" and user["is_active"]), None)
+    if admin_owner:
+        connection.execute("""
+            UPDATE accounts
+            SET owner_user_id = ?,
+                owner_name = ?,
+                owner_email = ?,
+                last_updated = CURRENT_TIMESTAMP
+        """, (
+            admin_owner["id"],
+            admin_owner["full_name"],
+            admin_owner["email"],
+        ))
 
     connection.execute(
         """
         UPDATE user_profile
-        SET team = '',
+        SET full_name = '',
+            email = '',
+            team = '',
             job_title = '',
             last_updated = CURRENT_TIMESTAMP
         WHERE id = 1
@@ -1622,8 +1628,8 @@ def campaign_step_templates():
             "time": "10:00"
         },
         {
-            "campaign": "White Paper / Webinar",
-            "activity_type": "White Paper / Webinar",
+            "campaign": "White Paper / Webinar / Consensus",
+            "activity_type": "White Paper / Webinar / Consensus",
             "subject_prefix": "Content share",
             "next_action": "Share relevant content or thought leadership",
             "time": "11:00"
@@ -2091,6 +2097,25 @@ def compact_join(values, limit=3):
     return ", ".join(cleaned)
 
 
+def behaviour_signal_from_notes(notes):
+    text = " ".join(str(note or "") for note in notes).lower()
+    if not text.strip():
+        return "Use a short value-led touchpoint and record the response so future recommendations can improve."
+    if any(word in text for word in ("busy", "no time", "later", "chase", "follow up", "follow-up")):
+        return "Use a concise follow-up with one specific ask and offer two meeting slots to reduce effort for the contact."
+    if any(word in text for word in ("referred", "referral", "introduced", "intro", "colleague", "team")):
+        return "Work through the warm route that has already appeared, reference the introduction and ask for the next stakeholder."
+    if any(word in text for word in ("budget", "cost", "commercial", "procurement", "business case")):
+        return "Lead with business value, quantified impact and procurement-ready proof rather than product detail."
+    if any(word in text for word in ("technical", "architecture", "security", "integration", "data")):
+        return "Use a technical proof point and invite the contact into a focused discovery around risk, integration or operating model."
+    if any(word in text for word in ("event", "webinar", "white paper", "consensus", "content")):
+        return "Follow the content signal quickly with a tailored point of view and a direct meeting ask while interest is warm."
+    if any(word in text for word in ("negative", "not relevant", "no interest", "closed")):
+        return "Change route before repeating the same message, either through a different stakeholder, partner or business trigger."
+    return "Use the most recent human response as the opener, keep the message specific, and ask for one clear next step."
+
+
 def deduplicate_execution_insights(insights):
     unique_insights = []
     seen = set()
@@ -2186,6 +2211,20 @@ def build_learning_insights(connection):
 
     if account_rows:
         account = account_rows[0]
+        account_note_rows = connection.execute("""
+            SELECT next_action, notes, outcome, activity_type
+            FROM outreach
+            WHERE account_id = ?
+              AND (
+                    NULLIF(TRIM(COALESCE(next_action, '')), '') IS NOT NULL
+                 OR NULLIF(TRIM(COALESCE(notes, '')), '') IS NOT NULL
+              )
+            ORDER BY last_updated DESC, id DESC
+            LIMIT 8
+        """, (account["account_id"],)).fetchall()
+        behaviour_action = behaviour_signal_from_notes(
+            [row["next_action"] or row["notes"] for row in account_note_rows]
+        )
         label_parts = [
             part for part in [account["sales_play"]]
             if part
@@ -2198,7 +2237,7 @@ def build_learning_insights(connection):
                 f"{account['positive_total']} positive signal(s) and "
                 f"{account['meeting_total']} meeting(s)."
             ),
-            "action": "Repeat this pattern for the next stakeholder before switching route.",
+            "action": behaviour_action,
             "link": url_for("view_account", account_id=account["account_id"])
         })
 
@@ -2218,6 +2257,22 @@ def build_learning_insights(connection):
 
     if contact_category_rows:
         category = contact_category_rows[0]
+        category_note_rows = connection.execute("""
+            SELECT outreach.next_action, outreach.notes
+            FROM outreach
+            LEFT JOIN contacts ON outreach.contact_id = contacts.id
+            WHERE contacts.category = ?
+              AND outreach.sales_play = ?
+              AND (
+                    NULLIF(TRIM(COALESCE(outreach.next_action, '')), '') IS NOT NULL
+                 OR NULLIF(TRIM(COALESCE(outreach.notes, '')), '') IS NOT NULL
+              )
+            ORDER BY outreach.last_updated DESC, outreach.id DESC
+            LIMIT 8
+        """, (category["category"], category["sales_play"])).fetchall()
+        category_action = behaviour_signal_from_notes(
+            [row["next_action"] or row["notes"] for row in category_note_rows]
+        )
         insights.append({
             "signal": "Contact",
             "title": f"{category['sales_play']} works best with {category['category']} contacts",
@@ -2226,7 +2281,7 @@ def build_learning_insights(connection):
                 f"{category['meeting_total']} meeting(s), and "
                 f"{category['negative_total']} negative signal(s)."
             ),
-            "action": "When adding contacts in this category, start with this sales play and track the outcome.",
+            "action": category_action,
             "link": url_for("contacts")
         })
 
@@ -2502,6 +2557,7 @@ def build_dashboard_response(connection):
             accounts.account_name,
             accounts.account_tier,
             contacts.name AS contact_name,
+            contacts.job_title AS contact_job_title,
             contacts.email AS contact_email,
             contacts.phone AS contact_phone,
             contacts.linkedin AS contact_linkedin
@@ -2685,12 +2741,12 @@ def build_dashboard_response(connection):
             )
             reason = str(reason).strip()
             if reason:
-                reason = reason[:160] + ("..." if len(reason) > 160 else "")
+                recommended_move = behaviour_signal_from_notes([reason])
                 ai_insights.append({
                     "type": "Engagement Route",
                     "severity": "medium",
                     "title": f"Use a sharper route into {account['account_name']}",
-                    "message": f"Start with {contact_label}. Shape the message around this known context: {reason}",
+                    "message": f"Start with {contact_label}. {recommended_move}",
                     "link": url_for("view_account", account_id=account["id"])
                 })
 
@@ -2937,6 +2993,56 @@ def create_partner_next_action_outreach(connection, account_id, partner_name, co
     return cursor.lastrowid
 
 
+def account_sales_play_options(connection, account_id=None):
+    rows = []
+    if account_id:
+        rows = connection.execute("""
+            SELECT DISTINCT sales_play
+            FROM outreach
+            WHERE account_id = ?
+              AND sales_play IS NOT NULL
+              AND sales_play != ''
+            UNION
+            SELECT DISTINCT sales_play
+            FROM accounts
+            WHERE id = ?
+              AND sales_play IS NOT NULL
+              AND sales_play != ''
+            ORDER BY sales_play
+        """, (account_id, account_id)).fetchall()
+    else:
+        rows = connection.execute("""
+            SELECT DISTINCT accounts.id AS account_id, outreach.sales_play
+            FROM outreach
+            JOIN accounts ON accounts.id = outreach.account_id
+            WHERE outreach.sales_play IS NOT NULL
+              AND outreach.sales_play != ''
+            UNION
+            SELECT id AS account_id, sales_play
+            FROM accounts
+            WHERE sales_play IS NOT NULL
+              AND sales_play != ''
+            ORDER BY sales_play
+        """).fetchall()
+    return [dict(row) for row in rows if row["sales_play"]]
+
+
+def account_partner_activity_options(connection):
+    return connection.execute("""
+        SELECT
+            account_partners.account_id,
+            account_partners.partner_id,
+            account_partners.partner_name,
+            partners.partner_type
+        FROM account_partners
+        LEFT JOIN partners ON partners.id = account_partners.partner_id
+        WHERE account_partners.account_id IS NOT NULL
+          AND account_partners.partner_name IS NOT NULL
+          AND account_partners.partner_name != ''
+        ORDER BY account_partners.partner_name
+    """).fetchall()
+
+
 def activity_update_required_message():
     return "Activity Update must be at least 5 characters before a task can be completed, closed or cancelled."
 
@@ -2971,9 +3077,10 @@ def pg_dashboard_context(connection):
         account_id = account["id"]
         pg_target_number = account["pg_bible_order"] or ""
         contacts = connection.execute("""
-            SELECT id, name, job_title
+            SELECT contacts.id, contacts.name, contacts.job_title, contacts.org_dept, accounts.business_unit
             FROM contacts
-            WHERE account_id = ?
+            LEFT JOIN accounts ON accounts.id = contacts.account_id
+            WHERE contacts.account_id = ?
               AND COALESCE(status, 'Active') != 'Archived'
             ORDER BY name
         """, (account_id,)).fetchall()
@@ -3008,6 +3115,14 @@ def pg_dashboard_context(connection):
 
         for contact in contacts:
             contact_id = contact["id"]
+            latest_contact_activity = connection.execute("""
+                SELECT MAX(COALESCE(last_updated, activity_date, date_created)) AS latest_activity
+                FROM outreach
+                WHERE account_id = ?
+                  AND contact_id = ?
+            """, (account_id, contact_id)).fetchone()["latest_activity"]
+            if latest_contact_activity and str(latest_contact_activity)[:10] < (datetime.now() - timedelta(days=14)).date().isoformat():
+                continue
             scheduled_action_rows = connection.execute("""
                 SELECT subject, next_action_date, next_action_time
                 FROM outreach
@@ -3086,11 +3201,14 @@ def pg_dashboard_context(connection):
                 "colour_index": nbm_colour_index(pg_target_number),
                 "account_name": account["account_name"],
                 "targeted_discovery": f"{contact['name']}{' - ' + contact['job_title'] if contact['job_title'] else ''}",
+                "business_org": contact["business_unit"] or contact["org_dept"] or "",
                 "completed_discovery_meeting": (
                     action_update["completed_discovery_meeting"]
                     if action_update
                     else (legacy_action_update["completed_discovery_meeting"] if legacy_action_update else "")
                 ),
+                "exec_first": action_update["exec_first"] if action_update and "exec_first" in action_update.keys() else "",
+                "nbm_completed": action_update["nbm_completed"] if action_update and "nbm_completed" in action_update.keys() else "",
                 "last_7_days_activity_entries": last_7_days_activity_entries,
                 "next_7_days_actions": next_7_days_actions,
             })
@@ -3117,6 +3235,8 @@ def pg_progress():
         for contact_id in request.form.getlist("pg_action_contact_id"):
             account_id = request.form.get(f"pg_action_account_id_{contact_id}", "")
             completed = request.form.get(f"completed_discovery_contact_{contact_id}", "")
+            exec_first = request.form.get(f"exec_first_contact_{contact_id}", "")
+            nbm_completed = request.form.get(f"nbm_completed_contact_{contact_id}", "")
             next_action = request.form.get(f"next_action_contact_{contact_id}", "")
             existing = connection.execute(
                 "SELECT id FROM pg_action_contact_updates WHERE contact_id = ?",
@@ -3126,20 +3246,24 @@ def pg_progress():
                 connection.execute("""
                     UPDATE pg_action_contact_updates
                     SET completed_discovery_meeting = ?,
+                        exec_first = ?,
+                        nbm_completed = ?,
                         next_action_override = ?,
                         last_updated = CURRENT_TIMESTAMP
                     WHERE contact_id = ?
-                """, (completed, next_action, contact_id))
+                """, (completed, exec_first, nbm_completed, next_action, contact_id))
             else:
                 connection.execute("""
                     INSERT INTO pg_action_contact_updates (
                         account_id,
                         contact_id,
                         completed_discovery_meeting,
+                        exec_first,
+                        nbm_completed,
                         next_action_override
                     )
-                    VALUES (?, ?, ?, ?)
-                """, (account_id, contact_id, completed, next_action))
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (account_id, contact_id, completed, exec_first, nbm_completed, next_action))
         audit_entry(
             connection,
             "dashboard_new",
@@ -3563,14 +3687,6 @@ def add_partner_contact(partner_id):
         ))
         contact_id = cursor.lastrowid
         partner_row = connection.execute("SELECT partner_name FROM partners WHERE id = ?", (partner_id,)).fetchone()
-        create_partner_next_action_outreach(
-            connection,
-            request.form.get("account_id") or None,
-            partner_row["partner_name"] if partner_row else "",
-            contact_name,
-            request.form.get("next_action"),
-            request.form.get("relationship_owner")
-        )
         audit_record_create(connection, "partner_contact", contact_id, {
             "partner_id": partner_id,
             "name": contact_name,
@@ -3581,7 +3697,7 @@ def add_partner_contact(partner_id):
             "relationship_owner": request.form.get("relationship_owner"),
             "email": request.form.get("email"),
             "relationship_status": request.form.get("relationship_status"),
-            "next_action": request.form.get("next_action"),
+            "next_action": "",
         })
         connection.commit()
 
@@ -3634,7 +3750,7 @@ def edit_partner_contact(partner_id, contact_id):
             "location": request.form.get("location"),
             "linkedin": request.form.get("linkedin"),
             "relationship_status": request.form.get("relationship_status"),
-            "next_action": request.form.get("next_action"),
+            "next_action": "",
             "notes": request.form.get("notes"),
         }
         labels = {
@@ -3686,14 +3802,6 @@ def edit_partner_contact(partner_id, contact_id):
             partner_id,
         ))
         audit_record_update(connection, "partner_contact", contact_id, existing, new_values, labels)
-        create_partner_next_action_outreach(
-            connection,
-            new_values["account_id"],
-            partner["partner_name"] if partner else "",
-            new_values["name"],
-            new_values["next_action"],
-            new_values["relationship_owner"]
-        )
         connection.commit()
 
     connection.close()
@@ -3748,10 +3856,10 @@ def add_partner_account_relationship(partner_id):
                 account_id,
                 partner_id,
                 partner["partner_name"],
-                request.form.get("partner_role"),
+                "",
                 request.form.get("involvement_status"),
                 request.form.get("relationship_owner"),
-                request.form.get("next_action"),
+                "",
                 request.form.get("notes")
             ))
             account_partner_id = cursor.lastrowid
@@ -3759,10 +3867,10 @@ def add_partner_account_relationship(partner_id):
                 "account_id": account_id,
                 "partner_id": partner_id,
                 "partner_name": partner["partner_name"],
-                "partner_role": request.form.get("partner_role"),
+                "partner_role": "",
                 "involvement_status": request.form.get("involvement_status"),
                 "relationship_owner": request.form.get("relationship_owner"),
-                "next_action": request.form.get("next_action"),
+                "next_action": "",
                 "notes": request.form.get("notes"),
             })
 
@@ -3773,15 +3881,6 @@ def add_partner_account_relationship(partner_id):
                 "Partner Added",
                 f"Partner involvement added: {partner['partner_name']}"
             )
-            create_partner_next_action_outreach(
-                connection,
-                account_id,
-                partner["partner_name"],
-                "",
-                request.form.get("next_action"),
-                request.form.get("relationship_owner")
-            )
-
             connection.commit()
 
     connection.close()
@@ -4022,10 +4121,10 @@ def add_account_partner(account_id):
             account_id,
             partner_id,
             partner_name,
-            request.form.get("partner_role"),
+            "",
             request.form.get("involvement_status"),
             request.form.get("relationship_owner"),
-            request.form.get("next_action"),
+            "",
             request.form.get("notes")
         ))
         account_partner_id = cursor.lastrowid
@@ -4033,10 +4132,10 @@ def add_account_partner(account_id):
             "account_id": account_id,
             "partner_id": partner_id,
             "partner_name": partner_name,
-            "partner_role": request.form.get("partner_role"),
+            "partner_role": "",
             "involvement_status": request.form.get("involvement_status"),
             "relationship_owner": request.form.get("relationship_owner"),
-            "next_action": request.form.get("next_action"),
+            "next_action": "",
             "notes": request.form.get("notes"),
         })
 
@@ -4086,10 +4185,10 @@ def edit_account_partner(account_id, partner_id):
         new_values = {
             "partner_id": selected_partner_id,
             "partner_name": partner_name,
-            "partner_role": request.form.get("partner_role"),
+            "partner_role": "",
             "involvement_status": request.form.get("involvement_status"),
             "relationship_owner": request.form.get("relationship_owner"),
-            "next_action": request.form.get("next_action"),
+            "next_action": "",
             "notes": request.form.get("notes")
         }
 
@@ -4097,7 +4196,7 @@ def edit_account_partner(account_id, partner_id):
             "partner_id": "Partner organisation",
             "partner_name": "Partner name",
             "partner_role": "Partner role",
-            "involvement_status": "Involvement status",
+            "involvement_status": "Partner engagement",
             "relationship_owner": "Relationship owner",
             "next_action": "Next action",
             "notes": "Notes"
@@ -4361,6 +4460,48 @@ def add_account_timeline(account_id):
     connection.close()
 
     return redirect(url_for("view_account", account_id=account_id))
+
+
+@app.route("/accounts/<int:account_id>/org-chart")
+def account_org_chart(account_id):
+    connection = get_db_connection()
+    account = connection.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    if not account:
+        connection.close()
+        return redirect(url_for("accounts"))
+    contacts = connection.execute("""
+        SELECT *
+        FROM contacts
+        WHERE account_id = ?
+          AND COALESCE(status, 'Active') != 'Archived'
+        ORDER BY COALESCE(NULLIF(org_dept, ''), 'Unmapped'), name
+    """, (account_id,)).fetchall()
+    partner_contacts = connection.execute("""
+        SELECT partner_contacts.*, partners.partner_name
+        FROM partner_contacts
+        LEFT JOIN partners ON partners.id = partner_contacts.partner_id
+        WHERE partner_contacts.account_id = ?
+        ORDER BY partners.partner_name, partner_contacts.name
+    """, (account_id,)).fetchall()
+    groups = {}
+    unmapped = []
+    for contact in contacts:
+        group_name = contact["org_dept"] or account["business_unit"] or ""
+        item = {"type": "Customer", "name": contact["name"], "title": contact["job_title"], "link": url_for("edit_contact", contact_id=contact["id"])}
+        if group_name:
+            groups.setdefault(group_name, []).append(item)
+        else:
+            unmapped.append(item)
+    for contact in partner_contacts:
+        group_name = contact["partner_name"] or "Partner"
+        groups.setdefault(f"Partner: {group_name}", []).append({
+            "type": "Partner",
+            "name": contact["name"],
+            "title": contact["job_title"],
+            "link": url_for("view_partner", partner_id=contact["partner_id"]),
+        })
+    connection.close()
+    return render_template("account_org_chart.html", account=account, groups=groups, unmapped=unmapped)
 
 
 @app.route("/contacts")
@@ -4863,18 +5004,8 @@ def add_outreach():
         WHERE COALESCE(contacts.status, 'Active') = 'Active'
         ORDER BY contacts.name
     """).fetchall()
-    sales_play_rows = connection.execute("""
-        SELECT DISTINCT sales_play
-        FROM outreach
-        WHERE sales_play IS NOT NULL
-          AND sales_play != ''
-        UNION
-        SELECT DISTINCT sales_play
-        FROM accounts
-        WHERE sales_play IS NOT NULL
-          AND sales_play != ''
-        ORDER BY sales_play
-    """).fetchall()
+    sales_play_rows = account_sales_play_options(connection)
+    partner_activity_options = account_partner_activity_options(connection)
 
     profile = connection.execute("""
         SELECT *
@@ -4894,7 +5025,8 @@ def add_outreach():
         contacts=contacts,
         profile=profile,
         non_working_blocks=non_working_block_rows,
-        sales_play_options=[row["sales_play"] for row in sales_play_rows if row["sales_play"]],
+        sales_play_options=sales_play_rows,
+        partner_activity_options=partner_activity_options,
         prefill=prefill,
         error=error
     )
@@ -5121,18 +5253,8 @@ def campaign_builder():
             accounts.account_name,
             contacts.name
     """).fetchall()
-    sales_play_rows = connection.execute("""
-        SELECT DISTINCT sales_play
-        FROM outreach
-        WHERE sales_play IS NOT NULL
-          AND sales_play != ''
-        UNION
-        SELECT DISTINCT sales_play
-        FROM accounts
-        WHERE sales_play IS NOT NULL
-          AND sales_play != ''
-        ORDER BY sales_play
-    """).fetchall()
+    sales_play_rows = account_sales_play_options(connection)
+    partner_activity_options = account_partner_activity_options(connection)
 
     connection.close()
 
@@ -5150,7 +5272,7 @@ def campaign_builder():
         selected_total_tasks=selected_total_tasks,
         selected_times_per_week=selected_times_per_week,
         selected_sales_play=selected_sales_play,
-        sales_play_options=[row["sales_play"] for row in sales_play_rows if row["sales_play"]],
+        sales_play_options=sales_play_rows,
         selected_fy=selected_fy,
         selected_quarter=selected_quarter,
         success_context_summary=success_context_summary,
@@ -5250,18 +5372,7 @@ def edit_outreach(outreach_id):
            OR contacts.id = ?
         ORDER BY contacts.name
     """, (outreach_item["contact_id"],)).fetchall()
-    sales_play_rows = connection.execute("""
-        SELECT DISTINCT sales_play
-        FROM outreach
-        WHERE sales_play IS NOT NULL
-          AND sales_play != ''
-        UNION
-        SELECT DISTINCT sales_play
-        FROM accounts
-        WHERE sales_play IS NOT NULL
-          AND sales_play != ''
-        ORDER BY sales_play
-    """).fetchall()
+    sales_play_rows = account_sales_play_options(connection)
 
     profile = connection.execute("""
         SELECT *
@@ -5315,7 +5426,8 @@ def edit_outreach(outreach_id):
                 contacts=contacts,
                 profile=profile,
                 non_working_blocks=non_working_block_rows,
-                sales_play_options=[row["sales_play"] for row in sales_play_rows if row["sales_play"]],
+                sales_play_options=sales_play_rows,
+                partner_activity_options=partner_activity_options,
                 error=error
             )
 
@@ -5329,7 +5441,8 @@ def edit_outreach(outreach_id):
                 contacts=contacts,
                 profile=profile,
                 non_working_blocks=non_working_block_rows,
-                sales_play_options=[row["sales_play"] for row in sales_play_rows if row["sales_play"]],
+                sales_play_options=sales_play_rows,
+                partner_activity_options=partner_activity_options,
                 error=error
             )
 
@@ -5343,7 +5456,8 @@ def edit_outreach(outreach_id):
                 contacts=contacts,
                 profile=profile,
                 non_working_blocks=non_working_block_rows,
-                sales_play_options=[row["sales_play"] for row in sales_play_rows if row["sales_play"]],
+                sales_play_options=sales_play_rows,
+                partner_activity_options=partner_activity_options,
                 error=error
             )
 
@@ -5438,7 +5552,8 @@ def edit_outreach(outreach_id):
         contacts=contacts,
         profile=profile,
         non_working_blocks=non_working_block_rows,
-        sales_play_options=[row["sales_play"] for row in sales_play_rows if row["sales_play"]],
+        sales_play_options=sales_play_rows,
+        partner_activity_options=partner_activity_options,
         error=error
     )
 
@@ -6389,6 +6504,72 @@ def delete_profile_data():
 @app.route("/reports")
 def reports():
     return render_template("reports.html")
+
+
+@app.route("/reports/partners")
+def partner_reports():
+    connection = get_db_connection()
+    partner_rows = connection.execute("""
+        SELECT
+            partners.id,
+            partners.partner_name,
+            partners.partner_type,
+            account_partners.involvement_status,
+            accounts.account_name,
+            COUNT(partner_contacts.id) AS contact_count
+        FROM partners
+        LEFT JOIN account_partners ON account_partners.partner_id = partners.id
+        LEFT JOIN accounts ON accounts.id = account_partners.account_id
+        LEFT JOIN partner_contacts ON partner_contacts.partner_id = partners.id
+        GROUP BY partners.id, partners.partner_name, partners.partner_type, account_partners.involvement_status, accounts.account_name
+        ORDER BY partners.partner_name, accounts.account_name
+    """).fetchall()
+    engagement_rows = connection.execute("""
+        SELECT COALESCE(NULLIF(account_partners.involvement_status, ''), 'Not set') AS engagement, COUNT(*) AS total
+        FROM account_partners
+        GROUP BY COALESCE(NULLIF(account_partners.involvement_status, ''), 'Not set')
+        ORDER BY total DESC
+    """).fetchall()
+    connection.close()
+    return render_template("partner_reports.html", partner_rows=partner_rows, engagement_rows=engagement_rows)
+
+
+@app.route("/reports/partners/export")
+def export_partner_reports():
+    connection = get_db_connection()
+    rows = connection.execute("""
+        SELECT
+            partners.partner_name,
+            partners.partner_type,
+            account_partners.involvement_status,
+            accounts.account_name,
+            partner_contacts.name AS partner_contact_name,
+            partner_contacts.job_title,
+            partner_contacts.relationship_status
+        FROM partners
+        LEFT JOIN account_partners ON account_partners.partner_id = partners.id
+        LEFT JOIN accounts ON accounts.id = account_partners.account_id
+        LEFT JOIN partner_contacts ON partner_contacts.partner_id = partners.id
+        ORDER BY partners.partner_name, accounts.account_name, partner_contacts.name
+    """).fetchall()
+    connection.close()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Partner", "Partner Type", "Partner Engagement", "Account", "Partner Contact", "Job Title", "Contact Engagement"])
+    for row in rows:
+        writer.writerow([
+            row["partner_name"],
+            row["partner_type"],
+            row["involvement_status"],
+            row["account_name"],
+            row["partner_contact_name"],
+            row["job_title"],
+            row["relationship_status"],
+        ])
+    response = Response(output.getvalue(), mimetype="text/csv")
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    response.headers["Content-Disposition"] = f"attachment; filename=partner_reports_{timestamp}.csv"
+    return response
 
 
 def audit_retention_cutoff():
