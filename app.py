@@ -6,427 +6,11 @@ import webbrowser
 import csv
 import io
 import re
-import traceback
 from datetime import datetime, timedelta
-from urllib.parse import urlencode
 
-from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection
+from flask import Flask, render_template, request, redirect, url_for, Response, send_file
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
-from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection
-
-
-APP_VERSION = "1.2"
-APP_RELEASE_DATE = "2026-05-10"
-APP_BUILD = "2026-05-10-v1.2-outreach-table-polish"
-
-RELEASE_NOTES = [
-    {
-        "version": "1.2",
-        "release_date": "2026-05-10",
-        "title": "Outreach task table presentation improvements",
-        "new": [],
-        "enhanced": [
-            "Enhanced the Outreach Tasks table so due date, due time and task status display in a cleaner compact layout.",
-            "Enhanced Outreach Activity forms so the contact selector only shows contacts associated to the selected account.",
-            "Enhanced Campaign Builder so multiple contact selection is constrained to contacts associated with the selected account.",
-            "Enhanced Insights Dashboard so execution guidance focuses on Campaign Learning success and failure indicators plus AI Insight engagement recommendations from account and contact context.",
-            "Enhanced the Accounts page with a cleaner streamlined table layout for PG order, account detail, health, coverage, pipeline and location.",
-            "Enhanced campaign autoscheduling so the first email step is VITO and later email-style steps use the single Follow-up activity type with the subject describing the follow-up channel.",
-            "Enhanced Outreach and Campaign Builder cleanup by requiring FY and Quarter before save, removing duplicate follow-up activity values, flattening Outreach task grouping, moving account sharing to Accounts and compacting Outreach filters.",
-        ],
-        "fixed": [],
-    },
-    {
-        "version": "1.1",
-        "release_date": "2026-05-08",
-        "title": "Outreach ownership, sharing and task assignment controls",
-        "new": [],
-        "enhanced": [
-            "Enhanced Outreach Tasks so task-level reassignment now requires an explicit Save Assignment button before the database is updated.",
-            "Enhanced account collaboration so the account originator keeps visibility when an account package is shared with other users.",
-            "Enhanced account sharing rules so tasks can only be assigned to users who already have access to the related account.",
-            "Enhanced account ownership so each account records an owner by default and the edit account form can transfer ownership to another active user.",
-            "Enhanced sharing management so account owners can revoke shared access and assigned outreach tasks are returned to the account owner.",
-            "Enhanced task responsibility reporting so SLA-style task measures are grouped by assigned user.",
-            "Enhanced Outreach filters with a compact status menu for All Open, All Closed, All and individual statuses including Cancelled.",
-            "Enhanced Outreach sharing controls so account sharing fields are smaller and easier to scan.",
-            "Enhanced the User Guide so account ownership, sharing, assignment and status filtering instructions reflect the current workflow.",
-            "Enhanced the User Guide with more detailed navigation guidance and clearer admin-only access explanations.",
-            "Enhanced broadcasts so login messages and dashboard ticker items are ordered by urgency, with a more compact login page presentation.",
-            "Enhanced audit management so all audit trails are consolidated on the Audit page, grouped by month, filterable by date and user, exportable to CSV by admins and governed by an audited 6-month retention toggle.",
-            "Enhanced admin navigation by moving Audit into Admin as an admin-only sub tab with clearer admin-only explanation.",
-            "Enhanced admin navigation with a Broadcast Messages sub tab so admins can jump directly to broadcast configuration.",
-            "Enhanced audit auto-delete controls so admins clearly see and select Auto-delete On or Auto-delete Off.",
-            "Enhanced the Audit user filter so user suggestions display full names only while still matching underlying audit email fields.",
-            "Enhanced dashboard development with the PG Progress tab for the PG Goals dashboard build.",
-            "Enhanced account records with NBM Target and Account Sales Play or Initiative fields to support PG Goals dashboard mapping.",
-            "Enhanced the main dashboard by removing the embedded tasks table so task work remains focused in Outreach Tasks.",
-            "Enhanced PG Progress so target numbering maps to Account PG Bible Order and PG Actions includes last 7 days outreach activity updates by account.",
-            "Enhanced PG Progress and made it available to all signed-in users.",
-            "Enhanced Outreach so Sales Play or Initiative is now the campaign grouping field and the separate Campaign Name field is no longer shown on forms, dashboards or reports.",
-            "Enhanced Outreach Tasks so Activity Update is mandatory before saving, Notes is retained as read-only system metadata and follow-on creation opens a clean new task form.",
-            "Enhanced PG Progress last 7 days activity so each activity update is shown on its own line with the submitted date.",
-            "Enhanced PG Progress so the PG Sales Play or Initiative column maps to Outreach task Sales Play or Initiative values for each account.",
-            "Enhanced PG Progress last 7 days activity display so valid activity updates render cleanly and empty accounts stay blank.",
-            "Enhanced Campaign Builder so generated outreach tasks leave Activity Update blank for the user to complete before saving.",
-            "Enhanced PG Progress so Next Action and Notes is now a read-only view of scheduled Outreach task subjects due in the next 7 days.",
-            "Enhanced the main dashboard into Insights Dashboard with needs-attention signals merged into Execution Insights, outcome breakdown moved under the top metrics and redundant latest outreach removed.",
-            "Enhanced PG Progress activity rules so Last 7 Days Activity shows only completed activity updates and scheduled actions include overdue open work plus the next 7 days.",
-            "Enhanced Outreach task pages by simplifying the table, reordering key fields and renaming Content and Thought Leadership activity to White Paper / Webinar.",
-            "Enhanced Outreach Reports so Monthly Meeting Conversion is shown as meetings booked each month.",
-            "Enhanced Outreach so Activity Update is only mandatory when a task is being completed, closed or cancelled.",
-            "Enhanced account partner linking so multiple partner organisations can be associated to an account at once.",
-            "Enhanced PG Bible mapping so NBM Target and Related NBM Target use the account PG Bible Order.",
-            "Enhanced Outreach Tasks so the task table uses one row per task and shows Activity Start Date in its own column.",
-            "Improved grouped table colour hierarchy so top-level groups use the darkest shade, nested groups step down progressively and detail rows remain light.",
-            "Improved Release Notes ordering so the latest release always appears first.",
-            "Improved profile audit entries so profile changes display clear field labels in the audit trail.",
-            "Enhanced on-page instructions across PipeFlow so every page now gives clearer guidance about what to do, what matters and what to check before saving.",
-            "Enhanced the Edit Outreach button so the edit form opens correctly with non-working date guidance available.",
-            "Enhanced the audit auto-delete off control so saving the off state is explicit and visibly confirmed.",
-            "Enhanced PG Progress hosted database compatibility so recent activity date filtering works correctly on Supabase Postgres.",
-        ],
-        "fixed": [
-            "Fixed the Outreach Tasks table so the assignment field is clearly labelled and the Save and Edit buttons stack cleanly in the task row.",
-            "Fixed the Outreach Tasks assignment controls so Save and Edit sit side by side beneath the assigned user field.",
-        ],
-    },
-    {
-        "version": "1.0",
-        "release_date": "2026-05-07",
-        "title": "Initial PipeFlow PG Manager release",
-        "new": [
-            "Introduced the hosted PipeFlow PG Manager application with private user profiles, sign in, registration and profile-level data separation.",
-            "Added core workspace modules for Dashboard, Accounts, Contacts, Partners, Outreach, Tasks, Reports, Global Search, Profile and Audit.",
-            "Added account tiering, PG Bible ordering and FY PG target tracking from account Pipeline Target USD ACV values.",
-            "Added Campaign Builder for one sales play per campaign, with campaign generation across multiple contacts on the selected account.",
-            "Added campaign learning signals that use historic outcomes, sales play, account industry, account details and selected contact data to guide generated outreach.",
-            "Added profile working hours and non-working date configuration to guide campaign auto-scheduling.",
-            "Added Shared Outreach and Team foundations so users can review team follow-up ownership and reassign shared outreach tasks.",
-            "Added partner organisation tracking, partner contacts and account-partner relationship mapping.",
-            "Added admin permissions, user management, broadcast messages and visible broadcast ticker messaging.",
-            "Added full audit trail capture for workspace record changes, including date and time, user, field, old value and new value.",
-            "Added PG Bible export support and report exports for accounts, contacts, outreach and tasks.",
-        ],
-        "enhanced": [
-            "Refined the Dashboard into a pipeline generation command centre with FY PG target, weekly execution metrics, execution insights and task visibility.",
-            "Aligned Dashboard Tasks with the Outreach table layout so task and outreach records have a consistent structure.",
-            "Improved Outreach ordering by account, sales play and earliest activity due date while keeping the table ungrouped on the Dashboard.",
-            "Made Activity Due Date visually prominent in Outreach and Dashboard task views.",
-            "Improved Outreach completion so users must add an Activity Update before closing work.",
-            "Improved follow-on activity flow so completed outreach opens a prefilled new outreach form instead of silently creating the next task.",
-            "Improved Outreach filters with multi-select status filtering and a default All Open view.",
-            "Improved auto-scheduling so generated campaign tasks avoid non-working dates, stay inside working hours and avoid duplicate time slots.",
-            "Improved non-working date management so users can configure multiple unavailable date blocks while weekends are excluded by default.",
-            "Improved Shared Outreach privacy so other users' full names only appear in assignment and share dropdowns.",
-            "Improved account collaboration so users can share a full account package, including account details, contacts and outreach tasks, with another team member.",
-            "Improved Release Notes with an accordion layout so older entries can stay collapsed as the product history grows.",
-            "Improved table usability by making primary record fields act as obvious edit buttons.",
-            "Improved Campaign Builder so users can only build campaigns against accounts that already have contacts, while still supporting multiple selected contacts.",
-            "Improved contact creation by showing the selected account business unit or organisation.",
-            "Improved account, contact, partner, outreach and task table readability to keep content inside page margins.",
-            "Improved edit flows with clear save and cancel options, plus complete-only and complete-with-follow-on options for outreach tasks.",
-        ],
-        "fixed": [
-            "Resolved duplicate-route and endpoint risks by validating route integrity during release checks.",
-            "Resolved SQLite and Supabase/Postgres compatibility issues, including date/time SQL translation problems.",
-            "Resolved persistence issues by moving hosted data storage to Supabase/Postgres instead of temporary SQLite.",
-            "Resolved PG Bible export configuration and report route failures identified during hosted testing.",
-            "Resolved recurring malformed SQL and indentation risks through compile and smoke-test validation.",
-            "Resolved overly large or unclear delete controls by only showing bulk delete actions after records are selected.",
-            "Resolved Outreach campaign generation issues where dates could start before the configured campaign start date.",
-            "Resolved dashboard and Outreach table layout problems where tables could overflow or become too compressed.",
-        ],
-    }
-]
-
-USER_GUIDE_SECTIONS = [
-    {
-        "slug": "getting-started",
-        "title": "Getting Started",
-        "summary": "Set up your profile, understand navigation and get your first workspace ready.",
-        "access": "All signed-in users can use the standard navigation. Admin appears only for users with admin permission, and Audit is available inside Admin as an admin-only sub tab.",
-        "navigation": [
-            "Use the top navigation from left to right as your normal workflow: Dashboard, Outreach Tasks, Accounts, Contacts, Partners, Reports, Profile and Release Notes.",
-            "Use the User Guide link in the top right whenever you need help without leaving the application structure.",
-            "Use the global search field in the header when you know the account, contact, partner, campaign or outreach text you want to find.",
-            "Use Sign Out as the final navigation option when you have finished working.",
-        ],
-        "steps": [
-            "Register or sign in with your PipeFlow profile.",
-            "Open Profile and confirm your full name, team, job title and working hours.",
-            "Add any non-working date blocks so generated campaigns avoid those days.",
-            "Create accounts first, add contacts to those accounts, then create outreach tasks or generate campaigns.",
-            "Review Dashboard and Reports regularly to check execution progress and accountability.",
-        ],
-        "tips": [
-            "Your workspace data is private unless you explicitly share an account through Outreach Tasks.",
-            "Use the global search field when you know the account, contact, partner or outreach text you are looking for.",
-            "If a menu item is missing, it is normally because your profile does not have permission for that function.",
-        ],
-    },
-    {
-        "slug": "dashboard",
-        "title": "Dashboard",
-        "summary": "Use the dashboard as your weekly pipeline execution command centre.",
-        "navigation": [
-            "Dashboard is the first tab and should be your starting point each day.",
-            "Click a dashboard task to open the editable outreach task when more detail is needed.",
-            "Use dashboard metrics to decide whether to move into Accounts, Outreach Tasks or Reports next.",
-        ],
-        "steps": [
-            "Review the command centre metrics for this week.",
-            "Use the pipeline target card to see total PG target ACV across your accounts.",
-            "Work active outreach tasks directly from the dashboard task table.",
-            "Use Execution Insights to decide which account, campaign or sales play needs attention next.",
-            "Update task status and due dates as work progresses so the dashboard stays accurate.",
-        ],
-        "tips": [
-            "Untouched accounts are accounts with no active campaign or outreach tasks.",
-            "Closed, completed and cancelled work is removed from active execution views by default.",
-            "Pipeline generated value should be treated as a source-system metric when it belongs in SFDC rather than PipeFlow.",
-        ],
-    },
-    {
-        "slug": "accounts",
-        "title": "Accounts",
-        "summary": "Create account records that drive pipeline tracking, contact mapping and PG Bible output.",
-        "access": "All users can manage accounts in their workspace. Only the account owner can share that account, revoke access or view account sharing assignments.",
-        "navigation": [
-            "Open Accounts from the navigation when you need to create, cleanse or review account planning data.",
-            "Click the account name in the table to open the account record.",
-            "Use the Back to Accounts button from an account record to return to the list.",
-        ],
-        "steps": [
-            "Add an account with account name, business organisation, industry, geography and website.",
-            "Set Account Tier to 1, 2 or 3 for prioritisation.",
-            "Set PG Bible Order when the account must appear in a specific sequence in exports.",
-            "Enter Pipeline Target USD ACV so the Dashboard can calculate total PG target value.",
-            "Review or reassign the Account Owner on the edit account form when ownership changes.",
-            "Open an account record to review contacts, partner involvement, outreach history and timeline entries.",
-            "Use Account Sharing on the account record to review and revoke access if you own the account.",
-        ],
-        "tips": [
-            "Use business organisation to distinguish large accounts with multiple internal groups.",
-            "Keep PG Bible order numeric and unique for your most important accounts.",
-            "Changing ownership is stronger than sharing because ownership rights move to the new owner.",
-        ],
-    },
-    {
-        "slug": "contacts",
-        "title": "Contacts",
-        "summary": "Capture stakeholder detail for account coverage and campaign targeting.",
-        "navigation": [
-            "Open Contacts when you need to add, review or clean stakeholder information.",
-            "Click the contact name to open the contact record.",
-            "Use the account link from a contact when you need to return to the wider account context.",
-        ],
-        "steps": [
-            "Add contacts from the Contacts page or from an account context.",
-            "Select the account before entering stakeholder details.",
-            "Capture job title, organisation, relationship, responsibilities and personal context where known.",
-            "Use contact data to make campaign recommendations more accurate over time.",
-            "Keep contact records current when a stakeholder changes role, leaves or becomes more important to the sales play.",
-        ],
-        "tips": [
-            "Accounts must have at least one contact before Campaign Builder can generate a campaign.",
-            "Richer contact notes improve future sales play recommendations.",
-            "Do not store sensitive personal data that is not relevant to legitimate business outreach.",
-        ],
-    },
-    {
-        "slug": "outreach",
-        "title": "Outreach Tasks",
-        "summary": "Track campaign touchpoints, task status, outcomes, account sharing, assignment and next activity updates.",
-        "access": "All users can work their own outreach tasks. Only account owners can share accounts, revoke account access or see account sharing assignments.",
-        "navigation": [
-            "Open Outreach Tasks when you need to filter, update, assign or review outreach execution.",
-            "Use Campaign Builder from the Outreach Tasks page when you want PipeFlow to generate a sequence.",
-            "Click Edit Outreach on a row to open the task form.",
-            "Use Clear Filters if the table does not show the tasks you expect.",
-        ],
-        "steps": [
-            "Use Add Outreach for one-off activity or Campaign Builder for generated sequences.",
-            "Use the Share Full Account panel to copy an account package to one or more users and record their access.",
-            "Group outreach by account and campaign to understand execution context.",
-            "Use the Assigned To dropdown in each row and click Save Assignment to commit task ownership.",
-            "Use the compact status filter to show All Open, All Closed, All or specific statuses.",
-            "Add an Activity Update before closing or completing an outreach task.",
-            "Use Complete and Create Follow-on when the current task is done but another task is needed.",
-        ],
-        "tips": [
-            "The due date is the Activity Due Date, based on the next action date.",
-            "Tasks can only be assigned to users who have access to the related account.",
-            "Closed, completed and cancelled outreach is hidden unless you explicitly filter for it.",
-            "If a user is missing from the assignment dropdown, check that the account has been shared with them first.",
-        ],
-    },
-    {
-        "slug": "campaign-builder",
-        "title": "Campaign Builder",
-        "summary": "Generate four-week outreach campaigns from a single sales play.",
-        "navigation": [
-            "Open Campaign Builder from the Outreach Tasks page.",
-            "Return to Outreach Tasks after generation to review the created task rows.",
-            "Use Reports later to compare campaign activity and outcomes.",
-        ],
-        "steps": [
-            "Choose an account that already has contacts.",
-            "Select one or more contacts for the campaign.",
-            "Enter one sales play only.",
-            "Set PG Week, campaign start and campaign end dates.",
-            "Set the total outreach task quantity and how many times per week activities should occur.",
-            "Generate the campaign to create outreach tasks across the selected contacts.",
-            "Review the generated dates and assignee before beginning execution.",
-        ],
-        "tips": [
-            "Generated campaigns avoid weekends and your configured non-working dates.",
-            "Tasks are placed inside your working hours and avoid duplicate time slots where possible.",
-            "If no account appears, add at least one contact to the account first.",
-        ],
-    },
-    {
-        "slug": "shared-outreach",
-        "title": "Sharing and Assignment",
-        "summary": "Share full accounts and reassign outreach tasks from the Outreach Tasks page while preserving privacy.",
-        "access": "Only the account owner can share, revoke or see account sharing assignments. Task assignees can see and update tasks only when they have access to the related account.",
-        "navigation": [
-            "Use Outreach Tasks for sharing and assignment. There is no separate Shared Outreach tab.",
-            "Use the Share Full Account panel to grant access.",
-            "Use Manage Existing Sharing or the Account Sharing panel on an account record to revoke access.",
-        ],
-        "steps": [
-            "Open Outreach Tasks from the top navigation.",
-            "Use Share Full Account to copy an account, contacts, outreach tasks and account details to one or more users.",
-            "Use Sharing Permissions to revoke access when a user no longer needs the account.",
-            "Use the Assigned To dropdown and Save Assignment button in the task table to reassign work.",
-            "Review active follow-up tasks grouped by customer and campaign.",
-            "If access is revoked, tasks assigned to that user return to the account owner.",
-        ],
-        "tips": [
-            "Other users' full names are only displayed in Outreach Tasks assignment and share dropdowns.",
-            "Sharing copies the full account package into the selected user's workspace while the originator retains their own access.",
-            "Revoking an account share moves any tasks assigned to that user back to the account owner.",
-            "Use sharing for collaboration. Use ownership reassignment only when responsibility for the account itself changes.",
-        ],
-    },
-    {
-        "slug": "partners",
-        "title": "Partners",
-        "summary": "Track partner organisations, partner contacts and account involvement.",
-        "navigation": [
-            "Open Partners when you need to manage partner organisations and their contacts.",
-            "Click the partner name to open the partner record.",
-            "Use account mappings inside the partner record to connect a partner to customer accounts.",
-        ],
-        "steps": [
-            "Create partner organisations with type, location, website, managers and notes.",
-            "Add partner contacts who work for the partner organisation.",
-            "Map partner contacts and partner involvement to accounts where they help progress opportunities.",
-            "Review partner metrics and account links from the partner record.",
-            "Keep partner manager and BMC partner manager fields current so ownership is clear.",
-        ],
-        "tips": [
-            "Partner contacts are separate from account contacts and use partner-specific role fields.",
-            "Use partner notes to capture channel context and next actions.",
-            "Partner account mappings help explain who is helping sell into a customer account.",
-        ],
-    },
-    {
-        "slug": "reports",
-        "title": "Reports and PG Bible",
-        "summary": "Review execution data and export account, contact, outreach, task and PG Bible outputs.",
-        "navigation": [
-            "Open Reports from the main navigation, then select the report type you need.",
-            "Use Back to Reports from report pages to return to the report menu.",
-            "Use exports when you need to review or share data outside PipeFlow.",
-        ],
-        "steps": [
-            "Open Reports from the top navigation.",
-            "Use Account Reports to review account coverage and target values.",
-            "Use Contact Reports to review stakeholder coverage.",
-            "Use Outreach and Task Reports to review activity volume, outcomes, due dates and ownership.",
-            "Export PG Bible when you need the formatted workbook output.",
-            "Use filters before exporting when the report supports narrowing by date, account, status or assignee.",
-        ],
-        "tips": [
-            "Reports reflect the same fields used across account, contact, outreach and task views.",
-            "PG Bible uses account target and ordering fields configured in the account form.",
-            "Task Reports include SLA by assignee so timeliness is measured against the person currently assigned.",
-        ],
-    },
-    {
-        "slug": "profile",
-        "title": "Profile and Scheduling",
-        "summary": "Configure user details, working hours and non-working dates.",
-        "navigation": [
-            "Open Profile from the main navigation when your user details or scheduling availability changes.",
-            "Use the non-working date section to add multiple unavailable blocks.",
-            "Return to Outreach or Campaign Builder after updating scheduling settings.",
-        ],
-        "steps": [
-            "Set full name, team and job title.",
-            "Set work day start and end times.",
-            "Add multiple non-working date blocks for holidays, travel or unavailable periods.",
-            "Delete outdated non-working blocks when they no longer apply.",
-            "Review these settings before using Campaign Builder because auto-scheduling uses them.",
-        ],
-        "tips": [
-            "Saturday and Sunday are non-working by default for auto-scheduling.",
-            "Manual scheduling can still override warnings for non-working dates or times.",
-            "Your full name is used in assignment fields, audit entries and ownership records.",
-        ],
-    },
-    {
-        "slug": "admin",
-        "title": "Admin",
-        "summary": "Manage users, permissions and broadcasts when signed in as an administrator.",
-        "access": "Admin forms are only visible to admin users. Non-admin users will not see Admin in the navigation and cannot access the admin routes.",
-        "navigation": [
-            "Admin appears near the end of the navigation only for admin users.",
-            "Use Admin for user management, role changes, broadcasts and profile administration.",
-            "Use the Broadcast Messages sub tab inside Admin to create, pause, edit or delete user messages.",
-            "Use the Audit Trail sub tab inside Admin to review administrative and data-change history.",
-        ],
-        "steps": [
-            "Open Admin from the top navigation when available.",
-            "Review user profiles and update role, team or email when required.",
-            "Deactivate users who should no longer access PipeFlow.",
-            "Create broadcast messages with start and stop times for login and dashboard announcements.",
-            "Use admin password reset only after confirming the request with the user.",
-        ],
-        "tips": [
-            "Admin actions are recorded in the admin audit trail.",
-            "Only admins can access Admin, including its Audit Trail sub tab.",
-            "If a user cannot see an admin form, check their role before troubleshooting the page.",
-        ],
-    },
-    {
-        "slug": "audit-release-notes",
-        "title": "Audit and Release Notes",
-        "summary": "Review change history and understand what has changed between releases.",
-        "access": "Audit is an admin-only sub tab inside Admin. Release Notes are visible to all users so everyone can understand what changed.",
-        "navigation": [
-            "Open Admin from the navigation, then use the Audit Trail sub tab.",
-            "Open Release Notes from the navigation to see product changes.",
-            "Use the accordion controls to expand older release entries when needed.",
-        ],
-        "steps": [
-            "Open Audit as an admin to review structured workspace changes.",
-            "Review date/time, user, action, record, field, old value and new value.",
-            "Open Release Notes to see changes grouped by version.",
-            "Use the accordion layout to keep older releases collapsed while the latest release stays open.",
-            "Use release categories to understand whether a change is New, Enhanced or Fixed.",
-        ],
-        "tips": [
-            "Release Notes always display latest to earliest.",
-            "Profile changes use readable field labels in the audit trail.",
-            "Audit is for accountability and investigation, not everyday task management.",
-        ],
-    },
-]
 
 
 for vendor_base in (
@@ -455,777 +39,15 @@ app = Flask(
     template_folder=resource_path("templates"),
     static_folder=resource_path("static")
 )
-app.config["SECRET_KEY"] = os.environ.get("PIPEFLOW_SECRET_KEY", "pipeflow-server-dev-secret-change-me")
 
-initialise_auth_database()
+initialise_database()
+
+CLOSED_TASK_STATUSES = {"Closed", "Completed", "Cancelled"}
 
 
 @app.context_processor
 def inject_dropdown_values():
-    return {
-        "dropdown_values": DROPDOWN_VALUES,
-        "current_user": current_user(),
-        "app_name": "PipeFlow PG Manager",
-        "app_version": APP_VERSION,
-        "app_release_date": APP_RELEASE_DATE,
-        "page_instructions": page_instructions_for_endpoint(request.endpoint),
-    }
-
-
-PAGE_INSTRUCTIONS = {
-    "home": {
-        "title": "How to Use This Page",
-        "items": [
-            "Start with the command centre metrics to see what needs attention this week.",
-            "Use the task table to update due dates, activity updates and task status without leaving the dashboard.",
-            "Review execution insights for suggested next actions across accounts, campaigns and sales plays.",
-            "Use the top navigation to move into Outreach Tasks, Accounts, Contacts, Partners, Reports, Profile or Release Notes.",
-        ],
-    },
-    "outreach": {
-        "title": "Outreach Tasks Guidance",
-        "items": [
-            "Only account owners can share accounts, revoke account sharing or see account sharing assignments.",
-            "Use the filters to focus active work. All Open excludes Completed, Closed and Cancelled records.",
-            "Use Save Assignment after changing the assignee. The selected user must already have access to the account.",
-            "Open the task to complete it, add a mandatory Activity Update or create a follow-on task.",
-        ],
-    },
-    "accounts": {
-        "title": "Accounts Guidance",
-        "items": [
-            "Use accounts for PG planning data that is not already managed in SFDC, including PG Bible order and FY target ACV.",
-            "Open the account name to edit or review contacts, partner involvement, outreach history, sharing and timeline.",
-            "Bulk delete only appears after records are selected so accidental deletion is less likely.",
-        ],
-    },
-    "add_account": {
-        "title": "Add Account Guidance",
-        "items": [
-            "The creator becomes the account owner by default.",
-            "Set PG Bible Order when the account must appear in a specific export sequence.",
-            "Enter Pipeline Target USD ACV so dashboard PG target totals and PG Bible exports remain accurate.",
-        ],
-    },
-    "edit_account": {
-        "title": "Edit Account Guidance",
-        "items": [
-            "Changing Account Owner transfers ownership rights when you save.",
-            "Only the owner can share or revoke sharing for this account.",
-            "Use Cancel if you need to leave without committing changes.",
-        ],
-    },
-    "view_account": {
-        "title": "Account Review Guidance",
-        "items": [
-            "Use this page to confirm account detail, coverage, partner involvement and audit history before planning outreach.",
-            "If you are the owner, the Account Sharing panel shows who has access and lets you revoke access.",
-            "Revoking access returns any tasks assigned to that user back to the account owner.",
-        ],
-    },
-    "contacts": {
-        "title": "Contacts Guidance",
-        "items": [
-            "Use contacts to capture stakeholder context that improves future campaign and sales play recommendations.",
-            "Open the contact name to review or update the record quickly.",
-            "Accounts need at least one contact before Campaign Builder can generate a campaign.",
-        ],
-    },
-    "add_contact": {
-        "title": "Add Contact Guidance",
-        "items": [
-            "Select the account first so the contact is mapped to the right business unit or organisation.",
-            "Capture job role, relationship strength and useful personal context where known.",
-            "Good contact data improves campaign recommendations over time.",
-        ],
-    },
-    "edit_contact": {
-        "title": "Edit Contact Guidance",
-        "items": [
-            "Update stakeholder details when role, relationship or responsibilities change.",
-            "Use Save to commit changes or Cancel to leave the record untouched.",
-            "Keep personal context concise and relevant to business outreach.",
-        ],
-    },
-    "view_contact": {
-        "title": "Contact Review Guidance",
-        "items": [
-            "Review account mapping, relationship context and timeline before creating outreach.",
-            "Use Edit Contact when stakeholder responsibility or relationship quality changes.",
-            "Timeline entries help explain how the relationship has developed.",
-        ],
-    },
-    "partners": {
-        "title": "Partners Guidance",
-        "items": [
-            "Use partners for organisations supporting account progression, such as GOSI, resellers, partners and hyperscalers.",
-            "Open a partner to manage its contacts and account relationships.",
-            "Partner contacts are separate from account contacts and use partner-specific role fields.",
-        ],
-    },
-    "view_partner": {
-        "title": "Partner Review Guidance",
-        "items": [
-            "Use this page to manage partner organisation details, partner contacts and account mappings.",
-            "Map partner contacts to the specific customer accounts they support.",
-            "Keep partner next actions current when they are helping progress an account.",
-        ],
-    },
-    "add_outreach": {
-        "title": "Add Outreach Guidance",
-        "items": [
-            "Use one record per outreach task or next action.",
-            "Activity Start Date is when the work begins. Activity Due Date is when the next action must be completed.",
-            "Leave Activity Update blank until there is a real update to record.",
-        ],
-    },
-    "edit_outreach": {
-        "title": "Edit Outreach Guidance",
-        "items": [
-            "Add an Activity Update before completing or closing a task.",
-            "Complete Only closes the current task without creating a follow-on.",
-            "Complete and Create Follow-on saves the current task as completed, then opens a new outreach form for the next step.",
-        ],
-    },
-    "view_outreach": {
-        "title": "Outreach Review Guidance",
-        "items": [
-            "Review the full task detail, contact, account, due date and activity update history.",
-            "Use Edit Outreach when the task needs a status, outcome or due date change.",
-            "Timeline entries help explain progress over time.",
-        ],
-    },
-    "campaign_builder": {
-        "title": "Campaign Builder Guidance",
-        "items": [
-            "Campaigns use one sales play only and can be generated for multiple contacts on the selected account.",
-            "Campaign start date cannot be earlier than today and generated tasks stay on or after the configured start date.",
-            "Auto-scheduling avoids weekends, configured non-working dates and duplicate time slots where possible.",
-        ],
-    },
-    "reports": {
-        "title": "Reports Guidance",
-        "items": [
-            "Use reports to review account coverage, contacts, outreach execution, task ownership and PG Bible export readiness.",
-            "Exports reflect the current fields used across the application.",
-            "PG Bible export requires the template to be available on the server.",
-        ],
-    },
-    "account_reports": {
-        "title": "Account Reports Guidance",
-        "items": [
-            "Review tiering, target ACV, business organisation and account coverage.",
-            "Use exports when you need to reconcile PipeFlow planning data outside the app.",
-            "Keep PG Bible Order and Pipeline Target values current for accurate reporting.",
-        ],
-    },
-    "contact_reports": {
-        "title": "Contact Reports Guidance",
-        "items": [
-            "Review stakeholder coverage by account, role and relationship quality.",
-            "Use this report to spot accounts with weak or missing contact coverage.",
-            "Export when contact data needs offline review.",
-        ],
-    },
-    "outreach_reports": {
-        "title": "Outreach Reports Guidance",
-        "items": [
-            "Review outreach volume, outcomes, campaigns, sales plays and due dates.",
-            "Use filters to narrow reporting by account, date range, outcome or activity type.",
-            "Compare outcomes to improve future campaign recommendations.",
-        ],
-    },
-    "task_reports": {
-        "title": "Task Reports Guidance",
-        "items": [
-            "Use SLA by Assignee to see who owns active, overdue and closed tasks.",
-            "Task timeliness is measured against the current assignee.",
-            "Filter by account, status or assignee before exporting.",
-        ],
-    },
-    "profile": {
-        "title": "Profile Guidance",
-        "items": [
-            "Keep your full name accurate because it appears in assignment fields and audit records.",
-            "Set work day start and end times so generated campaigns schedule inside your normal day.",
-            "Add non-working date blocks for holidays, travel or unavailable periods.",
-        ],
-    },
-    "admin_permissions": {
-        "title": "Admin Guidance",
-        "items": [
-            "This page is only visible to admin users. Non-admin users do not see Admin in the navigation.",
-            "Use user permissions to manage admin access, active users and profile details.",
-            "Use broadcasts to publish timed messages on login and the dashboard.",
-            "Admin actions are recorded in the admin audit trail.",
-        ],
-    },
-    "admin_users": {
-        "title": "Profile Administration Guidance",
-        "items": [
-            "This admin form is only available to users with admin permission.",
-            "Use this page to manage user identity, role and active status.",
-            "Deactivate users who should no longer access PipeFlow.",
-            "Password resets should only be used after confirming the user request.",
-        ],
-    },
-    "audit_trail": {
-        "title": "Audit Guidance",
-        "items": [
-            "Audit is an admin-only sub tab inside Admin and is hidden from non-admin users.",
-            "Use audit records to understand who changed what, when it changed and the values before and after.",
-            "Profile and permission changes include field labels for easier reading.",
-            "Use the newest entries first when investigating recent behaviour.",
-        ],
-    },
-    "global_search": {
-        "title": "Search Guidance",
-        "items": [
-            "Search across accounts, contacts, partners, outreach and timeline text.",
-            "Use specific account, contact, campaign or partner names for best results.",
-            "Open the matching record from the result list to review or edit it.",
-        ],
-    },
-    "release_notes": {
-        "title": "Release Notes Guidance",
-        "items": [
-            "Release notes show latest to earliest.",
-            "Open a release to review New, Enhanced and Fixed changes.",
-            "Version changes are only made when the release status is agreed.",
-        ],
-    },
-    "user_guide": {
-        "title": "User Guide Guidance",
-        "items": [
-            "Use this guide when you need workflow instructions or definitions.",
-            "Select a topic from the side menu to focus on one part of PipeFlow.",
-            "The guide reflects the current hosted workflow.",
-        ],
-    },
-    "user_guide_section": {
-        "title": "User Guide Guidance",
-        "items": [
-            "Review the selected guide topic for step-by-step workflow notes.",
-            "Use the side menu to move between related topics.",
-            "Return to the app page when you are ready to apply the guidance.",
-        ],
-    },
-    "team_page": {
-        "title": "Team Guidance",
-        "items": [
-            "Team administration is only visible to users with the required admin access.",
-            "Admins can invite users to the active team.",
-            "Invitations are created in-app and acknowledged before moving to Outreach Tasks.",
-            "Shared account access is managed from Outreach Tasks and account pages.",
-        ],
-    },
-    "tasks": {
-        "title": "Tasks Guidance",
-        "items": [
-            "Tasks are managed through the dashboard and Outreach Tasks page.",
-            "Use status and due date updates to keep accountability current.",
-            "Closed, Completed and Cancelled work is hidden from active views by default.",
-        ],
-    },
-    "login": {
-        "title": "Sign In Guidance",
-        "items": [
-            "Use your registered email and password to access your private PipeFlow workspace.",
-            "Broadcast messages from admins appear here when active.",
-            "Use reset password if you know your secret reset phrase.",
-        ],
-    },
-    "register": {
-        "title": "Registration Guidance",
-        "items": [
-            "Register with your work email, full name and password.",
-            "Choose a secret reset phrase you can remember because it is required for secure password reset.",
-            "Your profile creates a private workspace for your PipeFlow data.",
-        ],
-    },
-    "forgot_password": {
-        "title": "Password Reset Guidance",
-        "items": [
-            "Use this page when you need to reset your password without email.",
-            "You must know the secret reset phrase created during registration.",
-            "If you cannot remember the phrase, ask an administrator for help.",
-        ],
-    },
-    "reset_password": {
-        "title": "Reset Password Guidance",
-        "items": [
-            "Enter your email, reset phrase and new password.",
-            "The reset phrase is checked securely and is not shown to administrators.",
-            "After reset, sign in with the new password.",
-        ],
-    },
-}
-
-
-def page_instructions_for_endpoint(endpoint):
-    if not endpoint or endpoint.startswith("export_") or endpoint.startswith("health"):
-        return None
-    if endpoint in PAGE_INSTRUCTIONS:
-        return PAGE_INSTRUCTIONS[endpoint]
-    return {
-        "title": "Page Guidance",
-        "items": [
-            "Review the page details before making changes.",
-            "Use Save to commit updates or Cancel and Back buttons to leave without changing data.",
-            "Use the User Guide link if you need more detail about the workflow.",
-        ],
-    }
-
-
-@app.before_request
-def require_login_and_prepare_database():
-    public_endpoints = {"login", "register", "forgot_password", "reset_password", "release_notes", "user_guide", "user_guide_section", "storage_health", "static"}
-    if request.endpoint in public_endpoints:
-        return None
-
-    if not session.get("user_id"):
-        return redirect(url_for("login"))
-
-    initialise_database()
-    return None
-
-
-
-
-
-@app.route("/health/version")
-def version_health():
-    from db_compat import translate_sql
-    sample = "datetime(next_action_date || ' ' || IFNULL(next_action_time, '00:00')) < datetime('now', '-1 hour')"
-    lines = [
-        f"pipeflow_version={APP_VERSION}",
-        f"pipeflow_release_date={APP_RELEASE_DATE}",
-        f"pipeflow_server_build={APP_BUILD}",
-        f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
-        f"translation_check={translate_sql(sample)}",
-    ]
-    return Response("\n".join(lines), mimetype="text/plain")
-
-
-@app.route("/health/storage")
-def storage_health():
-    backend = "supabase_postgres" if using_postgres() else "temporary_sqlite"
-    lines = [
-        f"backend={backend}",
-        f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
-        f"user_id={session.get('user_id', '')}",
-        f"user_email={session.get('user_email', '')}",
-        f"workspace_schema={current_user_schema() if using_postgres() else ''}",
-    ]
-    return Response("\n".join(lines), mimetype="text/plain")
-
-
-@app.route("/release-notes")
-def release_notes():
-    sorted_release_notes = sorted(
-        RELEASE_NOTES,
-        key=lambda release: (
-            release.get("release_date", ""),
-            release.get("version", ""),
-        ),
-        reverse=True
-    )
-    return render_template(
-        "release_notes.html",
-        release_notes=sorted_release_notes,
-        current_version=APP_VERSION,
-        current_release_date=APP_RELEASE_DATE,
-    )
-
-
-@app.route("/user-guide")
-def user_guide():
-    return render_template(
-        "user_guide.html",
-        guide_sections=USER_GUIDE_SECTIONS,
-        selected_section=None,
-    )
-
-
-@app.route("/user-guide/<section_slug>")
-def user_guide_section(section_slug):
-    selected_section = None
-    selected_section = next(
-        (section for section in USER_GUIDE_SECTIONS if section["slug"] == section_slug),
-        None
-    )
-    if not selected_section:
-        return redirect(url_for("user_guide"))
-    return render_template(
-        "user_guide.html",
-        guide_sections=USER_GUIDE_SECTIONS,
-        selected_section=selected_section,
-    )
-
-
-@app.route("/login", methods=("GET", "POST"))
-def login():
-    error = ""
-    message = request.args.get("message", "")
-    if request.method == "POST":
-        user = authenticate_user(request.form.get("email", ""), request.form.get("password", ""))
-        if user:
-            session.clear()
-            session["user_id"] = user["id"]
-            session["user_email"] = user["email"]
-            session["user_name"] = user["full_name"]
-            session["workspace_schema"] = ensure_user_workspace_schema(user)
-            initialise_database()
-            connection = get_db_connection()
-            connection.execute(
-                """
-                UPDATE user_profile
-                SET full_name = ?,
-                    last_updated = CURRENT_TIMESTAMP
-                WHERE id = 1
-                """,
-                (user["full_name"],),
-            )
-            connection.commit()
-            connection.close()
-            return redirect(url_for("home"))
-        error = "Email or password was not recognised."
-
-    return render_template("login.html", error=error, message=message, broadcast_messages=list_broadcast_messages(active_only=True))
-
-
-@app.route("/forgot-password", methods=("GET", "POST"))
-def forgot_password():
-    error = ""
-    if request.method == "POST":
-        email = request.form.get("email", "")
-        reset_phrase = request.form.get("reset_phrase", "")
-        password = request.form.get("password", "")
-        error = reset_password_with_phrase(email, reset_phrase, password)
-        if not error:
-            return redirect(url_for("login", message="Password reset. Please sign in."))
-
-    return render_template("forgot_password.html", error=error)
-
-
-@app.route("/reset-password", methods=("GET", "POST"))
-def reset_password():
-    return redirect(url_for("forgot_password"))
-
-
-@app.route("/register", methods=("GET", "POST"))
-def register():
-    error = ""
-    if request.method == "POST":
-        user_id, error = create_user(
-            request.form.get("email", ""),
-            request.form.get("password", ""),
-            request.form.get("full_name", ""),
-            request.form.get("reset_phrase", ""),
-        )
-        if user_id:
-            session.clear()
-            session["user_id"] = user_id
-            session["user_email"] = request.form.get("email", "").strip().lower()
-            session["user_name"] = request.form.get("full_name", "").strip()
-            session["workspace_schema"] = ensure_user_workspace_schema(get_user_for_admin(user_id))
-            initialise_database()
-            connection = get_db_connection()
-            connection.execute(
-                """
-                UPDATE user_profile
-                SET full_name = ?,
-                    last_updated = CURRENT_TIMESTAMP
-                WHERE id = 1
-                """,
-                (session["user_name"],),
-            )
-            connection.commit()
-            connection.close()
-            return redirect(url_for("home"))
-
-    return render_template("register.html", error=error)
-
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect(url_for("login"))
-
-
-def render_admin_permissions():
-    return render_template(
-        "admin_permissions.html",
-        users=list_users(),
-        broadcast_messages=list_broadcast_messages(active_only=False),
-        audit_retention_enabled=audit_retention_enabled(),
-        message=request.args.get("message", ""),
-        error=request.args.get("error", "")
-    )
-
-
-@app.route("/admin/users")
-@admin_required
-def admin_users():
-    return redirect(url_for(
-        "admin_permissions",
-        message=request.args.get("message", ""),
-        error=request.args.get("error", "")
-    ))
-
-
-@app.route("/admin/permissions")
-@admin_required
-def admin_permissions():
-    return render_admin_permissions()
-
-
-@app.route("/admin/broadcasts/add", methods=("POST",))
-@admin_required
-def admin_add_broadcast():
-    error = create_broadcast_message(
-        request.form.get("title", ""),
-        request.form.get("message", ""),
-        request.form.get("severity", "info"),
-        request.form.get("start_at", ""),
-        request.form.get("stop_at", ""),
-        bool(request.form.get("is_active"))
-    )
-    if error:
-        return redirect(url_for("admin_users", error=error))
-    return redirect(url_for("admin_users", message="Broadcast message added."))
-
-
-@app.route("/admin/broadcasts/<int:message_id>/update", methods=("POST",))
-@admin_required
-def admin_update_broadcast(message_id):
-    error = update_broadcast_message(
-        message_id,
-        request.form.get("title", ""),
-        request.form.get("message", ""),
-        request.form.get("severity", "info"),
-        request.form.get("start_at", ""),
-        request.form.get("stop_at", ""),
-        bool(request.form.get("is_active"))
-    )
-    if error:
-        return redirect(url_for("admin_users", error=error))
-    return redirect(url_for("admin_users", message="Broadcast message updated."))
-
-
-@app.route("/admin/broadcasts/<int:message_id>/deactivate", methods=("POST",))
-@admin_required
-def admin_deactivate_broadcast(message_id):
-    set_broadcast_message_active(message_id, False)
-    return redirect(url_for("admin_users", message="Broadcast message hidden."))
-
-
-@app.route("/admin/broadcasts/<int:message_id>/reactivate", methods=("POST",))
-@admin_required
-def admin_reactivate_broadcast(message_id):
-    set_broadcast_message_active(message_id, True)
-    return redirect(url_for("admin_users", message="Broadcast message restored."))
-
-
-@app.route("/admin/broadcasts/<int:message_id>/delete", methods=("POST",))
-@admin_required
-def admin_delete_broadcast(message_id):
-    delete_broadcast_message(message_id)
-    return redirect(url_for("admin_users", message="Broadcast message deleted."))
-
-
-@app.route("/admin/audit-retention", methods=("POST",))
-@admin_required
-def admin_update_audit_retention():
-    enabled = request.form.get("audit_retention_enabled") == "1"
-    set_admin_setting("audit_retention_enabled", "1" if enabled else "0")
-    log_admin_audit(
-        current_user(),
-        "Audit retention setting updated",
-        "Admin setting",
-        "Audit auto-delete",
-        f"Audit auto-delete older than 6 months set to {'Auto-delete On' if enabled else 'Auto-delete Off'}."
-    )
-    if enabled:
-        cleanup_audit_retention()
-    return redirect(url_for("admin_users", message=f"Audit auto-delete is now {'Auto-delete On' if enabled else 'Auto-delete Off'}."))
-
-
-@app.route("/admin/account-fields/add", methods=("POST",))
-@admin_required
-def admin_add_account_field():
-    error = create_account_field_definition(
-        request.form.get("field_label", ""),
-        request.form.get("field_type", "text"),
-        bool(request.form.get("is_required"))
-    )
-    if error:
-        return redirect(url_for("admin_users", error=error))
-    log_admin_audit(
-        current_user(),
-        "Account field added",
-        "Account field",
-        request.form.get("field_label", ""),
-        f"Type: {request.form.get('field_type', 'text')}; Required: {'Yes' if request.form.get('is_required') else 'No'}"
-    )
-    return redirect(url_for("admin_users", message="Account field added."))
-
-
-@app.route("/admin/account-fields/<int:field_id>/update", methods=("POST",))
-@admin_required
-def admin_update_account_field(field_id):
-    before = get_account_field_definition(field_id)
-    error = update_account_field_definition(
-        field_id,
-        request.form.get("field_label", ""),
-        request.form.get("field_type", "text"),
-        bool(request.form.get("is_required")),
-        request.form.get("sort_order", "0")
-    )
-    if error:
-        return redirect(url_for("admin_users", error=error))
-    before_label = before["field_label"] if before else "Unknown field"
-    detail = (
-        f"Label: {before_label} to {request.form.get('field_label', '')}; "
-        f"Type: {request.form.get('field_type', 'text')}; "
-        f"Required: {'Yes' if request.form.get('is_required') else 'No'}; "
-        f"Order: {request.form.get('sort_order', '0')}"
-    )
-    log_admin_audit(current_user(), "Account field updated", "Account field", request.form.get("field_label", ""), detail)
-    return redirect(url_for("admin_users", message="Account field updated."))
-
-
-@app.route("/admin/account-fields/<int:field_id>/deactivate", methods=("POST",))
-@admin_required
-def admin_deactivate_account_field(field_id):
-    field = get_account_field_definition(field_id)
-    set_account_field_active(field_id, False)
-    log_admin_audit(
-        current_user(),
-        "Account field removed",
-        "Account field",
-        field["field_label"] if field else f"Field {field_id}",
-        "Field hidden from account forms. Existing values are retained."
-    )
-    return redirect(url_for("admin_users", message="Account field removed from account forms."))
-
-
-@app.route("/admin/account-fields/<int:field_id>/reactivate", methods=("POST",))
-@admin_required
-def admin_reactivate_account_field(field_id):
-    field = get_account_field_definition(field_id)
-    set_account_field_active(field_id, True)
-    log_admin_audit(
-        current_user(),
-        "Account field restored",
-        "Account field",
-        field["field_label"] if field else f"Field {field_id}",
-        "Field restored to account forms."
-    )
-    return redirect(url_for("admin_users", message="Account field restored to account forms."))
-
-
-@app.route("/admin/users/<int:user_id>/identity", methods=("POST",))
-@admin_required
-def admin_update_user_identity(user_id):
-    user = get_user_for_admin(user_id)
-    if not user:
-        return redirect(url_for("admin_users", error="Profile was not found."))
-    old_email = user["email"]
-    old_name = user["full_name"]
-    old_team = user["team"] if "team" in user.keys() and user["team"] else ""
-    new_email = request.form.get("email", "")
-    new_name = request.form.get("full_name", "")
-    new_team = request.form.get("team", "")
-    error = update_user_identity(user_id, new_email, new_name, new_team)
-    if error:
-        return redirect(url_for("admin_users", error=error))
-
-    changes = []
-    if old_name != new_name.strip():
-        changes.append(f"Name changed from {old_name} to {new_name.strip()}")
-    if old_email != new_email.strip().lower():
-        changes.append(f"Email changed from {old_email} to {new_email.strip().lower()}")
-    if old_team != new_team.strip():
-        changes.append(f"Team changed from {old_team or 'Not set'} to {new_team.strip() or 'Not set'}")
-    log_admin_audit(
-        current_user(),
-        "Profile details updated",
-        "User",
-        new_email.strip().lower(),
-        "; ".join(changes) if changes else "Profile details saved with no visible changes."
-    )
-    return redirect(url_for("admin_users", message="Profile details updated."))
-
-
-@app.route("/admin/users/<int:user_id>/deactivate", methods=("POST",))
-@admin_required
-def admin_deactivate_user(user_id):
-    if user_id == session.get("user_id"):
-        return redirect(url_for("admin_users", error="You cannot deactivate your own admin profile."))
-    user = get_user_for_admin(user_id)
-    set_user_active(user_id, False)
-    log_admin_audit(
-        current_user(),
-        "Profile deactivated",
-        "User",
-        user["email"] if user else f"User {user_id}",
-        "User sign-in access was paused."
-    )
-    return redirect(url_for("admin_users", message="Profile deactivated."))
-
-
-@app.route("/admin/users/<int:user_id>/reactivate", methods=("POST",))
-@admin_required
-def admin_reactivate_user(user_id):
-    user = get_user_for_admin(user_id)
-    set_user_active(user_id, True)
-    log_admin_audit(
-        current_user(),
-        "Profile reactivated",
-        "User",
-        user["email"] if user else f"User {user_id}",
-        "User sign-in access was restored."
-    )
-    return redirect(url_for("admin_users", message="Profile reactivated."))
-
-
-@app.route("/admin/users/<int:user_id>/role", methods=("POST",))
-@admin_required
-def admin_update_user_role(user_id):
-    if user_id == session.get("user_id"):
-        return redirect(url_for("admin_users", error="You cannot change your own admin role."))
-    user = get_user_for_admin(user_id)
-    old_role = user["role"] if user else "unknown"
-    new_role = request.form.get("role", "")
-    error = set_user_role(user_id, new_role)
-    if error:
-        return redirect(url_for("admin_users", error=error))
-    log_admin_audit(
-        current_user(),
-        "Role updated",
-        "User",
-        user["email"] if user else f"User {user_id}",
-        f"Role changed from {old_role} to {new_role}."
-    )
-    return redirect(url_for("admin_users", message="Role updated."))
-
-
-@app.route("/admin/users/<int:user_id>/reset-password", methods=("POST",))
-@admin_required
-def admin_reset_user_password(user_id):
-    user = get_user_for_admin(user_id)
-    error = reset_user_password(user_id, request.form.get("password", ""))
-    if error:
-        return redirect(url_for("admin_users", error=error))
-    log_admin_audit(
-        current_user(),
-        "Password reset",
-        "User",
-        user["email"] if user else f"User {user_id}",
-        "Admin reset this user's password."
-    )
-    return redirect(url_for("admin_users", message="Password reset."))
+    return {"dropdown_values": DROPDOWN_VALUES}
 
 
 def add_timeline_entry(connection, related_type, related_id, entry_type, entry_text, created_by="Melissa"):
@@ -1247,182 +69,6 @@ def add_timeline_entry(connection, related_type, related_id, entry_type, entry_t
     ))
 
 
-def audit_actor():
-    user = current_user()
-    if not user:
-        return {"id": None, "name": session.get("user_name", ""), "email": session.get("user_email", "")}
-    return {
-        "id": user["id"],
-        "name": user["full_name"],
-        "email": user["email"],
-    }
-
-
-def audit_entry(connection, entity_type, entity_id, action_type, field_name="", field_label="", value_from="", value_to=""):
-    actor = audit_actor()
-    connection.execute(
-        """
-        INSERT INTO audit_entries (
-            entity_type,
-            entity_id,
-            action_type,
-            field_name,
-            field_label,
-            value_from,
-            value_to,
-            actor_user_id,
-            actor_name,
-            actor_email
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            entity_type,
-            entity_id,
-            action_type,
-            field_name,
-            field_label,
-            "" if value_from is None else str(value_from),
-            "" if value_to is None else str(value_to),
-            actor["id"],
-            actor["name"],
-            actor["email"],
-        ),
-    )
-
-
-def audit_record_create(connection, entity_type, entity_id, values, labels=None):
-    labels = labels or {}
-    for field_name, value in values.items():
-        if value not in (None, ""):
-            audit_entry(
-                connection,
-                entity_type,
-                entity_id,
-                "Create",
-                field_name,
-                labels.get(field_name, field_name),
-                "",
-                value,
-            )
-
-
-def audit_record_update(connection, entity_type, entity_id, existing_record, new_values, labels=None):
-    labels = labels or {}
-    for field_name, new_value in new_values.items():
-        old_value = existing_record[field_name] if existing_record and existing_record[field_name] is not None else ""
-        new_value = new_value if new_value is not None else ""
-        if str(old_value) != str(new_value):
-            audit_entry(
-                connection,
-                entity_type,
-                entity_id,
-                "Update",
-                field_name,
-                labels.get(field_name, field_name),
-                old_value,
-                new_value,
-            )
-
-
-def audit_record_delete(connection, entity_type, entity_id, label=""):
-    audit_entry(connection, entity_type, entity_id, "Delete", "record", "Record", label, "")
-
-
-def current_user_can_delete_partner(partner):
-    user = current_user()
-    if not user or not partner:
-        return False
-    if user["role"] == "admin":
-        return True
-    submitted_by_user_id = partner["submitted_by_user_id"] if "submitted_by_user_id" in partner.keys() else None
-    submitted_by_email = partner["submitted_by_email"] if "submitted_by_email" in partner.keys() else None
-    return (
-        submitted_by_user_id == user["id"]
-        or (submitted_by_email and submitted_by_email == user["email"])
-    )
-
-
-def delete_current_profile_workspace_data(connection):
-    tables = [
-        "audit_entries",
-        "timeline_entries",
-        "account_custom_values",
-        "account_partners",
-        "partner_contacts",
-        "outreach",
-        "contacts",
-        "partners",
-        "accounts",
-    ]
-
-    for table in tables:
-        connection.execute(f"DELETE FROM {table}")
-
-    connection.execute(
-        """
-        UPDATE user_profile
-        SET team = '',
-            job_title = '',
-            last_updated = CURRENT_TIMESTAMP
-        WHERE id = 1
-        """
-    )
-
-
-def selected_record_ids(field_name="selected_ids"):
-    ids = []
-    for value in request.form.getlist(field_name):
-        try:
-            ids.append(int(value))
-        except (TypeError, ValueError):
-            continue
-    return ids
-
-
-def delete_account_records(connection, account_ids):
-    for account_id in account_ids:
-        account = connection.execute("SELECT account_name FROM accounts WHERE id = ?", (account_id,)).fetchone()
-        audit_record_delete(connection, "account", account_id, account["account_name"] if account else "")
-        connection.execute("DELETE FROM timeline_entries WHERE related_type = 'account' AND related_id = ?", (account_id,))
-        connection.execute("DELETE FROM timeline_entries WHERE related_type = 'contact' AND related_id IN (SELECT id FROM contacts WHERE account_id = ?)", (account_id,))
-        connection.execute("DELETE FROM timeline_entries WHERE related_type = 'outreach' AND related_id IN (SELECT id FROM outreach WHERE account_id = ?)", (account_id,))
-        connection.execute("DELETE FROM account_partners WHERE account_id = ?", (account_id,))
-        connection.execute("DELETE FROM account_custom_values WHERE account_id = ?", (account_id,))
-        connection.execute("DELETE FROM partner_contacts WHERE account_id = ?", (account_id,))
-        connection.execute("DELETE FROM outreach WHERE account_id = ?", (account_id,))
-        connection.execute("DELETE FROM contacts WHERE account_id = ?", (account_id,))
-        connection.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
-
-
-def delete_contact_records(connection, contact_ids):
-    for contact_id in contact_ids:
-        contact = connection.execute("SELECT name FROM contacts WHERE id = ?", (contact_id,)).fetchone()
-        audit_record_delete(connection, "contact", contact_id, contact["name"] if contact else "")
-        connection.execute("DELETE FROM timeline_entries WHERE related_type = 'contact' AND related_id = ?", (contact_id,))
-        connection.execute("DELETE FROM outreach WHERE contact_id = ?", (contact_id,))
-        connection.execute("DELETE FROM contacts WHERE id = ?", (contact_id,))
-
-
-def delete_outreach_records(connection, outreach_ids):
-    for outreach_id in outreach_ids:
-        outreach = connection.execute("SELECT subject FROM outreach WHERE id = ?", (outreach_id,)).fetchone()
-        audit_record_delete(connection, "outreach", outreach_id, outreach["subject"] if outreach else "")
-        connection.execute("DELETE FROM timeline_entries WHERE related_type = 'outreach' AND related_id = ?", (outreach_id,))
-        connection.execute("DELETE FROM outreach WHERE id = ?", (outreach_id,))
-
-
-def delete_partner_records(connection, partner_ids):
-    for partner_id in partner_ids:
-        partner = connection.execute("SELECT * FROM partners WHERE id = ?", (partner_id,)).fetchone()
-        if not current_user_can_delete_partner(partner):
-            continue
-        audit_record_delete(connection, "partner", partner_id, partner["partner_name"] if partner else "")
-        connection.execute("DELETE FROM account_partners WHERE partner_id = ?", (partner_id,))
-        connection.execute("DELETE FROM partner_contacts WHERE partner_id = ?", (partner_id,))
-        connection.execute("DELETE FROM partners WHERE id = ?", (partner_id,))
-
-
 def build_change_log(existing_record, new_values, labels):
     changes = []
 
@@ -1434,66 +80,6 @@ def build_change_log(existing_record, new_values, labels):
             label = labels.get(field_name, field_name)
             changes.append(f"{label} changed from '{old_value}' to '{new_value}'")
 
-    return changes
-
-
-def account_custom_field_payload(active_only=True):
-    return [dict(field) for field in list_account_field_definitions(active_only=active_only)]
-
-
-def load_account_custom_values(connection, account_id):
-    rows = connection.execute(
-        """
-        SELECT field_key, field_value
-        FROM account_custom_values
-        WHERE account_id = ?
-        """,
-        (account_id,),
-    ).fetchall()
-    return {row["field_key"]: row["field_value"] for row in rows}
-
-
-def save_account_custom_values(connection, account_id, fields, form):
-    for field in fields:
-        field_key = field["field_key"]
-        value = (form.get(f"custom_{field_key}") or "").strip()
-        existing = connection.execute(
-            """
-            SELECT id
-            FROM account_custom_values
-            WHERE account_id = ?
-              AND field_key = ?
-            """,
-            (account_id, field_key),
-        ).fetchone()
-        if existing:
-            connection.execute(
-                """
-                UPDATE account_custom_values
-                SET field_value = ?,
-                    last_updated = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (value, existing["id"]),
-            )
-        else:
-            connection.execute(
-                """
-                INSERT INTO account_custom_values (account_id, field_key, field_value)
-                VALUES (?, ?, ?)
-                """,
-                (account_id, field_key, value),
-            )
-
-
-def build_custom_field_changes(fields, old_values, form):
-    changes = []
-    for field in fields:
-        key = field["field_key"]
-        old_value = old_values.get(key) or ""
-        new_value = (form.get(f"custom_{key}") or "").strip()
-        if str(old_value) != str(new_value):
-            changes.append(f"{field['field_label']} changed from '{old_value}' to '{new_value}'")
     return changes
 
 
@@ -1512,27 +98,102 @@ def get_or_create_partner(connection, partner_name):
     if partner:
         return partner["id"]
 
-    actor = audit_actor()
     cursor = connection.execute("""
-        INSERT INTO partners (
-            partner_name,
-            submitted_by_user_id,
-            submitted_by_email,
-            submitted_by_name
-        )
-        VALUES (?, ?, ?, ?)
-    """, (partner_name, actor["id"], actor["email"], actor["name"]))
+        INSERT INTO partners (partner_name)
+        VALUES (?)
+    """, (partner_name,))
 
     return cursor.lastrowid
 
 
-def normalise_partner_website(website):
-    website = (website or "").strip()
-    if not website:
-        return ""
-    if re.match(r"^(https?://|www\.)[A-Za-z0-9][A-Za-z0-9.-]*(\.[A-Za-z]{2,})(/.*)?$", website):
-        return website
-    return None
+def is_closed_task_status(status):
+    return (status or "").strip() in CLOSED_TASK_STATUSES
+
+
+def task_rag_class(row):
+    if not row["next_action_date"]:
+        return "task-rag-none"
+
+    next_action_time = row["next_action_time"] or "00:00"
+    try:
+        due_at = datetime.strptime(
+            f"{row['next_action_date']} {next_action_time}",
+            "%Y-%m-%d %H:%M"
+        )
+    except ValueError:
+        return "task-rag-none"
+
+    now = datetime.now()
+    if due_at < now:
+        return "task-rag-red"
+    if due_at <= now + timedelta(days=1):
+        return "task-rag-amber"
+    return "task-rag-green"
+
+
+def distinct_sales_plays(connection):
+    rows = connection.execute("""
+        SELECT DISTINCT TRIM(sales_play) AS sales_play
+        FROM outreach
+        WHERE sales_play IS NOT NULL
+          AND TRIM(sales_play) != ''
+        ORDER BY LOWER(TRIM(sales_play))
+    """).fetchall()
+    return [row["sales_play"] for row in rows]
+
+
+def create_partner_outreach_task(
+    connection,
+    account_id,
+    partner_name,
+    next_action,
+    next_action_date=None,
+    next_action_time=None,
+    assigned_to=None,
+    subject_detail=None,
+):
+    next_action = (next_action or "").strip()
+    if not account_id or not next_action:
+        return
+
+    subject = f"Partner next action: {partner_name or 'Partner'}"
+    if subject_detail:
+        subject = f"{subject} - {subject_detail}"
+
+    connection.execute("""
+        INSERT INTO outreach (
+            account_id,
+            campaign,
+            sales_play,
+            activity_type,
+            activity_date,
+            activity_time,
+            subject,
+            notes,
+            outcome,
+            next_action,
+            next_action_date,
+            next_action_time,
+            task_status,
+            assigned_to
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        account_id,
+        "Partner",
+        "Partner engagement",
+        "Partner Touchpoint",
+        datetime.now().date().isoformat(),
+        datetime.now().strftime("%H:%M"),
+        subject,
+        "Created from partner relationship next action.",
+        "Follow-up Required",
+        next_action,
+        next_action_date,
+        next_action_time,
+        "Not Started",
+        assigned_to or ""
+    ))
 
 
 def calculate_account_health(contact_count, outreach_count, meeting_count, overdue_followups, latest_outreach_date):
@@ -1571,367 +232,49 @@ def calculate_account_health(contact_count, outreach_count, meeting_count, overd
     }
 
 
-def campaign_step_templates():
+def build_pg_campaign_steps(pg_week_start):
     return [
         {
+            "offset_days": -28,
             "campaign": "VITO",
-            "activity_type": "VITO",
+            "activity_type": "Email Sent",
             "subject_prefix": "VITO outreach",
             "next_action": "Send VITO-led message",
             "time": "09:00"
         },
         {
+            "offset_days": -23,
             "campaign": "LinkedIn",
-            "activity_type": "LinkedIn",
+            "activity_type": "LinkedIn Message",
             "subject_prefix": "LinkedIn outreach",
             "next_action": "Send LinkedIn connection or follow-up message",
             "time": "10:00"
         },
         {
-            "campaign": "White Paper / Webinar",
-            "activity_type": "White Paper / Webinar",
+            "offset_days": -18,
+            "campaign": "Content and Thought Leadership Sharing",
+            "activity_type": "Follow-up",
             "subject_prefix": "Content share",
             "next_action": "Share relevant content or thought leadership",
             "time": "11:00"
         },
         {
-            "campaign": "Phone",
-            "activity_type": "Phone",
+            "offset_days": -12,
+            "campaign": "Calls",
+            "activity_type": "Call",
             "subject_prefix": "Phone outreach",
             "next_action": "Call contact and progress the sales play",
             "time": "14:00"
         },
         {
+            "offset_days": -7,
             "campaign": "Events",
-            "activity_type": "Events",
+            "activity_type": "Event Touchpoint",
             "subject_prefix": "Event search and attendance trigger",
             "next_action": "Search for relevant events to attend or reference",
             "time": "15:00"
         }
     ]
-
-
-def normalise_match_text(value):
-    return (value or "").strip().lower()
-
-
-def build_campaign_success_context(connection, account_id, contact_ids, sales_play):
-    account = connection.execute("""
-        SELECT account_name, industry, business_unit, account_tier, country, city
-        FROM accounts
-        WHERE id = ?
-    """, (account_id,)).fetchone()
-
-    if contact_ids:
-        placeholders = ",".join("?" for _ in contact_ids)
-        selected_contacts = connection.execute(f"""
-            SELECT category, bmc_relationship, job_title, org_dept,
-                   responsibilities, characteristics, background,
-                   personal_interests, personal_win, education, social_media,
-                   additional_notes
-            FROM contacts
-            WHERE id IN ({placeholders})
-        """, contact_ids).fetchall()
-    else:
-        selected_contacts = []
-
-    industry = normalise_match_text(account["industry"] if account else "")
-    business_unit = normalise_match_text(account["business_unit"] if account else "")
-    account_tier = normalise_match_text(account["account_tier"] if account else "")
-    sales_play_text = normalise_match_text(sales_play)
-    contact_values = set()
-    contact_text = []
-    for contact in selected_contacts:
-        for field in (
-            "category",
-            "bmc_relationship",
-            "job_title",
-            "org_dept",
-            "responsibilities",
-            "characteristics",
-            "background",
-            "personal_interests",
-            "personal_win",
-            "education",
-            "social_media",
-            "additional_notes",
-        ):
-            value = normalise_match_text(contact[field])
-            if value:
-                contact_values.add(value)
-                contact_text.extend(value.split())
-
-    contact_keywords = {
-        word for word in contact_text
-        if len(word) >= 5
-    }
-
-    historical_rows = connection.execute("""
-        SELECT
-            outreach.activity_type,
-            outreach.sales_play,
-            outreach.outcome,
-            outreach.task_status,
-            accounts.industry,
-            accounts.business_unit,
-            accounts.account_tier,
-            contacts.category,
-            contacts.bmc_relationship,
-            contacts.job_title,
-            contacts.org_dept,
-            contacts.responsibilities,
-            contacts.characteristics,
-            contacts.background,
-            contacts.personal_interests,
-            contacts.personal_win,
-            contacts.education,
-            contacts.social_media,
-            contacts.additional_notes
-        FROM outreach
-        LEFT JOIN accounts ON outreach.account_id = accounts.id
-        LEFT JOIN contacts ON outreach.contact_id = contacts.id
-        WHERE outreach.activity_type IS NOT NULL
-          AND outreach.activity_type != ''
-          AND outreach.outcome IS NOT NULL
-          AND outreach.outcome != ''
-    """).fetchall()
-
-    template_by_type = {
-        template["activity_type"]: template
-        for template in campaign_step_templates()
-    }
-    scores = {activity_type: 0 for activity_type in template_by_type}
-    evidence = {activity_type: {"positive": 0, "meeting": 0, "matched": 0} for activity_type in template_by_type}
-
-    for row in historical_rows:
-        activity_type = row["activity_type"]
-        if activity_type not in scores:
-            continue
-
-        row_score = 1
-        if normalise_match_text(row["sales_play"]) == sales_play_text:
-            row_score += 8
-        if industry and normalise_match_text(row["industry"]) == industry:
-            row_score += 4
-        if business_unit and normalise_match_text(row["business_unit"]) == business_unit:
-            row_score += 3
-        if account_tier and normalise_match_text(row["account_tier"]) == account_tier:
-            row_score += 2
-
-        row_contact_values = {
-            normalise_match_text(row[field])
-            for field in (
-                "category",
-                "bmc_relationship",
-                "job_title",
-                "org_dept",
-            )
-            if normalise_match_text(row[field])
-        }
-        row_contact_text = " ".join(
-            normalise_match_text(row[field])
-            for field in (
-                "responsibilities",
-                "characteristics",
-                "background",
-                "personal_interests",
-                "personal_win",
-                "education",
-                "social_media",
-                "additional_notes",
-            )
-            if normalise_match_text(row[field])
-        )
-        if contact_values.intersection(row_contact_values):
-            row_score += 4
-        if contact_keywords and contact_keywords.intersection(set(row_contact_text.split())):
-            row_score += 2
-
-        if row["outcome"] in POSITIVE_OUTCOMES:
-            row_score += 8
-            evidence[activity_type]["positive"] += 1
-        if row["outcome"] == "Meeting Booked" or activity_type == "Meeting":
-            row_score += 5
-            evidence[activity_type]["meeting"] += 1
-        if row["outcome"] in NEGATIVE_OUTCOMES:
-            row_score -= 4
-
-        if row_score > 1:
-            evidence[activity_type]["matched"] += 1
-        scores[activity_type] += row_score
-
-    ranked_templates = sorted(
-        campaign_step_templates(),
-        key=lambda template: (-scores.get(template["activity_type"], 0), template["activity_type"])
-    )
-    top_templates = [
-        template for template in ranked_templates
-        if scores.get(template["activity_type"], 0) > 0
-    ] or campaign_step_templates()
-
-    strongest = top_templates[0]["activity_type"] if top_templates else "standard sequence"
-    matched_rows = sum(item["matched"] for item in evidence.values())
-    if matched_rows:
-        summary = (
-            f"Historic learning used: {matched_rows} matching signal(s). "
-            f"Strongest activity for this context: {strongest}. "
-            f"Context considered: sales play, industry, account tier, business org, contact role, relationship and personal notes."
-        )
-    else:
-        summary = (
-            "Historic learning used: no matching prior outcomes yet. "
-            "Using the standard PipeFlow activity sequence and this campaign will train future recommendations."
-        )
-
-    return {
-        "account": account,
-        "templates": top_templates,
-        "summary": summary,
-        "scores": scores,
-    }
-
-
-def evenly_spaced_dates(start_date, end_date, task_count):
-    days = (end_date - start_date).days
-    if task_count <= 1 or days <= 0:
-        return [start_date]
-
-    dates = []
-    used = set()
-    for index in range(task_count):
-        offset = round((days * index) / (task_count - 1))
-        candidate = start_date + timedelta(days=offset)
-        while candidate in used and candidate < end_date:
-            candidate += timedelta(days=1)
-        while candidate in used and candidate > start_date:
-            candidate -= timedelta(days=1)
-        used.add(candidate)
-        dates.append(candidate)
-    return sorted(dates)
-
-
-def parse_time_value(value, fallback):
-    try:
-        return datetime.strptime(value or fallback, "%H:%M").time()
-    except ValueError:
-        return datetime.strptime(fallback, "%H:%M").time()
-
-
-def parse_non_working_blocks(rows):
-    blocks = []
-    for row in rows or []:
-        try:
-            start = datetime.strptime(row["start_date"], "%Y-%m-%d").date()
-            end = datetime.strptime(row["end_date"], "%Y-%m-%d").date()
-        except (KeyError, TypeError, ValueError):
-            continue
-        if end < start:
-            start, end = end, start
-        blocks.append((start, end))
-    return blocks
-
-
-def legacy_profile_non_working_block(profile):
-    if not profile:
-        return []
-    try:
-        start = datetime.strptime(profile["non_working_start_date"], "%Y-%m-%d").date() if profile["non_working_start_date"] else None
-        end = datetime.strptime(profile["non_working_end_date"], "%Y-%m-%d").date() if profile["non_working_end_date"] else None
-    except (KeyError, TypeError, ValueError):
-        return []
-    if not start:
-        return []
-    end = end or start
-    if end < start:
-        start, end = end, start
-    return [(start, end)]
-
-
-def is_non_working_date(action_date, profile=None, non_working_blocks=None):
-    if action_date.weekday() >= 5:
-        return True
-    blocks = list(non_working_blocks or []) + legacy_profile_non_working_block(profile)
-    for start, end in blocks:
-        if start <= action_date <= end:
-            return True
-    return False
-
-
-def next_working_date(action_date, campaign_start, campaign_end, profile=None, non_working_blocks=None):
-    candidate = action_date
-    while candidate <= campaign_end and is_non_working_date(candidate, profile, non_working_blocks):
-        candidate += timedelta(days=1)
-    if candidate <= campaign_end:
-        return candidate
-    candidate = action_date
-    while candidate >= campaign_start and is_non_working_date(candidate, profile, non_working_blocks):
-        candidate -= timedelta(days=1)
-    if candidate >= campaign_start:
-        return candidate
-    return action_date
-
-
-def available_campaign_time(action_date, preferred_time, profile=None, reserved_slots=None):
-    reserved_slots = reserved_slots or set()
-    start_time = parse_time_value(profile["work_day_start"] if profile and profile["work_day_start"] else "", "09:00")
-    end_time = parse_time_value(profile["work_day_end"] if profile and profile["work_day_end"] else "", "17:00")
-    preferred = parse_time_value(preferred_time, "09:00")
-    current_dt = datetime.combine(action_date, max(start_time, min(preferred, end_time)))
-    end_dt = datetime.combine(action_date, end_time)
-    while current_dt <= end_dt:
-        slot = (action_date.isoformat(), current_dt.strftime("%H:%M"))
-        if slot not in reserved_slots:
-            reserved_slots.add(slot)
-            return current_dt.strftime("%H:%M")
-        current_dt += timedelta(minutes=15)
-    fallback = datetime.combine(action_date, start_time)
-    slot = (action_date.isoformat(), fallback.strftime("%H:%M"))
-    reserved_slots.add(slot)
-    return fallback.strftime("%H:%M")
-
-
-def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per_week, templates=None, profile=None, reserved_slots=None, non_working_blocks=None):
-    templates = templates or campaign_step_templates()
-    total_tasks = max(1, int(total_tasks or 1))
-    times_per_week = max(1, min(int(times_per_week or 1), 7))
-    schedule = []
-    initial_vito_template = next(
-        (template for template in campaign_step_templates() if template["activity_type"] == "VITO"),
-        {
-            "campaign": "VITO",
-            "activity_type": "VITO",
-            "subject_prefix": "VITO outreach",
-            "next_action": "Send VITO-led message",
-            "time": "09:00",
-        },
-    )
-
-    for index, action_date in enumerate(evenly_spaced_dates(campaign_start, campaign_end, total_tasks)):
-        if action_date < campaign_start:
-            action_date = campaign_start
-        if action_date > campaign_end:
-            action_date = campaign_end
-        action_date = next_working_date(action_date, campaign_start, campaign_end, profile, non_working_blocks)
-        if index == 0:
-            template = dict(initial_vito_template)
-        else:
-            template = dict(templates[index % len(templates)])
-            if template.get("activity_type") in ("VITO", "Email"):
-                template["campaign"] = "Follow-up"
-                template["activity_type"] = "Follow-up"
-                template["subject_prefix"] = "Follow-up email"
-                template["next_action"] = "Send follow-up email"
-                template["time"] = template.get("time") or "09:00"
-        template["action_date"] = action_date
-        template["time"] = available_campaign_time(action_date, template.get("time", "09:00"), profile, reserved_slots)
-        template["times_per_week"] = times_per_week
-        schedule.append(template)
-
-    return schedule
-
-
-def build_pg_campaign_steps(pg_week_start):
-    return build_campaign_schedule(pg_week_start - timedelta(days=28), pg_week_start - timedelta(days=1), 8, 2)
 
 
 POSITIVE_OUTCOMES = (
@@ -1945,15 +288,6 @@ NEGATIVE_OUTCOMES = (
     "Negative Response",
     "Not Relevant",
 )
-
-CLOSED_TASK_STATUSES = (
-    "Closed",
-    "Completed",
-)
-
-
-def is_closed_task_status(status):
-    return (status or "").strip() in CLOSED_TASK_STATUSES
 
 
 def score_learning_row(row):
@@ -1992,87 +326,6 @@ def add_learning_score(rows):
     return scored_rows
 
 
-def build_execution_insights(ai_insights, learning_insights):
-    combined = []
-    for insight in ai_insights:
-        combined.append({
-            "source": "AI Insight",
-            "category": insight.get("type", "Insight"),
-            "title": insight.get("title", ""),
-            "message": insight.get("message", ""),
-            "action": insight.get("message", ""),
-            "link": insight.get("link", url_for("home")),
-            "priority": insight.get("severity", "medium"),
-        })
-
-    for insight in learning_insights:
-        combined.append({
-            "source": "Campaign Learning",
-            "category": insight.get("signal", "Learning"),
-            "title": insight.get("title", ""),
-            "message": insight.get("message", ""),
-            "action": insight.get("action", ""),
-            "link": insight.get("link", url_for("campaign_builder")),
-            "priority": "learning",
-        })
-
-    priority_order = {
-        "high": 1,
-        "medium": 2,
-        "learning": 3,
-        "positive": 4,
-    }
-    combined.sort(key=lambda item: priority_order.get(item["priority"], 5))
-    return combined[:10]
-
-
-def build_attention_insights(needs_attention_accounts):
-    attention_insights = []
-    for account in needs_attention_accounts:
-        attention_insights.append({
-            "source": "Needs Attention",
-            "category": account.get("health_label", "Account Health"),
-            "title": account.get("account_name", "Account needs attention"),
-            "message": account.get("health_reason", ""),
-            "action": "Open the account and resolve the health risk before it blocks pipeline progress.",
-            "link": url_for("view_account", account_id=account["id"]),
-            "priority": "high",
-        })
-    return attention_insights
-
-
-def compact_join(values, limit=3):
-    cleaned = []
-    seen = set()
-    for value in values:
-        text = str(value or "").strip()
-        key = text.casefold()
-        if text and key not in seen:
-            cleaned.append(text)
-            seen.add(key)
-        if len(cleaned) >= limit:
-            break
-    return ", ".join(cleaned)
-
-
-def deduplicate_execution_insights(insights):
-    unique_insights = []
-    seen = set()
-
-    for insight in insights:
-        key = (
-            str(insight.get("title", "")).strip().casefold(),
-            str(insight.get("message", "")).strip().casefold(),
-            str(insight.get("link", "")).strip(),
-        )
-        if key in seen:
-            continue
-        seen.add(key)
-        unique_insights.append(insight)
-
-    return unique_insights
-
-
 def build_learning_insights(connection):
     positive_placeholders = ",".join("?" for _ in POSITIVE_OUTCOMES)
     negative_placeholders = ",".join("?" for _ in NEGATIVE_OUTCOMES)
@@ -2093,7 +346,7 @@ def build_learning_insights(connection):
             THEN 1 ELSE 0
         END) AS negative_total,
         SUM(CASE
-            WHEN COALESCE(outreach.task_status, '') IN ('Closed', 'Completed')
+            WHEN COALESCE(outreach.task_status, '') = 'Completed'
             THEN 1 ELSE 0
         END) AS completed_total,
         SUM(CASE
@@ -2103,12 +356,37 @@ def build_learning_insights(connection):
                     outreach.next_action_date || ' ' ||
                     IFNULL(outreach.next_action_time, '00:00')
                   ) < datetime('now', '-1 hour')
-              AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
+              AND COALESCE(outreach.task_status, '') != 'Completed'
             THEN 1 ELSE 0
         END) AS overdue_total
     """
     learning_params = (*POSITIVE_OUTCOMES, *NEGATIVE_OUTCOMES)
     insights = []
+
+    campaign_rows = add_learning_score(connection.execute(f"""
+        SELECT
+            outreach.campaign,
+            {learning_select}
+        FROM outreach
+        WHERE outreach.campaign IS NOT NULL
+          AND outreach.campaign != ''
+        GROUP BY outreach.campaign
+    """, learning_params).fetchall())
+
+    if campaign_rows:
+        campaign = campaign_rows[0]
+        insights.append({
+            "signal": "Campaign",
+            "title": f"{campaign['campaign']} is your strongest campaign signal",
+            "message": (
+                f"{campaign['positive_total']} positive signal(s), "
+                f"{campaign['meeting_total']} meeting(s), "
+                f"{campaign['positive_rate']}% positive rate across "
+                f"{campaign['total']} touchpoint(s)."
+            ),
+            "action": "Use this campaign as the default first route when the account and contact profile are similar.",
+            "link": url_for("outreach")
+        })
 
     sales_play_rows = add_learning_score(connection.execute(f"""
         SELECT
@@ -2138,20 +416,23 @@ def build_learning_insights(connection):
         SELECT
             accounts.id AS account_id,
             accounts.account_name,
+            outreach.campaign,
             outreach.sales_play,
             {learning_select}
         FROM outreach
         LEFT JOIN accounts ON outreach.account_id = accounts.id
         WHERE accounts.account_name IS NOT NULL
-          AND outreach.sales_play IS NOT NULL
-          AND outreach.sales_play != ''
-        GROUP BY accounts.id, accounts.account_name, outreach.sales_play
+          AND (
+                (outreach.campaign IS NOT NULL AND outreach.campaign != '')
+             OR (outreach.sales_play IS NOT NULL AND outreach.sales_play != '')
+          )
+        GROUP BY accounts.id, accounts.account_name, outreach.campaign, outreach.sales_play
     """, learning_params).fetchall())
 
     if account_rows:
         account = account_rows[0]
         label_parts = [
-            part for part in [account["sales_play"]]
+            part for part in [account["campaign"], account["sales_play"]]
             if part
         ]
         insights.append({
@@ -2169,28 +450,28 @@ def build_learning_insights(connection):
     contact_category_rows = add_learning_score(connection.execute(f"""
         SELECT
             contacts.category,
-            outreach.sales_play,
+            outreach.campaign,
             {learning_select}
         FROM outreach
         LEFT JOIN contacts ON outreach.contact_id = contacts.id
         WHERE contacts.category IS NOT NULL
           AND contacts.category != ''
-          AND outreach.sales_play IS NOT NULL
-          AND outreach.sales_play != ''
-        GROUP BY contacts.category, outreach.sales_play
+          AND outreach.campaign IS NOT NULL
+          AND outreach.campaign != ''
+        GROUP BY contacts.category, outreach.campaign
     """, learning_params).fetchall())
 
     if contact_category_rows:
         category = contact_category_rows[0]
         insights.append({
             "signal": "Contact",
-            "title": f"{category['sales_play']} works best with {category['category']} contacts",
+            "title": f"{category['campaign']} works best with {category['category']} contacts",
             "message": (
                 f"This combination has {category['positive_total']} positive signal(s), "
                 f"{category['meeting_total']} meeting(s), and "
                 f"{category['negative_total']} negative signal(s)."
             ),
-            "action": "When adding contacts in this category, start with this sales play and track the outcome.",
+            "action": "When adding contacts in this category, start with this campaign and track the outcome.",
             "link": url_for("contacts")
         })
 
@@ -2221,46 +502,17 @@ def build_learning_insights(connection):
             "link": url_for("contacts")
         })
 
-    failure_rows = add_learning_score(connection.execute(f"""
-        SELECT
-            outreach.sales_play,
-            outreach.activity_type,
-            {learning_select}
-        FROM outreach
-        WHERE outreach.sales_play IS NOT NULL
-          AND outreach.sales_play != ''
-          AND outreach.activity_type IS NOT NULL
-          AND outreach.activity_type != ''
-        GROUP BY outreach.sales_play, outreach.activity_type
-        HAVING SUM(CASE WHEN outreach.outcome IN ({negative_placeholders}) THEN 1 ELSE 0 END) > 0
-    """, (*learning_params, *NEGATIVE_OUTCOMES)).fetchall())
-
-    if failure_rows:
-        failure_rows.sort(
-            key=lambda row: (
-                row["negative_total"] or 0,
-                row["overdue_total"] or 0,
-                row["total"] or 0,
-            ),
-            reverse=True
-        )
-        failure = failure_rows[0]
-        insights.append({
-            "signal": "Failure Indicator",
-            "title": f"{failure['activity_type']} is underperforming for {failure['sales_play']}",
-            "message": (
-                f"This pattern has {failure['negative_total']} negative signal(s) "
-                f"from {failure['total']} touchpoint(s)."
-            ),
-            "action": "Change the channel, refine the message, or switch stakeholder route before repeating this pattern.",
-            "link": url_for("outreach")
-        })
-
     outcome_gaps = connection.execute("""
         SELECT COUNT(*) AS total
         FROM outreach
-        WHERE sales_play IS NOT NULL
-          AND sales_play != ''
+        WHERE (
+                campaign IS NOT NULL
+            AND campaign != ''
+        )
+          AND (
+                sales_play IS NOT NULL
+            AND sales_play != ''
+        )
           AND (
                 outcome IS NULL
              OR outcome = ''
@@ -2272,14 +524,14 @@ def build_learning_insights(connection):
         insights.append({
             "signal": "Learning",
             "title": "Add campaign outcomes to start learning",
-            "message": "PipeFlow will compare sales plays, contacts and account patterns once outcomes are captured.",
+            "message": "PipeFlow will compare campaigns, sales plays, contacts and account patterns once outcomes are captured.",
             "action": "Build a campaign, complete the follow-up tasks, then record the outcome on each touchpoint.",
             "link": url_for("campaign_builder")
         })
     elif outcome_gaps > 0:
         insights.append({
             "signal": "Data Quality",
-            "title": f"{outcome_gaps} sales play touchpoint(s) need outcomes",
+            "title": f"{outcome_gaps} campaign touchpoint(s) need outcomes",
             "message": "The learning model gets sharper when each campaign step has an outcome.",
             "action": "Update completed touchpoints so the dashboard can recommend what works with more confidence.",
             "link": url_for("tasks")
@@ -2291,130 +543,10 @@ def build_learning_insights(connection):
 @app.route("/")
 def home():
     connection = get_db_connection()
-    try:
-        return build_dashboard_response(connection)
-    except Exception as exc:
-        print(f"Dashboard failed: {exc!r}", file=sys.stderr)
-        traceback.print_exc()
-        return render_dashboard_fallback()
-    finally:
-        connection.close()
-
-
-def render_dashboard_fallback():
-    return render_template(
-        "index.html",
-        this_week_due=0,
-        this_week_completed=0,
-        this_week_overdue=0,
-        this_week_untouched_accounts=0,
-        this_week_meetings_booked=0,
-        this_week_start="",
-        this_week_end="",
-        total_accounts=0,
-        total_contacts=0,
-        total_outreach=0,
-        total_pg_target=0,
-        meetings_booked=0,
-        follow_ups_due=0,
-        latest_outreach=[],
-        outreach_by_account=[],
-        outcome_breakdown=[],
-        top_accounts=[],
-        needs_attention_accounts=[],
-        ai_insights=[{
-            "type": "Dashboard Check",
-            "severity": "high",
-            "title": "Dashboard data needs a refresh",
-            "message": "One dashboard query could not be loaded. Other app pages should still be available while this is checked.",
-            "link": url_for("reports")
-        }],
-        learning_insights=[],
-        execution_insights=[],
-        dashboard_tasks=[],
-        task_statuses=DROPDOWN_VALUES["task_statuses"],
-        outreach_outcomes=DROPDOWN_VALUES["outreach_outcomes"],
-        broadcast_messages=list_broadcast_messages(active_only=True)
-    )
-
-
-def build_dashboard_response(connection):
 
     total_accounts = connection.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
     total_contacts = connection.execute("SELECT COUNT(*) FROM contacts").fetchone()[0]
     total_outreach = connection.execute("SELECT COUNT(*) FROM outreach").fetchone()[0]
-    total_pg_target = connection.execute("""
-        SELECT COALESCE(SUM(pipeline_target), 0)
-        FROM accounts
-    """).fetchone()[0]
-    today = datetime.now().date()
-    week_start = today - timedelta(days=today.weekday())
-    week_end = week_start + timedelta(days=6)
-    week_start_key = week_start.isoformat()
-    week_end_key = week_end.isoformat()
-
-    all_accounts = connection.execute("""
-        SELECT id, account_name, pipeline_target
-        FROM accounts
-    """).fetchall()
-
-    weekly_outreach_rows = connection.execute("""
-        SELECT
-            outreach.*,
-            accounts.pipeline_target
-        FROM outreach
-        LEFT JOIN accounts ON outreach.account_id = accounts.id
-    """).fetchall()
-
-    def parse_dashboard_date(value):
-        if not value:
-            return None
-        try:
-            return datetime.strptime(str(value), "%Y-%m-%d").date()
-        except ValueError:
-            return None
-
-    def task_closed(row):
-        return is_closed_task_status(row["task_status"])
-
-    this_week_due = 0
-    this_week_completed = 0
-    this_week_overdue = 0
-    this_week_meetings_booked = 0
-
-    for row in weekly_outreach_rows:
-        next_action_date = parse_dashboard_date(row["next_action_date"])
-        activity_date = parse_dashboard_date(row["activity_date"])
-
-        if next_action_date and week_start <= next_action_date <= week_end and not task_closed(row):
-            this_week_due += 1
-
-        if next_action_date and next_action_date < today and not task_closed(row):
-            this_week_overdue += 1
-
-        if task_closed(row):
-            last_updated_date = parse_dashboard_date(str(row["last_updated"] or "")[:10])
-            if last_updated_date and week_start <= last_updated_date <= week_end:
-                this_week_completed += 1
-
-        if activity_date and week_start <= activity_date <= week_end:
-            if row["outcome"] == "Meeting Booked" or row["activity_type"] == "Meeting":
-                this_week_meetings_booked += 1
-
-    this_week_untouched_accounts = connection.execute("""
-        SELECT COUNT(*)
-        FROM accounts
-        WHERE NOT EXISTS (
-            SELECT 1
-            FROM outreach
-            WHERE outreach.account_id = accounts.id
-              AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
-              AND (
-                    (outreach.sales_play IS NOT NULL AND outreach.sales_play != '')
-                 OR (outreach.next_action IS NOT NULL AND outreach.next_action != '')
-              )
-        )
-    """).fetchone()[0]
 
     meetings_booked = connection.execute("""
         SELECT COUNT(*) FROM outreach
@@ -2427,7 +559,7 @@ def build_dashboard_response(connection):
         WHERE next_action_date IS NOT NULL
           AND next_action_date != ''
           AND date(next_action_date) <= date('now', '+7 days')
-          AND COALESCE(task_status, '') NOT IN ('Closed', 'Completed')
+          AND COALESCE(task_status, '') != 'Completed'
     """).fetchone()[0]
 
     outreach_by_account = connection.execute("""
@@ -2469,23 +601,6 @@ def build_dashboard_response(connection):
         LIMIT 5
     """).fetchall()
 
-    dashboard_tasks = connection.execute("""
-        SELECT outreach.*, accounts.account_name, accounts.account_tier, contacts.name AS contact_name
-        FROM outreach
-        LEFT JOIN accounts ON outreach.account_id = accounts.id
-        LEFT JOIN contacts ON outreach.contact_id = contacts.id
-        WHERE outreach.next_action IS NOT NULL
-          AND outreach.next_action != ''
-          AND outreach.next_action_date IS NOT NULL
-          AND outreach.next_action_date != ''
-          AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
-        ORDER BY
-            CASE WHEN date(outreach.next_action_date) < date('now') THEN 0 ELSE 1 END,
-            outreach.next_action_date ASC,
-            outreach.next_action_time ASC
-        LIMIT 8
-    """).fetchall()
-
     account_health_rows = connection.execute("""
         SELECT 
             accounts.*,
@@ -2522,7 +637,7 @@ def build_dashboard_response(connection):
                         outreach.next_action_date || ' ' ||
                         IFNULL(outreach.next_action_time, '00:00')
                       ) < datetime('now', '-1 hour')
-                  AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
+                  AND COALESCE(outreach.task_status, '') != 'Completed'
             ) AS overdue_followups,
 
             (
@@ -2585,7 +700,7 @@ def build_dashboard_response(connection):
                 "type": "Relationship Gap",
                 "severity": "high",
                 "title": f"{account['account_name']} has low relationship coverage",
-                "message": "There are fewer than 2 contacts mapped. Add more stakeholders to reduce single-thread risk.",
+                "message": "Next move: add one executive or decision influencer and one day-to-day contact before the next outreach.",
                 "link": url_for("view_account", account_id=account["id"])
             })
 
@@ -2594,7 +709,7 @@ def build_dashboard_response(connection):
                 "type": "Action Risk",
                 "severity": "high",
                 "title": f"{account['account_name']} has overdue follow-ups",
-                "message": f"{account['overdue_followups']} follow-up(s) are overdue. Review next actions before momentum drops.",
+                "message": f"Next move: complete or re-date {account['overdue_followups']} overdue follow-up(s) and assign a clear owner.",
                 "link": url_for("view_account", account_id=account["id"])
             })
 
@@ -2603,70 +718,16 @@ def build_dashboard_response(connection):
                 "type": "Conversion Gap",
                 "severity": "medium",
                 "title": f"{account['account_name']} has outreach but no meetings",
-                "message": "Activity is happening, but no meeting has been booked yet. Consider changing message, route or stakeholder.",
+                "message": "Next move: use the strongest business trigger and ask one named contact for a specific discovery meeting.",
                 "link": url_for("view_account", account_id=account["id"])
             })
-
-        contact_context_rows = connection.execute("""
-            SELECT
-                name,
-                job_title,
-                category,
-                org_dept,
-                responsibilities,
-                bmc_relationship,
-                characteristics,
-                background,
-                personal_interests,
-                personal_win,
-                additional_notes
-            FROM contacts
-            WHERE account_id = ?
-            ORDER BY
-                CASE WHEN bmc_relationship IS NULL OR bmc_relationship = '' THEN 1 ELSE 0 END,
-                CASE WHEN responsibilities IS NULL OR responsibilities = '' THEN 1 ELSE 0 END,
-                name
-            LIMIT 5
-        """, (account["id"],)).fetchall()
-
-        if contact_context_rows:
-            contact_names = compact_join(
-                ", ".join(part for part in [row["name"], row["job_title"]] if part)
-                for row in contact_context_rows
-            )
-            relationship_context = compact_join(row["bmc_relationship"] for row in contact_context_rows)
-            responsibility_context = compact_join(row["responsibilities"] for row in contact_context_rows)
-            personal_context = compact_join(
-                row["personal_win"] or row["personal_interests"] or row["characteristics"] or row["background"] or row["additional_notes"]
-                for row in contact_context_rows
-            )
-
-            context_parts = []
-            if relationship_context:
-                context_parts.append(f"relationship context: {relationship_context}")
-            if responsibility_context:
-                context_parts.append(f"responsibilities: {responsibility_context}")
-            if personal_context:
-                context_parts.append(f"personal drivers: {personal_context}")
-
-            if context_parts:
-                ai_insights.append({
-                    "type": "Engagement Route",
-                    "severity": "medium",
-                    "title": f"Personalise {account['account_name']} engagement by stakeholder context",
-                    "message": (
-                        f"Use {contact_names or 'the mapped contacts'} and tailor the route around "
-                        f"{'; '.join(context_parts)}."
-                    ),
-                    "link": url_for("view_account", account_id=account["id"])
-                })
 
         if (account["partner_count"] or 0) == 0 and (account["outreach_count"] or 0) > 0:
             ai_insights.append({
                 "type": "Partner Gap",
                 "severity": "medium",
                 "title": f"{account['account_name']} has no partner involvement mapped",
-                "message": "This account has activity but no partner coverage. Add a relevant partner to test a warmer route in.",
+                "message": "Next move: add one partner with account influence and create a dated introduction or validation task.",
                 "link": url_for("view_account", account_id=account["id"])
             })
 
@@ -2675,7 +736,7 @@ def build_dashboard_response(connection):
                 "type": "Partner Activation",
                 "severity": "medium",
                 "title": f"{account['account_name']} has partner coverage but no active partner",
-                "message": "Partner relationships are mapped, but none are introduced, engaged or active. Pick the best partner and set a next action.",
+                "message": "Next move: choose the partner most likely to reach the buyer and set a clear owner-led next action.",
                 "link": url_for("view_account", account_id=account["id"])
             })
 
@@ -2684,7 +745,7 @@ def build_dashboard_response(connection):
                 "type": "Partner Next Step",
                 "severity": "medium",
                 "title": f"{account['account_name']} has active partner involvement without a next action",
-                "message": f"{account['active_partner_next_action_gaps']} active partner relationship(s) need a clear next action.",
+                "message": f"Next move: turn {account['active_partner_next_action_gaps']} active partner relationship(s) into dated outreach tasks.",
                 "link": url_for("view_account", account_id=account["id"])
             })
 
@@ -2693,7 +754,7 @@ def build_dashboard_response(connection):
                 "type": "Momentum",
                 "severity": "positive",
                 "title": f"{account['account_name']} is showing positive engagement",
-                "message": "This account has both outreach activity and meetings. Keep progressing next actions.",
+                "message": "Next move: confirm meeting outcomes, capture the customer problem, and keep the next action dated.",
                 "link": url_for("view_account", account_id=account["id"])
             })
 
@@ -2702,7 +763,7 @@ def build_dashboard_response(connection):
                 "type": "Partner Momentum",
                 "severity": "positive",
                 "title": f"{account['account_name']} has strong partner coverage",
-                "message": "Multiple active partner relationships are mapped alongside meeting activity. Keep partner owners aligned on the next move.",
+                "message": "Next move: align partner owners on one customer-facing action that advances the opportunity.",
                 "link": url_for("view_account", account_id=account["id"])
             })
 
@@ -2716,7 +777,7 @@ def build_dashboard_response(connection):
                     "type": "Going Cold",
                     "severity": "medium",
                     "title": f"{account['account_name']} has had no outreach for {days_since_outreach} days",
-                    "message": "This account may be going cold. Add a relevant touchpoint or next action.",
+                    "message": "Next move: add a specific re-engagement task or mark the account inactive for this cycle.",
                     "link": url_for("view_account", account_id=account["id"])
                 })
 
@@ -2748,24 +809,14 @@ def build_dashboard_response(connection):
     )
 
     ai_insights = ai_insights[:6]
-    execution_insights = deduplicate_execution_insights(
-        build_execution_insights(ai_insights, learning_insights)
-    )
-    execution_insights = execution_insights[:12]
+
+    connection.close()
 
     return render_template(
         "index.html",
-        this_week_due=this_week_due,
-        this_week_completed=this_week_completed,
-        this_week_overdue=this_week_overdue,
-        this_week_untouched_accounts=this_week_untouched_accounts,
-        this_week_meetings_booked=this_week_meetings_booked,
-        this_week_start=week_start_key,
-        this_week_end=week_end_key,
         total_accounts=total_accounts,
         total_contacts=total_contacts,
         total_outreach=total_outreach,
-        total_pg_target=total_pg_target,
         meetings_booked=meetings_booked,
         follow_ups_due=follow_ups_due,
         latest_outreach=latest_outreach,
@@ -2774,285 +825,12 @@ def build_dashboard_response(connection):
         top_accounts=top_accounts,
         needs_attention_accounts=needs_attention_accounts,
         ai_insights=ai_insights,
-        learning_insights=learning_insights,
-        execution_insights=execution_insights,
-        dashboard_tasks=dashboard_tasks,
-        task_statuses=DROPDOWN_VALUES["task_statuses"],
-        outreach_outcomes=DROPDOWN_VALUES["outreach_outcomes"],
-        broadcast_messages=list_broadcast_messages(active_only=True)
-    )
-
-
-def dashboard_setting(connection, key, default=""):
-    row = connection.execute(
-        "SELECT setting_value FROM dashboard_settings WHERE setting_key = ?",
-        (key,),
-    ).fetchone()
-    return row["setting_value"] if row else default
-
-
-def save_dashboard_setting(connection, key, value):
-    existing = connection.execute(
-        "SELECT setting_key FROM dashboard_settings WHERE setting_key = ?",
-        (key,),
-    ).fetchone()
-    if existing:
-        connection.execute("""
-            UPDATE dashboard_settings
-            SET setting_value = ?,
-                last_updated = CURRENT_TIMESTAMP
-            WHERE setting_key = ?
-        """, (value, key))
-    else:
-        connection.execute(
-            "INSERT INTO dashboard_settings (setting_key, setting_value) VALUES (?, ?)",
-            (key, value),
-        )
-
-
-def money_value(value):
-    try:
-        return float(value or 0)
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def nbm_colour_index(value):
-    try:
-        number = int(str(value or "0"))
-    except ValueError:
-        number = 0
-    return number % 12
-
-
-def activity_update_is_valid(value):
-    return len((value or "").strip()) >= 5
-
-
-def status_requires_activity_update(status):
-    return is_closed_task_status(status)
-
-
-def contact_matches_account(connection, account_id, contact_id):
-    if not contact_id:
-        return True
-    if not account_id:
-        return False
-
-    match = connection.execute(
-        """
-        SELECT id
-        FROM contacts
-        WHERE id = ?
-          AND account_id = ?
-        """,
-        (contact_id, account_id),
-    ).fetchone()
-    return bool(match)
-
-
-def activity_update_required_message():
-    return "Activity Update must be at least 5 characters before a task can be completed, closed or cancelled."
-
-
-def fy_quarter_required_message():
-    return "FY and Quarter are required before this record can be saved."
-
-
-def fy_quarter_are_valid(fy, quarter):
-    return bool((fy or "").strip() and (quarter or "").strip())
-
-
-def pg_dashboard_context(connection):
-    accounts = connection.execute("""
-        SELECT *
-        FROM accounts
-        ORDER BY
-            CASE WHEN pg_bible_order IS NULL THEN 1 ELSE 0 END,
-            pg_bible_order,
-            account_name
-    """).fetchall()
-    current_pipeline = money_value(dashboard_setting(connection, "current_pipeline", "0"))
-    fy_pipeline_target = sum(money_value(account["pipeline_target"]) for account in accounts)
-    pipeline_gap = fy_pipeline_target - current_pipeline
-
-    pg_plan_rows = []
-    pg_action_rows = []
-    seven_days_ago = (datetime.now() - timedelta(days=7)).date().isoformat()
-    today_key = datetime.now().date().isoformat()
-    seven_days_forward = (datetime.now() + timedelta(days=7)).date().isoformat()
-    for account in accounts:
-        account_id = account["id"]
-        pg_target_number = account["pg_bible_order"] or ""
-        contacts = connection.execute("""
-            SELECT id, name, job_title
-            FROM contacts
-            WHERE account_id = ?
-            ORDER BY name
-        """, (account_id,)).fetchall()
-        outreach_sales_play_rows = connection.execute("""
-            SELECT DISTINCT sales_play
-            FROM outreach
-            WHERE account_id = ?
-              AND sales_play IS NOT NULL
-              AND sales_play != ''
-            ORDER BY sales_play
-        """, (account_id,)).fetchall()
-        outreach_sales_plays = [
-            row["sales_play"]
-            for row in outreach_sales_play_rows
-            if row["sales_play"]
-        ]
-        pg_sales_play = "; ".join(outreach_sales_plays) or account["sales_play"] or ""
-        pg_plan_rows.append({
-            "account_id": account_id,
-            "target_number": pg_target_number,
-            "colour_index": nbm_colour_index(pg_target_number),
-            "sales_play": pg_sales_play,
-            "account_name": account["account_name"],
-            "estimated_value": money_value(account["pipeline_target"]),
-        })
-
-        legacy_action_update = connection.execute("""
-            SELECT *
-            FROM pg_action_updates
-            WHERE account_id = ?
-        """, (account_id,)).fetchone()
-
-        for contact in contacts:
-            contact_id = contact["id"]
-            scheduled_action_rows = connection.execute("""
-                SELECT subject, next_action_date, next_action_time
-                FROM outreach
-                WHERE account_id = ?
-                  AND contact_id = ?
-                  AND next_action_date IS NOT NULL
-                  AND next_action_date != ''
-                  AND next_action_date <= ?
-                  AND COALESCE(task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
-                ORDER BY next_action_date ASC, next_action_time ASC, id DESC
-            """, (account_id, contact_id, seven_days_forward)).fetchall()
-            recent_activity_rows = connection.execute("""
-                SELECT activity_date, activity_type, subject, next_action, last_updated
-                FROM outreach
-                WHERE account_id = ?
-                  AND contact_id = ?
-                  AND last_updated >= ?
-                  AND next_action IS NOT NULL
-                  AND next_action != ''
-                  AND COALESCE(task_status, '') IN ('Closed', 'Completed', 'Cancelled')
-                ORDER BY last_updated DESC, id DESC
-            """, (account_id, contact_id, seven_days_ago)).fetchall()
-            action_update = connection.execute("""
-                SELECT *
-                FROM pg_action_contact_updates
-                WHERE contact_id = ?
-            """, (contact_id,)).fetchone()
-
-            next_7_days_actions = []
-            for action_row in scheduled_action_rows:
-                subject = action_row["subject"] or "Scheduled action"
-                due_parts = [action_row["next_action_date"] or "", action_row["next_action_time"] or ""]
-                next_7_days_actions.append({
-                    "subject": subject,
-                    "due": " ".join(part for part in due_parts if part),
-                })
-            last_7_days_activity_entries = []
-            for row in recent_activity_rows:
-                submitted_date = str(row["last_updated"] or row["activity_date"] or "No date")[:10]
-                last_7_days_activity_entries.append({
-                    "date": submitted_date,
-                    "activity": row["activity_type"] or row["subject"] or "Activity",
-                    "activity_update": row["next_action"],
-                })
-
-            pg_action_rows.append({
-                "account_id": account_id,
-                "contact_id": contact_id,
-                "target_number": pg_target_number,
-                "colour_index": nbm_colour_index(pg_target_number),
-                "account_name": account["account_name"],
-                "targeted_discovery": f"{contact['name']}{' - ' + contact['job_title'] if contact['job_title'] else ''}",
-                "completed_discovery_meeting": (
-                    action_update["completed_discovery_meeting"]
-                    if action_update
-                    else (legacy_action_update["completed_discovery_meeting"] if legacy_action_update else "")
-                ),
-                "last_7_days_activity_entries": last_7_days_activity_entries,
-                "next_7_days_actions": next_7_days_actions,
-            })
-
-    return {
-        "fy_pipeline_target": fy_pipeline_target,
-        "current_pipeline": current_pipeline,
-        "pipeline_gap": pipeline_gap,
-        "pg_plan_rows": pg_plan_rows,
-        "pg_action_rows": pg_action_rows,
-    }
-
-
-@app.route("/dashboard-new")
-def dashboard_new():
-    return redirect(url_for("pg_progress"))
-
-
-@app.route("/pg-progress", methods=("GET", "POST"))
-def pg_progress():
-    connection = get_db_connection()
-    if request.method == "POST":
-        save_dashboard_setting(connection, "current_pipeline", request.form.get("current_pipeline", "0"))
-        for contact_id in request.form.getlist("pg_action_contact_id"):
-            account_id = request.form.get(f"pg_action_account_id_{contact_id}", "")
-            completed = request.form.get(f"completed_discovery_contact_{contact_id}", "")
-            next_action = request.form.get(f"next_action_contact_{contact_id}", "")
-            existing = connection.execute(
-                "SELECT id FROM pg_action_contact_updates WHERE contact_id = ?",
-                (contact_id,),
-            ).fetchone()
-            if existing:
-                connection.execute("""
-                    UPDATE pg_action_contact_updates
-                    SET completed_discovery_meeting = ?,
-                        next_action_override = ?,
-                        last_updated = CURRENT_TIMESTAMP
-                    WHERE contact_id = ?
-                """, (completed, next_action, contact_id))
-            else:
-                connection.execute("""
-                    INSERT INTO pg_action_contact_updates (
-                        account_id,
-                        contact_id,
-                        completed_discovery_meeting,
-                        next_action_override
-                    )
-                    VALUES (?, ?, ?, ?)
-                """, (account_id, contact_id, completed, next_action))
-        audit_entry(
-            connection,
-            "dashboard_new",
-            None,
-            "update",
-            "pg_goals",
-            "PG Goals dashboard",
-            "",
-            "PG Progress saved"
-        )
-        connection.commit()
-        connection.close()
-        return redirect(url_for("pg_progress", message="PG Progress saved."))
-
-    context = pg_dashboard_context(connection)
-    connection.close()
-    return render_template(
-        "dashboard_new.html",
-        message=request.args.get("message", ""),
-        **context,
+        learning_insights=learning_insights
     )
 
 
 @app.route("/accounts")
 def accounts():
-    user = current_user()
     connection = get_db_connection()
 
     account_rows = connection.execute("""
@@ -3091,7 +869,7 @@ def accounts():
                         outreach.next_action_date || ' ' ||
                         IFNULL(outreach.next_action_time, '00:00')
                       ) < datetime('now', '-1 hour')
-                  AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
+                  AND COALESCE(outreach.task_status, '') != 'Completed'
             ) AS overdue_followups,
 
             (
@@ -3132,39 +910,15 @@ def accounts():
 
     accounts.sort(
         key=lambda account: (
+            int(account["account_tier"]) if str(account["account_tier"] or "").isdigit() else 99,
             health_order.get(account["health_colour"], 99),
             account["account_name"].lower()
         )
     )
 
-    shareable_accounts = [
-        account for account in accounts
-        if current_user_owns_account(account)
-    ]
-    account_shares = connection.execute("""
-        SELECT
-            account_shared_users.*,
-            accounts.account_name,
-            accounts.owner_user_id,
-            accounts.owner_name
-        FROM account_shared_users
-        JOIN accounts ON accounts.id = account_shared_users.account_id
-        WHERE accounts.owner_user_id IS NULL
-           OR accounts.owner_user_id = ?
-        ORDER BY accounts.account_name, account_shared_users.full_name
-    """, (user["id"] if user else None,)).fetchall()
-
     connection.close()
 
-    return render_template(
-        "accounts.html",
-        accounts=accounts,
-        shareable_accounts=shareable_accounts,
-        account_shares=account_shares,
-        assignable_users=list_assignable_users(),
-        message=request.args.get("message", ""),
-        error=request.args.get("error", ""),
-    )
+    return render_template("accounts.html", accounts=accounts)
 
 
 @app.route("/partners")
@@ -3187,25 +941,18 @@ def partners():
         FROM partners
         ORDER BY partners.partner_name
     """).fetchall()
-    partners_with_permissions = []
-    for row in partner_rows:
-        partner = dict(row)
-        partner["can_delete"] = current_user_can_delete_partner(row)
-        partners_with_permissions.append(partner)
 
     connection.close()
 
-    return render_template("partners.html", partners=partners_with_permissions)
+    return render_template("partners.html", partners=partner_rows)
 
 
 @app.route("/partners/add", methods=("POST",))
 def add_partner():
     connection = get_db_connection()
     partner_name = request.form.get("partner_name", "").strip()
-    website = normalise_partner_website(request.form.get("website"))
-    actor = audit_actor()
 
-    if partner_name and website is not None:
+    if partner_name:
         existing_partner = connection.execute("""
             SELECT id
             FROM partners
@@ -3222,49 +969,20 @@ def add_partner():
                     website,
                     country,
                     city,
-                    partner_manager,
-                    bmc_partner_manager,
                     relationship_owner,
-                    submitted_by_user_id,
-                    submitted_by_email,
-                    submitted_by_name,
                     notes
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 partner_name,
                 request.form.get("partner_type"),
-                website,
+                request.form.get("website"),
                 request.form.get("country"),
                 request.form.get("city"),
-                request.form.get("partner_manager"),
-                request.form.get("bmc_partner_manager"),
-                request.form.get("bmc_partner_manager"),
-                actor["id"],
-                actor["email"],
-                actor["name"],
+                request.form.get("relationship_owner"),
                 request.form.get("notes")
             ))
             partner_id = cursor.lastrowid
-            audit_record_create(connection, "partner", partner_id, {
-                "partner_name": partner_name,
-                "partner_type": request.form.get("partner_type"),
-                "website": website,
-                "partner_manager": request.form.get("partner_manager"),
-                "bmc_partner_manager": request.form.get("bmc_partner_manager"),
-                "city": request.form.get("city"),
-                "country": request.form.get("country"),
-                "notes": request.form.get("notes"),
-            }, {
-                "partner_name": "Partner account name",
-                "partner_type": "Partner type",
-                "website": "Account website",
-                "partner_manager": "Partner account manager",
-                "bmc_partner_manager": "BMC partner manager",
-                "city": "City",
-                "country": "Country",
-                "notes": "Notes",
-            })
             connection.commit()
 
         connection.close()
@@ -3302,13 +1020,11 @@ def view_partner(partner_id):
     """, (partner_id,)).fetchall()
 
     partner_contacts = connection.execute("""
-        SELECT
-            partner_contacts.*,
-            accounts.account_name
+        SELECT partner_contacts.*, accounts.account_name
         FROM partner_contacts
         LEFT JOIN accounts ON partner_contacts.account_id = accounts.id
-        WHERE partner_contacts.partner_id = ?
-        ORDER BY accounts.account_name, partner_contacts.name
+        WHERE partner_id = ?
+        ORDER BY name
     """, (partner_id,)).fetchall()
 
     partner_contact_count = connection.execute("""
@@ -3326,10 +1042,7 @@ def view_partner(partner_id):
     accounts = connection.execute("""
         SELECT *
         FROM accounts
-        ORDER BY
-            CASE WHEN pg_bible_order IS NULL THEN 1 ELSE 0 END,
-            pg_bible_order,
-            account_name
+        ORDER BY account_name
     """).fetchall()
 
     connection.close()
@@ -3349,32 +1062,8 @@ def view_partner(partner_id):
 def edit_partner(partner_id):
     connection = get_db_connection()
     partner_name = request.form.get("partner_name", "").strip()
-    website = normalise_partner_website(request.form.get("website"))
-    existing_partner = connection.execute("SELECT * FROM partners WHERE id = ?", (partner_id,)).fetchone()
 
-    if existing_partner and partner_name and website is not None:
-        new_values = {
-            "partner_name": partner_name,
-            "partner_type": request.form.get("partner_type"),
-            "website": website,
-            "country": request.form.get("country"),
-            "city": request.form.get("city"),
-            "partner_manager": request.form.get("partner_manager"),
-            "bmc_partner_manager": request.form.get("bmc_partner_manager"),
-            "relationship_owner": request.form.get("bmc_partner_manager"),
-            "notes": request.form.get("notes"),
-        }
-        labels = {
-            "partner_name": "Partner account name",
-            "partner_type": "Partner type",
-            "website": "Account website",
-            "country": "Country",
-            "city": "City",
-            "partner_manager": "Partner account manager",
-            "bmc_partner_manager": "BMC partner manager",
-            "relationship_owner": "Relationship owner",
-            "notes": "Notes",
-        }
+    if partner_name:
         connection.execute("""
             UPDATE partners
             SET partner_name = ?,
@@ -3382,25 +1071,20 @@ def edit_partner(partner_id):
                 website = ?,
                 country = ?,
                 city = ?,
-                partner_manager = ?,
-                bmc_partner_manager = ?,
                 relationship_owner = ?,
                 notes = ?,
                 last_updated = CURRENT_TIMESTAMP
             WHERE id = ?
         """, (
-            new_values["partner_name"],
-            new_values["partner_type"],
-            new_values["website"],
-            new_values["country"],
-            new_values["city"],
-            new_values["partner_manager"],
-            new_values["bmc_partner_manager"],
-            new_values["relationship_owner"],
-            new_values["notes"],
+            partner_name,
+            request.form.get("partner_type"),
+            request.form.get("website"),
+            request.form.get("country"),
+            request.form.get("city"),
+            request.form.get("relationship_owner"),
+            request.form.get("notes"),
             partner_id
         ))
-        audit_record_update(connection, "partner", partner_id, existing_partner, new_values, labels)
 
         connection.execute("""
             UPDATE account_partners
@@ -3420,14 +1104,13 @@ def add_partner_contact(partner_id):
     contact_name = request.form.get("name", "").strip()
 
     if contact_name:
-        cursor = connection.execute("""
+        connection.execute("""
             INSERT INTO partner_contacts (
                 partner_id,
+                account_id,
                 name,
                 job_title,
-                partner_contact_role,
                 coverage_area,
-                account_id,
                 relationship_owner,
                 email,
                 phone,
@@ -3435,16 +1118,17 @@ def add_partner_contact(partner_id):
                 linkedin,
                 relationship_status,
                 next_action,
+                next_action_date,
+                next_action_time,
                 notes
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             partner_id,
+            request.form.get("account_id"),
             contact_name,
             request.form.get("job_title"),
-            request.form.get("partner_contact_role"),
             request.form.get("coverage_area"),
-            request.form.get("account_id") or None,
             request.form.get("relationship_owner"),
             request.form.get("email"),
             request.form.get("phone"),
@@ -3452,21 +1136,81 @@ def add_partner_contact(partner_id):
             request.form.get("linkedin"),
             request.form.get("relationship_status"),
             request.form.get("next_action"),
+            request.form.get("next_action_date"),
+            request.form.get("next_action_time"),
             request.form.get("notes")
         ))
-        contact_id = cursor.lastrowid
-        audit_record_create(connection, "partner_contact", contact_id, {
-            "partner_id": partner_id,
-            "name": contact_name,
-            "job_title": request.form.get("job_title"),
-            "partner_contact_role": request.form.get("partner_contact_role"),
-            "coverage_area": request.form.get("coverage_area"),
-            "account_id": request.form.get("account_id") or None,
-            "relationship_owner": request.form.get("relationship_owner"),
-            "email": request.form.get("email"),
-            "relationship_status": request.form.get("relationship_status"),
-            "next_action": request.form.get("next_action"),
-        })
+        partner = connection.execute("SELECT partner_name FROM partners WHERE id = ?", (partner_id,)).fetchone()
+        create_partner_outreach_task(
+            connection,
+            request.form.get("account_id"),
+            partner["partner_name"] if partner else "Partner",
+            request.form.get("next_action"),
+            request.form.get("next_action_date"),
+            request.form.get("next_action_time"),
+            request.form.get("relationship_owner"),
+            contact_name
+        )
+        connection.commit()
+
+    connection.close()
+    return redirect(url_for("view_partner", partner_id=partner_id))
+
+
+@app.route("/partners/<int:partner_id>/contacts/<int:contact_id>/edit", methods=("POST",))
+def edit_partner_contact(partner_id, contact_id):
+    connection = get_db_connection()
+    contact_name = request.form.get("name", "").strip()
+
+    if contact_name:
+        connection.execute("""
+            UPDATE partner_contacts
+            SET account_id = ?,
+                name = ?,
+                job_title = ?,
+                coverage_area = ?,
+                relationship_owner = ?,
+                email = ?,
+                phone = ?,
+                location = ?,
+                linkedin = ?,
+                relationship_status = ?,
+                next_action = ?,
+                next_action_date = ?,
+                next_action_time = ?,
+                notes = ?,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE id = ?
+              AND partner_id = ?
+        """, (
+            request.form.get("account_id"),
+            contact_name,
+            request.form.get("job_title"),
+            request.form.get("coverage_area"),
+            request.form.get("relationship_owner"),
+            request.form.get("email"),
+            request.form.get("phone"),
+            request.form.get("location"),
+            request.form.get("linkedin"),
+            request.form.get("relationship_status"),
+            request.form.get("next_action"),
+            request.form.get("next_action_date"),
+            request.form.get("next_action_time"),
+            request.form.get("notes"),
+            contact_id,
+            partner_id
+        ))
+        partner = connection.execute("SELECT partner_name FROM partners WHERE id = ?", (partner_id,)).fetchone()
+        create_partner_outreach_task(
+            connection,
+            request.form.get("account_id"),
+            partner["partner_name"] if partner else "Partner",
+            request.form.get("next_action"),
+            request.form.get("next_action_date"),
+            request.form.get("next_action_time"),
+            request.form.get("relationship_owner"),
+            contact_name
+        )
         connection.commit()
 
     connection.close()
@@ -3476,14 +1220,6 @@ def add_partner_contact(partner_id):
 @app.route("/partners/<int:partner_id>/contacts/<int:contact_id>/delete", methods=("POST",))
 def delete_partner_contact(partner_id, contact_id):
     connection = get_db_connection()
-    contact = connection.execute("""
-        SELECT name
-        FROM partner_contacts
-        WHERE id = ?
-          AND partner_id = ?
-    """, (contact_id, partner_id)).fetchone()
-    if contact:
-        audit_record_delete(connection, "partner_contact", contact_id, contact["name"])
     connection.execute("""
         DELETE FROM partner_contacts
         WHERE id = ?
@@ -3493,17 +1229,6 @@ def delete_partner_contact(partner_id, contact_id):
     connection.close()
 
     return redirect(url_for("view_partner", partner_id=partner_id))
-
-
-@app.route("/partners/bulk-delete", methods=("POST",))
-def bulk_delete_partners():
-    partner_ids = selected_record_ids()
-    if partner_ids:
-        connection = get_db_connection()
-        delete_partner_records(connection, partner_ids)
-        connection.commit()
-        connection.close()
-    return redirect(url_for("partners"))
 
 
 @app.route("/partners/<int:partner_id>/accounts/add", methods=("POST",))
@@ -3527,15 +1252,16 @@ def add_partner_account_relationship(partner_id):
         """, (account_id, partner_id)).fetchone()
 
         if existing_relationship is None:
-            cursor = connection.execute("""
+            connection.execute("""
                 INSERT INTO account_partners (
                     account_id,
                     partner_id,
                     partner_name,
-                    partner_role,
                     involvement_status,
                     relationship_owner,
                     next_action,
+                    next_action_date,
+                    next_action_time,
                     notes
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -3543,23 +1269,23 @@ def add_partner_account_relationship(partner_id):
                 account_id,
                 partner_id,
                 partner["partner_name"],
-                request.form.get("partner_role"),
                 request.form.get("involvement_status"),
                 request.form.get("relationship_owner"),
                 request.form.get("next_action"),
+                request.form.get("next_action_date"),
+                request.form.get("next_action_time"),
                 request.form.get("notes")
             ))
-            account_partner_id = cursor.lastrowid
-            audit_record_create(connection, "account_partner", account_partner_id, {
-                "account_id": account_id,
-                "partner_id": partner_id,
-                "partner_name": partner["partner_name"],
-                "partner_role": request.form.get("partner_role"),
-                "involvement_status": request.form.get("involvement_status"),
-                "relationship_owner": request.form.get("relationship_owner"),
-                "next_action": request.form.get("next_action"),
-                "notes": request.form.get("notes"),
-            })
+            create_partner_outreach_task(
+                connection,
+                account_id,
+                partner["partner_name"],
+                request.form.get("next_action"),
+                request.form.get("next_action_date"),
+                request.form.get("next_action_time"),
+                request.form.get("relationship_owner"),
+                "account relationship"
+            )
 
             add_timeline_entry(
                 connection,
@@ -3577,17 +1303,14 @@ def add_partner_account_relationship(partner_id):
 
 @app.route("/accounts/add", methods=("GET", "POST"))
 def add_account():
-    custom_fields = account_custom_field_payload(active_only=True)
     if request.method == "POST":
         connection = get_db_connection()
-        owner = current_user_owner_payload()
-        cursor = connection.execute("""
+        connection.execute("""
             INSERT INTO accounts
-            (account_name, pg_bible_order, account_tier, industry, business_unit, country, city, website, pipeline_target, nbm_target, sales_play, owner_user_id, owner_name, owner_email, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (account_name, account_tier, industry, business_unit, country, city, website, pipeline_target, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             request.form.get("account_name"),
-            request.form.get("pg_bible_order") or None,
             request.form.get("account_tier"),
             request.form.get("industry"),
             request.form.get("business_unit"),
@@ -3595,35 +1318,13 @@ def add_account():
             request.form.get("city"),
             request.form.get("website"),
             request.form.get("pipeline_target"),
-            request.form.get("nbm_target"),
-            request.form.get("sales_play"),
-            owner["owner_user_id"],
-            owner["owner_name"],
-            owner["owner_email"],
             request.form.get("notes")
         ))
-        account_id = cursor.lastrowid
-        audit_record_create(connection, "account", account_id, {
-            "account_name": request.form.get("account_name"),
-            "pg_bible_order": request.form.get("pg_bible_order") or None,
-            "account_tier": request.form.get("account_tier"),
-            "industry": request.form.get("industry"),
-            "business_unit": request.form.get("business_unit"),
-            "country": request.form.get("country"),
-            "city": request.form.get("city"),
-            "website": request.form.get("website"),
-            "pipeline_target": request.form.get("pipeline_target"),
-            "nbm_target": request.form.get("nbm_target"),
-            "sales_play": request.form.get("sales_play"),
-            "owner_name": owner["owner_name"],
-            "notes": request.form.get("notes"),
-        })
-        save_account_custom_values(connection, account_id, custom_fields, request.form)
         connection.commit()
         connection.close()
         return redirect(url_for("accounts"))
 
-    return render_template("add_account.html", custom_fields=custom_fields)
+    return render_template("add_account.html")
 
 
 @app.route("/accounts/<int:account_id>")
@@ -3669,7 +1370,7 @@ def view_account(account_id):
                         outreach.next_action_date || ' ' ||
                         IFNULL(outreach.next_action_time, '00:00')
                       ) < datetime('now', '-1 hour')
-                  AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
+                  AND COALESCE(outreach.task_status, '') != 'Completed'
             ) AS overdue_followups,
 
             (
@@ -3697,18 +1398,6 @@ def view_account(account_id):
         ORDER BY name
     """, (account_id,)).fetchall()
 
-    owner = account_owner_payload(account)
-    is_account_owner = current_user_owns_account(account)
-    if is_account_owner:
-        account_shares = connection.execute("""
-            SELECT *
-            FROM account_shared_users
-            WHERE account_id = ?
-            ORDER BY full_name, email
-        """, (account_id,)).fetchall()
-    else:
-        account_shares = []
-
     account_partners = connection.execute("""
         SELECT
             account_partners.*,
@@ -3718,7 +1407,6 @@ def view_account(account_id):
                 SELECT COUNT(*)
                 FROM partner_contacts
                 WHERE partner_contacts.partner_id = account_partners.partner_id
-                  AND partner_contacts.account_id = account_partners.account_id
             ) AS partner_contact_count
         FROM account_partners
         LEFT JOIN partners ON account_partners.partner_id = partners.id
@@ -3740,9 +1428,6 @@ def view_account(account_id):
         ORDER BY date_created DESC
     """, (account_id,)).fetchall()
 
-    custom_fields = account_custom_field_payload(active_only=True)
-    custom_values = load_account_custom_values(connection, account_id)
-
     connection.close()
 
     return render_template(
@@ -3751,57 +1436,43 @@ def view_account(account_id):
         account_stats=account_stats,
         account_outreach=account_outreach,
         account_contacts=account_contacts,
-        account_shares=account_shares,
         account_partners=account_partners,
         partner_options=partner_options,
-        timeline_entries=timeline_entries,
-        custom_fields=custom_fields,
-        custom_values=custom_values,
-        owner=owner,
-        is_account_owner=is_account_owner
+        timeline_entries=timeline_entries
     )
 
 
 @app.route("/accounts/<int:account_id>/partners/add", methods=("POST",))
 def add_account_partner(account_id):
     connection = get_db_connection()
+    partner_id = request.form.get("partner_id")
     partner_name = request.form.get("partner_name", "").strip()
-    partners_to_add = []
 
-    for selected_partner_id in request.form.getlist("partner_ids"):
+    if partner_id:
         partner = connection.execute("""
-            SELECT id, partner_name
+            SELECT partner_name
             FROM partners
             WHERE id = ?
-        """, (selected_partner_id,)).fetchone()
+        """, (partner_id,)).fetchone()
         if partner:
-            partners_to_add.append((partner["id"], partner["partner_name"]))
+            partner_name = partner["partner_name"]
+        else:
+            partner_id = None
+
+    if partner_name and not partner_id:
+        partner_id = get_or_create_partner(connection, partner_name)
 
     if partner_name:
-        partners_to_add.append((get_or_create_partner(connection, partner_name), partner_name))
-
-    seen_partner_ids = set()
-    for partner_id, partner_name in partners_to_add:
-        if partner_id in seen_partner_ids:
-            continue
-        seen_partner_ids.add(partner_id)
-        existing = connection.execute("""
-            SELECT id
-            FROM account_partners
-            WHERE account_id = ?
-              AND partner_id = ?
-        """, (account_id, partner_id)).fetchone()
-        if existing:
-            continue
-        cursor = connection.execute("""
+        connection.execute("""
             INSERT INTO account_partners (
                 account_id,
                 partner_id,
                 partner_name,
-                partner_role,
                 involvement_status,
                 relationship_owner,
                 next_action,
+                next_action_date,
+                next_action_time,
                 notes
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -3809,23 +1480,23 @@ def add_account_partner(account_id):
             account_id,
             partner_id,
             partner_name,
-            request.form.get("partner_role"),
             request.form.get("involvement_status"),
             request.form.get("relationship_owner"),
             request.form.get("next_action"),
+            request.form.get("next_action_date"),
+            request.form.get("next_action_time"),
             request.form.get("notes")
         ))
-        account_partner_id = cursor.lastrowid
-        audit_record_create(connection, "account_partner", account_partner_id, {
-            "account_id": account_id,
-            "partner_id": partner_id,
-            "partner_name": partner_name,
-            "partner_role": request.form.get("partner_role"),
-            "involvement_status": request.form.get("involvement_status"),
-            "relationship_owner": request.form.get("relationship_owner"),
-            "next_action": request.form.get("next_action"),
-            "notes": request.form.get("notes"),
-        })
+        create_partner_outreach_task(
+            connection,
+            account_id,
+            partner_name,
+            request.form.get("next_action"),
+            request.form.get("next_action_date"),
+            request.form.get("next_action_time"),
+            request.form.get("relationship_owner"),
+            "account relationship"
+        )
 
         add_timeline_entry(
             connection,
@@ -3873,20 +1544,22 @@ def edit_account_partner(account_id, partner_id):
         new_values = {
             "partner_id": selected_partner_id,
             "partner_name": partner_name,
-            "partner_role": request.form.get("partner_role"),
             "involvement_status": request.form.get("involvement_status"),
             "relationship_owner": request.form.get("relationship_owner"),
             "next_action": request.form.get("next_action"),
+            "next_action_date": request.form.get("next_action_date"),
+            "next_action_time": request.form.get("next_action_time"),
             "notes": request.form.get("notes")
         }
 
         labels = {
             "partner_id": "Partner organisation",
             "partner_name": "Partner name",
-            "partner_role": "Partner role",
             "involvement_status": "Involvement status",
             "relationship_owner": "Relationship owner",
             "next_action": "Next action",
+            "next_action_date": "Next action date",
+            "next_action_time": "Next action time",
             "notes": "Notes"
         }
 
@@ -3897,10 +1570,11 @@ def edit_account_partner(account_id, partner_id):
                 UPDATE account_partners
                 SET partner_id = ?,
                     partner_name = ?,
-                    partner_role = ?,
                     involvement_status = ?,
                     relationship_owner = ?,
                     next_action = ?,
+                    next_action_date = ?,
+                    next_action_time = ?,
                     notes = ?,
                     last_updated = CURRENT_TIMESTAMP
                 WHERE id = ?
@@ -3908,17 +1582,27 @@ def edit_account_partner(account_id, partner_id):
             """, (
                 new_values["partner_id"],
                 new_values["partner_name"],
-                new_values["partner_role"],
                 new_values["involvement_status"],
                 new_values["relationship_owner"],
                 new_values["next_action"],
+                new_values["next_action_date"],
+                new_values["next_action_time"],
                 new_values["notes"],
                 partner_id,
                 account_id
             ))
+            create_partner_outreach_task(
+                connection,
+                account_id,
+                new_values["partner_name"],
+                new_values["next_action"],
+                new_values["next_action_date"],
+                new_values["next_action_time"],
+                new_values["relationship_owner"],
+                "account relationship"
+            )
 
             if changes:
-                audit_record_update(connection, "account_partner", partner_id, existing_partner, new_values, labels)
                 add_timeline_entry(
                     connection,
                     "account",
@@ -3945,7 +1629,6 @@ def delete_account_partner(account_id, partner_id):
     """, (partner_id, account_id)).fetchone()
 
     if partner:
-        audit_record_delete(connection, "account_partner", partner_id, partner["partner_name"])
         connection.execute("""
             DELETE FROM account_partners
             WHERE id = ?
@@ -3974,13 +1657,10 @@ def edit_account(account_id):
         "SELECT * FROM accounts WHERE id = ?",
         (account_id,)
     ).fetchone()
-    custom_fields = account_custom_field_payload(active_only=True)
-    custom_values = load_account_custom_values(connection, account_id)
 
     if request.method == "POST":
         new_values = {
             "account_name": request.form.get("account_name"),
-            "pg_bible_order": request.form.get("pg_bible_order") or None,
             "account_tier": request.form.get("account_tier"),
             "industry": request.form.get("industry"),
             "business_unit": request.form.get("business_unit"),
@@ -3988,14 +1668,11 @@ def edit_account(account_id):
             "city": request.form.get("city"),
             "website": request.form.get("website"),
             "pipeline_target": request.form.get("pipeline_target"),
-            "nbm_target": request.form.get("nbm_target"),
-            "sales_play": request.form.get("sales_play"),
             "notes": request.form.get("notes")
         }
 
         labels = {
             "account_name": "Account name",
-            "pg_bible_order": "PG Bible order",
             "account_tier": "Account tier",
             "industry": "Industry",
             "business_unit": "Business unit / org",
@@ -4003,32 +1680,14 @@ def edit_account(account_id):
             "city": "City",
             "website": "Website",
             "pipeline_target": "Pipeline target",
-            "nbm_target": "NBM target",
-            "sales_play": "Account sales play or initiative",
-            "owner_user_id": "Account owner",
-            "owner_name": "Account owner name",
-            "owner_email": "Account owner email",
             "notes": "Notes"
         }
-        previous_owner_id = account["owner_user_id"] if "owner_user_id" in account.keys() else None
-        selected_owner = assignable_user_by_id(request.form.get("owner_user_id"))
-        if selected_owner:
-            new_values["owner_user_id"] = selected_owner["id"]
-            new_values["owner_name"] = selected_owner["full_name"]
-            new_values["owner_email"] = selected_owner["email"]
-        else:
-            existing_owner = account_owner_payload(account)
-            new_values["owner_user_id"] = existing_owner["owner_user_id"]
-            new_values["owner_name"] = existing_owner["owner_name"]
-            new_values["owner_email"] = existing_owner["owner_email"]
 
         changes = build_change_log(account, new_values, labels)
-        changes.extend(build_custom_field_changes(custom_fields, custom_values, request.form))
 
         connection.execute("""
             UPDATE accounts
             SET account_name = ?,
-                pg_bible_order = ?,
                 account_tier = ?,
                 industry = ?,
                 business_unit = ?,
@@ -4036,17 +1695,11 @@ def edit_account(account_id):
                 city = ?,
                 website = ?,
                 pipeline_target = ?,
-                nbm_target = ?,
-                sales_play = ?,
-                owner_user_id = ?,
-                owner_name = ?,
-                owner_email = ?,
                 notes = ?,
                 last_updated = CURRENT_TIMESTAMP
             WHERE id = ?
         """, (
             new_values["account_name"],
-            new_values["pg_bible_order"],
             new_values["account_tier"],
             new_values["industry"],
             new_values["business_unit"],
@@ -4054,19 +1707,11 @@ def edit_account(account_id):
             new_values["city"],
             new_values["website"],
             new_values["pipeline_target"],
-            new_values["nbm_target"],
-            new_values["sales_play"],
-            new_values["owner_user_id"],
-            new_values["owner_name"],
-            new_values["owner_email"],
             new_values["notes"],
             account_id
         ))
 
-        save_account_custom_values(connection, account_id, custom_fields, request.form)
-
         if changes:
-            audit_record_update(connection, "account", account_id, account, new_values, labels)
             add_timeline_entry(
                 connection,
                 "account",
@@ -4076,60 +1721,23 @@ def edit_account(account_id):
             )
 
         connection.commit()
-
-        if selected_owner and str(previous_owner_id or "") != str(selected_owner["id"]):
-            source_schema = current_user_schema() if using_postgres() else ""
-            if using_postgres() and selected_owner["workspace_schema"]:
-                share_full_account_to_member(
-                    source_schema,
-                    account_id,
-                    selected_owner,
-                    current_user()["full_name"] if current_user() else "",
-                )
-            upsert_account_share(connection, account_id, selected_owner)
-            add_timeline_entry(
-                connection,
-                "account",
-                account_id,
-                "Account Ownership Reassigned",
-                f"Account ownership reassigned to {selected_owner['full_name']}."
-            )
-            connection.commit()
         connection.close()
 
         return redirect(url_for("view_account", account_id=account_id))
 
     connection.close()
-    return render_template(
-        "edit_account.html",
-        account=account,
-        custom_fields=custom_fields,
-        custom_values=custom_values,
-        assignable_users=list_assignable_users(),
-        owner=account_owner_payload(account)
-    )
+    return render_template("edit_account.html", account=account)
 
 
 @app.route("/accounts/<int:account_id>/delete", methods=("POST",))
-@admin_required
 def delete_account(account_id):
     connection = get_db_connection()
-    delete_account_records(connection, [account_id])
+    connection.execute("DELETE FROM timeline_entries WHERE related_type = 'account' AND related_id = ?", (account_id,))
+    connection.execute("DELETE FROM account_partners WHERE account_id = ?", (account_id,))
+    connection.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
     connection.commit()
     connection.close()
 
-    return redirect(url_for("accounts"))
-
-
-@app.route("/accounts/bulk-delete", methods=("POST",))
-@admin_required
-def bulk_delete_accounts():
-    account_ids = selected_record_ids()
-    if account_ids:
-        connection = get_db_connection()
-        delete_account_records(connection, account_ids)
-        connection.commit()
-        connection.close()
     return redirect(url_for("accounts"))
 
 
@@ -4153,28 +1761,56 @@ def add_account_timeline(account_id):
 @app.route("/contacts")
 def contacts():
     connection = get_db_connection()
+    account_filter = request.args.get("account_id", "")
+    name_filter = request.args.get("contact_name", "").strip()
+    status_filter = request.args.get("contact_status", "")
+
+    filters = ["COALESCE(contacts.archived, 0) = 0"]
+    params = []
+
+    if account_filter:
+        filters.append("contacts.account_id = ?")
+        params.append(account_filter)
+
+    if name_filter:
+        filters.append("contacts.name LIKE ?")
+        params.append(f"%{name_filter}%")
+
+    if status_filter:
+        filters.append("COALESCE(NULLIF(contacts.contact_status, ''), 'Active') = ?")
+        params.append(status_filter)
+
     contacts = connection.execute("""
         SELECT contacts.*, accounts.account_name, accounts.account_tier, accounts.business_unit
         FROM contacts
         LEFT JOIN accounts ON contacts.account_id = accounts.id
+        WHERE """ + " AND ".join(filters) + """
         ORDER BY contacts.name
-    """).fetchall()
+    """, params).fetchall()
+    accounts = connection.execute("SELECT id, account_name FROM accounts ORDER BY account_name").fetchall()
     connection.close()
-    return render_template("contacts.html", contacts=contacts)
+    return render_template(
+        "contacts.html",
+        contacts=contacts,
+        accounts=accounts,
+        account_filter=account_filter,
+        name_filter=name_filter,
+        status_filter=status_filter
+    )
 
 
 @app.route("/contacts/add", methods=("GET", "POST"))
 def add_contact():
     if request.method == "POST":
         connection = get_db_connection()
-        cursor = connection.execute("""
+        connection.execute("""
             INSERT INTO contacts (
                 account_id, category, name, job_title, org_dept, responsibilities,
                 email, phone, location, linkedin, bmc_relationship, characteristics,
                 background, personal_interests, personal_win, education,
-                social_media, additional_notes
+                social_media, additional_notes, contact_status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             request.form.get("account_id"),
             request.form.get("category"),
@@ -4193,30 +1829,16 @@ def add_contact():
             request.form.get("personal_win"),
             request.form.get("education"),
             request.form.get("social_media"),
-            request.form.get("additional_notes")
+            request.form.get("additional_notes"),
+            request.form.get("contact_status", "Active")
         ))
-        contact_id = cursor.lastrowid
-        audit_record_create(connection, "contact", contact_id, {
-            "account_id": request.form.get("account_id"),
-            "category": request.form.get("category"),
-            "name": request.form.get("name"),
-            "job_title": request.form.get("job_title"),
-            "org_dept": request.form.get("org_dept"),
-            "email": request.form.get("email"),
-            "phone": request.form.get("phone"),
-            "bmc_relationship": request.form.get("bmc_relationship"),
-        })
         connection.commit()
         connection.close()
 
         return redirect(url_for("contacts"))
 
     connection = get_db_connection()
-    accounts = connection.execute("""
-        SELECT *
-        FROM accounts
-        ORDER BY account_name, business_unit
-    """).fetchall()
+    accounts = connection.execute("SELECT * FROM accounts ORDER BY account_name").fetchall()
     connection.close()
 
     return render_template("add_contact.html", accounts=accounts)
@@ -4227,7 +1849,7 @@ def view_contact(contact_id):
     connection = get_db_connection()
 
     contact = connection.execute("""
-        SELECT contacts.*, accounts.account_name, accounts.account_tier
+        SELECT contacts.*, accounts.account_name, accounts.account_tier, accounts.business_unit
         FROM contacts
         LEFT JOIN accounts ON contacts.account_id = accounts.id
         WHERE contacts.id = ?
@@ -4276,11 +1898,9 @@ def edit_contact(contact_id):
         (contact_id,)
     ).fetchone()
 
-    accounts = connection.execute("""
-        SELECT *
-        FROM accounts
-        ORDER BY account_name, business_unit
-    """).fetchall()
+    accounts = connection.execute(
+        "SELECT * FROM accounts ORDER BY account_name"
+    ).fetchall()
 
     if request.method == "POST":
         new_values = {
@@ -4302,6 +1922,8 @@ def edit_contact(contact_id):
             "education": request.form.get("education"),
             "social_media": request.form.get("social_media"),
             "additional_notes": request.form.get("additional_notes")
+            ,
+            "contact_status": request.form.get("contact_status", "Active")
         }
 
         labels = {
@@ -4322,7 +1944,8 @@ def edit_contact(contact_id):
             "personal_win": "Personal win",
             "education": "Education",
             "social_media": "Social media",
-            "additional_notes": "Additional notes"
+            "additional_notes": "Additional notes",
+            "contact_status": "Status"
         }
 
         changes = build_change_log(contact, new_values, labels)
@@ -4347,6 +1970,7 @@ def edit_contact(contact_id):
                 education = ?,
                 social_media = ?,
                 additional_notes = ?,
+                contact_status = ?,
                 last_updated = CURRENT_TIMESTAMP
             WHERE id = ?
         """, (
@@ -4368,11 +1992,11 @@ def edit_contact(contact_id):
             new_values["education"],
             new_values["social_media"],
             new_values["additional_notes"],
+            new_values["contact_status"],
             contact_id
         ))
 
         if changes:
-            audit_record_update(connection, "contact", contact_id, contact, new_values, labels)
             add_timeline_entry(
                 connection,
                 "contact",
@@ -4398,36 +2022,41 @@ def edit_contact(contact_id):
 @app.route("/contacts/<int:contact_id>/delete", methods=("POST",))
 def delete_contact(contact_id):
     connection = get_db_connection()
-    delete_contact_records(connection, [contact_id])
+    connection.execute("DELETE FROM timeline_entries WHERE related_type = 'contact' AND related_id = ?", (contact_id,))
+    connection.execute("DELETE FROM contacts WHERE id = ?", (contact_id,))
     connection.commit()
     connection.close()
 
     return redirect(url_for("contacts"))
 
 
-@app.route("/contacts/bulk-delete", methods=("POST",))
-def bulk_delete_contacts():
-    contact_ids = selected_record_ids()
+@app.route("/contacts/archive", methods=("POST",))
+def archive_contacts():
+    contact_ids = request.form.getlist("contact_ids")
     if contact_ids:
+        placeholders = ",".join("?" for _ in contact_ids)
         connection = get_db_connection()
-        delete_contact_records(connection, contact_ids)
+        connection.execute(f"""
+            UPDATE contacts
+            SET archived = 1,
+                archived_date = date('now'),
+                contact_status = 'Inactive',
+                last_updated = CURRENT_TIMESTAMP
+            WHERE id IN ({placeholders})
+        """, contact_ids)
         connection.commit()
         connection.close()
-    return redirect(url_for("contacts"))
+
+    return redirect(url_for("contacts", contact_status="Inactive"))
 
 
 @app.route("/outreach")
 def outreach():
-    user = current_user()
     fy_filter = request.args.get("fy")
     quarter_filter = request.args.get("quarter")
-    sales_play_filter = request.args.get("sales_play")
+    campaign_filter = request.args.get("campaign")
     account_filter = request.args.get("account_id")
     outcome_filter = request.args.get("outcome")
-    selected_statuses = request.args.getlist("task_status")
-    if not selected_statuses:
-        selected_statuses = ["All Open"]
-    closed_statuses = ["Closed", "Completed", "Cancelled"]
 
     connection = get_db_connection()
 
@@ -4449,9 +2078,9 @@ def outreach():
         query += " AND outreach.quarter = ?"
         params.append(quarter_filter)
 
-    if sales_play_filter:
-        query += " AND outreach.sales_play = ?"
-        params.append(sales_play_filter)
+    if campaign_filter:
+        query += " AND outreach.campaign = ?"
+        params.append(campaign_filter)
 
     if account_filter:
         query += " AND outreach.account_id = ?"
@@ -4461,51 +2090,13 @@ def outreach():
         query += " AND outreach.outcome = ?"
         params.append(outcome_filter)
 
-    if "All" in selected_statuses:
-        pass
-    elif "All Closed" in selected_statuses:
-        placeholders = ",".join("?" for _ in closed_statuses)
-        query += f" AND COALESCE(outreach.task_status, 'Not Started') IN ({placeholders})"
-        params.extend(closed_statuses)
-    elif "All Open" in selected_statuses:
-        placeholders = ",".join("?" for _ in closed_statuses)
-        query += f" AND COALESCE(outreach.task_status, '') NOT IN ({placeholders})"
-        params.extend(closed_statuses)
-    elif selected_statuses:
-        placeholders = ",".join("?" for _ in selected_statuses)
-        query += f" AND COALESCE(outreach.task_status, 'Not Started') IN ({placeholders})"
-        params.extend(selected_statuses)
+    query += " ORDER BY outreach.activity_date DESC, outreach.activity_time DESC"
 
-    query += """
-        ORDER BY
-            CASE
-                WHEN outreach.next_action_date IS NULL OR outreach.next_action_date = ''
-                THEN 1 ELSE 0
-            END,
-            outreach.next_action_date ASC,
-            outreach.next_action_time ASC,
-            outreach.activity_date DESC,
-            outreach.id DESC
-    """
-
-    workspace_schema = current_user_schema() if using_postgres() else ""
-    outreach_records = []
-    for row in connection.execute(query, params).fetchall():
-        row_dict = dict(row)
-        row_dict["workspace_schema"] = workspace_schema
-        outreach_records.append(row_dict)
+    outreach_records = connection.execute(query, params).fetchall()
 
     accounts = connection.execute(
         "SELECT * FROM accounts ORDER BY account_name"
     ).fetchall()
-    existing_sales_plays = connection.execute("""
-        SELECT DISTINCT sales_play
-        FROM outreach
-        WHERE sales_play IS NOT NULL
-          AND sales_play != ''
-        ORDER BY sales_play
-    """).fetchall()
-    sales_play_options = sorted(row["sales_play"] for row in existing_sales_plays if row["sales_play"])
 
     connection.close()
 
@@ -4513,99 +2104,51 @@ def outreach():
         "outreach.html",
         outreach_records=outreach_records,
         accounts=accounts,
-        sales_play_options=sales_play_options,
         fy_filter=fy_filter,
         quarter_filter=quarter_filter,
-        sales_play_filter=sales_play_filter,
+        campaign_filter=campaign_filter,
         account_filter=account_filter,
-        outcome_filter=outcome_filter,
-        selected_statuses=selected_statuses,
-        assignable_users=list_assignable_users(),
-        message=request.args.get("message", ""),
-        error=request.args.get("error", ""),
+        outcome_filter=outcome_filter
     )
 
 
 @app.route("/outreach/add", methods=("GET", "POST"))
 def add_outreach():
     connection = get_db_connection()
-    prefill = {}
-    error = ""
-    prefill_from_id = request.args.get("prefill_from")
-    if prefill_from_id:
-        source = connection.execute(
-            "SELECT * FROM outreach WHERE id = ?",
-            (prefill_from_id,),
-        ).fetchone()
-        if source:
-            prefill = {
-                "account_id": source["account_id"],
-                "contact_id": source["contact_id"],
-                "notes": f"Follow-on task from completed outreach #{source['id']}.",
-            }
 
     if request.method == "POST":
-        prefill = dict(request.form)
-        requested_status = request.form.get("task_status", "Not Started")
-        if not fy_quarter_are_valid(request.form.get("fy"), request.form.get("quarter")):
-            error = fy_quarter_required_message()
-        elif not contact_matches_account(connection, request.form.get("account_id"), request.form.get("contact_id")):
-            error = "Select a contact that belongs to the selected account."
-        elif status_requires_activity_update(requested_status) and not activity_update_is_valid(request.form.get("next_action")):
-            error = activity_update_required_message()
-        else:
-            sales_play_value = request.form.get("sales_play")
-            cursor = connection.execute("""
-                INSERT INTO outreach (
-                    fy, quarter, campaign, sales_play, account_id, contact_id, activity_type,
-                    activity_date, activity_time, subject, notes, outcome,
-                    next_action, next_action_date, next_action_time,
-                    task_status, assigned_to
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                request.form.get("fy"),
-                request.form.get("quarter"),
-                sales_play_value,
-                sales_play_value,
-                request.form.get("account_id"),
-                request.form.get("contact_id"),
-                request.form.get("activity_type"),
-                request.form.get("activity_date"),
-                request.form.get("activity_time"),
-                request.form.get("subject"),
-                request.form.get("notes", ""),
-                request.form.get("outcome"),
-                request.form.get("next_action"),
-                request.form.get("next_action_date"),
-                request.form.get("next_action_time"),
-                request.form.get("task_status", "Not Started"),
-                request.form.get("assigned_to", "")
-            ))
-            outreach_id = cursor.lastrowid
-            audit_record_create(connection, "outreach", outreach_id, {
-                "fy": request.form.get("fy"),
-                "quarter": request.form.get("quarter"),
-                "campaign": sales_play_value,
-                "sales_play": sales_play_value,
-                "account_id": request.form.get("account_id"),
-                "contact_id": request.form.get("contact_id"),
-                "activity_type": request.form.get("activity_type"),
-                "activity_date": request.form.get("activity_date"),
-                "activity_time": request.form.get("activity_time"),
-                "subject": request.form.get("subject"),
-                "outcome": request.form.get("outcome"),
-                "next_action": request.form.get("next_action"),
-                "next_action_date": request.form.get("next_action_date"),
-                "next_action_time": request.form.get("next_action_time"),
-                "task_status": request.form.get("task_status", "Not Started"),
-                "assigned_to": request.form.get("assigned_to", ""),
-            })
+        connection.execute("""
+            INSERT INTO outreach (
+                fy, quarter, campaign, sales_play, account_id, contact_id, activity_type,
+                activity_date, activity_time, subject, notes, outcome,
+                next_action, next_action_date, next_action_time,
+                task_status, assigned_to
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            request.form.get("fy"),
+            request.form.get("quarter"),
+            request.form.get("campaign"),
+            request.form.get("sales_play"),
+            request.form.get("account_id"),
+            request.form.get("contact_id"),
+            request.form.get("activity_type"),
+            request.form.get("activity_date"),
+            request.form.get("activity_time"),
+            request.form.get("subject"),
+            request.form.get("notes"),
+            request.form.get("outcome"),
+            request.form.get("next_action"),
+            request.form.get("next_action_date"),
+            request.form.get("next_action_time"),
+            request.form.get("task_status", "Not Started"),
+            request.form.get("assigned_to", "")
+        ))
 
-            connection.commit()
-            connection.close()
+        connection.commit()
+        connection.close()
 
-            return redirect(url_for("outreach"))
+        return redirect(url_for("outreach"))
 
     accounts = connection.execute("SELECT * FROM accounts ORDER BY account_name").fetchall()
 
@@ -4613,19 +2156,17 @@ def add_outreach():
         SELECT contacts.*, accounts.account_name, accounts.account_tier
         FROM contacts
         LEFT JOIN accounts ON contacts.account_id = accounts.id
+        WHERE COALESCE(contacts.archived, 0) = 0
         ORDER BY contacts.name
     """).fetchall()
+    sales_plays = distinct_sales_plays(connection)
 
     profile = connection.execute("""
         SELECT *
         FROM user_profile
         WHERE id = 1
     """).fetchone()
-    non_working_block_rows = connection.execute("""
-        SELECT *
-        FROM non_working_blocks
-        ORDER BY start_date, end_date, id
-    """).fetchall()
+
     connection.close()
 
     return render_template(
@@ -4633,9 +2174,7 @@ def add_outreach():
         accounts=accounts,
         contacts=contacts,
         profile=profile,
-        non_working_blocks=non_working_block_rows,
-        prefill=prefill,
-        error=error
+        sales_plays=sales_plays
     )
 
 
@@ -4643,84 +2182,34 @@ def add_outreach():
 def campaign_builder():
     connection = get_db_connection()
     generated_count = 0
-    error = ""
     selected_account_id = request.form.get("account_id") or request.args.get("account_id") or ""
     selected_contact_ids = request.form.getlist("contact_ids")
     selected_pg_week_start = request.form.get("pg_week_start", "")
-    selected_campaign_start = request.form.get("campaign_start_date", "")
-    selected_campaign_end = request.form.get("campaign_end_date", "")
-    selected_total_tasks = request.form.get("total_outreach_tasks", "8")
-    selected_times_per_week = request.form.get("times_per_week", "2")
-    selected_sales_play = request.form.get("sales_play") or request.form.get("sales_plays", "")
-    selected_fy = request.form.get("fy", "")
-    selected_quarter = request.form.get("quarter", "")
-    success_context_summary = ""
-    profile = connection.execute("""
-        SELECT *
-        FROM user_profile
-        WHERE id = 1
-    """).fetchone()
-    non_working_block_rows = connection.execute("""
-        SELECT *
-        FROM non_working_blocks
-        ORDER BY start_date, end_date, id
-    """).fetchall()
-    non_working_blocks = parse_non_working_blocks(non_working_block_rows)
+    selected_sales_plays = request.form.get("sales_plays", "")
 
     if request.method == "POST":
         account_id = request.form.get("account_id")
         pg_week_start_raw = request.form.get("pg_week_start", "")
-        campaign_start_raw = request.form.get("campaign_start_date", "")
-        campaign_end_raw = request.form.get("campaign_end_date", "")
-        try:
-            total_tasks = max(1, min(int(request.form.get("total_outreach_tasks", "8") or 8), 50))
-        except ValueError:
-            total_tasks = 8
-        try:
-            times_per_week = max(1, min(int(request.form.get("times_per_week", "2") or 2), 7))
-        except ValueError:
-            times_per_week = 2
-        selected_total_tasks = str(total_tasks)
-        selected_times_per_week = str(times_per_week)
         contact_ids = request.form.getlist("contact_ids")
-        sales_play = (request.form.get("sales_play") or request.form.get("sales_plays", "")).strip()
-        if "\n" in sales_play:
-            sales_play = next((line.strip() for line in sales_play.splitlines() if line.strip()), "")
-        if not sales_play:
-            sales_play = "PG week sales play"
-        selected_sales_play = sales_play
-        selected_fy = request.form.get("fy", "")
-        selected_quarter = request.form.get("quarter", "")
+        sales_plays = [
+            play.strip()
+            for play in request.form.get("sales_plays", "").splitlines()
+            if play.strip()
+        ]
 
-        if not account_id:
-            error = "Select an account before generating a campaign."
-        elif not contact_ids:
-            error = "Select at least one contact for the selected account before generating a campaign."
-        elif not fy_quarter_are_valid(selected_fy, selected_quarter):
-            error = fy_quarter_required_message()
-        elif account_id and pg_week_start_raw and campaign_start_raw and campaign_end_raw and contact_ids:
-            today = datetime.now().date()
+        if not sales_plays:
+            sales_plays = ["PG week sales play"]
+
+        if account_id and pg_week_start_raw and contact_ids:
             pg_week_start = datetime.strptime(pg_week_start_raw, "%Y-%m-%d").date()
-            campaign_start = datetime.strptime(campaign_start_raw, "%Y-%m-%d").date()
-            campaign_end = datetime.strptime(campaign_end_raw, "%Y-%m-%d").date()
-            if campaign_end < campaign_start:
-                campaign_start, campaign_end = campaign_end, campaign_start
-            if campaign_start < today:
-                campaign_start = today
-                selected_campaign_start = campaign_start.isoformat()
-            if campaign_end < campaign_start:
-                error = "Campaign end date cannot be earlier than the campaign start date."
-            if error:
-                contacts = []
-            else:
-                placeholders = ",".join("?" for _ in contact_ids)
-                contacts = connection.execute(f"""
-                    SELECT *
-                    FROM contacts
-                    WHERE account_id = ?
-                      AND id IN ({placeholders})
-                    ORDER BY name
-                """, [account_id, *contact_ids]).fetchall()
+            placeholders = ",".join("?" for _ in contact_ids)
+            contacts = connection.execute(f"""
+                SELECT *
+                FROM contacts
+                WHERE account_id = ?
+                  AND id IN ({placeholders})
+                ORDER BY name
+            """, [account_id, *contact_ids]).fetchall()
 
             account = connection.execute("""
                 SELECT account_name
@@ -4728,67 +2217,28 @@ def campaign_builder():
                 WHERE id = ?
             """, (account_id,)).fetchone()
 
-            if not account:
-                error = "The selected account could not be found."
-            elif not error and not contacts:
-                error = "The selected account has no matching selected contacts. Add a contact to the account first, then build the campaign."
-            elif not error:
-                valid_contact_ids = [str(contact["id"]) for contact in contacts]
-                selected_contact_ids = valid_contact_ids
-                account_name = account["account_name"] if account else "Selected account"
-                campaign_name = sales_play
-                assigned_to = request.form.get("assigned_to", "")
-                fy = selected_fy
-                quarter = selected_quarter
-                success_context = build_campaign_success_context(connection, account_id, valid_contact_ids, sales_play)
-                success_context_summary = success_context["summary"]
-                schedule_templates = success_context["templates"]
-                selected_fy = fy
-                selected_quarter = quarter
-                reserved_rows = connection.execute("""
-                    SELECT next_action_date, next_action_time
-                    FROM outreach
-                    WHERE next_action_date IS NOT NULL
-                      AND next_action_date != ''
-                      AND COALESCE(task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
-                """).fetchall()
-                reserved_slots = {
-                    (row["next_action_date"], row["next_action_time"] or "09:00")
-                    for row in reserved_rows
-                    if row["next_action_date"]
-                }
+            account_name = account["account_name"] if account else "Selected account"
+            assigned_to = request.form.get("assigned_to", "")
+            fy = request.form.get("fy", "")
+            quarter = request.form.get("quarter", "")
 
-                for contact in contacts:
-                    for step in build_campaign_schedule(
-                        campaign_start,
-                        campaign_end,
-                        total_tasks,
-                        times_per_week,
-                        schedule_templates,
-                        profile=profile,
-                        reserved_slots=reserved_slots,
-                        non_working_blocks=non_working_blocks
-                    ):
-                        action_date = step["action_date"]
+            for contact in contacts:
+                for sales_play in sales_plays:
+                    for step in build_pg_campaign_steps(pg_week_start):
+                        action_date = pg_week_start + timedelta(days=step["offset_days"])
                         subject = f"{step['subject_prefix']}: {sales_play}"
                         notes = (
-                            f"Auto-generated campaign step for {account_name}. "
-                            f"Campaign window: {campaign_start.isoformat()} to {campaign_end.isoformat()}. "
-                            f"Total outreach tasks: {total_tasks}. "
-                            f"Times per week: {times_per_week}. "
-                            f"Sales play: {sales_play}. Contact: {contact['name']}. "
-                            f"{success_context_summary}"
+                            f"Auto-generated 4-week PG campaign step for {account_name}. "
+                            f"Sales play: {sales_play}. Contact: {contact['name']}."
                         )
+                        next_action = f"{step['next_action']} for {contact['name']} - {sales_play}"
+
                         connection.execute("""
                             INSERT INTO outreach (
                                 fy,
                                 quarter,
                                 campaign,
                                 sales_play,
-                                campaign_start_date,
-                                campaign_end_date,
-                                campaign_tasks_per_week,
-                                campaign_total_tasks,
                                 account_id,
                                 contact_id,
                                 activity_type,
@@ -4803,62 +2253,57 @@ def campaign_builder():
                                 task_status,
                                 assigned_to
                             )
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, (
-                                fy,
-                                quarter,
-                                campaign_name,
-                                sales_play,
-                                campaign_start.isoformat(),
-                                campaign_end.isoformat(),
-                                times_per_week,
-                                total_tasks,
-                                account_id,
-                                contact["id"],
-                                step["activity_type"],
-                                action_date.isoformat(),
-                                step["time"],
-                                subject,
-                                notes,
-                                "No Response Yet",
-                                "",
-                                action_date.isoformat(),
-                                step["time"],
-                                "Not Started",
-                                assigned_to
+                            fy,
+                            quarter,
+                            step["campaign"],
+                            sales_play,
+                            account_id,
+                            contact["id"],
+                            step["activity_type"],
+                            action_date.isoformat(),
+                            step["time"],
+                            subject,
+                            notes,
+                            "No Response Yet",
+                            next_action,
+                            action_date.isoformat(),
+                            step["time"],
+                            "Not Started",
+                            assigned_to
                         ))
                         generated_count += 1
 
-                add_timeline_entry(
-                    connection,
-                    "account",
-                    account_id,
-                    "Campaign Built",
-                    f"Generated {generated_count} campaign outreach step(s) for sales play {sales_play} from {campaign_start.isoformat()} to {campaign_end.isoformat()} with {total_tasks} task(s) at {times_per_week} time(s) per week. {success_context_summary}"
-                )
-                connection.commit()
+            add_timeline_entry(
+                connection,
+                "account",
+                account_id,
+                "Campaign Built",
+                f"Generated {generated_count} PG campaign outreach step(s)"
+            )
+            connection.commit()
 
     accounts = connection.execute("""
-        SELECT
-            accounts.*,
-            COUNT(contacts.id) AS contact_count
+        SELECT *
         FROM accounts
-        LEFT JOIN contacts ON contacts.account_id = accounts.id
-        GROUP BY accounts.id
-        HAVING COUNT(contacts.id) > 0
-        ORDER BY accounts.account_name
+        ORDER BY account_name
     """).fetchall()
 
     contacts = connection.execute("""
         SELECT contacts.*, accounts.account_name
         FROM contacts
         LEFT JOIN accounts ON contacts.account_id = accounts.id
-        ORDER BY
-            CASE WHEN accounts.pg_bible_order IS NULL THEN 1 ELSE 0 END,
-            accounts.pg_bible_order,
-            accounts.account_name,
-            contacts.name
+        WHERE COALESCE(contacts.archived, 0) = 0
+        ORDER BY accounts.account_name, contacts.name
     """).fetchall()
+    sales_plays = distinct_sales_plays(connection)
+
+    profile = connection.execute("""
+        SELECT *
+        FROM user_profile
+        WHERE id = 1
+    """).fetchone()
 
     connection.close()
 
@@ -4871,15 +2316,8 @@ def campaign_builder():
         selected_account_id=selected_account_id,
         selected_contact_ids=selected_contact_ids,
         selected_pg_week_start=selected_pg_week_start,
-        selected_campaign_start=selected_campaign_start,
-        selected_campaign_end=selected_campaign_end,
-        selected_total_tasks=selected_total_tasks,
-        selected_times_per_week=selected_times_per_week,
-        selected_sales_play=selected_sales_play,
-        selected_fy=selected_fy,
-        selected_quarter=selected_quarter,
-        success_context_summary=success_context_summary,
-        error=error
+        selected_sales_plays=selected_sales_plays,
+        sales_plays=sales_plays
     )
 
 
@@ -4888,7 +2326,9 @@ def view_outreach(outreach_id):
     connection = get_db_connection()
 
     outreach_item = connection.execute("""
-        SELECT outreach.*, accounts.account_name, accounts.account_tier, contacts.name AS contact_name
+        SELECT outreach.*, accounts.account_name, accounts.account_tier,
+               contacts.name AS contact_name, contacts.email AS contact_email,
+               contacts.phone AS contact_phone, contacts.linkedin AS contact_linkedin
         FROM outreach
         LEFT JOIN accounts ON outreach.account_id = accounts.id
         LEFT JOIN contacts ON outreach.contact_id = contacts.id
@@ -4932,36 +2372,29 @@ def add_outreach_timeline(outreach_id):
 @app.route("/outreach/<int:outreach_id>/delete", methods=("POST",))
 def delete_outreach(outreach_id):
     connection = get_db_connection()
-    delete_outreach_records(connection, [outreach_id])
+    outreach_item = connection.execute(
+        "SELECT task_status FROM outreach WHERE id = ?",
+        (outreach_id,)
+    ).fetchone()
+    if outreach_item and is_closed_task_status(outreach_item["task_status"]):
+        connection.close()
+        return redirect(url_for("outreach"))
+    connection.execute("DELETE FROM timeline_entries WHERE related_type = 'outreach' AND related_id = ?", (outreach_id,))
+    connection.execute("DELETE FROM outreach WHERE id = ?", (outreach_id,))
     connection.commit()
     connection.close()
 
     return redirect(url_for("outreach"))
 
 
-@app.route("/outreach/bulk-delete", methods=("POST",))
-def bulk_delete_outreach():
-    outreach_ids = selected_record_ids()
-    if outreach_ids:
-        connection = get_db_connection()
-        delete_outreach_records(connection, outreach_ids)
-        connection.commit()
-        connection.close()
-    return redirect(url_for("outreach"))
-
-
 @app.route("/outreach/<int:outreach_id>/edit", methods=("GET", "POST"))
 def edit_outreach(outreach_id):
     connection = get_db_connection()
-    error = ""
 
     outreach_item = connection.execute(
         "SELECT * FROM outreach WHERE id = ?",
         (outreach_id,)
     ).fetchone()
-    if not outreach_item:
-        connection.close()
-        return redirect(url_for("outreach", error="The selected outreach task could not be found."))
 
     accounts = connection.execute(
         "SELECT * FROM accounts ORDER BY account_name"
@@ -4971,34 +2404,34 @@ def edit_outreach(outreach_id):
         SELECT contacts.*, accounts.account_name
         FROM contacts
         LEFT JOIN accounts ON contacts.account_id = accounts.id
+        WHERE COALESCE(contacts.archived, 0) = 0
         ORDER BY contacts.name
     """).fetchall()
+    sales_plays = distinct_sales_plays(connection)
 
     profile = connection.execute("""
         SELECT *
         FROM user_profile
         WHERE id = 1
     """).fetchone()
-    non_working_block_rows = connection.execute("""
-        SELECT *
-        FROM non_working_blocks
-        ORDER BY start_date, end_date, id
-    """).fetchall()
+
     if request.method == "POST":
-        submit_action = request.form.get("submit_action", "save")
-        sales_play_value = request.form.get("sales_play")
+        if is_closed_task_status(outreach_item["task_status"]):
+            connection.close()
+            return redirect(url_for("view_outreach", outreach_id=outreach_id))
+
         new_values = {
             "fy": request.form.get("fy"),
             "quarter": request.form.get("quarter"),
-            "campaign": sales_play_value,
-            "sales_play": sales_play_value,
+            "campaign": request.form.get("campaign"),
+            "sales_play": request.form.get("sales_play"),
             "account_id": request.form.get("account_id"),
             "contact_id": request.form.get("contact_id"),
             "activity_type": request.form.get("activity_type"),
             "activity_date": request.form.get("activity_date"),
             "activity_time": request.form.get("activity_time"),
             "subject": request.form.get("subject"),
-            "notes": outreach_item["notes"] or "",
+            "notes": request.form.get("notes"),
             "outcome": request.form.get("outcome"),
             "next_action": request.form.get("next_action"),
             "next_action_date": request.form.get("next_action_date"),
@@ -5006,68 +2439,23 @@ def edit_outreach(outreach_id):
             "task_status": request.form.get("task_status", "Not Started"),
             "assigned_to": request.form.get("assigned_to", "")
         }
-        follow_on_requested = submit_action == "complete_and_follow"
-
-        if submit_action in ("complete_and_follow", "complete_only"):
-            new_values["task_status"] = "Completed"
-            new_values["next_action_date"] = ""
-            new_values["next_action_time"] = ""
-
-        if not fy_quarter_are_valid(new_values["fy"], new_values["quarter"]):
-            error = fy_quarter_required_message()
-            connection.close()
-            return render_template(
-                "edit_outreach.html",
-                outreach_item=outreach_item,
-                accounts=accounts,
-                contacts=contacts,
-                profile=profile,
-                non_working_blocks=non_working_block_rows,
-                error=error
-            )
-
-        if not contact_matches_account(connection, new_values["account_id"], new_values["contact_id"]):
-            error = "Select a contact that belongs to the selected account."
-            connection.close()
-            return render_template(
-                "edit_outreach.html",
-                outreach_item=outreach_item,
-                accounts=accounts,
-                contacts=contacts,
-                profile=profile,
-                non_working_blocks=non_working_block_rows,
-                error=error
-            )
-
-        if status_requires_activity_update(new_values["task_status"]) and not activity_update_is_valid(new_values["next_action"]):
-            error = activity_update_required_message()
-            connection.close()
-            return render_template(
-                "edit_outreach.html",
-                outreach_item=outreach_item,
-                accounts=accounts,
-                contacts=contacts,
-                profile=profile,
-                non_working_blocks=non_working_block_rows,
-                error=error
-            )
 
         labels = {
             "fy": "FY",
             "quarter": "Quarter",
-            "campaign": "Sales play or initiative campaign grouping",
-            "sales_play": "Sales play or initiative",
+            "campaign": "Campaign",
+            "sales_play": "Sales play",
             "account_id": "Account",
             "contact_id": "Contact",
             "activity_type": "Activity type",
-            "activity_date": "Activity start date",
-            "activity_time": "Activity start time",
+            "activity_date": "Activity date",
+            "activity_time": "Activity time",
             "subject": "Subject",
-            "notes": "System metadata",
+            "notes": "Notes",
             "outcome": "Outcome",
-            "next_action": "Activity update",
-            "next_action_date": "Activity due date",
-            "next_action_time": "Activity due time",
+            "next_action": "Next action",
+            "next_action_date": "Next action date",
+            "next_action_time": "Next action time",
             "task_status": "Task status",
             "assigned_to": "Assigned to"
         }
@@ -5117,7 +2505,6 @@ def edit_outreach(outreach_id):
         ))
 
         if changes:
-            audit_record_update(connection, "outreach", outreach_id, outreach_item, new_values, labels)
             add_timeline_entry(
                 connection,
                 "outreach",
@@ -5129,10 +2516,7 @@ def edit_outreach(outreach_id):
         connection.commit()
         connection.close()
 
-        if follow_on_requested:
-            return redirect(url_for("add_outreach", prefill_from=outreach_id))
-
-        return redirect(url_for("outreach"))
+        return redirect(url_for("view_outreach", outreach_id=outreach_id))
 
     connection.close()
 
@@ -5142,8 +2526,8 @@ def edit_outreach(outreach_id):
         accounts=accounts,
         contacts=contacts,
         profile=profile,
-        non_working_blocks=non_working_block_rows,
-        error=error
+        sales_plays=sales_plays,
+        is_locked=is_closed_task_status(outreach_item["task_status"])
     )
 
 
@@ -5215,26 +2599,21 @@ def global_search():
                OR website LIKE ?
                OR country LIKE ?
                OR city LIKE ?
-               OR partner_manager LIKE ?
-               OR bmc_partner_manager LIKE ?
                OR relationship_owner LIKE ?
                OR notes LIKE ?
             ORDER BY partner_name
         """, (
             search_term, search_term, search_term, search_term,
-            search_term, search_term, search_term, search_term, search_term
+            search_term, search_term, search_term
         )).fetchall()
 
         partner_contact_results = connection.execute("""
-            SELECT partner_contacts.*, partners.partner_name, accounts.account_name
+            SELECT partner_contacts.*, partners.partner_name
             FROM partner_contacts
             LEFT JOIN partners ON partner_contacts.partner_id = partners.id
-            LEFT JOIN accounts ON partner_contacts.account_id = accounts.id
             WHERE partner_contacts.name LIKE ?
                OR partner_contacts.job_title LIKE ?
-               OR partner_contacts.partner_contact_role LIKE ?
                OR partner_contacts.coverage_area LIKE ?
-               OR accounts.account_name LIKE ?
                OR partner_contacts.relationship_owner LIKE ?
                OR partner_contacts.email LIKE ?
                OR partner_contacts.phone LIKE ?
@@ -5248,8 +2627,7 @@ def global_search():
         """, (
             search_term, search_term, search_term, search_term,
             search_term, search_term, search_term, search_term,
-            search_term, search_term, search_term, search_term,
-            search_term, search_term
+            search_term, search_term, search_term, search_term
         )).fetchall()
 
         outreach_results = connection.execute("""
@@ -5260,6 +2638,7 @@ def global_search():
             WHERE outreach.subject LIKE ?
                OR outreach.notes LIKE ?
                OR outreach.outcome LIKE ?
+               OR outreach.campaign LIKE ?
                OR outreach.sales_play LIKE ?
                OR outreach.next_action LIKE ?
                OR outreach.activity_type LIKE ?
@@ -5268,7 +2647,8 @@ def global_search():
             ORDER BY outreach.activity_date DESC, outreach.activity_time DESC
         """, (
             search_term, search_term, search_term, search_term,
-            search_term, search_term, search_term, search_term
+            search_term, search_term, search_term, search_term,
+            search_term
         )).fetchall()
 
         timeline_results = connection.execute("""
@@ -5298,1050 +2678,100 @@ def global_search():
 
 @app.route("/tasks")
 def tasks():
-    return redirect(url_for("home", _anchor="dashboard-tasks"))
+    connection = get_db_connection()
 
+    closed_status_placeholders = ",".join("?" for _ in CLOSED_TASK_STATUSES)
+    open_status_filter = f"COALESCE(task_status, '') NOT IN ({closed_status_placeholders})"
+    closed_status_params = list(CLOSED_TASK_STATUSES)
 
-def row_to_insert_values(row, columns):
-    return [row[column] if column in row.keys() else None for column in columns]
+    overdue_tasks = connection.execute(f"""
+        SELECT outreach.*, accounts.account_name, accounts.account_tier, contacts.name AS contact_name,
+               contacts.email AS contact_email, contacts.phone AS contact_phone, contacts.linkedin AS contact_linkedin
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
+        WHERE next_action_date IS NOT NULL
+          AND next_action_date != ''
+          AND date(next_action_date) < date('now')
+          AND {open_status_filter}
+        ORDER BY next_action_date ASC, next_action_time ASC
+    """, closed_status_params).fetchall()
 
+    today_tasks = connection.execute(f"""
+        SELECT outreach.*, accounts.account_name, accounts.account_tier, contacts.name AS contact_name,
+               contacts.email AS contact_email, contacts.phone AS contact_phone, contacts.linkedin AS contact_linkedin
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
+        WHERE next_action_date IS NOT NULL
+          AND next_action_date != ''
+          AND date(next_action_date) = date('now')
+          AND {open_status_filter}
+        ORDER BY next_action_time ASC
+    """, closed_status_params).fetchall()
 
-def insert_copied_row(connection, table_name, columns, row, overrides=None):
-    values = dict(zip(columns, row_to_insert_values(row, columns)))
-    values.update(overrides or {})
-    placeholders = ", ".join("?" for _ in columns)
-    column_sql = ", ".join(columns)
-    cursor = connection.execute(
-        f"INSERT INTO {table_name} ({column_sql}) VALUES ({placeholders})",
-        [values[column] for column in columns],
-    )
-    return cursor.lastrowid
+    upcoming_tasks = connection.execute(f"""
+        SELECT outreach.*, accounts.account_name, accounts.account_tier, contacts.name AS contact_name,
+               contacts.email AS contact_email, contacts.phone AS contact_phone, contacts.linkedin AS contact_linkedin
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
+        WHERE next_action_date IS NOT NULL
+          AND next_action_date != ''
+          AND date(next_action_date) > date('now')
+          AND {open_status_filter}
+        ORDER BY next_action_date ASC, next_action_time ASC
+        LIMIT 10
+    """, closed_status_params).fetchall()
 
+    connection.close()
 
-def assignable_user_by_id(user_id):
-    if not user_id:
-        return None
-    for assignable_user in list_assignable_users():
-        if str(assignable_user["id"]) == str(user_id):
-            return assignable_user
-    return None
-
-
-def current_user_owner_payload():
-    user = current_user()
-    if not user:
-        return {
-            "owner_user_id": None,
-            "owner_name": "",
-            "owner_email": "",
-        }
-    return {
-        "owner_user_id": user["id"],
-        "owner_name": user["full_name"],
-        "owner_email": user["email"],
-    }
-
-
-def account_owner_payload(account):
-    fallback = current_user_owner_payload()
-    if not account:
-        return fallback
-    return {
-        "owner_user_id": account["owner_user_id"] if "owner_user_id" in account.keys() and account["owner_user_id"] else fallback["owner_user_id"],
-        "owner_name": account["owner_name"] if "owner_name" in account.keys() and account["owner_name"] else fallback["owner_name"],
-        "owner_email": account["owner_email"] if "owner_email" in account.keys() and account["owner_email"] else fallback["owner_email"],
-    }
-
-
-def current_user_owns_account(account):
-    user = current_user()
-    if not user or not account:
-        return False
-    owner = account_owner_payload(account)
-    return not owner["owner_user_id"] or str(owner["owner_user_id"]) == str(user["id"])
-
-
-def upsert_account_share(connection, account_id, target_member):
-    existing = connection.execute("""
-        SELECT id
-        FROM account_shared_users
-        WHERE account_id = ?
-          AND user_id = ?
-    """, (account_id, target_member["id"])).fetchone()
-    if existing:
-        connection.execute("""
-            UPDATE account_shared_users
-            SET full_name = ?,
-                email = ?,
-                workspace_schema = ?,
-                last_updated = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """, (
-            target_member["full_name"],
-            target_member["email"],
-            target_member["workspace_schema"],
-            existing["id"],
-        ))
-        return existing["id"]
-    cursor = connection.execute("""
-        INSERT INTO account_shared_users (
-            account_id,
-            user_id,
-            full_name,
-            email,
-            workspace_schema
-        )
-        VALUES (?, ?, ?, ?, ?)
-    """, (
-        account_id,
-        target_member["id"],
-        target_member["full_name"],
-        target_member["email"],
-        target_member["workspace_schema"],
-    ))
-    return cursor.lastrowid
-
-
-def account_access_user_ids(connection, account):
-    owner = account_owner_payload(account)
-    allowed_user_ids = set()
-    if owner["owner_user_id"]:
-        allowed_user_ids.add(str(owner["owner_user_id"]))
-    rows = connection.execute("""
-        SELECT user_id
-        FROM account_shared_users
-        WHERE account_id = ?
-    """, (account["id"],)).fetchall()
-    allowed_user_ids.update(str(row["user_id"]) for row in rows if row["user_id"])
-    current = current_user()
-    if current:
-        allowed_user_ids.add(str(current["id"]))
-    return allowed_user_ids
-
-
-def assignee_has_account_access(connection, account, assigned_to_user_id):
-    if not assigned_to_user_id:
-        return True
-    return str(assigned_to_user_id) in account_access_user_ids(connection, account)
-
-
-def share_full_account_to_member(source_schema, account_id, target_member, actor_name):
-    restore_schema = session.get("workspace_schema")
-    try:
-        session["workspace_schema"] = target_member["workspace_schema"]
-        initialise_database(force=True)
-    finally:
-        if restore_schema:
-            session["workspace_schema"] = restore_schema
-        else:
-            session.pop("workspace_schema", None)
-
-    source_connection = get_schema_connection(schema=source_schema) if using_postgres() else get_db_connection()
-    target_connection = get_schema_connection(schema=target_member["workspace_schema"]) if using_postgres() else get_db_connection()
-
-    account = source_connection.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
-    if not account:
-        source_connection.close()
-        target_connection.close()
-        return "The selected account could not be found."
-
-    existing_account = target_connection.execute(
-        "SELECT id FROM accounts WHERE account_name = ?",
-        (account["account_name"],),
-    ).fetchone()
-    if existing_account:
-        target_account_id = existing_account["id"]
-        target_connection.execute("DELETE FROM partner_contacts WHERE account_id = ?", (target_account_id,))
-        target_connection.execute("DELETE FROM account_partners WHERE account_id = ?", (target_account_id,))
-        target_connection.execute("DELETE FROM account_custom_values WHERE account_id = ?", (target_account_id,))
-        target_connection.execute("DELETE FROM outreach WHERE account_id = ?", (target_account_id,))
-        target_connection.execute("DELETE FROM contacts WHERE account_id = ?", (target_account_id,))
-        target_connection.execute("""
-            UPDATE accounts
-            SET pg_bible_order = ?,
-                account_tier = ?,
-                industry = ?,
-                business_unit = ?,
-                country = ?,
-                city = ?,
-                website = ?,
-                pipeline_target = ?,
-                owner_user_id = ?,
-                owner_name = ?,
-                owner_email = ?,
-                notes = ?,
-                last_updated = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """, (
-            account["pg_bible_order"],
-            account["account_tier"],
-            account["industry"],
-            account["business_unit"],
-            account["country"],
-            account["city"],
-            account["website"],
-            account["pipeline_target"],
-            account["owner_user_id"] if "owner_user_id" in account.keys() else None,
-            account["owner_name"] if "owner_name" in account.keys() else actor_name,
-            account["owner_email"] if "owner_email" in account.keys() else "",
-            account["notes"],
-            target_account_id,
-        ))
-    else:
-        target_account_id = insert_copied_row(
-            target_connection,
-            "accounts",
-            ["account_name", "pg_bible_order", "account_tier", "industry", "business_unit", "country", "city", "website", "pipeline_target", "owner_user_id", "owner_name", "owner_email", "notes"],
-            account,
-        )
-
-    contact_id_map = {}
-    contacts = source_connection.execute("SELECT * FROM contacts WHERE account_id = ? ORDER BY id", (account_id,)).fetchall()
-    for contact in contacts:
-        new_contact_id = insert_copied_row(
-            target_connection,
-            "contacts",
-            [
-                "account_id", "category", "photo", "name", "job_title", "org_dept", "responsibilities",
-                "email", "phone", "location", "linkedin", "bmc_relationship", "characteristics",
-                "background", "personal_interests", "personal_win", "education", "social_media",
-                "additional_notes"
-            ],
-            contact,
-            {"account_id": target_account_id},
-        )
-        contact_id_map[contact["id"]] = new_contact_id
-
-    for outreach_item in source_connection.execute("SELECT * FROM outreach WHERE account_id = ? ORDER BY id", (account_id,)).fetchall():
-        insert_copied_row(
-            target_connection,
-            "outreach",
-            [
-                "fy", "quarter", "account_id", "contact_id", "campaign", "sales_play",
-                "campaign_start_date", "campaign_end_date", "campaign_tasks_per_week",
-                "campaign_total_tasks", "activity_date", "activity_time", "activity_type",
-                "subject", "notes", "outcome", "next_action", "next_action_date",
-                "next_action_time", "task_status", "assigned_to"
-            ],
-            outreach_item,
-            {
-                "account_id": target_account_id,
-                "contact_id": contact_id_map.get(outreach_item["contact_id"]),
-            },
-        )
-
-    for custom_value in source_connection.execute("SELECT * FROM account_custom_values WHERE account_id = ? ORDER BY id", (account_id,)).fetchall():
-        insert_copied_row(
-            target_connection,
-            "account_custom_values",
-            ["account_id", "field_key", "field_value"],
-            custom_value,
-            {"account_id": target_account_id},
-        )
-
-    for partner in source_connection.execute("SELECT * FROM account_partners WHERE account_id = ? ORDER BY id", (account_id,)).fetchall():
-        insert_copied_row(
-            target_connection,
-            "account_partners",
-            ["account_id", "partner_id", "partner_name", "partner_role", "involvement_status", "relationship_owner", "next_action", "notes"],
-            partner,
-            {"account_id": target_account_id},
-        )
-
-    for partner_contact in source_connection.execute("SELECT * FROM partner_contacts WHERE account_id = ? ORDER BY id", (account_id,)).fetchall():
-        insert_copied_row(
-            target_connection,
-            "partner_contacts",
-            [
-                "partner_id", "name", "job_title", "partner_contact_role", "coverage_area",
-                "account_id", "relationship_owner", "email", "phone", "location", "linkedin",
-                "relationship_status", "next_action", "notes"
-            ],
-            partner_contact,
-            {"account_id": target_account_id},
-        )
-
-    add_timeline_entry(
-        target_connection,
-        "account",
-        target_account_id,
-        "Account Shared",
-        f"Full account shared by {actor_name or 'team member'}."
-    )
-    target_connection.commit()
-    source_connection.close()
-    target_connection.close()
-    return ""
-
-
-@app.route("/team", methods=("GET", "POST"))
-def team_page():
-    user = current_user()
-    error = ""
-    invite_created = False
-    if request.method == "POST":
-        error = create_team_invite(
-            user,
-            request.form.get("invite_email", ""),
-            request.form.get("invite_role", "member"),
-        )
-        invite_created = not error
     return render_template(
-        "team.html",
-        team=active_team_for_user(user),
-        members=list_active_team_members(user),
-        invites=list_active_team_invites(user),
-        error=error,
-        invite_created=invite_created,
+        "tasks.html",
+        overdue_tasks=overdue_tasks,
+        today_tasks=today_tasks,
+        upcoming_tasks=upcoming_tasks,
+        task_rag_class=task_rag_class
     )
-
-
-@app.route("/team-outreach")
-def team_outreach():
-    return redirect(url_for("outreach"))
-
-
-def legacy_team_outreach_context():
-    user = current_user()
-    team = active_team_for_user(user)
-    members = list_active_team_members(user)
-    assignable_users = list_assignable_users()
-    member_schemas = {member["workspace_schema"]: member for member in members if member["workspace_schema"]}
-    rows = []
-    current_accounts = []
-
-    if using_postgres():
-        for member in members:
-            schema = member["workspace_schema"]
-            if not schema:
-                continue
-            try:
-                connection = get_schema_connection(schema=schema)
-                member_rows = connection.execute("""
-                    SELECT
-                        outreach.*,
-                        accounts.account_name,
-                        contacts.name AS contact_name
-                    FROM outreach
-                    LEFT JOIN accounts ON outreach.account_id = accounts.id
-                    LEFT JOIN contacts ON outreach.contact_id = contacts.id
-                    WHERE outreach.next_action_date IS NOT NULL
-                      AND outreach.next_action_date != ''
-                      AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
-                    ORDER BY
-                        COALESCE(NULLIF(outreach.assigned_to, ''), ?),
-                        COALESCE(NULLIF(accounts.account_name, ''), 'No Account'),
-                        COALESCE(NULLIF(outreach.sales_play, ''), 'No Sales Play'),
-                        outreach.next_action_date ASC,
-                        outreach.next_action_time ASC
-                """, (member["full_name"],)).fetchall()
-                for row in member_rows:
-                    row_dict = dict(row)
-                    row_dict["workspace_schema"] = schema
-                    row_dict["owner_name"] = member["full_name"]
-                    rows.append(row_dict)
-                connection.close()
-            except Exception:
-                continue
-    else:
-        connection = get_db_connection()
-        member_rows = connection.execute("""
-            SELECT outreach.*, accounts.account_name, contacts.name AS contact_name
-            FROM outreach
-            LEFT JOIN accounts ON outreach.account_id = accounts.id
-            LEFT JOIN contacts ON outreach.contact_id = contacts.id
-            WHERE outreach.next_action_date IS NOT NULL
-              AND outreach.next_action_date != ''
-              AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
-            ORDER BY outreach.next_action_date ASC, outreach.next_action_time ASC
-        """).fetchall()
-        for row in member_rows:
-            row_dict = dict(row)
-            row_dict["workspace_schema"] = current_user_schema()
-            row_dict["owner_name"] = user["full_name"] if user else ""
-            rows.append(row_dict)
-        connection.close()
-
-    own_connection = get_db_connection()
-    current_accounts = own_connection.execute("""
-        SELECT id, account_name
-        FROM accounts
-        ORDER BY account_name
-    """).fetchall()
-    own_connection.close()
-
-    rows.sort(key=lambda row: (
-        row.get("assigned_to") or row.get("owner_name") or "Unassigned",
-        row.get("account_name") or "No Account",
-        row.get("sales_play") or "No Sales Play",
-        row.get("next_action_date") or "",
-        row.get("next_action_time") or "",
-    ))
-
-    return {
-        "team": team,
-        "members": members,
-        "assignable_users": assignable_users,
-        "outreach_records": rows,
-        "current_accounts": current_accounts,
-    }
-
-
-@app.route("/team-outreach/share-account", methods=("POST",))
-def share_account_from_team_outreach():
-    user = current_user()
-    assignable_users = list_assignable_users()
-    target_user_ids = request.form.getlist("target_user_ids")
-    account_id = request.form.get("account_id")
-    return_to = request.form.get("return_to") or url_for("outreach")
-    if not target_user_ids:
-        separator = "&" if "?" in return_to else "?"
-        return redirect(f"{return_to}{separator}{urlencode({'error': 'Select at least one user before sharing the account.'})}")
-    source_connection = get_db_connection()
-    account = source_connection.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
-    if not account or not current_user_owns_account(account):
-        source_connection.close()
-        separator = "&" if "?" in return_to else "?"
-        return redirect(f"{return_to}{separator}{urlencode({'error': 'Only the account owner can share this account.'})}")
-    target_members = [
-        member for member in assignable_users
-        if str(member["id"]) in target_user_ids
-           and member["workspace_schema"]
-           and (not user or str(member["id"]) != str(user["id"]))
-    ]
-    if not target_members:
-        source_connection.close()
-        separator = "&" if "?" in return_to else "?"
-        return redirect(f"{return_to}{separator}{urlencode({'error': 'Select at least one valid user other than yourself.'})}")
-    source_schema = current_user_schema() if using_postgres() else ""
-    errors = []
-    shared_count = 0
-    for target_member in target_members:
-        error = share_full_account_to_member(source_schema, account_id, target_member, user["full_name"] if user else "")
-        if error:
-            errors.append(error)
-        else:
-            upsert_account_share(source_connection, account_id, target_member)
-            shared_count += 1
-    if shared_count:
-        add_timeline_entry(
-            source_connection,
-            "account",
-            account_id,
-            "Account Shared",
-            f"Full account shared with {shared_count} user(s)."
-        )
-        source_connection.commit()
-    source_connection.close()
-    separator = "&" if "?" in return_to else "?"
-    if errors and not shared_count:
-        return redirect(f"{return_to}{separator}{urlencode({'error': errors[0]})}")
-    if errors:
-        return redirect(f"{return_to}{separator}{urlencode({'message': f'Account shared with {shared_count} user(s). Some shares could not be completed.'})}")
-    return redirect(f"{return_to}{separator}{urlencode({'message': f'Full account shared with {shared_count} user(s).'})}")
-
-
-@app.route("/team-outreach/account-share/<int:share_id>/revoke", methods=("POST",))
-def revoke_account_share_from_outreach(share_id):
-    user = current_user()
-    return_to = request.form.get("return_to") or url_for("outreach")
-    connection = get_db_connection()
-    share = connection.execute("""
-        SELECT account_shared_users.*, accounts.account_name, accounts.owner_user_id, accounts.owner_name, accounts.owner_email
-        FROM account_shared_users
-        JOIN accounts ON accounts.id = account_shared_users.account_id
-        WHERE account_shared_users.id = ?
-    """, (share_id,)).fetchone()
-    if not share:
-        connection.close()
-        separator = "&" if "?" in return_to else "?"
-        return redirect(f"{return_to}{separator}{urlencode({'error': 'The selected sharing permission could not be found.'})}")
-
-    owner = account_owner_payload(share)
-    if user and owner["owner_user_id"] and str(owner["owner_user_id"]) != str(user["id"]):
-        connection.close()
-        separator = "&" if "?" in return_to else "?"
-        return redirect(f"{return_to}{separator}{urlencode({'error': 'Only the account owner can revoke account sharing permissions.'})}")
-
-    connection.execute("""
-        UPDATE outreach
-        SET assigned_to = ?,
-            last_updated = CURRENT_TIMESTAMP
-        WHERE account_id = ?
-          AND assigned_to = ?
-    """, (
-        owner["owner_name"],
-        share["account_id"],
-        share["full_name"],
-    ))
-    connection.execute("DELETE FROM account_shared_users WHERE id = ?", (share_id,))
-    add_timeline_entry(
-        connection,
-        "account",
-        share["account_id"],
-        "Account Share Revoked",
-        f"Access revoked for {share['full_name'] or share['email']}. Assigned tasks returned to {owner['owner_name'] or 'the account owner'}."
-    )
-    connection.commit()
-    connection.close()
-    separator = "&" if "?" in return_to else "?"
-    return redirect(f"{return_to}{separator}{urlencode({'message': 'Account sharing permission revoked and assigned tasks returned to the account owner.'})}")
-
-
-@app.route("/team-outreach/reassign", methods=("POST",))
-def reassign_team_outreach():
-    user = current_user()
-    members = list_active_team_members(user)
-    assignable_users = list_assignable_users()
-    allowed_schemas = {member["workspace_schema"] for member in members if member["workspace_schema"]}
-    if not using_postgres():
-        allowed_schemas.add("")
-    allowed_user_ids = {str(member["id"]) for member in assignable_users}
-    workspace_schema = request.form.get("workspace_schema")
-    outreach_id = request.form.get("outreach_id")
-    assigned_to_user_id = request.form.get("assigned_to_user_id", "")
-    assigned_member = assignable_user_by_id(assigned_to_user_id) if assigned_to_user_id else None
-    assigned_to = assigned_member["full_name"] if assigned_member else ""
-    return_to = request.form.get("return_to") or request.referrer or url_for("outreach")
-    if workspace_schema not in allowed_schemas or (assigned_to_user_id and assigned_to_user_id not in allowed_user_ids):
-        return redirect(return_to)
-    connection = get_schema_connection(schema=workspace_schema) if using_postgres() else get_db_connection()
-    outreach_item = connection.execute("SELECT * FROM outreach WHERE id = ?", (outreach_id,)).fetchone()
-    if outreach_item:
-        account = connection.execute("SELECT * FROM accounts WHERE id = ?", (outreach_item["account_id"],)).fetchone()
-        if account and not assignee_has_account_access(connection, account, assigned_to_user_id):
-            connection.close()
-            return redirect(url_for(
-                "outreach",
-                error="The selected assignee does not have access to this account. Share the account first, then assign the task."
-            ))
-        connection.execute(
-            """
-            UPDATE outreach
-            SET assigned_to = ?,
-                last_updated = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """,
-            (assigned_to, outreach_id),
-        )
-        audit_record_update(connection, "outreach", outreach_id, outreach_item, {
-            "assigned_to": assigned_to,
-        }, {
-            "assigned_to": "Assigned to",
-        })
-        connection.commit()
-    connection.close()
-    return redirect(return_to)
-
-
-@app.route("/tasks/<int:outreach_id>/update", methods=("POST",))
-def update_task_from_tasks(outreach_id):
-    connection = get_db_connection()
-    outreach_item = connection.execute(
-        "SELECT * FROM outreach WHERE id = ?",
-        (outreach_id,),
-    ).fetchone()
-    return_target = request.form.get("return_to") or request.referrer or url_for("home")
-    if not outreach_item:
-        connection.close()
-        return redirect(return_target)
-
-    new_values = {
-        "outcome": request.form.get("outcome"),
-        "task_status": request.form.get("task_status", "Not Started"),
-        "next_action": request.form.get("next_action"),
-        "next_action_date": request.form.get("next_action_date"),
-        "next_action_time": request.form.get("next_action_time"),
-        "notes": outreach_item["notes"] or "",
-    }
-    if status_requires_activity_update(new_values["task_status"]) and not activity_update_is_valid(new_values["next_action"]):
-        connection.close()
-        return redirect(return_target)
-    labels = {
-        "outcome": "Outcome",
-        "task_status": "Task status",
-        "next_action": "Activity update",
-        "next_action_date": "Activity due date",
-        "next_action_time": "Activity due time",
-        "notes": "System metadata",
-    }
-    changes = build_change_log(outreach_item, new_values, labels)
-
-    connection.execute(
-        """
-        UPDATE outreach
-        SET outcome = ?,
-            task_status = ?,
-            next_action = ?,
-            next_action_date = ?,
-            next_action_time = ?,
-            last_updated = CURRENT_TIMESTAMP
-        WHERE id = ?
-        """,
-        (
-            new_values["outcome"],
-            new_values["task_status"],
-            new_values["next_action"],
-            new_values["next_action_date"],
-            new_values["next_action_time"],
-            outreach_id,
-        ),
-    )
-    if changes:
-        audit_record_update(connection, "outreach", outreach_id, outreach_item, new_values, labels)
-        add_timeline_entry(
-            connection,
-            "outreach",
-            outreach_id,
-            "Task Updated",
-            "Task updated from Tasks page: " + "; ".join(changes),
-        )
-    connection.commit()
-    connection.close()
-    return redirect(return_target)
-
-
-@app.route("/tasks/<int:outreach_id>/complete", methods=("POST",))
-def complete_task_from_tasks(outreach_id):
-    connection = get_db_connection()
-    outreach_item = connection.execute(
-        "SELECT * FROM outreach WHERE id = ?",
-        (outreach_id,),
-    ).fetchone()
-    return_target = request.form.get("return_to") or request.referrer or url_for("home")
-    if not outreach_item:
-        connection.close()
-        return redirect(return_target)
-
-    activity_update = (request.form.get("next_action") or "").strip()
-    if not activity_update:
-        connection.close()
-        return redirect(return_target)
-
-    outcome = request.form.get("outcome") or outreach_item["outcome"] or "Follow-up Required"
-    connection.execute(
-        """
-        UPDATE outreach
-        SET task_status = 'Closed',
-            outcome = ?,
-            next_action = ?,
-            last_updated = CURRENT_TIMESTAMP
-        WHERE id = ?
-        """,
-        (outcome, activity_update, outreach_id),
-    )
-    audit_record_update(connection, "outreach", outreach_id, outreach_item, {
-        "task_status": "Closed",
-        "outcome": outcome,
-        "next_action": activity_update,
-    }, {
-        "task_status": "Task status",
-        "outcome": "Outcome",
-        "next_action": "Activity update",
-    })
-    add_timeline_entry(
-        connection,
-        "outreach",
-        outreach_id,
-        "Task Closed",
-        f"Task marked closed from dashboard with outcome: {outcome}",
-    )
-    connection.commit()
-    connection.close()
-    return redirect(return_target)
 
 
 @app.route("/profile", methods=("GET", "POST"))
 def profile():
     connection = get_db_connection()
-    message = request.args.get("message", "")
-    error = request.args.get("error", "")
 
     if request.method == "POST":
-        existing_profile = connection.execute("""
-            SELECT *
-            FROM user_profile
-            WHERE id = 1
-        """).fetchone()
-        new_values = {
-            "full_name": request.form.get("full_name"),
-            "team": request.form.get("team"),
-            "job_title": request.form.get("job_title"),
-            "work_day_start": request.form.get("work_day_start") or "09:00",
-            "work_day_end": request.form.get("work_day_end") or "17:00",
-            "non_working_start_date": request.form.get("non_working_start_date"),
-            "non_working_end_date": request.form.get("non_working_end_date"),
-        }
-        labels = {
-            "full_name": "Full Name",
-            "team": "Team",
-            "job_title": "Job Title",
-            "work_day_start": "Work Day Start",
-            "work_day_end": "Work Day End",
-            "non_working_start_date": "Legacy Non-Working Start Date",
-            "non_working_end_date": "Legacy Non-Working End Date",
-        }
         connection.execute("""
             UPDATE user_profile
             SET full_name = ?,
                 team = ?,
                 job_title = ?,
-                work_day_start = ?,
-                work_day_end = ?,
-                non_working_start_date = ?,
-                non_working_end_date = ?,
                 last_updated = CURRENT_TIMESTAMP
             WHERE id = 1
         """, (
-            new_values["full_name"],
-            new_values["team"],
-            new_values["job_title"],
-            new_values["work_day_start"],
-            new_values["work_day_end"],
-            new_values["non_working_start_date"],
-            new_values["non_working_end_date"]
+            request.form.get("full_name"),
+            request.form.get("team"),
+            request.form.get("job_title")
         ))
-        if existing_profile:
-            audit_record_update(connection, "profile", 1, existing_profile, new_values, labels)
 
         connection.commit()
         connection.close()
 
-        return redirect(url_for("profile", message="Profile saved."))
+        return redirect(url_for("profile"))
 
     profile_record = connection.execute("""
         SELECT *
         FROM user_profile
         WHERE id = 1
     """).fetchone()
-    non_working_blocks = connection.execute("""
-        SELECT *
-        FROM non_working_blocks
-        ORDER BY start_date, end_date, id
-    """).fetchall()
 
     connection.close()
 
-    return render_template(
-        "profile.html",
-        profile=profile_record,
-        non_working_blocks=non_working_blocks,
-        message=message,
-        error=error
-    )
-
-
-@app.route("/profile/non-working/add", methods=("POST",))
-def add_non_working_block():
-    start_date = request.form.get("start_date")
-    end_date = request.form.get("end_date") or start_date
-    reason = request.form.get("reason", "")
-    if not start_date:
-        return redirect(url_for("profile", error="Non-working start date is required."))
-    connection = get_db_connection()
-    cursor = connection.execute("""
-        INSERT INTO non_working_blocks (start_date, end_date, reason)
-        VALUES (?, ?, ?)
-    """, (start_date, end_date, reason))
-    audit_record_create(connection, "profile", 1, {
-        "non_working_block": f"{start_date} to {end_date}",
-        "non_working_reason": reason,
-    }, {
-        "non_working_block": "Non-Working Date Block",
-        "non_working_reason": "Non-Working Reason",
-    })
-    connection.commit()
-    connection.close()
-    return redirect(url_for("profile", message="Non-working block added."))
-
-
-@app.route("/profile/non-working/<int:block_id>/delete", methods=("POST",))
-def delete_non_working_block(block_id):
-    connection = get_db_connection()
-    block = connection.execute("SELECT * FROM non_working_blocks WHERE id = ?", (block_id,)).fetchone()
-    if block:
-        audit_record_delete(connection, "profile", 1, f"Non-working block {block['start_date']} to {block['end_date']}")
-    connection.execute("DELETE FROM non_working_blocks WHERE id = ?", (block_id,))
-    connection.commit()
-    connection.close()
-    return redirect(url_for("profile", message="Non-working block deleted."))
-
-
-@app.route("/profile/delete-data", methods=("POST",))
-def delete_profile_data():
-    confirmation = (request.form.get("delete_confirmation") or "").strip()
-
-    if confirmation != "DELETE MY DATA":
-        return redirect(url_for(
-            "profile",
-            error="Type DELETE MY DATA to confirm the workspace data deletion."
-        ))
-
-    connection = get_db_connection()
-    delete_current_profile_workspace_data(connection)
-    connection.commit()
-    connection.close()
-
-    return redirect(url_for(
-        "profile",
-        message="Your private PipeFlow workspace data has been deleted. Your login profile has been kept."
-    ))
+    return render_template("profile.html", profile=profile_record)
 
 
 @app.route("/reports")
 def reports():
     return render_template("reports.html")
-
-
-def audit_retention_cutoff():
-    return (datetime.now() - timedelta(days=183)).strftime("%Y-%m-%d %H:%M:%S")
-
-
-def cleanup_audit_retention():
-    if not audit_retention_enabled():
-        return
-    cutoff = audit_retention_cutoff()
-    cleanup_admin_audit_entries_older_than(cutoff)
-    if using_postgres():
-        for user in list_users():
-            schema = user["workspace_schema"] if "workspace_schema" in user.keys() else ""
-            if not schema:
-                continue
-            try:
-                connection = get_schema_connection(schema=schema)
-                connection.execute("DELETE FROM audit_entries WHERE date_created < ?", (cutoff,))
-                connection.commit()
-                connection.close()
-            except Exception:
-                continue
-    else:
-        connection = get_db_connection()
-        connection.execute("DELETE FROM audit_entries WHERE date_created < ?", (cutoff,))
-        connection.commit()
-        connection.close()
-
-
-def parse_audit_date(value):
-    if not value:
-        return None
-    try:
-        return datetime.strptime(value, "%Y-%m-%d").date()
-    except ValueError:
-        return None
-
-
-def audit_entry_date(value):
-    if not value:
-        return None
-    text = str(value)
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d"):
-        try:
-            return datetime.strptime(text[:len(fmt)], fmt).date()
-        except ValueError:
-            continue
-    return None
-
-
-def audit_month_label(value):
-    parsed = audit_entry_date(value)
-    return parsed.strftime("%B %Y") if parsed else "Unknown Month"
-
-
-def normalise_audit_row(row, source, workspace_owner=""):
-    row_dict = dict(row)
-    if source == "admin":
-        return {
-            "source": "Admin",
-            "date_created": row_dict.get("date_created", ""),
-            "actor_name": row_dict.get("actor_name", ""),
-            "actor_email": row_dict.get("actor_email", ""),
-            "action_type": row_dict.get("action_type", ""),
-            "record": row_dict.get("target_label") or row_dict.get("target_type") or "Admin change",
-            "field": row_dict.get("target_type") or "Admin",
-            "value_from": "",
-            "value_to": row_dict.get("detail", ""),
-            "workspace_owner": "Admin",
-            "month_label": audit_month_label(row_dict.get("date_created", "")),
-        }
-    return {
-        "source": "Workspace",
-        "date_created": row_dict.get("date_created", ""),
-        "actor_name": row_dict.get("actor_name", ""),
-        "actor_email": row_dict.get("actor_email", ""),
-        "action_type": row_dict.get("action_type", ""),
-        "record": f"{row_dict.get('entity_type') or 'record'} #{row_dict.get('entity_id') or '-'}",
-        "field": row_dict.get("field_label") or row_dict.get("field_name") or "Record",
-        "value_from": row_dict.get("value_from", ""),
-        "value_to": row_dict.get("value_to", ""),
-        "workspace_owner": workspace_owner or "Current workspace",
-        "month_label": audit_month_label(row_dict.get("date_created", "")),
-    }
-
-
-def collect_audit_entries():
-    cleanup_audit_retention()
-    rows = []
-    auth_connection = get_auth_connection()
-    admin_rows = auth_connection.execute("""
-        SELECT *
-        FROM admin_audit_entries
-        ORDER BY date_created DESC, id DESC
-    """).fetchall()
-    auth_connection.close()
-    rows.extend(normalise_audit_row(row, "admin") for row in admin_rows)
-
-    if using_postgres():
-        for user in list_users():
-            schema = user["workspace_schema"] if "workspace_schema" in user.keys() else ""
-            if not schema:
-                continue
-            try:
-                connection = get_schema_connection(schema=schema)
-                workspace_rows = connection.execute("""
-                    SELECT *
-                    FROM audit_entries
-                    ORDER BY date_created DESC, id DESC
-                """).fetchall()
-                connection.close()
-            except Exception:
-                continue
-            owner = user["full_name"] or user["email"]
-            rows.extend(normalise_audit_row(row, "workspace", owner) for row in workspace_rows)
-    else:
-        connection = get_db_connection()
-        workspace_rows = connection.execute("""
-            SELECT *
-            FROM audit_entries
-            ORDER BY date_created DESC, id DESC
-        """).fetchall()
-        connection.close()
-        rows.extend(normalise_audit_row(row, "workspace", current_user()["full_name"] if current_user() else "") for row in workspace_rows)
-
-    return rows
-
-
-def filtered_audit_entries(entries, start_date=None, end_date=None, user_filter=""):
-    filtered = []
-    user_filter = (user_filter or "").strip().lower()
-    for entry in entries:
-        entry_date = audit_entry_date(entry["date_created"])
-        if start_date and (not entry_date or entry_date < start_date):
-            continue
-        if end_date and (not entry_date or entry_date > end_date):
-            continue
-        actor_blob = f"{entry['actor_name']} {entry['actor_email']} {entry['workspace_owner']}".lower()
-        if user_filter and user_filter not in actor_blob:
-            continue
-        filtered.append(entry)
-    return sorted(filtered, key=lambda row: row["date_created"] or "", reverse=True)
-
-
-def audit_filter_users(entries):
-    names_by_email = {}
-    standalone_names = set()
-    for entry in entries:
-        name = (entry["actor_name"] or "").strip()
-        email = (entry["actor_email"] or "").strip().lower()
-        owner = (entry["workspace_owner"] or "").strip()
-        if email and name:
-            names_by_email[email] = name
-        elif name and "@" not in name:
-            standalone_names.add(name)
-        if owner and owner != "Admin" and "@" not in owner:
-            standalone_names.add(owner)
-    return sorted(set(names_by_email.values()) | standalone_names)
-
-
-def group_audit_entries_by_month(entries):
-    groups = []
-    current_label = None
-    current_rows = []
-    for entry in entries:
-        label = entry["month_label"]
-        if current_label is None:
-            current_label = label
-        if label != current_label:
-            groups.append({"month": current_label, "entries": current_rows})
-            current_label = label
-            current_rows = []
-        current_rows.append(entry)
-    if current_label is not None:
-        groups.append({"month": current_label, "entries": current_rows})
-    return groups
-
-
-@app.route("/audit")
-@admin_required
-def audit_trail():
-    start_date_raw = request.args.get("start_date", "")
-    end_date_raw = request.args.get("end_date", "")
-    user_filter = request.args.get("user", "")
-    all_entries = collect_audit_entries()
-    entries = filtered_audit_entries(
-        all_entries,
-        parse_audit_date(start_date_raw),
-        parse_audit_date(end_date_raw),
-        user_filter,
-    )
-    users = audit_filter_users(all_entries)
-    return render_template(
-        "audit.html",
-        audit_groups=group_audit_entries_by_month(entries),
-        entries=entries,
-        users=users,
-        selected_start_date=start_date_raw,
-        selected_end_date=end_date_raw,
-        selected_user=user_filter,
-        audit_retention_enabled=audit_retention_enabled(),
-    )
-
-
-@app.route("/audit/export")
-@admin_required
-def export_audit_trail():
-    start_date_raw = request.args.get("start_date", "")
-    end_date_raw = request.args.get("end_date", "")
-    user_filter = request.args.get("user", "")
-    entries = filtered_audit_entries(
-        collect_audit_entries(),
-        parse_audit_date(start_date_raw),
-        parse_audit_date(end_date_raw),
-        user_filter,
-    )
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow([
-        "Date Created",
-        "Source",
-        "Workspace Owner",
-        "User",
-        "User Email",
-        "Action",
-        "Record",
-        "Field",
-        "Value From",
-        "Value To",
-    ])
-    for entry in entries:
-        writer.writerow([
-            entry["date_created"],
-            entry["source"],
-            entry["workspace_owner"],
-            entry["actor_name"],
-            entry["actor_email"],
-            entry["action_type"],
-            entry["record"],
-            entry["field"],
-            entry["value_from"],
-            entry["value_to"],
-        ])
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return Response(
-        output.getvalue(),
-        mimetype="text/csv",
-        headers={
-            "Content-Disposition": f"attachment; filename=audit_trail_{timestamp}.csv"
-        },
-    )
 
 
 def documented_sales_play(row):
@@ -6371,10 +2801,7 @@ def build_pg_bible_report_from_db(connection):
     accounts = connection.execute("""
         SELECT *
         FROM accounts
-        ORDER BY
-            CASE WHEN pg_bible_order IS NULL THEN 1 ELSE 0 END,
-            pg_bible_order,
-            account_name
+        ORDER BY account_name
     """).fetchall()
 
     plan_items = []
@@ -6395,11 +2822,9 @@ def build_pg_bible_report_from_db(connection):
                 seen_sales_plays.add(sales_play_key)
 
         plan_items.append(PlanItem(
-            pg_bible_order=account["pg_bible_order"],
             account_tier=account["account_tier"] or "",
             pipeline_target_value=account["pipeline_target"] or 0,
             notes=account["notes"] or "",
-            nbm_target=str(account["pg_bible_order"] or ""),
             customer=account["account_name"] or "",
             sales_play="; ".join(sales_plays),
             estimated_value=account["pipeline_target"] or 0,
@@ -6409,15 +2834,10 @@ def build_pg_bible_report_from_db(connection):
         SELECT
             contacts.*,
             accounts.pipeline_target,
-            accounts.account_name,
-            accounts.pg_bible_order
+            accounts.account_name
         FROM contacts
         LEFT JOIN accounts ON contacts.account_id = accounts.id
-        ORDER BY
-            CASE WHEN accounts.pg_bible_order IS NULL THEN 1 ELSE 0 END,
-            accounts.pg_bible_order,
-            accounts.account_name,
-            contacts.name
+        ORDER BY accounts.account_name, contacts.name
     """).fetchall()
 
     action_items = []
@@ -6443,7 +2863,7 @@ def build_pg_bible_report_from_db(connection):
         action_items.append(ActionItem(
             person_name=contact["name"] or "",
             person_title=contact["job_title"] or "",
-            related_nbm_target=str(contact["pg_bible_order"] or ""),
+            related_nbm_target=str(contact["account_id"] or ""),
             discovery_target_name_title=", ".join(
                 part for part in [contact["name"], contact["job_title"]] if part
             ),
@@ -6461,80 +2881,45 @@ def build_pg_bible_report_from_db(connection):
             vo_value=contact["pipeline_target"] or 0 if meeting_count else 0,
         ))
 
-    weekly_source_rows = connection.execute("""
+    weekly_rows = connection.execute("""
         SELECT
-            outreach.activity_date,
-            outreach.activity_type,
-            outreach.outcome,
-            outreach.task_status,
-            accounts.pipeline_target,
-            contacts.category
+            date(activity_date, '-' || ((strftime('%w', activity_date) + 6) % 7) || ' days') AS week_key,
+            SUM(CASE WHEN campaign = 'VITO' THEN 1 ELSE 0 END) AS vitos_sent,
+            SUM(CASE WHEN campaign = 'VITO' AND outcome != 'No Response Yet' THEN 1 ELSE 0 END) AS vitos_chased,
+            SUM(CASE WHEN activity_type = 'Meeting' OR outcome = 'Meeting Booked' THEN 1 ELSE 0 END) AS discovery_booked,
+            SUM(CASE WHEN activity_type = 'Meeting' THEN 1 ELSE 0 END) AS discovery_completed,
+            SUM(CASE WHEN outcome = 'Meeting Booked' THEN 1 ELSE 0 END) AS nbms_booked,
+            SUM(CASE WHEN outcome = 'Meeting Booked' AND contacts.category = 'Executive' THEN 1 ELSE 0 END) AS nbms_exec_firsts,
+            SUM(CASE WHEN outcome = 'Meeting Booked' AND COALESCE(task_status, '') = 'Completed' THEN 1 ELSE 0 END) AS nbms_completed,
+            SUM(CASE WHEN outcome IN ('Meeting Booked', 'Positive Response', 'Referral Made') THEN 1 ELSE 0 END) AS pipeline_generated_vo_count,
+            SUM(CASE WHEN outcome IN ('Meeting Booked', 'Positive Response', 'Referral Made') THEN COALESCE(accounts.pipeline_target, 0) ELSE 0 END) AS pipeline_generated_value
         FROM outreach
         LEFT JOIN accounts ON outreach.account_id = accounts.id
         LEFT JOIN contacts ON outreach.contact_id = contacts.id
         WHERE activity_date IS NOT NULL
           AND activity_date != ''
+        GROUP BY week_key
+        ORDER BY week_key
     """).fetchall()
-
-    weekly_totals = {}
-    for row in weekly_source_rows:
-        try:
-            activity_date = datetime.strptime(str(row["activity_date"]), "%Y-%m-%d").date()
-        except ValueError:
-            continue
-        week_start = activity_date - timedelta(days=activity_date.weekday())
-        week_key = week_start.isoformat()
-        if week_key not in weekly_totals:
-            weekly_totals[week_key] = {
-                "vitos_sent": 0,
-                "vitos_chased": 0,
-                "discovery_booked": 0,
-                "discovery_completed": 0,
-                "nbms_booked": 0,
-                "nbms_exec_firsts": 0,
-                "nbms_completed": 0,
-                "pipeline_generated_vo_count": 0,
-                "pipeline_generated_value": 0,
-            }
-        totals = weekly_totals[week_key]
-        is_meeting_booked = row["outcome"] == "Meeting Booked"
-        is_pipeline_outcome = row["outcome"] in ("Meeting Booked", "Positive Response", "Referral Made")
-        if row["activity_type"] == "VITO":
-            totals["vitos_sent"] += 1
-            if row["outcome"] != "No Response Yet":
-                totals["vitos_chased"] += 1
-        if row["activity_type"] == "Meeting" or is_meeting_booked:
-            totals["discovery_booked"] += 1
-        if row["activity_type"] == "Meeting":
-            totals["discovery_completed"] += 1
-        if is_meeting_booked:
-            totals["nbms_booked"] += 1
-            if row["category"] == "Executive":
-                totals["nbms_exec_firsts"] += 1
-            if is_closed_task_status(row["task_status"]):
-                totals["nbms_completed"] += 1
-        if is_pipeline_outcome:
-            totals["pipeline_generated_vo_count"] += 1
-            totals["pipeline_generated_value"] += row["pipeline_target"] or 0
 
     weekly_results = [
         WeeklyResultRow(
-            week_key=week_key,
-            vitos_sent=totals["vitos_sent"],
-            vitos_chased=totals["vitos_chased"],
-            discovery_booked=totals["discovery_booked"],
-            discovery_completed=totals["discovery_completed"],
-            nbms_booked=totals["nbms_booked"],
-            nbms_exec_firsts=totals["nbms_exec_firsts"],
-            nbms_completed=totals["nbms_completed"],
-            pipeline_generated_vo_count=totals["pipeline_generated_vo_count"],
-            pipeline_generated_value=totals["pipeline_generated_value"],
+            week_key=row["week_key"],
+            vitos_sent=row["vitos_sent"] or 0,
+            vitos_chased=row["vitos_chased"] or 0,
+            discovery_booked=row["discovery_booked"] or 0,
+            discovery_completed=row["discovery_completed"] or 0,
+            nbms_booked=row["nbms_booked"] or 0,
+            nbms_exec_firsts=row["nbms_exec_firsts"] or 0,
+            nbms_completed=row["nbms_completed"] or 0,
+            pipeline_generated_vo_count=row["pipeline_generated_vo_count"] or 0,
+            pipeline_generated_value=row["pipeline_generated_value"] or 0,
         )
-        for week_key, totals in sorted(weekly_totals.items())
+        for row in weekly_rows
     ]
 
     total_account_target = sum(account["pipeline_target"] or 0 for account in accounts)
-    total_pipeline_added = sum(row.pipeline_generated_value or 0 for row in weekly_results)
+    total_pipeline_added = sum(row["pipeline_generated_value"] or 0 for row in weekly_rows)
     calc_payload = {
         "starting_pipeline": os.environ.get("PIPEFLOW_PG_STARTING_PIPELINE", total_account_target),
         "pipeline_added": os.environ.get("PIPEFLOW_PG_PIPELINE_ADDED", total_pipeline_added),
@@ -6552,11 +2937,6 @@ def build_pg_bible_report_from_db(connection):
 
 @app.route("/reports/pg-bible/export")
 def export_pg_bible():
-    template_setting = os.environ.get("PG_BIBLE_TEMPLATE_PATH", "").strip()
-    if not template_setting:
-        bundled_template = Path(__file__).resolve().parent / "pg_bible_templates" / "PG Bible FY27.xlsx"
-        template_setting = str(bundled_template)
-
     try:
         from excel_exporter import PGBibleExporter
         from models import PGBibleExportError
@@ -6567,7 +2947,10 @@ def export_pg_bible():
             mimetype="text/plain",
         )
 
-    template_path = Path(template_setting)
+    template_path = Path(os.environ.get(
+        "PG_BIBLE_TEMPLATE_PATH",
+        "/Users/memcgove/Downloads/PG Bible FY27.xlsx",
+    ))
 
     if not template_path.exists():
         return Response(
@@ -6581,7 +2964,7 @@ def export_pg_bible():
     connection.close()
 
     try:
-        output_dir = Path(os.environ.get("PIPEFLOW_DATA_DIR", Path(__file__).resolve().parent / "server_data")) / "exports"
+        output_dir = Path.home() / "PipeFlow" / "exports"
         output_path = PGBibleExporter(template_path, output_dir).export(report)
     except PGBibleExportError as exc:
         return Response(
@@ -6604,8 +2987,6 @@ def account_reports():
 
     accounts = connection.execute("""
         SELECT
-            id,
-            pg_bible_order,
             account_name,
             account_tier,
             industry,
@@ -6613,10 +2994,7 @@ def account_reports():
             city,
             pipeline_target
         FROM accounts
-        ORDER BY
-            CASE WHEN pg_bible_order IS NULL THEN 1 ELSE 0 END,
-            pg_bible_order,
-            account_name
+        ORDER BY account_name
     """).fetchall()
 
     accounts_by_industry = connection.execute("""
@@ -6673,7 +3051,6 @@ def export_account_reports():
 
     accounts = connection.execute("""
         SELECT
-            pg_bible_order,
             account_name,
             account_tier,
             industry,
@@ -6681,10 +3058,7 @@ def export_account_reports():
             city,
             pipeline_target
         FROM accounts
-        ORDER BY
-            CASE WHEN pg_bible_order IS NULL THEN 1 ELSE 0 END,
-            pg_bible_order,
-            account_name
+        ORDER BY account_name
     """).fetchall()
 
     connection.close()
@@ -6693,7 +3067,6 @@ def export_account_reports():
     writer = csv.writer(output)
 
     writer.writerow([
-        "PG Bible Order",
         "Account Name",
         "Account Tier",
         "Industry",
@@ -6704,7 +3077,6 @@ def export_account_reports():
 
     for account in accounts:
         writer.writerow([
-            account["pg_bible_order"],
             account["account_name"],
             account["account_tier"],
             account["industry"],
@@ -6736,16 +3108,60 @@ def task_reports():
     selected_task_status = request.args.get("task_status", "")
     selected_assigned_to = request.args.get("assigned_to", "")
 
+    filters = [
+        "outreach.next_action IS NOT NULL",
+        "outreach.next_action != ''"
+    ]
+
+    params = []
+
+    if selected_start_date:
+        filters.append("date(outreach.next_action_date) >= date(?)")
+        params.append(selected_start_date)
+
+    if selected_end_date:
+        filters.append("date(outreach.next_action_date) <= date(?)")
+        params.append(selected_end_date)
+
+    if selected_account:
+        filters.append("outreach.account_id = ?")
+        params.append(selected_account)
+
+    if selected_task_status:
+        filters.append("COALESCE(NULLIF(outreach.task_status, ''), 'Not Started') = ?")
+        params.append(selected_task_status)
+
+    if selected_assigned_to:
+        filters.append("outreach.assigned_to = ?")
+        params.append(selected_assigned_to)
+
+    where_clause = "WHERE " + " AND ".join(filters)
+
     accounts = connection.execute("""
         SELECT id, account_name
         FROM accounts
         ORDER BY account_name
     """).fetchall()
 
-    all_tasks = connection.execute("""
+    task_statuses = connection.execute("""
+        SELECT DISTINCT COALESCE(NULLIF(task_status, ''), 'Not Started') AS task_status
+        FROM outreach
+        WHERE next_action IS NOT NULL
+          AND next_action != ''
+        ORDER BY task_status
+    """).fetchall()
+
+    assigned_users = connection.execute("""
+        SELECT DISTINCT assigned_to
+        FROM outreach
+        WHERE assigned_to IS NOT NULL
+          AND assigned_to != ''
+        ORDER BY assigned_to
+    """).fetchall()
+
+    tasks = connection.execute(f"""
         SELECT
             outreach.id,
-            outreach.account_id,
             outreach.next_action,
             outreach.next_action_date,
             outreach.next_action_time,
@@ -6758,106 +3174,66 @@ def task_reports():
         FROM outreach
         LEFT JOIN accounts ON outreach.account_id = accounts.id
         LEFT JOIN contacts ON outreach.contact_id = contacts.id
-        WHERE outreach.next_action IS NOT NULL
-          AND outreach.next_action != ''
+        {where_clause}
         ORDER BY outreach.next_action_date ASC, outreach.next_action_time ASC
-    """).fetchall()
+    """, params).fetchall()
+
+    overdue_tasks = connection.execute(f"""
+        SELECT COUNT(*)
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
+        {where_clause}
+          AND outreach.next_action_date < date('now')
+          AND COALESCE(outreach.task_status, '') != 'Completed'
+    """, params).fetchone()[0]
+
+    due_today = connection.execute(f"""
+        SELECT COUNT(*)
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
+        {where_clause}
+          AND outreach.next_action_date = date('now')
+          AND COALESCE(outreach.task_status, '') != 'Completed'
+    """, params).fetchone()[0]
+
+    upcoming_tasks = connection.execute(f"""
+        SELECT COUNT(*)
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
+        {where_clause}
+          AND outreach.next_action_date > date('now')
+          AND COALESCE(outreach.task_status, '') != 'Completed'
+    """, params).fetchone()[0]
+
+    tasks_by_status = connection.execute(f"""
+        SELECT
+            COALESCE(NULLIF(outreach.task_status, ''), 'Not Started') AS status,
+            COUNT(*) AS total
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
+        {where_clause}
+        GROUP BY COALESCE(NULLIF(outreach.task_status, ''), 'Not Started')
+        ORDER BY total DESC
+    """, params).fetchall()
+
+    tasks_by_account = connection.execute(f"""
+        SELECT
+            COALESCE(accounts.account_name, 'Unknown') AS account_name,
+            COUNT(outreach.id) AS total
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
+        {where_clause}
+        GROUP BY COALESCE(accounts.account_name, 'Unknown')
+        ORDER BY total DESC
+        LIMIT 10
+    """, params).fetchall()
 
     connection.close()
-
-    def parse_report_date(value):
-        if not value:
-            return None
-        try:
-            return datetime.strptime(str(value), "%Y-%m-%d").date()
-        except ValueError:
-            return None
-
-    start_date = parse_report_date(selected_start_date)
-    end_date = parse_report_date(selected_end_date)
-
-    def normalised_status(task):
-        return task["task_status"] or "Not Started"
-
-    def include_task(task):
-        task_date = parse_report_date(task["next_action_date"])
-        if start_date and (not task_date or task_date < start_date):
-            return False
-        if end_date and (not task_date or task_date > end_date):
-            return False
-        if selected_account and str(task["account_id"] or "") != selected_account:
-            return False
-        if selected_task_status and normalised_status(task) != selected_task_status:
-            return False
-        if selected_assigned_to and (task["assigned_to"] or "") != selected_assigned_to:
-            return False
-        return True
-
-    tasks = [task for task in all_tasks if include_task(task)]
-    today = datetime.now().date()
-    active_tasks = [task for task in tasks if not is_closed_task_status(normalised_status(task))]
-    overdue_tasks = sum(
-        1 for task in active_tasks
-        if parse_report_date(task["next_action_date"]) and parse_report_date(task["next_action_date"]) < today
-    )
-    due_today = sum(
-        1 for task in active_tasks
-        if parse_report_date(task["next_action_date"]) == today
-    )
-    upcoming_tasks = sum(
-        1 for task in active_tasks
-        if parse_report_date(task["next_action_date"]) and parse_report_date(task["next_action_date"]) > today
-    )
-
-    task_statuses = [
-        {"task_status": status}
-        for status in sorted({normalised_status(task) for task in all_tasks})
-    ]
-    assigned_users = [
-        {"assigned_to": assigned_to}
-        for assigned_to in sorted({task["assigned_to"] for task in all_tasks if task["assigned_to"]})
-    ]
-
-    status_totals = {}
-    account_totals = {}
-    assignee_totals = {}
-    for task in tasks:
-        status = normalised_status(task)
-        account_name = task["account_name"] or "Unknown"
-        assignee = task["assigned_to"] or "Unassigned"
-        task_date = parse_report_date(task["next_action_date"])
-        status_totals[status] = status_totals.get(status, 0) + 1
-        account_totals[account_name] = account_totals.get(account_name, 0) + 1
-        if assignee not in assignee_totals:
-            assignee_totals[assignee] = {
-                "assignee": assignee,
-                "active_tasks": 0,
-                "overdue_active_tasks": 0,
-                "closed_tasks": 0,
-            }
-        if is_closed_task_status(status):
-            assignee_totals[assignee]["closed_tasks"] += 1
-        else:
-            assignee_totals[assignee]["active_tasks"] += 1
-            if task_date and task_date < today:
-                assignee_totals[assignee]["overdue_active_tasks"] += 1
-
-    tasks_by_status = [
-        {"status": status, "total": total}
-        for status, total in sorted(status_totals.items(), key=lambda item: (-item[1], item[0]))
-    ]
-    tasks_by_account = [
-        {"account_name": account_name, "total": total}
-        for account_name, total in sorted(account_totals.items(), key=lambda item: (-item[1], item[0]))[:10]
-    ]
-    status_chart_labels = [item["status"] for item in tasks_by_status]
-    status_chart_data = [item["total"] for item in tasks_by_status]
-    account_chart_labels = [item["account_name"] for item in tasks_by_account]
-    account_chart_data = [item["total"] for item in tasks_by_account]
-    sla_by_assignee = sorted(
-        assignee_totals.values(),
-        key=lambda item: (-item["overdue_active_tasks"], -item["active_tasks"], item["assignee"]),
-    )
 
     return render_template(
         "task_reports.html",
@@ -6867,7 +3243,6 @@ def task_reports():
         upcoming_tasks=upcoming_tasks,
         tasks_by_status=tasks_by_status,
         tasks_by_account=tasks_by_account,
-        sla_by_assignee=sla_by_assignee,
         accounts=accounts,
         task_statuses=task_statuses,
         assigned_users=assigned_users,
@@ -6875,11 +3250,7 @@ def task_reports():
         selected_end_date=selected_end_date,
         selected_account=selected_account,
         selected_task_status=selected_task_status,
-        selected_assigned_to=selected_assigned_to,
-        status_chart_labels=status_chart_labels,
-        status_chart_data=status_chart_data,
-        account_chart_labels=account_chart_labels,
-        account_chart_data=account_chart_data
+        selected_assigned_to=selected_assigned_to
     )
 
 
@@ -6927,7 +3298,7 @@ def export_task_reports():
         "Account Tier",
         "Contact",
         "Subject",
-        "System Metadata",
+        "Notes",
         "Outcome",
         "Activity Type",
         "Activity Date"
@@ -6974,6 +3345,33 @@ def outreach_reports():
     selected_activity_type = request.args.get("activity_type", "")
     selected_outcome = request.args.get("outcome", "")
 
+    filters = []
+    params = []
+
+    if selected_start_date:
+        filters.append("date(outreach.activity_date) >= date(?)")
+        params.append(selected_start_date)
+
+    if selected_end_date:
+        filters.append("date(outreach.activity_date) <= date(?)")
+        params.append(selected_end_date)
+
+    if selected_account:
+        filters.append("outreach.account_id = ?")
+        params.append(selected_account)
+
+    if selected_activity_type:
+        filters.append("outreach.activity_type = ?")
+        params.append(selected_activity_type)
+
+    if selected_outcome:
+        filters.append("outreach.outcome = ?")
+        params.append(selected_outcome)
+
+    where_clause = ""
+    if filters:
+        where_clause = "WHERE " + " AND ".join(filters)
+
     accounts = connection.execute("""
         SELECT id, account_name
         FROM accounts
@@ -6996,107 +3394,104 @@ def outreach_reports():
         ORDER BY outcome
     """).fetchall()
 
-    all_outreach = connection.execute("""
+    total_outreach = connection.execute(f"""
+        SELECT COUNT(*)
+        FROM outreach
+        {where_clause}
+    """, params).fetchone()[0]
+
+    meetings_booked = connection.execute(f"""
+        SELECT COUNT(*)
+        FROM outreach
+        {where_clause}
+        {"AND" if where_clause else "WHERE"} (
+            outreach.outcome = 'Meeting Booked'
+            OR outreach.activity_type = 'Meeting'
+        )
+    """, params).fetchone()[0]
+
+    conversion_rate = 0
+    if total_outreach > 0:
+        conversion_rate = round((meetings_booked / total_outreach) * 100, 2)
+
+    outcome_breakdown = connection.execute(f"""
         SELECT
-            outreach.id,
-            outreach.account_id,
+            COALESCE(NULLIF(outreach.outcome, ''), 'Unknown') AS outcome,
+            COUNT(*) AS count
+        FROM outreach
+        {where_clause}
+        GROUP BY COALESCE(NULLIF(outreach.outcome, ''), 'Unknown')
+        ORDER BY count DESC
+    """, params).fetchall()
+
+    outreach_by_type = connection.execute(f"""
+        SELECT
+            COALESCE(NULLIF(outreach.activity_type, ''), 'Unknown') AS activity_type,
+            COUNT(*) AS count
+        FROM outreach
+        {where_clause}
+        GROUP BY COALESCE(NULLIF(outreach.activity_type, ''), 'Unknown')
+        ORDER BY count DESC
+    """, params).fetchall()
+
+    latest_outreach = connection.execute(f"""
+        SELECT
             outreach.activity_date,
-            outreach.activity_time,
-            outreach.next_action_date,
-            outreach.next_action_time,
             outreach.activity_type,
             outreach.outcome,
-            outreach.task_status,
-            outreach.sales_play,
-            outreach.fy,
-            outreach.quarter,
             accounts.account_name,
-            accounts.account_tier,
-            contacts.name AS contact_name
+            accounts.account_tier
         FROM outreach
         LEFT JOIN accounts ON outreach.account_id = accounts.id
-        LEFT JOIN contacts ON outreach.contact_id = contacts.id
-        ORDER BY outreach.activity_date DESC, outreach.activity_time DESC, outreach.id DESC
-    """).fetchall()
+        {where_clause}
+        ORDER BY outreach.activity_date DESC, outreach.activity_time DESC
+        LIMIT 10
+    """, params).fetchall()
 
-    connection.close()
-
-    def parse_report_date(value):
-        if not value:
-            return None
-        try:
-            return datetime.strptime(str(value), "%Y-%m-%d").date()
-        except ValueError:
-            return None
-
-    start_date = parse_report_date(selected_start_date)
-    end_date = parse_report_date(selected_end_date)
-
-    def include_item(item):
-        activity_date = parse_report_date(item["activity_date"])
-        if start_date and (not activity_date or activity_date < start_date):
-            return False
-        if end_date and (not activity_date or activity_date > end_date):
-            return False
-        if selected_account and str(item["account_id"] or "") != selected_account:
-            return False
-        if selected_activity_type and (item["activity_type"] or "") != selected_activity_type:
-            return False
-        if selected_outcome and (item["outcome"] or "") != selected_outcome:
-            return False
-        return True
-
-    filtered_outreach = [item for item in all_outreach if include_item(item)]
-    total_outreach = len(filtered_outreach)
-    meetings_booked = sum(
-        1 for item in filtered_outreach
-        if item["outcome"] == "Meeting Booked" or item["activity_type"] == "Meeting"
-    )
-    meeting_conversion_total = meetings_booked
-
-    outcome_totals = {}
-    type_totals = {}
-    monthly_totals = {}
-    for item in filtered_outreach:
-        outcome = item["outcome"] or "Unknown"
-        activity_type = item["activity_type"] or "Unknown"
-        outcome_totals[outcome] = outcome_totals.get(outcome, 0) + 1
-        type_totals[activity_type] = type_totals.get(activity_type, 0) + 1
-        activity_date = parse_report_date(item["activity_date"])
-        if activity_date:
-            month = activity_date.strftime("%Y-%m")
-            if month not in monthly_totals:
-                monthly_totals[month] = {"total_outreach": 0, "meetings_booked": 0}
-            monthly_totals[month]["total_outreach"] += 1
-            if item["outcome"] == "Meeting Booked" or item["activity_type"] == "Meeting":
-                monthly_totals[month]["meetings_booked"] += 1
-
-    outcome_breakdown = [
-        {"outcome": outcome, "count": count}
-        for outcome, count in sorted(outcome_totals.items(), key=lambda item: (-item[1], item[0]))
-    ]
-    outreach_by_type = [
-        {"activity_type": activity_type, "count": count}
-        for activity_type, count in sorted(type_totals.items(), key=lambda item: (-item[1], item[0]))
-    ]
-    latest_outreach = filtered_outreach[:10]
+    monthly_trends_raw = connection.execute(f"""
+        SELECT
+            strftime('%Y-%m', outreach.activity_date) AS month,
+            COUNT(*) AS total_outreach,
+            SUM(
+                CASE
+                    WHEN outreach.outcome = 'Meeting Booked'
+                      OR outreach.activity_type = 'Meeting'
+                    THEN 1
+                    ELSE 0
+                END
+            ) AS meetings_booked
+        FROM outreach
+        {where_clause}
+        {"AND" if where_clause else "WHERE"} outreach.activity_date IS NOT NULL
+          AND outreach.activity_date != ''
+        GROUP BY month
+        ORDER BY month
+    """, params).fetchall()
 
     monthly_trends = []
-    for month, totals in sorted(monthly_totals.items()):
-        total = totals["total_outreach"]
-        meetings = totals["meetings_booked"]
+
+    for row in monthly_trends_raw:
+        total = row["total_outreach"] or 0
+        meetings = row["meetings_booked"] or 0
+
+        conversion = 0
+        if total > 0:
+            conversion = round((meetings / total) * 100, 2)
+
         monthly_trends.append({
-            "month": month,
+            "month": row["month"],
             "total_outreach": total,
             "meetings_booked": meetings,
-            "meeting_conversion": meetings,
+            "conversion_rate": conversion
         })
+
+    connection.close()
 
     return render_template(
         "outreach_reports.html",
         total_outreach=total_outreach,
         meetings_booked=meetings_booked,
-        conversion_rate=meeting_conversion_total,
+        conversion_rate=conversion_rate,
         outcome_breakdown=outcome_breakdown,
         outreach_by_type=outreach_by_type,
         latest_outreach=latest_outreach,
@@ -7108,15 +3503,7 @@ def outreach_reports():
         selected_end_date=selected_end_date,
         selected_account=selected_account,
         selected_activity_type=selected_activity_type,
-        selected_outcome=selected_outcome,
-        outcome_chart_labels=[item["outcome"] for item in outcome_breakdown],
-        outcome_chart_data=[item["count"] for item in outcome_breakdown],
-        activity_type_chart_labels=[item["activity_type"] for item in outreach_by_type],
-        activity_type_chart_data=[item["count"] for item in outreach_by_type],
-        monthly_chart_labels=[item["month"] for item in monthly_trends],
-        monthly_outreach_data=[item["total_outreach"] for item in monthly_trends],
-        monthly_meetings_data=[item["meetings_booked"] for item in monthly_trends],
-        monthly_conversion_data=[item["meeting_conversion"] for item in monthly_trends],
+        selected_outcome=selected_outcome
     )
 
 
@@ -7127,19 +3514,11 @@ def export_outreach_reports():
     outreach_items = connection.execute("""
         SELECT
             outreach.activity_date,
-            outreach.activity_time,
-            outreach.next_action_date,
-            outreach.next_action_time,
-            outreach.task_status,
-            outreach.sales_play,
-            outreach.fy,
-            outreach.quarter,
             accounts.account_name,
             accounts.account_tier,
             contacts.name AS contact_name,
             outreach.activity_type,
             outreach.outcome,
-            outreach.next_action,
             outreach.notes
         FROM outreach
         LEFT JOIN accounts ON outreach.account_id = accounts.id
@@ -7154,38 +3533,22 @@ def export_outreach_reports():
 
     writer.writerow([
         "Date",
-        "Time",
-        "Due Date",
-        "Due Time",
-        "Status",
-        "FY",
-        "Quarter",
-        "Sales Play or Initiative",
         "Account",
         "Account Tier",
         "Contact",
         "Activity Type",
         "Outcome",
-        "Activity Update",
-        "System Metadata"
+        "Notes"
     ])
 
     for item in outreach_items:
         writer.writerow([
             item["activity_date"],
-            item["activity_time"],
-            item["next_action_date"],
-            item["next_action_time"],
-            item["task_status"],
-            item["fy"],
-            item["quarter"],
-            item["sales_play"],
             item["account_name"],
             item["account_tier"],
             item["contact_name"],
             item["activity_type"],
             item["outcome"],
-            item["next_action"],
             item["notes"]
         ])
 
@@ -7205,8 +3568,30 @@ def export_outreach_reports():
 @app.route("/reports/contacts")
 def contact_reports():
     connection = get_db_connection()
+    selected_status = request.args.get("contact_status", "")
+    selected_archived_start = request.args.get("archived_start", "")
+    selected_archived_end = request.args.get("archived_end", "")
 
-    contacts = connection.execute("""
+    filters = []
+    params = []
+
+    if selected_status:
+        filters.append("COALESCE(NULLIF(contacts.contact_status, ''), 'Active') = ?")
+        params.append(selected_status)
+
+    if selected_archived_start:
+        filters.append("date(contacts.archived_date) >= date(?)")
+        params.append(selected_archived_start)
+
+    if selected_archived_end:
+        filters.append("date(contacts.archived_date) <= date(?)")
+        params.append(selected_archived_end)
+
+    where_clause = ""
+    if filters:
+        where_clause = "WHERE " + " AND ".join(filters)
+
+    contacts = connection.execute(f"""
         SELECT
             contacts.id,
             contacts.name,
@@ -7214,12 +3599,16 @@ def contact_reports():
             contacts.category,
             contacts.bmc_relationship,
             contacts.email,
+            contacts.contact_status,
+            contacts.archived,
+            contacts.archived_date,
             accounts.account_name,
             accounts.account_tier
         FROM contacts
         LEFT JOIN accounts ON contacts.account_id = accounts.id
+        {where_clause}
         ORDER BY contacts.name
-    """).fetchall()
+    """, params).fetchall()
 
     contacts_by_category = connection.execute("""
         SELECT
@@ -7268,15 +3657,40 @@ def contact_reports():
         contacts_by_category=contacts_by_category,
         contacts_by_relationship=contacts_by_relationship,
         contacts_by_account=contacts_by_account,
-        contacts_by_account_tier=contacts_by_account_tier
+        contacts_by_account_tier=contacts_by_account_tier,
+        selected_status=selected_status,
+        selected_archived_start=selected_archived_start,
+        selected_archived_end=selected_archived_end
     )
 
 
 @app.route("/reports/contacts/export")
 def export_contact_reports():
     connection = get_db_connection()
+    selected_status = request.args.get("contact_status", "")
+    selected_archived_start = request.args.get("archived_start", "")
+    selected_archived_end = request.args.get("archived_end", "")
 
-    contacts = connection.execute("""
+    filters = []
+    params = []
+
+    if selected_status:
+        filters.append("COALESCE(NULLIF(contacts.contact_status, ''), 'Active') = ?")
+        params.append(selected_status)
+
+    if selected_archived_start:
+        filters.append("date(contacts.archived_date) >= date(?)")
+        params.append(selected_archived_start)
+
+    if selected_archived_end:
+        filters.append("date(contacts.archived_date) <= date(?)")
+        params.append(selected_archived_end)
+
+    where_clause = ""
+    if filters:
+        where_clause = "WHERE " + " AND ".join(filters)
+
+    contacts = connection.execute(f"""
         SELECT
             contacts.name,
             contacts.job_title,
@@ -7295,12 +3709,16 @@ def export_contact_reports():
             contacts.education,
             contacts.social_media,
             contacts.additional_notes,
+            contacts.contact_status,
+            contacts.archived,
+            contacts.archived_date,
             accounts.account_name,
             accounts.account_tier
         FROM contacts
         LEFT JOIN accounts ON contacts.account_id = accounts.id
+        {where_clause}
         ORDER BY contacts.name
-    """).fetchall()
+    """, params).fetchall()
 
     connection.close()
 
@@ -7325,6 +3743,9 @@ def export_contact_reports():
         "Education",
         "Social Media",
         "Additional Notes",
+        "Status",
+        "Archived",
+        "Archived Date",
         "Account",
         "Account Tier"
     ])
@@ -7348,6 +3769,9 @@ def export_contact_reports():
             contact["education"],
             contact["social_media"],
             contact["additional_notes"],
+            contact["contact_status"],
+            "Yes" if contact["archived"] else "No",
+            contact["archived_date"],
             contact["account_name"],
             contact["account_tier"]
         ])
@@ -7373,6 +3797,7 @@ def export_outreach():
         SELECT
             outreach.fy,
             outreach.quarter,
+            outreach.campaign,
             outreach.sales_play,
             outreach.activity_date,
             outreach.activity_time,
@@ -7400,25 +3825,27 @@ def export_outreach():
     writer.writerow([
         "FY",
         "Quarter",
-        "Sales Play or Initiative",
-        "Activity Start Date",
-        "Activity Start Time",
+        "Campaign",
+        "Sales Play",
+        "Activity Date",
+        "Activity Time",
         "Account",
         "Account Tier",
         "Contact",
         "Activity Type",
         "Subject",
-        "System Metadata",
+        "Notes",
         "Outcome",
         "Next Action",
-        "Activity Due Date",
-        "Activity Due Time"
+        "Next Action Date",
+        "Next Action Time"
     ])
 
     for row in outreach_records:
         writer.writerow([
             row["fy"],
             row["quarter"],
+            row["campaign"],
             row["sales_play"],
             row["activity_date"],
             row["activity_time"],
@@ -7445,6 +3872,5 @@ def open_browser():
 
 
 if __name__ == "__main__":
-    if os.environ.get("PIPEFLOW_NO_BROWSER") != "1":
-        threading.Timer(1.5, open_browser).start()
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")), debug=False)
+    threading.Timer(1.5, open_browser).start()
+    app.run(debug=False)

@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}Outreach Tasks | PipeFlow{% endblock %}
+{% block title %}Outreach | PipeFlow{% endblock %}
 
 {% block content %}
 
 <div class="page-header">
     <div>
-        <h1>Outreach Tasks</h1>
-        <p>Track, filter, share and assign prospecting follow-up tasks from one workspace.</p>
+        <h1>Outreach</h1>
+        <p>Track prospecting activity, follow-ups and next actions.</p>
     </div>
 
     <div class="button-group">
@@ -25,24 +25,9 @@
     </div>
 </div>
 
-{% if message %}
-    <div class="alert-success">{{ message }}</div>
-{% endif %}
-{% if error %}
-    <div class="alert-error">{{ error }}</div>
-{% endif %}
-
-<div class="outreach-control-grid outreach-filter-only-grid">
-    <div class="form-card compact-filter-card">
-        <div class="section-header">
-            <div>
-                <h2>Filter Outreach Tasks</h2>
-                <p>Use filters to focus the task table below.</p>
-            </div>
-        </div>
-
-        <form method="GET" action="{{ url_for('outreach') }}" class="pipeflow-form compact-filter-form outreach-filter-form">
-            <div class="form-grid compact-filter-grid outreach-filter-grid">
+<div class="form-card">
+    <form method="GET" action="{{ url_for('outreach') }}" class="pipeflow-form">
+        <div class="form-grid">
 
             <div class="form-group">
                 <label for="fy">FY</label>
@@ -72,11 +57,11 @@
             </div>
 
             <div class="form-group">
-                <label for="sales_play">Sales Play / Initiative</label>
-                <select id="sales_play" name="sales_play">
-                    <option value="">All sales plays</option>
-                    {% for sales_play in sales_play_options %}
-                        <option value="{{ sales_play }}" {% if sales_play_filter == sales_play %}selected{% endif %}>{{ sales_play }}</option>
+                <label for="campaign">Campaign</label>
+                <select id="campaign" name="campaign">
+                    <option value="">All campaigns</option>
+                    {% for campaign in dropdown_values.outreach_campaigns %}
+                        <option value="{{ campaign }}" {% if campaign_filter == campaign %}selected{% endif %}>{{ campaign }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -91,151 +76,99 @@
                 </select>
             </div>
 
-            <div class="form-group">
-                <label>Status</label>
-                <details class="checkbox-dropdown compact-checkbox-dropdown status-filter-dropdown">
-                    <summary>{{ selected_statuses | join(", ") }}</summary>
-                    <div class="checkbox-dropdown-panel">
-                        {% for status_filter in ["All Open", "All Closed", "All"] %}
-                            <label class="checkbox-row">
-                                <input type="checkbox" name="task_status" value="{{ status_filter }}" {% if status_filter in selected_statuses %}checked{% endif %}>
-                                <span>{{ status_filter }}</span>
-                            </label>
-                        {% endfor %}
-                        {% for status in dropdown_values.task_statuses %}
-                            <label class="checkbox-row">
-                                <input type="checkbox" name="task_status" value="{{ status }}" {% if status in selected_statuses %}checked{% endif %}>
-                                <span>{{ status }}</span>
-                            </label>
-                        {% endfor %}
-                    </div>
-                </details>
-            </div>
+        </div>
 
-            <div class="form-group outreach-filter-actions">
-                <label>&nbsp;</label>
-                <button type="submit" class="btn btn-primary">Apply Filters</button>
-                <a href="{{ url_for('outreach') }}" class="btn btn-secondary">Clear Filters</a>
-            </div>
-            </div>
-        </form>
-    </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Apply Filters</button>
+            <a href="{{ url_for('outreach') }}" class="btn btn-secondary">Clear Filters</a>
+        </div>
+    </form>
 </div>
 
 <div class="form-card">
     {% if outreach_records %}
-        <form id="bulk-delete-outreach-form"
-              method="POST"
-              action="{{ url_for('bulk_delete_outreach') }}"
-              onsubmit="return confirm('Delete the selected outreach records? This cannot be undone.');"></form>
-
-        <div class="bulk-action-bar" data-bulk-action-bar="bulk-delete-outreach-form" hidden>
-            <span><strong data-bulk-selected-count>0</strong> outreach record(s) selected.</span>
-            <button type="submit" form="bulk-delete-outreach-form" class="btn btn-danger btn-small">Delete Selected</button>
-        </div>
-
-        <div class="table-container outreach-table-container">
+        <div class="table-container">
             <table class="report-table outreach-table">
-                <colgroup>
-                    <col class="bulk-select-col">
-                    <col class="outreach-due-col">
-                    <col class="outreach-start-col">
-                    <col class="outreach-account-col">
-                    <col class="outreach-campaign-col">
-                    <col class="outreach-activity-col">
-                    <col class="outreach-assigned-col">
-                </colgroup>
                 <thead>
                     <tr>
-                        <th class="bulk-select-col">Select</th>
-                        <th>Activity Due Date</th>
-                        <th>Activity Start Date</th>
-                        <th>Account / Contact</th>
-                        <th>Sales Play / Initiative</th>
-                        <th>Activity Type / Subject</th>
-                        <th>Assigned To</th>
+                        <th>FY</th>
+                        <th>Quarter</th>
+                        <th>Campaign</th>
+                        <th>Sales Play</th>
+                        <th>Date</th>
+                        <th>Time</th>
+                        <th>Account</th>
+                        <th>Tier</th>
+                        <th>Contact</th>
+                        <th>Type</th>
+                        <th>Subject</th>
+                        <th>Outcome</th>
+                        <th>Next Action</th>
+                        <th>Next Action Date</th>
+                        <th>Next Action Time</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
 
                 <tbody>
                     {% for item in outreach_records %}
-                        <tr class="outreach-main-row">
-                            <td class="bulk-select-col">
-                                <input type="checkbox" name="selected_ids" value="{{ item.id }}" form="bulk-delete-outreach-form" aria-label="Select outreach {{ item.subject or item.id }}">
-                            </td>
-                            <td data-sort-value="{{ item.next_action_date or '9999-12-31' }} {{ item.next_action_time or '99:99' }}">
-                                <div class="outreach-due-date-block">
-                                    <span class="outreach-date-label">Due</span>
-                                    <span class="outreach-date-value">
-                                        {% if item.next_action_date %}
-                                            {{ item.next_action_date[8:10] }}-{{ item.next_action_date[5:7] }}-{{ item.next_action_date[0:4] }}
-                                        {% else %}
-                                            No due date
-                                        {% endif %}
-                                    </span>
-                                    <div class="outreach-due-meta">
-                                        <span>{{ item.next_action_time or "No due time" }}</span>
-                                        <span class="outreach-status-chip">{{ item.task_status or "Not Started" }}</span>
-                                    </div>
+                        <tr>
+                            <td>{{ item.fy or "—" }}</td>
+                            <td>{{ item.quarter or "—" }}</td>
+                            <td>{{ item.campaign or "—" }}</td>
+                            <td>{{ item.sales_play or "—" }}</td>
+                            <td>
+    {% if item.activity_date %}
+        {{ item.activity_date[8:10] }}-{{ item.activity_date[5:7] }}-{{ item.activity_date[0:4] }}
+    {% else %}
+        —
+    {% endif %}
+</td>
+                            <td>{{ item.activity_time or "—" }}</td>
+                            <td>{{ item.account_name or "—" }}</td>
+                            <td>{{ "Tier " ~ item.account_tier if item.account_tier else "—" }}</td>
+                            <td>{{ item.contact_name or "—" }}</td>
+                            <td>{{ item.activity_type or "—" }}</td>
+                            <td>{{ item.subject or "—" }}</td>
+                            <td>{{ item.outcome or "—" }}</td>
+                            <td>{{ item.next_action or "—" }}</td>
+<td>
+    {% if item.next_action_date %}
+        {{ item.next_action_date[8:10] }}-{{ item.next_action_date[5:7] }}-{{ item.next_action_date[0:4] }}
+    {% else %}
+        —
+    {% endif %}
+</td>                            <td>{{ item.next_action_time or "—" }}</td>
+
+                            <td>
+                                <div class="table-actions outreach-actions">
+                                    <a href="{{ url_for('view_outreach', outreach_id=item.id) }}" class="btn btn-secondary btn-small">
+                                        View
+                                    </a>
+
+                                    {% if item.task_status in ["Closed", "Completed", "Cancelled"] %}
+                                        <span class="status-pill">Locked</span>
+                                    {% else %}
+                                        <a href="{{ url_for('edit_outreach', outreach_id=item.id) }}" class="btn btn-primary btn-small">
+                                            Edit
+                                        </a>
+
+                                        <form method="POST"
+                                              action="{{ url_for('delete_outreach', outreach_id=item.id) }}"
+                                              style="display:inline;">
+                                            <button type="submit"
+                                                    class="btn btn-danger btn-small"
+                                                    onclick="return confirm('Are you sure you want to delete this outreach record?');">
+                                                Delete
+                                            </button>
+                                        </form>
+                                    {% endif %}
                                 </div>
-                            </td>
-                            <td>
-                                <div class="outreach-start-date-block">
-                                    <strong>
-                                        {% if item.activity_date %}
-                                            {{ item.activity_date[8:10] }}-{{ item.activity_date[5:7] }}-{{ item.activity_date[0:4] }}
-                                        {% else %}
-                                            No start date
-                                        {% endif %}
-                                    </strong>
-                                    <span>{{ item.activity_time or "No start time" }}</span>
-                                </div>
-                            </td>
-                            <td>
-                                <strong>{{ item.account_name or "No account" }}</strong>
-                                <br>
-                                <span class="muted">{{ item.contact_name or "No contact" }}</span>
-                            </td>
-                            <td>
-                                <strong>{{ item.sales_play or "No sales play" }}</strong>
-                            </td>
-                            <td>
-                                <strong>{{ item.activity_type or "No activity type" }}</strong>
-                                <br>
-                                <span class="muted">{{ item.subject or "No subject" }}</span>
-                            </td>
-                            <td>
-                                <form method="POST" action="{{ url_for('reassign_team_outreach') }}" class="inline-form compact-assignment-form">
-                                    <input type="hidden" name="return_to" value="{{ url_for('outreach') }}">
-                                    <input type="hidden" name="workspace_schema" value="{{ item.workspace_schema }}">
-                                    <input type="hidden" name="outreach_id" value="{{ item.id }}">
-                                    <label for="assigned_to_user_{{ item.id }}" class="table-field-label">Assigned To</label>
-                                    <div class="assignment-save-control">
-                                        <select id="assigned_to_user_{{ item.id }}" name="assigned_to_user_id">
-                                            <option value="">Unassigned</option>
-                                            {% for assignable_user in assignable_users %}
-                                                <option value="{{ assignable_user.id }}" {% if item.assigned_to == assignable_user.full_name %}selected{% endif %}>
-                                                    {{ assignable_user.full_name }}
-                                                </option>
-                                            {% endfor %}
-                                        </select>
-                                        <div class="assignment-row-actions">
-                                            <button type="submit" class="btn btn-primary btn-small">Save</button>
-                                            <a href="{{ url_for('edit_outreach', outreach_id=item.id) }}"
-                                               class="btn btn-secondary btn-small compact-row-edit-button"
-                                               title="Edit outreach {{ item.subject or item.activity_type or item.id }}"
-                                               aria-label="Edit outreach {{ item.subject or item.activity_type or item.id }}">
-                                                Edit
-                                            </a>
-                                        </div>
-                                    </div>
-                                </form>
                             </td>
                         </tr>
                     {% endfor %}
                 </tbody>
             </table>
-        </div>
     {% else %}
         <p>No outreach activity found for the selected filters.</p>
     {% endif %}

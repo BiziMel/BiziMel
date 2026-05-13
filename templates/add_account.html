@@ -8,10 +8,6 @@
     <label>Account Name</label>
     <input type="text" name="account_name" required>
 
-    <label>PG Bible Order</label>
-    <input type="number" name="pg_bible_order" min="1" step="1" placeholder="Example: 1">
-    <p class="field-help">Controls the account sequence in the PG Bible export. Leave blank to sort after numbered accounts.</p>
-
     <label>Account Tier</label>
     <select name="account_tier">
         <option value="">Select tier</option>
@@ -41,34 +37,8 @@
     <label>Pipeline Target USD $ ACV</label>
     <input type="number" id="pipeline_target" name="pipeline_target" step="0.01" min="0" placeholder="0.00">
 
-    <label>NBM Target</label>
-    <input type="number" name="nbm_target" min="1" step="1" placeholder="Example: 1">
-    <p class="field-help">Used to map this account into the PG Goals dashboard plan and actions tables.</p>
-
-    <label>Account Sales Play or Initiative</label>
-    <textarea name="sales_play" rows="3" placeholder="Document the sales play or initiative for this account."></textarea>
-
-    <label>Account Owner</label>
-    <input type="text" value="{{ current_user.full_name if current_user else 'Current user' }}" readonly>
-    <p class="field-help">New accounts are owned by the creator by default. Ownership can be reassigned from the edit account form.</p>
-
     <label>Notes</label>
     <textarea name="notes"></textarea>
-
-    {% if custom_fields %}
-        <h3>Additional Account Fields</h3>
-        {% for field in custom_fields %}
-            <label>{{ field.field_label }}{% if field.is_required %} *{% endif %}</label>
-            {% if field.field_type == "textarea" %}
-                <textarea name="custom_{{ field.field_key }}" {% if field.is_required %}required{% endif %}></textarea>
-            {% else %}
-                <input type="{{ 'number' if field.field_type == 'number' else 'date' if field.field_type == 'date' else 'text' }}"
-                       name="custom_{{ field.field_key }}"
-                       {% if field.field_type == 'number' %}step="0.01"{% endif %}
-                       {% if field.is_required %}required{% endif %}>
-            {% endif %}
-        {% endfor %}
-    {% endif %}
 
     <button type="submit">Save Account</button>
 

@@ -13,54 +13,85 @@
     </a>
 </div>
 
-{% if contacts %}
+<div class="form-card">
+    <form method="GET" action="{{ url_for('contacts') }}" class="pipeflow-form">
+        <div class="form-grid compact-filter-grid">
+            <div class="form-group">
+                <label for="account_id">Account</label>
+                <select id="account_id" name="account_id">
+                    <option value="">All accounts</option>
+                    {% for account in accounts %}
+                        <option value="{{ account.id }}" {% if account_filter == account.id|string %}selected{% endif %}>
+                            {{ account.account_name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
 
-<form id="bulk-delete-contacts-form"
-      method="POST"
-      action="{{ url_for('bulk_delete_contacts') }}"
-      onsubmit="return confirm('Delete the selected contacts and their related outreach records? This cannot be undone.');"></form>
+            <div class="form-group">
+                <label for="contact_name">Contact Name</label>
+                <input type="text" id="contact_name" name="contact_name" value="{{ name_filter or '' }}">
+            </div>
 
-<div class="bulk-action-bar" data-bulk-action-bar="bulk-delete-contacts-form" hidden>
-    <span><strong data-bulk-selected-count>0</strong> contact(s) selected.</span>
-    <button type="submit" form="bulk-delete-contacts-form" class="btn btn-danger btn-small">Delete Selected</button>
+            <div class="form-group">
+                <label for="contact_status">Status</label>
+                <select id="contact_status" name="contact_status">
+                    <option value="">All statuses</option>
+                    {% for status in dropdown_values.contact_statuses %}
+                        <option value="{{ status }}" {% if status_filter == status %}selected{% endif %}>{{ status }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Filter</button>
+            <a href="{{ url_for('contacts') }}" class="btn btn-secondary">Clear</a>
+        </div>
+    </form>
 </div>
 
+{% if contacts %}
+
 <div class="table-container">
-    <table class="report-table">
+    <form method="POST" action="{{ url_for('archive_contacts') }}">
+    <table class="report-table contacts-table spacious-table">
         <thead>
             <tr>
-                <th class="bulk-select-col">Select</th>
+                <th>Archive</th>
                 <th>Contact</th>
                 <th>Account</th>
+                {% if contacts|selectattr("business_unit")|list %}
+                    <th>Business Org</th>
+                {% endif %}
                 <th>Account Tier</th>
                 <th>Role</th>
                 <th>Relationship</th>
+                <th>Status</th>
                 <th>Email</th>
+                <th>Action</th>
             </tr>
         </thead>
 
         <tbody>
             {% for contact in contacts %}
                 <tr>
-                    <td class="bulk-select-col">
-                        <input type="checkbox" name="selected_ids" value="{{ contact['id'] }}" form="bulk-delete-contacts-form" aria-label="Select {{ contact['name'] }}">
+                    <td>
+                        <input type="checkbox" name="contact_ids" value="{{ contact['id'] }}">
                     </td>
                     <td>
-                        <a href="{{ url_for('edit_contact', contact_id=contact['id']) }}"
-                           class="record-primary-link"
-                           title="Edit contact {{ contact['name'] or 'Unknown' }}"
-                           aria-label="Edit contact {{ contact['name'] or 'Unknown' }}">
-                            {{ contact["name"] or "Unknown" }}
-                        </a>
+                        <strong>{{ contact["name"] or "Unknown" }}</strong>
                         <br>
                         <small>{{ contact["category"] or "Category not set" }}</small>
                     </td>
 
                     <td>
                         {{ contact["account_name"] or "Unknown account" }}
-                        <br>
-                        <small>{{ contact["business_unit"] or "Business org not set" }}</small>
                     </td>
+
+                    {% if contacts|selectattr("business_unit")|list %}
+                        <td>{{ contact["business_unit"] or "" }}</td>
+                    {% endif %}
 
                     <td>
                         <span class="status-pill">
@@ -83,6 +114,10 @@
                     </td>
 
                     <td>
+                        <span class="status-pill">{{ contact["contact_status"] or "Active" }}</span>
+                    </td>
+
+                    <td>
                         {% if contact["email"] %}
                             <a href="mailto:{{ contact['email'] }}">
                                 {{ contact["email"] }}
@@ -91,10 +126,24 @@
                             <small>Not added</small>
                         {% endif %}
                     </td>
+
+                    <td>
+                        <a href="{{ url_for('view_contact', contact_id=contact['id']) }}" class="btn btn-primary">
+                            View
+                        </a>
+                    </td>
                 </tr>
             {% endfor %}
         </tbody>
     </table>
+    <div class="form-actions">
+        <button type="submit"
+                class="btn btn-danger"
+                onclick="return confirm('Archive selected contacts?');">
+            Archive Selected
+        </button>
+    </div>
+    </form>
 </div>
 
 {% else %}

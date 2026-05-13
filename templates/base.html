@@ -2,54 +2,33 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>{% block title %}PipeFlow PG Manager{% endblock %}</title>
+    <title>{% block title %}PipeFlow{% endblock %}</title>
 
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="icon" type="image/png" href="/static/pipeflow.png?v=300">
-    <script src="{{ url_for('static', filename='table_sort.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='bulk_actions.js') }}" defer></script>
 </head>
 <body>
 
     <header class="header-stack">
-        <div class="header-top-row">
         <div class="app-brand">
             <img src="{{ url_for('static', filename='pipeflow.png') }}"
                  alt="PipeFlow Logo"
                  class="app-logo">
 
-            <div>
-                <h1>{{ app_name or "PipeFlow PG Manager" }}</h1>
-                <a href="{{ url_for('release_notes') }}" class="version-pill">
-                    Version {{ app_version or "1.0" }}
-                </a>
-            </div>
-        </div>
-
-        <a href="{{ url_for('user_guide') }}" class="btn btn-secondary user-guide-link">User Guide</a>
+            <h1>PipeFlow</h1>
         </div>
 
     <nav class="button-group nav-stack">
-    <a href="/" class="btn btn-primary">Insights Dashboard</a>
-    <a href="{{ url_for('pg_progress') }}" class="btn btn-primary">PG Progress</a>
-    <a href="/outreach" class="btn btn-primary">Outreach Tasks</a>
+    <a href="/" class="btn btn-primary">Dashboard</a>
     <a href="/accounts" class="btn btn-primary">Accounts</a>
-    <a href="/contacts" class="btn btn-primary">Contacts</a>
     <a href="/partners" class="btn btn-primary">Partners</a>
+    <a href="/contacts" class="btn btn-primary">Contacts</a>
+    <a href="/outreach" class="btn btn-primary">Outreach</a>
+    <a href="/tasks" class="btn btn-primary">Tasks</a>
     <a href="/reports" class="btn btn-primary">Reports</a>
+    <a href="/search" class="btn btn-primary">Search</a>
     <a href="/profile" class="btn btn-secondary">Profile</a>
-    <a href="/release-notes" class="btn btn-secondary">Release Notes</a>
-    {% if current_user and current_user["role"] == "admin" %}
-    <a href="/admin/permissions" class="btn btn-secondary">Admin</a>
-    {% endif %}
-    {% if current_user %}
-    <a href="/logout" class="btn btn-secondary">Sign Out</a>
-    {% endif %}
 </nav>
-
-        {% if current_user %}
-        <p class="muted-text">Signed in as {{ current_user["full_name"] }}</p>
-        {% endif %}
 
         <div class="header-search">
             <form method="GET" action="{{ url_for('global_search') }}">
@@ -62,37 +41,8 @@
     </header>
 
     <main class="container">
-        {% if page_instructions %}
-            <section class="page-instructions" aria-label="Page instructions">
-                <details open>
-                    <summary>{{ page_instructions["title"] }}</summary>
-                    <ul>
-                        {% for item in page_instructions["items"] %}
-                            <li>{{ item }}</li>
-                        {% endfor %}
-                    </ul>
-                </details>
-            </section>
-        {% endif %}
-
         {% block content %}{% endblock %}
     </main>
 
-    <script>
-        document.addEventListener("DOMContentLoaded", () => {
-            document.querySelectorAll("form").forEach((form) => {
-                if (form.classList.contains("auth-form")) {
-                    return;
-                }
-                form.setAttribute("autocomplete", "off");
-                form.querySelectorAll("input, select, textarea").forEach((field) => {
-                    field.setAttribute("autocomplete", "off");
-                    field.setAttribute("data-1p-ignore", "true");
-                    field.setAttribute("data-lpignore", "true");
-                    field.setAttribute("data-form-type", "other");
-                });
-            });
-        });
-    </script>
 </body>
 </html>

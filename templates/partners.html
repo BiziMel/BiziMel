@@ -15,16 +15,14 @@
     <div class="section-header">
         <div>
             <h2>Add Partner Organisation</h2>
-            <p>Create the partner company once, then link it to accounts and partner-side contacts.</p>
+            <p>Create the partner company once, then link it to accounts and contacts.</p>
         </div>
     </div>
 
     <form method="POST" action="{{ url_for('add_partner') }}" class="pipeflow-form">
         <div class="form-grid">
-            <div class="form-section-heading full-width">Partner Account</div>
-
             <div class="form-group">
-                <label for="partner_name">Partner Account Name</label>
+                <label for="partner_name">Partner Name</label>
                 <input type="text" id="partner_name" name="partner_name" required>
             </div>
 
@@ -39,28 +37,14 @@
             </div>
 
             <div class="form-group">
-                <label for="website">Account Website</label>
-                <input type="text"
-                       id="website"
-                       name="website"
-                       pattern="^(https?://|www\.).+"
-                       title="Enter a website starting with http://, https:// or www.">
-            </div>
-
-            <div class="form-section-heading full-width">Ownership</div>
-
-            <div class="form-group">
-                <label for="partner_manager">Partner Account Manager</label>
-                <input type="text" id="partner_manager" name="partner_manager">
+                <label for="website">Website</label>
+                <input type="text" id="website" name="website">
             </div>
 
             <div class="form-group">
-                <label for="bmc_partner_manager">BMC Partner Manager</label>
-                <input type="text" id="bmc_partner_manager" name="bmc_partner_manager">
-                <input type="hidden" name="relationship_owner" value="">
+                <label for="relationship_owner">Relationship Owner</label>
+                <input type="text" id="relationship_owner" name="relationship_owner">
             </div>
-
-            <div class="form-section-heading full-width">Location</div>
 
             <div class="form-group">
                 <label for="city">City</label>
@@ -88,47 +72,25 @@
 </div>
 
 {% if partners %}
-    <form id="bulk-delete-partners-form"
-          method="POST"
-          action="{{ url_for('bulk_delete_partners') }}"
-          onsubmit="return confirm('Delete the selected partners, partner contacts and account links? This cannot be undone.');"></form>
-
-    <div class="bulk-action-bar" data-bulk-action-bar="bulk-delete-partners-form" hidden>
-        <span><strong data-bulk-selected-count>0</strong> partner record(s) selected.</span>
-        <button type="submit" form="bulk-delete-partners-form" class="btn btn-danger btn-small">Delete Selected</button>
-    </div>
-
     <div class="table-container">
         <table class="report-table">
             <thead>
                 <tr>
-                    <th class="bulk-select-col">Select</th>
                     <th>Partner</th>
                     <th>Type</th>
                     <th>Coverage</th>
-                    <th>Managers</th>
+                    <th>Owner</th>
                     <th>Location</th>
                     <th>Website</th>
+                    <th>Action</th>
                 </tr>
             </thead>
 
             <tbody>
                 {% for partner in partners %}
                     <tr>
-                        <td class="bulk-select-col">
-                            {% if partner.can_delete %}
-                                <input type="checkbox" name="selected_ids" value="{{ partner.id }}" form="bulk-delete-partners-form" aria-label="Select {{ partner.partner_name }}">
-                            {% else %}
-                                <span class="muted">Owner only</span>
-                            {% endif %}
-                        </td>
                         <td>
-                            <a href="{{ url_for('view_partner', partner_id=partner.id) }}#partner-details-form"
-                               class="record-primary-link"
-                               title="Edit partner {{ partner.partner_name }}"
-                               aria-label="Edit partner {{ partner.partner_name }}">
-                                {{ partner.partner_name }}
-                            </a>
+                            <strong>{{ partner.partner_name }}</strong>
                             <br>
                             <small>{{ partner.notes or "No notes added" }}</small>
                         </td>
@@ -141,11 +103,7 @@
                             <strong>{{ partner.contact_count or 0 }}</strong> partner contact(s)
                         </td>
 
-                        <td>
-                            <strong>Partner Account Manager:</strong> {{ partner.partner_manager or "Not assigned" }}
-                            <br>
-                            <small><strong>BMC:</strong> {{ partner.bmc_partner_manager or partner.relationship_owner or "Not assigned" }}</small>
-                        </td>
+                        <td>{{ partner.relationship_owner or "Not assigned" }}</td>
 
                         <td>
                             {{ partner.city or "City not set" }}
@@ -155,10 +113,16 @@
 
                         <td>
                             {% if partner.website %}
-                                <a href="{% if partner.website.startswith('www.') %}https://{{ partner.website }}{% else %}{{ partner.website }}{% endif %}" target="_blank" class="btn btn-secondary">Website</a>
+                                <a href="{{ partner.website }}" target="_blank" class="btn btn-secondary">Website</a>
                             {% else %}
                                 <small>Not added</small>
                             {% endif %}
+                        </td>
+
+                        <td>
+                            <a href="{{ url_for('view_partner', partner_id=partner.id) }}" class="btn btn-primary">
+                                View
+                            </a>
                         </td>
                     </tr>
                 {% endfor %}

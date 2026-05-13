@@ -26,6 +26,10 @@
         {% endif %}
     </p>
     <p><strong>Category:</strong> {{ contact.category }}</p>
+    <p><strong>Status:</strong> {{ contact.contact_status or "Active" }}</p>
+    {% if contact.business_unit %}
+        <p><strong>Business Org:</strong> {{ contact.business_unit }}</p>
+    {% endif %}
     <p><strong>Job Title:</strong> {{ contact.job_title }}</p>
     <p><strong>Org / Dept:</strong> {{ contact.org_dept }}</p>
     <p><strong>Email:</strong> {{ contact.email }}</p>

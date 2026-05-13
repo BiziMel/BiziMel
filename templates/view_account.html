@@ -17,17 +17,15 @@
             Edit Account
         </a>
 
-        {% if current_user and current_user["role"] == "admin" %}
-            <form method="POST"
-                  action="{{ url_for('delete_account', account_id=account.id) }}"
-                  style="display:inline;">
-                <button type="submit"
-                        class="btn btn-danger"
-                        onclick="return confirm('Are you sure you want to delete this account? This cannot be undone.');">
-                    Delete Account
-                </button>
-            </form>
-        {% endif %}
+        <form method="POST"
+              action="{{ url_for('delete_account', account_id=account.id) }}"
+              style="display:inline;">
+            <button type="submit"
+                    class="btn btn-danger"
+                    onclick="return confirm('Are you sure you want to delete this account?');">
+                Delete Account
+            </button>
+        </form>
     </div>
 </div>
 
@@ -66,11 +64,6 @@
     <h2>Account Details</h2>
 
     <p>
-        <strong>PG Bible Order:</strong>
-        {{ account["pg_bible_order"] or "Not set" }}
-    </p>
-
-    <p>
         <strong>Account Tier:</strong>
         {% if account["account_tier"] %}
             Tier {{ account["account_tier"] }}
@@ -100,61 +93,9 @@
         {% endif %}
     </p>
 
-    <p>
-        <strong>Account Owner:</strong>
-        {{ owner.owner_name or "Not set" }}
-    </p>
-
     <p><strong>Notes:</strong></p>
     <p>{{ account["notes"] }}</p>
-
-    {% if custom_fields %}
-        <h3>Additional Account Fields</h3>
-        {% for field in custom_fields %}
-            <p>
-                <strong>{{ field.field_label }}:</strong>
-                {{ custom_values.get(field.field_key) or "Not set" }}
-            </p>
-        {% endfor %}
-    {% endif %}
 </div>
-
-{% if is_account_owner %}
-    <div class="form-card sharing-management-panel">
-        <div class="section-header">
-            <div>
-                <h2>Account Sharing</h2>
-                <p>People who currently have this account shared with them. Revoke access here when needed.</p>
-            </div>
-        </div>
-
-        {% if account_shares %}
-            <div class="sharing-permission-list account-sharing-list">
-                {% for share in account_shares %}
-                    <div class="sharing-permission-row">
-                        <div>
-                            <strong>{{ share.full_name or share.email }}</strong>
-                            <span>{{ share.email or "No email recorded" }}</span>
-                        </div>
-
-                        <form method="POST"
-                              action="{{ url_for('revoke_account_share_from_outreach', share_id=share.id) }}"
-                              onsubmit="return confirm('Revoke this account share? Assigned tasks for this user will return to the account owner.');">
-                            <input type="hidden" name="return_to" value="{{ url_for('view_account', account_id=account.id) }}">
-                            <button type="submit" class="btn btn-danger btn-small">Revoke Access</button>
-                        </form>
-                    </div>
-                {% endfor %}
-            </div>
-        {% else %}
-            <div class="empty-state compact-empty-state">
-                <h3>No active sharing</h3>
-                <p>This account has not been shared with another user yet.</p>
-                <a href="{{ url_for('outreach') }}" class="btn btn-secondary">Open Outreach Tasks to Share</a>
-            </div>
-        {% endif %}
-    </div>
-{% endif %}
 
 <div class="form-card">
     <div class="section-header">
@@ -216,14 +157,14 @@
         </datalist>
 
         <div class="form-grid">
-            <div class="form-group full-width">
-                <label for="partner_ids">Partner Organisations</label>
-                <select id="partner_ids" name="partner_ids" multiple size="6">
+            <div class="form-group">
+                <label for="partner_id">Partner Organisation</label>
+                <select id="partner_id" name="partner_id">
+                    <option value="">Create new partner below</option>
                     {% for partner in partner_options %}
                         <option value="{{ partner.id }}">{{ partner.partner_name }}</option>
                     {% endfor %}
                 </select>
-                <p class="field-help">Select one or more existing partner accounts to associate with this account.</p>
             </div>
 
             <div class="form-group">
@@ -233,16 +174,6 @@
                        name="partner_name"
                        list="partner-name-options"
                        placeholder="Use when the partner is not in the list">
-            </div>
-
-            <div class="form-group">
-                <label for="partner_role">Partner Role</label>
-                <select id="partner_role" name="partner_role">
-                    <option value="">Select partner role</option>
-                    {% for role in dropdown_values.partner_contact_roles %}
-                        <option value="{{ role }}">{{ role }}</option>
-                    {% endfor %}
-                </select>
             </div>
 
             <div class="form-group">
@@ -267,6 +198,16 @@
                 <input type="text"
                        id="next_action"
                        name="next_action">
+            </div>
+
+            <div class="form-group">
+                <label for="next_action_date">Next Action Date</label>
+                <input type="date" id="next_action_date" name="next_action_date">
+            </div>
+
+            <div class="form-group">
+                <label for="next_action_time">Next Action Time</label>
+                <input type="time" id="next_action_time" name="next_action_time">
             </div>
 
             <div class="form-group full-width">
@@ -297,7 +238,6 @@
                                     {{ partner.partner_name }}
                                 {% endif %}
                             </strong>
-                            <p>{{ partner.partner_role or "No partner role set" }}</p>
                             {% if partner.partner_type %}
                                 <p class="muted">{{ partner.partner_type }}</p>
                             {% endif %}
@@ -311,7 +251,8 @@
                     <div class="partner-detail-grid">
                         <p><strong>Owner:</strong> {{ partner.relationship_owner or "Not assigned" }}</p>
                         <p><strong>Next Action:</strong> {{ partner.next_action or "No next action set" }}</p>
-                        <p><strong>Responsible Partner Contacts:</strong> {{ partner.partner_contact_count or 0 }}</p>
+                        <p><strong>Due:</strong> {{ partner.next_action_date or "No date" }} {{ partner.next_action_time or "" }}</p>
+                        <p><strong>Partner Contacts:</strong> {{ partner.partner_contact_count or 0 }}</p>
                         <p>
                             <strong>Partner Page:</strong>
                             {% if partner.partner_id %}
@@ -357,18 +298,6 @@
                                     </div>
 
                                     <div class="form-group">
-                                        <label for="partner_role_{{ partner.id }}">Partner Role</label>
-                                        <select id="partner_role_{{ partner.id }}" name="partner_role">
-                                            <option value="">Select partner role</option>
-                                            {% for role in dropdown_values.partner_contact_roles %}
-                                                <option value="{{ role }}" {% if partner.partner_role == role %}selected{% endif %}>
-                                                    {{ role }}
-                                                </option>
-                                            {% endfor %}
-                                        </select>
-                                    </div>
-
-                                    <div class="form-group">
                                         <label for="involvement_status_{{ partner.id }}">Involvement Status</label>
                                         <select id="involvement_status_{{ partner.id }}" name="involvement_status">
                                             <option value="">Select status</option>
@@ -394,6 +323,22 @@
                                                id="next_action_{{ partner.id }}"
                                                name="next_action"
                                                value="{{ partner.next_action or '' }}">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="next_action_date_{{ partner.id }}">Next Action Date</label>
+                                        <input type="date"
+                                               id="next_action_date_{{ partner.id }}"
+                                               name="next_action_date"
+                                               value="{{ partner.next_action_date or '' }}">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="next_action_time_{{ partner.id }}">Next Action Time</label>
+                                        <input type="time"
+                                               id="next_action_time_{{ partner.id }}"
+                                               name="next_action_time"
+                                               value="{{ partner.next_action_time or '' }}">
                                     </div>
 
                                     <div class="form-group full-width">

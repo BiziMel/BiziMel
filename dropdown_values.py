@@ -86,9 +86,9 @@ DROPDOWN_VALUES = {
         "Accenture",
     ],
     "partner_types": [
-        "GOSI",
-        "Reseller",
         "Partner",
+        "SI",
+        "Reseller",
         "Hyperscaler",
     ],
     "partner_contact_roles": [
@@ -116,14 +116,12 @@ DROPDOWN_VALUES = {
         "Q4",
     ],
     "outreach_activity_types": [
-        "VITO",
-        "LinkedIn",
-        "Phone",
-        "White Paper / Webinar",
-        "Events",
-        "Email",
+        "Email Sent",
+        "LinkedIn Message",
+        "Call",
         "Meeting",
         "Follow-up",
+        "Event Touchpoint",
         "Partner Touchpoint",
         "Other",
     ],
@@ -131,7 +129,7 @@ DROPDOWN_VALUES = {
         "VITO",
         "LinkedIn",
         "Calls",
-        "White Paper / Webinar",
+        "Content and Thought Leadership Sharing",
         "Events",
     ],
     "outreach_outcomes": [
@@ -147,9 +145,13 @@ DROPDOWN_VALUES = {
     "task_statuses": [
         "Not Started",
         "In Progress",
-        "Pending",
         "Closed",
         "Completed",
+        "Pending",
         "Cancelled",
+    ],
+    "contact_statuses": [
+        "Active",
+        "Inactive",
     ],
 }
