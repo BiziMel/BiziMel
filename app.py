@@ -7867,11 +7867,11 @@ def inactive_contacts_for_archive(connection, start_date, end_date):
     """
     params = []
     if start_date:
-        query += " AND DATE(contacts.last_updated) >= ?"
-        params.append(start_date)
+        query += " AND contacts.last_updated >= ?"
+        params.append(f"{start_date} 00:00:00")
     if end_date:
-        query += " AND DATE(contacts.last_updated) <= ?"
-        params.append(end_date)
+        query += " AND contacts.last_updated <= ?"
+        params.append(f"{end_date} 23:59:59")
     query += " ORDER BY contacts.last_updated DESC, contacts.name"
     return connection.execute(query, params).fetchall()
 
