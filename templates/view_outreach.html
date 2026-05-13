@@ -4,8 +4,8 @@
 <div class="page-header">
     <h1>{{ outreach_item.subject }}</h1>
     <div class="button-row">
-        <a class="button" href="{{ url_for('outreach') }}">Back to Outreach</a>
-        <a class="button" href="{{ url_for('edit_outreach', outreach_id=outreach_item.id) }}">Edit Outreach</a>
+        <a class="btn btn-secondary" href="{{ url_for('outreach') }}">Back to Outreach</a>
+        <a class="btn btn-primary" href="{{ url_for('edit_outreach', outreach_id=outreach_item.id) }}">Edit Outreach</a>
     </div>
 </div>
 
@@ -14,35 +14,25 @@
 
     <p><strong>FY:</strong> {{ outreach_item.fy }}</p>
     <p><strong>Quarter:</strong> {{ outreach_item.quarter }}</p>
-    <p><strong>Campaign:</strong> {{ outreach_item.campaign or "Not set" }}</p>
-    <p><strong>Sales Play:</strong> {{ outreach_item.sales_play or "Not set" }}</p>
+    <p><strong>Sales Play or Initiative:</strong> {{ outreach_item.sales_play or "Not set" }}</p>
     <p><strong>Account:</strong> {{ outreach_item.account_name }}</p>
     <p><strong>Contact:</strong> {{ outreach_item.contact_name }}</p>
-    {% if outreach_item.contact_name %}
-        <p><strong>Contact Email:</strong> {{ outreach_item.contact_email or "Not added" }}</p>
-        <p><strong>Contact Phone:</strong> {{ outreach_item.contact_phone or "Not added" }}</p>
-        <p>
-            <strong>Contact LinkedIn:</strong>
-            {% if outreach_item.contact_linkedin %}
-                <a href="{{ outreach_item.contact_linkedin }}" target="_blank">LinkedIn profile</a>
-            {% else %}
-                Not added
-            {% endif %}
-        </p>
-    {% endif %}
     <p><strong>Activity Type:</strong> {{ outreach_item.activity_type }}</p>
-    <p><strong>Activity Date:</strong> {{ outreach_item.activity_date }}</p>
-    <p><strong>Activity Time:</strong> {{ outreach_item.activity_time }}</p>
+    <p><strong>Activity Start Date:</strong> {{ outreach_item.activity_date }}</p>
+    <p><strong>Activity Start Time:</strong> {{ outreach_item.activity_time }}</p>
     <p><strong>Outcome:</strong> {{ outreach_item.outcome }}</p>
 </div>
 
 <div class="detail-card">
     <h2>Notes and Next Action</h2>
 
-    <p><strong>Notes:</strong><br>{{ outreach_item.notes }}</p>
+    <div class="system-metadata-panel">
+        <h2>System Metadata</h2>
+        <p>{{ outreach_item.notes or "No system scheduling metadata recorded." }}</p>
+    </div>
     <p><strong>Next Action:</strong><br>{{ outreach_item.next_action }}</p>
-    <p><strong>Next Action Date:</strong> {{ outreach_item.next_action_date }}</p>
-    <p><strong>Next Action Time:</strong> {{ outreach_item.next_action_time }}</p>
+    <p><strong>Activity Due Date:</strong> {{ outreach_item.next_action_date }}</p>
+    <p><strong>Activity Due Time:</strong> {{ outreach_item.next_action_time }}</p>
 </div>
 
 <div class="detail-row">

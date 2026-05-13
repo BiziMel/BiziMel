@@ -25,7 +25,7 @@
     </div>
 </div>
 
-<div class="form-card">
+<div class="form-card" id="partner-details-form">
     <div class="section-header">
         <div>
             <h2>Partner Details</h2>
@@ -35,8 +35,10 @@
 
     <form method="POST" action="{{ url_for('edit_partner', partner_id=partner.id) }}" class="pipeflow-form">
         <div class="form-grid">
+            <div class="form-section-heading full-width">Partner Account</div>
+
             <div class="form-group">
-                <label for="partner_name">Partner Name</label>
+                <label for="partner_name">Partner Account Name</label>
                 <input type="text" id="partner_name" name="partner_name" value="{{ partner.partner_name }}" required>
             </div>
 
@@ -53,14 +55,29 @@
             </div>
 
             <div class="form-group">
-                <label for="website">Website</label>
-                <input type="text" id="website" name="website" value="{{ partner.website or '' }}">
+                <label for="website">Account Website</label>
+                <input type="text"
+                       id="website"
+                       name="website"
+                       value="{{ partner.website or '' }}"
+                       pattern="^(https?://|www\.).+"
+                       title="Enter a website starting with http://, https:// or www.">
+            </div>
+
+            <div class="form-section-heading full-width">Ownership</div>
+
+            <div class="form-group">
+                <label for="partner_manager">Partner Account Manager</label>
+                <input type="text" id="partner_manager" name="partner_manager" value="{{ partner.partner_manager or '' }}">
             </div>
 
             <div class="form-group">
-                <label for="relationship_owner">Relationship Owner</label>
-                <input type="text" id="relationship_owner" name="relationship_owner" value="{{ partner.relationship_owner or '' }}">
+                <label for="bmc_partner_manager">BMC Partner Manager</label>
+                <input type="text" id="bmc_partner_manager" name="bmc_partner_manager" value="{{ partner.bmc_partner_manager or partner.relationship_owner or '' }}">
+                <input type="hidden" name="relationship_owner" value="{{ partner.bmc_partner_manager or partner.relationship_owner or '' }}">
             </div>
+
+            <div class="form-section-heading full-width">Location</div>
 
             <div class="form-group">
                 <label for="city">City</label>
@@ -83,6 +100,7 @@
 
         <div class="button-group">
             <button type="submit" class="btn btn-primary">Save Partner</button>
+            <a href="{{ url_for('partners') }}" class="btn btn-secondary">Cancel</a>
         </div>
     </form>
 </div>
@@ -108,6 +126,16 @@
             </div>
 
             <div class="form-group">
+                <label for="partner_role">Partner Role</label>
+                <select id="partner_role" name="partner_role">
+                    <option value="">Select partner role</option>
+                    {% for role in dropdown_values.partner_contact_roles %}
+                        <option value="{{ role }}">{{ role }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
                 <label for="involvement_status">Involvement Status</label>
                 <select id="involvement_status" name="involvement_status">
                     <option value="">Select status</option>
@@ -119,22 +147,12 @@
 
             <div class="form-group">
                 <label for="account_relationship_owner">Relationship Owner</label>
-                <input type="text" id="account_relationship_owner" name="relationship_owner" value="{{ partner.relationship_owner or '' }}">
+                <input type="text" id="account_relationship_owner" name="relationship_owner" value="{{ partner.bmc_partner_manager or partner.relationship_owner or '' }}">
             </div>
 
             <div class="form-group full-width">
                 <label for="next_action">Next Action</label>
                 <input type="text" id="next_action" name="next_action">
-            </div>
-
-            <div class="form-group">
-                <label for="next_action_date">Next Action Date</label>
-                <input type="date" id="next_action_date" name="next_action_date">
-            </div>
-
-            <div class="form-group">
-                <label for="next_action_time">Next Action Time</label>
-                <input type="time" id="next_action_time" name="next_action_time">
             </div>
 
             <div class="form-group full-width">
@@ -159,6 +177,7 @@
                                     {{ relationship.account_name or "Unknown account" }}
                                 </a>
                             </strong>
+                            <p>{{ relationship.partner_role or "No partner role set" }}</p>
                             <p class="muted">{{ relationship.industry or "Industry not set" }}</p>
                         </div>
 
@@ -168,7 +187,6 @@
                     <div class="partner-detail-grid">
                         <p><strong>Owner:</strong> {{ relationship.relationship_owner or "Not assigned" }}</p>
                         <p><strong>Next Action:</strong> {{ relationship.next_action or "No next action set" }}</p>
-                        <p><strong>Due:</strong> {{ relationship.next_action_date or "No date" }} {{ relationship.next_action_time or "" }}</p>
                         <p><strong>Location:</strong> {{ relationship.city or "City not set" }}, {{ relationship.country or "Country not set" }}</p>
                     </div>
 
@@ -204,8 +222,18 @@
             </div>
 
             <div class="form-group">
-                <label for="contact_relationship_status">Partner Engagement</label>
-                <select id="contact_relationship_status" name="relationship_status">
+                <label for="partner_contact_role">Partner Role</label>
+                <select id="partner_contact_role" name="partner_contact_role">
+                    <option value="">Select partner role</option>
+                    {% for role in dropdown_values.partner_contact_roles %}
+                        <option value="{{ role }}">{{ role }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="relationship_status">Partner Engagement</label>
+                <select id="relationship_status" name="relationship_status">
                     <option value="">Select engagement</option>
                     {% for status in dropdown_values.partner_engagement_statuses %}
                         <option value="{{ status }}">{{ status }}</option>
@@ -214,19 +242,9 @@
             </div>
 
             <div class="form-group">
-                <label for="contact_relationship_owner">Relationship Owner</label>
-                <input type="text" id="contact_relationship_owner" name="relationship_owner" value="{{ partner.relationship_owner or '' }}">
-            </div>
-
-            <div class="form-group">
-                <label for="contact_coverage_area">Coverage / Influence Area</label>
-                <input type="text" id="contact_coverage_area" name="coverage_area" placeholder="Account patch, sector, cloud, procurement...">
-            </div>
-
-            <div class="form-group">
-                <label for="contact_account_id">Mapped Account</label>
+                <label for="contact_account_id">Responsible Account</label>
                 <select id="contact_account_id" name="account_id">
-                    <option value="">Select account for next action</option>
+                    <option value="">No account assigned</option>
                     {% for account in accounts %}
                         <option value="{{ account.id }}">{{ account.account_name }}</option>
                     {% endfor %}
@@ -234,38 +252,38 @@
             </div>
 
             <div class="form-group">
-                <label for="contact_email">Email</label>
-                <input type="email" id="contact_email" name="email">
+                <label for="relationship_owner">Relationship Owner</label>
+                <input type="text" id="relationship_owner" name="relationship_owner" value="{{ partner.bmc_partner_manager or partner.relationship_owner or '' }}">
             </div>
 
             <div class="form-group">
-                <label for="contact_phone">Phone</label>
-                <input type="text" id="contact_phone" name="phone">
+                <label for="coverage_area">Coverage / Influence Area</label>
+                <input type="text" id="coverage_area" name="coverage_area" placeholder="Account patch, sector, cloud, procurement...">
             </div>
 
             <div class="form-group">
-                <label for="contact_location">Location</label>
-                <input type="text" id="contact_location" name="location">
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email">
+            </div>
+
+            <div class="form-group">
+                <label for="phone">Phone</label>
+                <input type="text" id="phone" name="phone">
+            </div>
+
+            <div class="form-group">
+                <label for="location">Location</label>
+                <input type="text" id="location" name="location">
             </div>
 
             <div class="form-group full-width">
-                <label for="contact_linkedin">LinkedIn</label>
-                <input type="text" id="contact_linkedin" name="linkedin">
+                <label for="linkedin">LinkedIn</label>
+                <input type="text" id="linkedin" name="linkedin">
             </div>
 
             <div class="form-group full-width">
-                <label for="contact_next_action">Next Partner Action</label>
-                <input type="text" id="contact_next_action" name="next_action">
-            </div>
-
-            <div class="form-group">
-                <label for="contact_next_action_date">Next Action Date</label>
-                <input type="date" id="contact_next_action_date" name="next_action_date">
-            </div>
-
-            <div class="form-group">
-                <label for="contact_next_action_time">Next Action Time</label>
-                <input type="time" id="contact_next_action_time" name="next_action_time">
+                <label for="next_action">Next Partner Action</label>
+                <input type="text" id="next_action" name="next_action">
             </div>
 
             <div class="form-group full-width">
@@ -282,26 +300,39 @@
     {% if partner_contacts %}
         <div class="contact-card-grid">
             {% for contact in partner_contacts %}
-                <a class="contact-summary-card partner-contact-card" href="{{ url_for('view_partner', partner_id=partner.id) }}#partner-contact-{{ contact.id }}">
+                <div class="contact-summary-card partner-contact-card">
                     <div>
                         <strong>{{ contact.name }}</strong>
                         <p>{{ contact.job_title or "No job title" }}</p>
+                        <p class="muted">{{ contact.partner_contact_role or "No partner role set" }}</p>
+                        <p class="muted">Responsible account: {{ contact.account_name or "Not assigned" }}</p>
                         <p class="muted">{{ contact.coverage_area or "No coverage area" }}</p>
-                        <p class="muted">{{ contact.account_name or "No mapped account" }}</p>
                     </div>
 
                     <div class="contact-summary-actions">
                         <span class="status-pill">{{ contact.relationship_status or "No engagement" }}</span>
                         {% if contact.email %}
-                            <span class="btn btn-secondary">Email</span>
+                            <a href="mailto:{{ contact.email }}" class="btn btn-secondary">Email</a>
                         {% endif %}
+                        {% if contact.linkedin %}
+                            <a href="{{ contact.linkedin }}" target="_blank" class="btn btn-secondary">LinkedIn</a>
+                        {% endif %}
+                        <form method="POST"
+                              action="{{ url_for('delete_partner_contact', partner_id=partner.id, contact_id=contact.id) }}"
+                              style="display:inline;">
+                            <button type="submit"
+                                    class="btn btn-danger"
+                                    onclick="return confirm('Delete this partner contact?');">
+                                Delete
+                            </button>
+                        </form>
                     </div>
 
                     <div class="partner-detail-grid full-width">
                         <p><strong>Owner:</strong> {{ contact.relationship_owner or "Not assigned" }}</p>
+                        <p><strong>Responsible Account:</strong> {{ contact.account_name or "Not assigned" }}</p>
                         <p><strong>Location:</strong> {{ contact.location or "No location" }}</p>
                         <p><strong>Next Action:</strong> {{ contact.next_action or "No next action set" }}</p>
-                        <p><strong>Due:</strong> {{ contact.next_action_date or "No date" }} {{ contact.next_action_time or "" }}</p>
                     </div>
 
                     {% if contact.phone or contact.notes %}
@@ -311,96 +342,7 @@
                             {{ contact.notes or "" }}
                         </p>
                     {% endif %}
-                </a>
-                <details class="partner-edit-panel partner-contact-edit" id="partner-contact-{{ contact.id }}">
-                    <summary class="btn btn-secondary">Edit {{ contact.name }}</summary>
-                    <form method="POST"
-                          action="{{ url_for('edit_partner_contact', partner_id=partner.id, contact_id=contact.id) }}"
-                          class="pipeflow-form partner-form">
-                        <div class="form-grid">
-                            <div class="form-group">
-                                <label for="edit_name_{{ contact.id }}">Name</label>
-                                <input type="text" id="edit_name_{{ contact.id }}" name="name" value="{{ contact.name }}" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="edit_job_title_{{ contact.id }}">Job Title</label>
-                                <input type="text" id="edit_job_title_{{ contact.id }}" name="job_title" value="{{ contact.job_title or '' }}">
-                            </div>
-                            <div class="form-group">
-                                <label for="edit_account_id_{{ contact.id }}">Mapped Account</label>
-                                <select id="edit_account_id_{{ contact.id }}" name="account_id">
-                                    <option value="">No mapped account</option>
-                                    {% for account in accounts %}
-                                        <option value="{{ account.id }}" {% if contact.account_id == account.id %}selected{% endif %}>
-                                            {{ account.account_name }}
-                                        </option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="edit_relationship_status_{{ contact.id }}">Partner Engagement</label>
-                                <select id="edit_relationship_status_{{ contact.id }}" name="relationship_status">
-                                    <option value="">Select engagement</option>
-                                    {% for status in dropdown_values.partner_engagement_statuses %}
-                                        <option value="{{ status }}" {% if contact.relationship_status == status %}selected{% endif %}>{{ status }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="edit_relationship_owner_{{ contact.id }}">Relationship Owner</label>
-                                <input type="text" id="edit_relationship_owner_{{ contact.id }}" name="relationship_owner" value="{{ contact.relationship_owner or '' }}">
-                            </div>
-                            <div class="form-group">
-                                <label for="edit_coverage_area_{{ contact.id }}">Coverage / Influence Area</label>
-                                <input type="text" id="edit_coverage_area_{{ contact.id }}" name="coverage_area" value="{{ contact.coverage_area or '' }}">
-                            </div>
-                            <div class="form-group">
-                                <label for="edit_email_{{ contact.id }}">Email</label>
-                                <input type="email" id="edit_email_{{ contact.id }}" name="email" value="{{ contact.email or '' }}">
-                            </div>
-                            <div class="form-group">
-                                <label for="edit_phone_{{ contact.id }}">Phone</label>
-                                <input type="text" id="edit_phone_{{ contact.id }}" name="phone" value="{{ contact.phone or '' }}">
-                            </div>
-                            <div class="form-group">
-                                <label for="edit_location_{{ contact.id }}">Location</label>
-                                <input type="text" id="edit_location_{{ contact.id }}" name="location" value="{{ contact.location or '' }}">
-                            </div>
-                            <div class="form-group">
-                                <label for="edit_linkedin_{{ contact.id }}">LinkedIn</label>
-                                <input type="text" id="edit_linkedin_{{ contact.id }}" name="linkedin" value="{{ contact.linkedin or '' }}">
-                            </div>
-                            <div class="form-group full-width">
-                                <label for="edit_next_action_{{ contact.id }}">Next Partner Action</label>
-                                <input type="text" id="edit_next_action_{{ contact.id }}" name="next_action" value="{{ contact.next_action or '' }}">
-                            </div>
-                            <div class="form-group">
-                                <label for="edit_next_action_date_{{ contact.id }}">Next Action Date</label>
-                                <input type="date" id="edit_next_action_date_{{ contact.id }}" name="next_action_date" value="{{ contact.next_action_date or '' }}">
-                            </div>
-                            <div class="form-group">
-                                <label for="edit_next_action_time_{{ contact.id }}">Next Action Time</label>
-                                <input type="time" id="edit_next_action_time_{{ contact.id }}" name="next_action_time" value="{{ contact.next_action_time or '' }}">
-                            </div>
-                            <div class="form-group full-width">
-                                <label for="edit_contact_notes_{{ contact.id }}">Notes</label>
-                                <textarea id="edit_contact_notes_{{ contact.id }}" name="notes" rows="3">{{ contact.notes or "" }}</textarea>
-                            </div>
-                        </div>
-                        <div class="button-group">
-                            <button type="submit" class="btn btn-primary">Save Contact</button>
-                        </div>
-                    </form>
-                    <form method="POST"
-                          action="{{ url_for('delete_partner_contact', partner_id=partner.id, contact_id=contact.id) }}"
-                          style="display:inline;">
-                        <button type="submit"
-                                class="btn btn-danger"
-                                onclick="return confirm('Delete this partner contact?');">
-                            Delete
-                        </button>
-                    </form>
-                </details>
+                </div>
             {% endfor %}
         </div>
     {% else %}

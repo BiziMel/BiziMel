@@ -6,35 +6,7 @@
 
 <div class="button-group">
     <a href="/reports" class="btn btn-secondary">Back to Reports</a>
-    <a href="{{ url_for('export_contact_reports', contact_status=selected_status, archived_start=selected_archived_start, archived_end=selected_archived_end) }}" class="btn btn-primary">Export Contact Report</a>
-</div>
-
-<div class="form-card">
-    <form method="GET" action="{{ url_for('contact_reports') }}" class="pipeflow-form">
-        <div class="form-grid compact-filter-grid">
-            <div class="form-group">
-                <label for="contact_status">Status</label>
-                <select id="contact_status" name="contact_status">
-                    <option value="">All statuses</option>
-                    {% for status in dropdown_values.contact_statuses %}
-                        <option value="{{ status }}" {% if selected_status == status %}selected{% endif %}>{{ status }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="form-group">
-                <label for="archived_start">Archived From</label>
-                <input type="date" id="archived_start" name="archived_start" value="{{ selected_archived_start }}">
-            </div>
-            <div class="form-group">
-                <label for="archived_end">Archived To</label>
-                <input type="date" id="archived_end" name="archived_end" value="{{ selected_archived_end }}">
-            </div>
-        </div>
-        <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Filter</button>
-            <a href="{{ url_for('contact_reports') }}" class="btn btn-secondary">Clear</a>
-        </div>
-    </form>
+    <a href="{{ url_for('export_contact_reports') }}" class="btn btn-primary">Export Contact Report</a>
 </div>
 
 <div class="report-grid">
@@ -70,7 +42,7 @@
     </div>
 
     <div class="table-container">
-        <table class="report-table contacts-report-table spacious-table">
+        <table class="report-table">
             <thead>
                 <tr>
                     <th>Name</th>
@@ -78,8 +50,6 @@
                     <th>Category</th>
                     <th>Relationship</th>
                     <th>Email</th>
-                    <th>Status</th>
-                    <th>Archived</th>
                     <th>Account</th>
                     <th>Account Tier</th>
                 </tr>
@@ -88,19 +58,24 @@
             <tbody>
                 {% for contact in contacts %}
                     <tr>
-                        <td>{{ contact["name"] or "Unknown" }}</td>
+                        <td>
+                            <a href="{{ url_for('edit_contact', contact_id=contact['id']) }}"
+                               class="record-primary-link"
+                               title="Edit contact {{ contact['name'] or 'Unknown' }}"
+                               aria-label="Edit contact {{ contact['name'] or 'Unknown' }}">
+                                {{ contact["name"] or "Unknown" }}
+                            </a>
+                        </td>
                         <td>{{ contact["job_title"] or "Not set" }}</td>
                         <td>{{ contact["category"] or "Unknown" }}</td>
                         <td>{{ contact["bmc_relationship"] or "Unknown" }}</td>
                         <td>{{ contact["email"] or "Not set" }}</td>
-                        <td>{{ contact["contact_status"] or "Active" }}</td>
-                        <td>{{ contact["archived_date"] or "No" }}</td>
                         <td>{{ contact["account_name"] or "Unknown" }}</td>
                         <td>{{ "Tier " ~ contact["account_tier"] if contact["account_tier"] else "Not set" }}</td>
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="9">No contacts found.</td>
+                        <td colspan="7">No contacts found.</td>
                     </tr>
                 {% endfor %}
             </tbody>

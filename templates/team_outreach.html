@@ -63,16 +63,16 @@
     <div class="section-header">
         <div>
             <h2>{{ team.team_name if team else "Active Team" }}</h2>
-            <p>Grouped by assignment status, customer and sales play. User full names are only shown in the assignment dropdown.</p>
+            <p>Shared outreach tasks sorted by due date. User full names are only shown in the assignment dropdown.</p>
         </div>
     </div>
 
     {% if outreach_records %}
         <div class="table-container outreach-table-container">
-            <table class="report-table outreach-table no-sort">
+            <table class="report-table outreach-table">
                 <thead>
                     <tr>
-                        <th>Due Date</th>
+                        <th data-default-sort="asc">Due Date</th>
                         <th>Account / Contact</th>
                         <th>Sales Play / Initiative</th>
                         <th>Activity</th>
@@ -80,39 +80,16 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% set current_group = namespace(assignee=None, account=None, sales_play=None) %}
                     {% for item in outreach_records %}
-                        {% set assignee_group = "Assigned" if item.assigned_to else "Unassigned" %}
-                        {% set account_group = item.account_name or "No Account" %}
-                        {% set sales_play_group = item.sales_play or "No Sales Play" %}
-                        {% if current_group.assignee != assignee_group %}
-                            {% set current_group.assignee = assignee_group %}
-                            {% set current_group.account = None %}
-                            {% set current_group.sales_play = None %}
-                            <tr class="outreach-account-group-row">
-                                <td colspan="5"><span>Assignee</span><strong>{{ assignee_group }}</strong></td>
-                            </tr>
-                        {% endif %}
-                        {% if current_group.account != account_group %}
-                            {% set current_group.account = account_group %}
-                            {% set current_group.sales_play = None %}
-                            <tr class="outreach-subgroup-row">
-                                <td colspan="5"><span>Customer</span><strong>{{ account_group }}</strong></td>
-                            </tr>
-                        {% endif %}
-                        {% if current_group.sales_play != sales_play_group %}
-                            {% set current_group.sales_play = sales_play_group %}
-                            <tr class="outreach-campaign-group-row">
-                                <td colspan="5"><span>Sales Play / Initiative</span><strong>{{ sales_play_group }}</strong></td>
-                            </tr>
-                        {% endif %}
                         <tr>
-                            <td>
+                            <td data-sort-value="{{ item.next_action_date or '9999-12-31' }} {{ item.next_action_time or '99:99' }}">
                                 <div class="outreach-due-date-block">
-                                    <span class="date-stack-label">Due</span>
-                                    <strong>{{ item.next_action_date or "No due date" }}</strong>
-                                    <span>{{ item.next_action_time or "No due time" }}</span>
-                                    <span class="status-pill compact-status-pill">{{ item.task_status or "Not Started" }}</span>
+                                    <span class="outreach-date-label">Due</span>
+                                    <span class="outreach-date-value">{{ item.next_action_date or "No due date" }}</span>
+                                    <div class="outreach-due-meta">
+                                        <span>{{ item.next_action_time or "No due time" }}</span>
+                                        <span class="outreach-status-chip">{{ item.task_status or "Not Started" }}</span>
+                                    </div>
                                 </div>
                             </td>
                             <td>

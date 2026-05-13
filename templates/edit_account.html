@@ -1,11 +1,21 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h2>Edit Account</h2>
+<div class="page-header">
+    <div>
+        <h1>Edit Account</h1>
+        <p>Update the account record, then save or cancel safely.</p>
+    </div>
+</div>
 
-<form method="POST">
+<div class="form-card">
+<form method="POST" class="pipeflow-form">
     <label>Account Name</label>
     <input type="text" name="account_name" value="{{ account['account_name'] }}" required>
+
+    <label>PG Bible Order</label>
+    <input type="number" name="pg_bible_order" min="1" step="1" value="{{ account['pg_bible_order'] or '' }}" placeholder="Example: 1">
+    <p class="field-help">Controls the account sequence in the PG Bible export. Leave blank to sort after numbered accounts.</p>
 
     <label>Account Tier</label>
     <select name="account_tier">
@@ -37,11 +47,47 @@
     <input type="number" name="pipeline_target" step="0.01" min="0"
            value="{{ '%.2f'|format(account['pipeline_target']|float) if account['pipeline_target'] else '' }}">
 
+    <label>NBM Target</label>
+    <input type="number" name="nbm_target" min="1" step="1" value="{{ account['nbm_target'] or '' }}" placeholder="Example: 1">
+    <p class="field-help">Used to map this account into the PG Goals dashboard plan and actions tables.</p>
+
+    <label>Account Sales Play or Initiative</label>
+    <textarea name="sales_play" rows="3">{{ account['sales_play'] or '' }}</textarea>
+
+    <label>Account Owner</label>
+    <select name="owner_user_id">
+        {% for assignable_user in assignable_users %}
+            <option value="{{ assignable_user.id }}" {% if owner.owner_user_id and assignable_user.id|string == owner.owner_user_id|string %}selected{% endif %}>
+                {{ assignable_user.full_name }}{% if assignable_user.email %} ({{ assignable_user.email }}){% endif %}
+            </option>
+        {% endfor %}
+    </select>
+    <p class="field-help">Changing owner transfers account ownership rights when you save the account.</p>
+
     <label>Notes</label>
     <textarea name="notes">{{ account['notes'] }}</textarea>
 
-    <button type="submit">Update Account</button>
-</form>
+    {% if custom_fields %}
+        <h3>Additional Account Fields</h3>
+        {% for field in custom_fields %}
+            <label>{{ field.field_label }}{% if field.is_required %} *{% endif %}</label>
+            {% set field_value = custom_values.get(field.field_key, '') %}
+            {% if field.field_type == "textarea" %}
+                <textarea name="custom_{{ field.field_key }}" {% if field.is_required %}required{% endif %}>{{ field_value }}</textarea>
+            {% else %}
+                <input type="{{ 'number' if field.field_type == 'number' else 'date' if field.field_type == 'date' else 'text' }}"
+                       name="custom_{{ field.field_key }}"
+                       value="{{ field_value }}"
+                       {% if field.field_type == 'number' %}step="0.01"{% endif %}
+                       {% if field.is_required %}required{% endif %}>
+            {% endif %}
+        {% endfor %}
+    {% endif %}
 
-<p><a href="/accounts">Back to Accounts</a></p>
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save Account</button>
+        <a href="{{ url_for('view_account', account_id=account['id']) }}" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+</div>
 {% endblock %}

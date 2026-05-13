@@ -13,88 +13,188 @@
     </a>
 </div>
 
+{% if message %}
+    <div class="alert-success">{{ message }}</div>
+{% endif %}
+{% if error %}
+    <div class="alert-error">{{ error }}</div>
+{% endif %}
+
+<section class="form-card compact-filter-card account-sharing-card">
+    <div class="section-header compact-section-header">
+        <div>
+            <h2>Share Full Account</h2>
+            <p>Account owners can share account details, contacts and outreach tasks with other users.</p>
+        </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('share_account_from_team_outreach') }}" class="pipeflow-form compact-filter-form account-share-form">
+        <input type="hidden" name="return_to" value="{{ url_for('accounts') }}">
+        <div class="form-grid compact-filter-grid account-share-grid">
+            <div class="form-group">
+                <label for="share_account_id">Account</label>
+                <select id="share_account_id" name="account_id" required>
+                    <option value="">Select account</option>
+                    {% for account in shareable_accounts %}
+                        <option value="{{ account.id }}">{{ account.account_name }}</option>
+                    {% endfor %}
+                </select>
+                {% if not shareable_accounts %}
+                    <p class="field-help">Only account owners can share accounts.</p>
+                {% endif %}
+            </div>
+
+            <div class="form-group">
+                <label>Share With</label>
+                <details class="checkbox-dropdown compact-checkbox-dropdown">
+                    <summary>Select users</summary>
+                    <div class="checkbox-dropdown-panel">
+                    {% for assignable_user in assignable_users %}
+                        {% if current_user and assignable_user.id != current_user["id"] %}
+                            <label class="checkbox-row">
+                                <input type="checkbox" name="target_user_ids" value="{{ assignable_user.id }}">
+                                <span>{{ assignable_user.full_name }}</span>
+                            </label>
+                        {% endif %}
+                    {% endfor %}
+                    </div>
+                </details>
+            </div>
+
+            <div class="form-group account-share-action">
+                <label>&nbsp;</label>
+                <button type="submit" class="btn btn-primary">Share Account</button>
+            </div>
+        </div>
+    </form>
+
+    <div class="sharing-permission-list sharing-management-panel account-sharing-list">
+        <div class="section-header compact-section-header">
+            <div>
+                <h3>Manage Existing Sharing</h3>
+                <p>Revoke access for people you have shared accounts with.</p>
+            </div>
+        </div>
+
+        {% for share in account_shares %}
+            <div class="sharing-permission-row">
+                <div>
+                    <strong>{{ share.account_name }}</strong>
+                    <span>Shared with {{ share.full_name or share.email }}</span>
+                </div>
+                <form method="POST"
+                      action="{{ url_for('revoke_account_share_from_outreach', share_id=share.id) }}"
+                      onsubmit="return confirm('Revoke this account share? Assigned tasks for this user will return to the account owner.');">
+                    <input type="hidden" name="return_to" value="{{ url_for('accounts') }}">
+                    <button type="submit" class="btn btn-danger btn-small">Revoke Access</button>
+                </form>
+            </div>
+        {% endfor %}
+
+        {% if not account_shares %}
+            <p class="muted compact-empty-copy">No active account shares created by you yet.</p>
+        {% endif %}
+    </div>
+</section>
+
 {% if accounts %}
 
+{% if current_user and current_user["role"] == "admin" %}
+<form id="bulk-delete-accounts-form"
+      method="POST"
+      action="{{ url_for('bulk_delete_accounts') }}"
+      onsubmit="return confirm('Delete the selected accounts and their related workspace records? This cannot be undone.');"></form>
+
+<div class="bulk-action-bar" data-bulk-action-bar="bulk-delete-accounts-form" hidden>
+    <span><strong data-bulk-selected-count>0</strong> account(s) selected.</span>
+    <button type="submit" form="bulk-delete-accounts-form" class="btn btn-danger btn-small">Delete Selected</button>
+</div>
+{% endif %}
+
 <div class="table-container">
-    <table class="report-table">
+    <table class="report-table accounts-table accounts-clean-table">
+        <colgroup>
+            {% if current_user and current_user["role"] == "admin" %}
+                <col class="bulk-select-col">
+            {% endif %}
+            <col class="accounts-pg-col">
+            <col class="accounts-name-col">
+            <col class="accounts-health-col">
+            <col class="accounts-pipeline-col">
+        </colgroup>
         <thead>
             <tr>
+                {% if current_user and current_user["role"] == "admin" %}
+                    <th class="bulk-select-col">Select</th>
+                {% endif %}
+                <th>PG Order</th>
                 <th>Account</th>
-                <th>Tier</th>
-                <th>Health</th>
-                <th>Pipeline</th>
-                <th>Coverage</th>
-                <th>Location</th>
-                <th>Website</th>
-                <th>Action</th>
+                <th>Health & Coverage</th>
+                <th>Pipeline & Location</th>
             </tr>
         </thead>
 
         <tbody>
             {% for account in accounts %}
                 <tr>
+                    {% if current_user and current_user["role"] == "admin" %}
+                        <td class="bulk-select-col">
+                            <input type="checkbox" name="selected_ids" value="{{ account['id'] }}" form="bulk-delete-accounts-form" aria-label="Select {{ account['account_name'] }}">
+                        </td>
+                    {% endif %}
                     <td>
-                        <strong>{{ account["account_name"] or "Unknown" }}</strong>
-                        <br>
-                        <small>{{ account["industry"] or "Industry not set" }}</small>
-                    </td>
-
-                    <td>
-                        <span class="status-pill">
+                        <span class="account-order-pill">{{ account["pg_bible_order"] or "-" }}</span>
+                        <span class="account-tier-mini">
                             {% if account["account_tier"] %}
                                 Tier {{ account["account_tier"] }}
                             {% else %}
-                                Not set
+                                No tier
                             {% endif %}
                         </span>
-                        <br>
-                        <small class="muted-light">PG Plan {{ account["id"] }}</small>
                     </td>
 
                     <td>
-                        <span class="health-pill health-{{ account['health_colour'] }}">
-                            {{ account["health_label"] }}
-                        </span>
-                        <br>
-                        <small>{{ account["health_reason"] }}</small>
-                    </td>
-
-                    <td>
-                        <strong>${{ "{:,.2f}".format(account["pipeline_target"] or 0) }}</strong>
-                        <br>
-                        <small>USD ACV target</small>
-                    </td>
-
-                    <td>
-                        <strong>{{ account["contact_count"] or 0 }}</strong> contacts
-                        <br>
-                        <strong>{{ account["outreach_count"] or 0 }}</strong> outreach ·
-                        <strong>{{ account["meeting_count"] or 0 }}</strong> meetings
-                        <br>
-                        <small>{{ account["overdue_followups"] or 0 }} overdue follow-up(s)</small>
-                    </td>
-
-                    <td>
-                        {{ account["city"] or "City not set" }}
-                        <br>
-                        <small>{{ account["country"] or "Country not set" }}</small>
-                    </td>
-
-                    <td>
-                        {% if account["website"] %}
-                            <a href="{{ account['website'] }}" target="_blank" class="btn btn-secondary">
-                                Website
-                            </a>
-                        {% else %}
-                            <small>Not added</small>
-                        {% endif %}
-                    </td>
-
-                    <td>
-                        <a href="{{ url_for('view_account', account_id=account['id']) }}" class="btn btn-primary">
-                            View
+                        <a href="{{ url_for('edit_account', account_id=account['id']) }}"
+                           class="account-name-link"
+                           title="Edit account {{ account['account_name'] or 'Unknown' }}"
+                           aria-label="Edit account {{ account['account_name'] or 'Unknown' }}">
+                            {{ account["account_name"] or "Unknown" }}
                         </a>
+                        <div class="account-meta-stack">
+                            <span>{{ account["business_unit"] or "Business org not set" }}</span>
+                            <span>{{ account["industry"] or "Industry not set" }}</span>
+                            {% if account["website"] %}
+                                <a href="{{ account['website'] }}" target="_blank" class="account-text-link">Website</a>
+                            {% endif %}
+                        </div>
                     </td>
+
+                    <td>
+                        <div class="account-health-stack">
+                            <span class="health-pill health-{{ account['health_colour'] }}">
+                                {{ account["health_label"] }}
+                            </span>
+                            <span class="account-health-reason">{{ account["health_reason"] }}</span>
+                        </div>
+                        <div class="account-coverage-grid">
+                            <span><strong>{{ account["contact_count"] or 0 }}</strong> Contacts</span>
+                            <span><strong>{{ account["outreach_count"] or 0 }}</strong> Outreach</span>
+                            <span><strong>{{ account["meeting_count"] or 0 }}</strong> Meetings</span>
+                            <span class="{% if account['overdue_followups'] %}account-risk-text{% endif %}">
+                                <strong>{{ account["overdue_followups"] or 0 }}</strong> Overdue
+                            </span>
+                        </div>
+                    </td>
+
+                    <td>
+                        <strong class="account-pipeline-value">${{ "{:,.0f}".format(account["pipeline_target"] or 0) }}</strong>
+                        <span class="account-meta-muted">USD ACV target</span>
+                        <div class="account-location-line">
+                            {{ account["city"] or "City not set" }}
+                            <span>{{ account["country"] or "Country not set" }}</span>
+                        </div>
+                    </td>
+
                 </tr>
             {% endfor %}
         </tbody>

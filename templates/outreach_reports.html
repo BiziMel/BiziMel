@@ -71,8 +71,8 @@
     </div>
 
     <div class="dashboard-card">
-        <h3>Conversion Rate</h3>
-        <p>{{ conversion_rate }}%</p>
+        <h3>Meeting Conversion</h3>
+        <p>{{ conversion_rate }}</p>
     </div>
 
 </div>
@@ -95,7 +95,7 @@
     </div>
 
     <div class="report-card">
-        <h3>Monthly Conversion Trend</h3>
+        <h3>Monthly Meeting Conversion</h3>
         <canvas id="monthlyConversionChart"></canvas>
     </div>
 
@@ -147,8 +147,12 @@
             <thead>
                 <tr>
                     <th>Date</th>
+                    <th>Due Date</th>
+                    <th>Status</th>
                     <th>Account</th>
+                    <th>Contact</th>
                     <th>Account Tier</th>
+                    <th>Sales Play / Initiative</th>
                     <th>Type</th>
                     <th>Outcome</th>
                 </tr>
@@ -157,15 +161,26 @@
             <tbody>
                 {% for item in latest_outreach %}
                     <tr>
-                        <td>{{ item["activity_date"] or "Not set" }}</td>
+                        <td>
+                            <a href="{{ url_for('edit_outreach', outreach_id=item['id']) }}"
+                               class="record-primary-link"
+                               title="Edit outreach {{ item['activity_type'] or item['activity_date'] or item['id'] }}"
+                               aria-label="Edit outreach {{ item['activity_type'] or item['activity_date'] or item['id'] }}">
+                                {{ item["activity_date"] or "Not set" }}
+                            </a>
+                        </td>
+                        <td>{{ item["next_action_date"] or "Not set" }}</td>
+                        <td>{{ item["task_status"] or "Not Started" }}</td>
                         <td>{{ item["account_name"] or "Unknown" }}</td>
+                        <td>{{ item["contact_name"] or "No contact" }}</td>
                         <td>{{ "Tier " ~ item["account_tier"] if item["account_tier"] else "Not set" }}</td>
+                        <td>{{ item["sales_play"] or "Not set" }}</td>
                         <td>{{ item["activity_type"] or "Unknown" }}</td>
                         <td>{{ item["outcome"] or "Unknown" }}</td>
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="5">No outreach found.</td>
+                        <td colspan="9">No outreach found.</td>
                     </tr>
                 {% endfor %}
             </tbody>
@@ -176,53 +191,14 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <script>
-    const outcomeLabels = [
-        {% for item in outcome_breakdown %}
-            "{{ item['outcome'] or 'Unknown' }}",
-        {% endfor %}
-    ];
-
-    const outcomeData = [
-        {% for item in outcome_breakdown %}
-            {{ item['count'] or 0 }},
-        {% endfor %}
-    ];
-
-    const activityTypeLabels = [
-        {% for item in outreach_by_type %}
-            "{{ item['activity_type'] or 'Unknown' }}",
-        {% endfor %}
-    ];
-
-    const activityTypeData = [
-        {% for item in outreach_by_type %}
-            {{ item['count'] or 0 }},
-        {% endfor %}
-    ];
-
-    const monthlyLabels = [
-        {% for item in monthly_trends %}
-            "{{ item['month'] }}",
-        {% endfor %}
-    ];
-
-    const monthlyOutreachData = [
-        {% for item in monthly_trends %}
-            {{ item['total_outreach'] or 0 }},
-        {% endfor %}
-    ];
-
-    const monthlyMeetingsData = [
-        {% for item in monthly_trends %}
-            {{ item['meetings_booked'] or 0 }},
-        {% endfor %}
-    ];
-
-    const monthlyConversionData = [
-        {% for item in monthly_trends %}
-            {{ item['conversion_rate'] or 0 }},
-        {% endfor %}
-    ];
+    const outcomeLabels = {{ outcome_chart_labels | tojson }};
+    const outcomeData = {{ outcome_chart_data | tojson }};
+    const activityTypeLabels = {{ activity_type_chart_labels | tojson }};
+    const activityTypeData = {{ activity_type_chart_data | tojson }};
+    const monthlyLabels = {{ monthly_chart_labels | tojson }};
+    const monthlyOutreachData = {{ monthly_outreach_data | tojson }};
+    const monthlyMeetingsData = {{ monthly_meetings_data | tojson }};
+    const monthlyConversionData = {{ monthly_conversion_data | tojson }};
 
     new Chart(document.getElementById("outcomeChart"), {
         type: "bar",
@@ -301,7 +277,7 @@
             labels: monthlyLabels,
             datasets: [
                 {
-                    label: "Conversion Rate %",
+                    label: "Meetings Booked",
                     data: monthlyConversionData,
                     tension: 0.3
                 }
@@ -313,9 +289,7 @@
                 y: {
                     beginAtZero: true,
                     ticks: {
-                        callback: function(value) {
-                            return value + "%";
-                        }
+                        precision: 0
                     }
                 }
             }

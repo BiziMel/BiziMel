@@ -16,32 +16,36 @@
 </div>
 
 <div class="form-card">
-    {% if is_locked %}
-        <p class="locked-notice">This outreach task is {{ outreach_item.task_status }} and cannot be modified or reassigned.</p>
+    {% if error %}
+        <div class="alert-error">{{ error }}</div>
     {% endif %}
-    <form method="POST" class="pipeflow-form">
-        <datalist id="sales-play-options">
-            {% for sales_play in sales_plays %}
-                <option value="{{ sales_play }}">
-            {% endfor %}
-        </datalist>
 
-        <fieldset {% if is_locked %}disabled{% endif %}>
+    <form method="POST" class="pipeflow-form">
+        <input type="hidden" name="notes" value="{{ outreach_item.notes or '' }}">
+
         <div class="form-grid">
 
             <div class="form-group">
                 <label for="fy">FY</label>
-                <input type="text" id="fy" name="fy" maxlength="2" pattern="[0-9]{2}" value="{{ outreach_item.fy or '' }}">
+                <input type="text" id="fy" name="fy" maxlength="2" pattern="[0-9]{2}" value="{{ outreach_item.fy or '' }}" required>
             </div>
 
             <div class="form-group">
                 <label for="quarter">Quarter</label>
-                <select id="quarter" name="quarter">
+                <select id="quarter" name="quarter" required>
                     <option value="">Select quarter</option>
                     {% for q in dropdown_values.quarters %}
                         <option value="{{ q }}" {% if outreach_item.quarter == q %}selected{% endif %}>{{ q }}</option>
                     {% endfor %}
                 </select>
+            </div>
+
+            <div class="form-group">
+                <label for="sales_play">Sales Play or Initiative</label>
+                <input type="text"
+                       id="sales_play"
+                       name="sales_play"
+                       value="{{ outreach_item.sales_play or '' }}">
             </div>
 
             <div class="form-group">
@@ -57,100 +61,17 @@
             </div>
 
             <div class="form-group">
-                <label for="sales_play">Sales Play or Initiative</label>
-                <input type="text"
-                       id="sales_play"
-                       name="sales_play"
-                       list="sales-play-options"
-                       placeholder="Add or select"
-                       value="{{ outreach_item.sales_play or '' }}">
-            </div>
-
-            <div class="form-group">
-                <label for="campaign">Campaign</label>
-                <select id="campaign" name="campaign">
-                    <option value="">Select campaign</option>
-                    {% for campaign in dropdown_values.outreach_campaigns %}
-                        <option value="{{ campaign }}" {% if outreach_item.campaign == campaign %}selected{% endif %}>
-                            {{ campaign }}
-                        </option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="form-group">
                 <label for="contact_id">Contact</label>
                 <select id="contact_id" name="contact_id">
                     <option value="">Select contact</option>
                     {% for contact in contacts %}
                         <option value="{{ contact.id }}"
-                                data-url="{{ url_for('view_contact', contact_id=contact.id) }}"
+                                data-account-id="{{ contact.account_id or '' }}"
                                 {% if outreach_item.contact_id == contact.id %}selected{% endif %}>
                             {{ contact.name }}{% if contact.account_name %} - {{ contact.account_name }}{% endif %}
                         </option>
                     {% endfor %}
                 </select>
-                <a id="open-contact-record"
-                   href="#"
-                   target="_blank"
-                   class="btn btn-secondary btn-small disabled-link">
-                    Open Contact
-                </a>
-            </div>
-
-            <div class="form-group">
-                <label for="activity_type">Activity Type</label>
-                <select id="activity_type" name="activity_type" required>
-                    <option value="">Select activity type</option>
-                    {% for activity in dropdown_values.outreach_activity_types %}
-                        <option value="{{ activity }}" {% if outreach_item.activity_type == activity %}selected{% endif %}>{{ activity }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label for="activity_date">Activity Date</label>
-                <input type="date" id="activity_date" name="activity_date" value="{{ outreach_item.activity_date or '' }}" required>
-            </div>
-
-            <div class="form-group">
-                <label for="activity_time">Activity Time</label>
-                <input type="time" id="activity_time" name="activity_time" value="{{ outreach_item.activity_time or '' }}">
-            </div>
-
-            <div class="form-group full-width">
-                <label for="subject">Subject</label>
-                <input type="text" id="subject" name="subject" value="{{ outreach_item.subject or '' }}">
-            </div>
-
-            <div class="form-group full-width">
-                <label for="notes">Notes</label>
-                <textarea id="notes" name="notes" rows="5">{{ outreach_item.notes or '' }}</textarea>
-            </div>
-
-            <div class="form-group">
-                <label for="outcome">Outcome</label>
-                <select id="outcome" name="outcome">
-                    <option value="">Select outcome</option>
-                    {% for outcome in dropdown_values.outreach_outcomes %}
-                        <option value="{{ outcome }}" {% if outreach_item.outcome == outcome %}selected{% endif %}>{{ outcome }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label for="next_action_date">Next Action Date</label>
-                <input type="date" id="next_action_date" name="next_action_date" value="{{ outreach_item.next_action_date or '' }}">
-            </div>
-
-            <div class="form-group">
-                <label for="next_action_time">Next Action Time</label>
-                <input type="time" id="next_action_time" name="next_action_time" value="{{ outreach_item.next_action_time or '' }}">
-            </div>
-
-            <div class="form-group full-width">
-                <label for="next_action">Next Action</label>
-                <textarea id="next_action" name="next_action" rows="4">{{ outreach_item.next_action or '' }}</textarea>
             </div>
 
             <div class="form-group">
@@ -181,12 +102,74 @@
                 </select>
             </div>
 
+            <div class="form-group">
+                <label for="activity_type">Activity Type</label>
+                <select id="activity_type" name="activity_type" required>
+                    <option value="">Select activity type</option>
+                    {% for activity in dropdown_values.outreach_activity_types %}
+                        <option value="{{ activity }}" {% if outreach_item.activity_type == activity %}selected{% endif %}>{{ activity }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="activity_date">Activity Start Date</label>
+                <input type="date" id="activity_date" name="activity_date" value="{{ outreach_item.activity_date or '' }}" required>
+            </div>
+
+            <div class="form-group">
+                <label for="activity_time">Activity Start Time</label>
+                <input type="time" id="activity_time" name="activity_time" value="{{ outreach_item.activity_time or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="next_action_date">Activity Due Date</label>
+                <input type="date" id="next_action_date" name="next_action_date" value="{{ outreach_item.next_action_date or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="next_action_time">Activity Due Time</label>
+                <input type="time" id="next_action_time" name="next_action_time" value="{{ outreach_item.next_action_time or '' }}">
+            </div>
+
+            <div class="form-group full-width">
+                <label for="subject">Subject</label>
+                <input type="text" id="subject" name="subject" value="{{ outreach_item.subject or '' }}" required>
+            </div>
+
+            <div class="form-group">
+                <label for="outcome">Outcome</label>
+                <select id="outcome" name="outcome">
+                    <option value="">Select outcome</option>
+                    {% for outcome in dropdown_values.outreach_outcomes %}
+                        <option value="{{ outcome }}" {% if outreach_item.outcome == outcome %}selected{% endif %}>{{ outcome }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group full-width">
+                <label for="next_action">Activity Update</label>
+                <textarea id="next_action" name="next_action" rows="4">{{ outreach_item.next_action or '' }}</textarea>
+                <p class="field-help">Can stay blank while the task is open. Add at least 5 characters before completing, closing or cancelling.</p>
+            </div>
         </div>
-        </fieldset>
+
+        <section class="system-metadata-panel">
+            <h2>System Metadata</h2>
+            <p>{{ outreach_item.notes or "No system scheduling metadata has been created for this task yet." }}</p>
+        </section>
 
         <div class="form-actions">
-            <button type="submit" class="btn btn-primary" {% if is_locked %}disabled{% endif %}>
+            <button type="submit" name="submit_action" value="save" class="btn btn-primary">
                 Save Changes
+            </button>
+
+            <button type="submit" name="submit_action" value="complete_and_follow" class="btn btn-primary">
+                Complete and Create Follow-on
+            </button>
+
+            <button type="submit" name="submit_action" value="complete_only" class="btn btn-secondary">
+                Complete Only
             </button>
 
             <a href="{{ url_for('outreach') }}" class="btn btn-secondary">
@@ -198,23 +181,76 @@
 </div>
 
 <script>
-    const contactSelect = document.getElementById("contact_id");
-    const openContactLink = document.getElementById("open-contact-record");
+    const profileWorkStart = "{{ profile.work_day_start or '09:00' }}";
+    const profileWorkEnd = "{{ profile.work_day_end or '17:00' }}";
+    const nonWorkingBlocks = {{ non_working_blocks | map(attribute='start_date') | list | tojson }}.map((start, index) => ({
+        start,
+        end: {{ non_working_blocks | map(attribute='end_date') | list | tojson }}[index] || start
+    }));
 
-    function refreshContactLink() {
-        const selectedOption = contactSelect.options[contactSelect.selectedIndex];
-        const url = selectedOption ? selectedOption.dataset.url : "";
-        if (url) {
-            openContactLink.href = url;
-            openContactLink.classList.remove("disabled-link");
-        } else {
-            openContactLink.href = "#";
-            openContactLink.classList.add("disabled-link");
-        }
+    function isNonWorkingDate(value) {
+        if (!value) return false;
+        const date = new Date(`${value}T00:00:00`);
+        if (date.getDay() === 0 || date.getDay() === 6) return true;
+        return nonWorkingBlocks.some((block) => value >= block.start && value <= block.end);
     }
 
-    contactSelect.addEventListener("change", refreshContactLink);
-    refreshContactLink();
+    function warnManualSchedule(dateInputId, timeInputId) {
+        const dateInput = document.getElementById(dateInputId);
+        const timeInput = document.getElementById(timeInputId);
+        if (!dateInput) return;
+        function checkSchedule() {
+            const selectedDate = dateInput.value;
+            const selectedTime = timeInput ? timeInput.value : "";
+            if (isNonWorkingDate(selectedDate)) {
+                alert("This date is configured as non working in your profile. You can still save it manually if this is intentional.");
+            } else if (selectedTime && (selectedTime < profileWorkStart || selectedTime > profileWorkEnd)) {
+                alert("This time is outside your configured working day. You can still save it manually if this is intentional.");
+            }
+        }
+        dateInput.addEventListener("change", checkSchedule);
+        if (timeInput) timeInput.addEventListener("change", checkSchedule);
+    }
+
+    warnManualSchedule("activity_date", "activity_time");
+    warnManualSchedule("next_action_date", "next_action_time");
+
+    function constrainContactsByAccount() {
+        const accountSelect = document.getElementById("account_id");
+        const contactSelect = document.getElementById("contact_id");
+        if (!accountSelect || !contactSelect) return;
+
+        function applyContactFilter() {
+            const selectedAccountId = accountSelect.value;
+            let selectedContactStillValid = !contactSelect.value;
+
+            Array.from(contactSelect.options).forEach((option) => {
+                if (!option.value) {
+                    option.hidden = false;
+                    option.disabled = false;
+                    return;
+                }
+
+                const belongsToSelectedAccount = selectedAccountId && option.dataset.accountId === selectedAccountId;
+                option.hidden = !belongsToSelectedAccount;
+                option.disabled = !belongsToSelectedAccount;
+                if (option.selected && belongsToSelectedAccount) {
+                    selectedContactStillValid = true;
+                }
+            });
+
+            if (!selectedContactStillValid) {
+                contactSelect.value = "";
+            }
+
+            contactSelect.disabled = !selectedAccountId;
+        }
+
+        accountSelect.addEventListener("change", applyContactFilter);
+        applyContactFilter();
+    }
+
+    constrainContactsByAccount();
 </script>
 
 {% endblock %} 

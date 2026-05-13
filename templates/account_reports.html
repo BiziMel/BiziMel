@@ -37,7 +37,7 @@
     <div class="section-header">
         <div>
             <h2>Account Report Detail</h2>
-            <p>Full account list with industry, location and pipeline target.</p>
+            <p>Full account list ordered by PG Bible sequence, then account name.</p>
         </div>
     </div>
 
@@ -45,6 +45,7 @@
         <table class="report-table">
             <thead>
                 <tr>
+                    <th>PG Bible Order</th>
                     <th>Account Name</th>
                     <th>Tier</th>
                     <th>Industry</th>
@@ -57,7 +58,15 @@
             <tbody>
                 {% for account in accounts %}
                     <tr>
-                        <td>{{ account["account_name"] }}</td>
+                        <td>{{ account["pg_bible_order"] or "Not set" }}</td>
+                        <td>
+                            <a href="{{ url_for('edit_account', account_id=account['id']) }}"
+                               class="record-primary-link"
+                               title="Edit account {{ account['account_name'] }}"
+                               aria-label="Edit account {{ account['account_name'] }}">
+                                {{ account["account_name"] }}
+                            </a>
+                        </td>
                         <td>{{ "Tier " ~ account["account_tier"] if account["account_tier"] else "Not set" }}</td>
                         <td>{{ account["industry"] }}</td>
                         <td>{{ account["country"] }}</td>
@@ -66,7 +75,7 @@
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="6">No accounts found.</td>
+                        <td colspan="7">No accounts found.</td>
                     </tr>
                 {% endfor %}
             </tbody>

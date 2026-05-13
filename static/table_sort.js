@@ -78,6 +78,9 @@
         const headerRow = table.tHead ? table.tHead.rows[0] : table.querySelector("tr");
         const tbody = table.tBodies[0];
         if (!headerRow || !tbody || !tbody.rows.length) return;
+        let defaultSortHeader = null;
+        let defaultSortColumn = null;
+        let defaultSortDirection = SORT_ASC;
 
         Array.from(headerRow.cells).forEach((header, columnIndex) => {
             if (header.colSpan && header.colSpan > 1) return;
@@ -97,9 +100,20 @@
                     activate();
                 }
             });
+
+            if (header.dataset.defaultSort && !defaultSortHeader) {
+                defaultSortHeader = header;
+                defaultSortColumn = columnIndex;
+                defaultSortDirection = header.dataset.defaultSort === SORT_DESC ? SORT_DESC : SORT_ASC;
+            }
         });
 
         table.dataset.sortReady = "true";
+
+        if (defaultSortHeader) {
+            defaultSortHeader.dataset.sortDirection = defaultSortDirection === SORT_ASC ? SORT_DESC : SORT_ASC;
+            sortTable(table, defaultSortColumn, defaultSortHeader);
+        }
     }
 
     function initialiseSortableTables() {

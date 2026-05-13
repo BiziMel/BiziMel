@@ -94,6 +94,42 @@
 <div class="report-table-section">
     <div class="section-header">
         <div>
+            <h2>SLA by Assignee</h2>
+            <p>Task timeliness is measured against the profile currently assigned to each task.</p>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th>Assignee</th>
+                    <th>Active Tasks</th>
+                    <th>Overdue Active Tasks</th>
+                    <th>Closed / Completed Tasks</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in sla_by_assignee %}
+                    <tr>
+                        <td>{{ row.assignee }}</td>
+                        <td>{{ row.active_tasks }}</td>
+                        <td>{{ row.overdue_active_tasks }}</td>
+                        <td>{{ row.closed_tasks }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="4">No assignee SLA data found.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="report-table-section">
+    <div class="section-header">
+        <div>
             <h2>Task Report Detail</h2>
             <p>Full list of scheduled tasks and ownership.</p>
         </div>
@@ -118,7 +154,14 @@
             <tbody>
                 {% for task in tasks %}
                     <tr>
-                        <td>{{ task["next_action"] or "Not set" }}</td>
+                        <td>
+                            <a href="{{ url_for('edit_outreach', outreach_id=task['id']) }}"
+                               class="record-primary-link"
+                               title="Edit task {{ task['next_action'] or task['id'] }}"
+                               aria-label="Edit task {{ task['next_action'] or task['id'] }}">
+                                {{ task["next_action"] or "Not set" }}
+                            </a>
+                        </td>
                         <td>{{ task["next_action_date"] or "Not set" }}</td>
                         <td>{{ task["next_action_time"] or "Not set" }}</td>
                         <td>{{ task["task_status"] or "Not Started" }}</td>
@@ -141,29 +184,10 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <script>
-    const statusLabels = [
-        {% for item in tasks_by_status %}
-            "{{ item['status'] or 'Unknown' }}",
-        {% endfor %}
-    ];
-
-    const statusData = [
-        {% for item in tasks_by_status %}
-            {{ item['total'] or 0 }},
-        {% endfor %}
-    ];
-
-    const accountLabels = [
-        {% for item in tasks_by_account %}
-            "{{ item['account_name'] or 'Unknown' }}",
-        {% endfor %}
-    ];
-
-    const accountData = [
-        {% for item in tasks_by_account %}
-            {{ item['total'] or 0 }},
-        {% endfor %}
-    ];
+    const statusLabels = {{ status_chart_labels | tojson }};
+    const statusData = {{ status_chart_data | tojson }};
+    const accountLabels = {{ account_chart_labels | tojson }};
+    const accountData = {{ account_chart_data | tojson }};
 
     new Chart(document.getElementById("statusChart"), {
         type: "doughnut",

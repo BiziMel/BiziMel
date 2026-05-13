@@ -18,6 +18,14 @@
 <div class="form-card">
     <h2>Profile Details</h2>
 
+    {% if message %}
+        <div class="alert-success">{{ message }}</div>
+    {% endif %}
+
+    {% if error %}
+        <div class="alert-error">{{ error }}</div>
+    {% endif %}
+
     <form method="POST" class="pipeflow-form">
 
         <div class="form-grid">
@@ -49,6 +57,24 @@
                        placeholder="Enter job title">
             </div>
 
+            <div class="form-section-heading">Working Hours</div>
+
+            <div class="form-group">
+                <label for="work_day_start">Work Day Start</label>
+                <input type="time"
+                       id="work_day_start"
+                       name="work_day_start"
+                       value="{{ profile.work_day_start or '09:00' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="work_day_end">Work Day End</label>
+                <input type="time"
+                       id="work_day_end"
+                       name="work_day_end"
+                       value="{{ profile.work_day_end or '17:00' }}">
+            </div>
+
         </div>
 
         <div class="form-actions">
@@ -64,6 +90,102 @@
     <p><strong>Full Name:</strong> {{ profile.full_name or "Not configured" }}</p>
     <p><strong>Team:</strong> {{ profile.team or "Not configured" }}</p>
     <p><strong>Job Title:</strong> {{ profile.job_title or "Not configured" }}</p>
+    <p><strong>Working Hours:</strong> {{ profile.work_day_start or "09:00" }} to {{ profile.work_day_end or "17:00" }}</p>
+    <p><strong>Weekend Days:</strong> Saturday and Sunday are always treated as non-working days for auto-scheduling.</p>
+</div>
+
+<div class="form-card">
+    <div class="section-header">
+        <div>
+            <h2>Non-Working Dates</h2>
+            <p>Add holidays, travel, annual leave or other unavailable date blocks. Weekends are already excluded automatically.</p>
+        </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('add_non_working_block') }}" class="pipeflow-form">
+        <div class="form-grid compact-filter-grid">
+            <div class="form-group">
+                <label for="start_date">Start Date</label>
+                <input type="date" id="start_date" name="start_date" required>
+            </div>
+            <div class="form-group">
+                <label for="end_date">End Date</label>
+                <input type="date" id="end_date" name="end_date">
+            </div>
+            <div class="form-group">
+                <label for="reason">Reason</label>
+                <input type="text" id="reason" name="reason" placeholder="Optional">
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Add Non-Working Block</button>
+        </div>
+    </form>
+
+    {% if non_working_blocks %}
+        <div class="table-container">
+            <table class="report-table">
+                <thead>
+                    <tr>
+                        <th>Start Date</th>
+                        <th>End Date</th>
+                        <th>Reason</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for block in non_working_blocks %}
+                        <tr>
+                            <td>{{ block.start_date }}</td>
+                            <td>{{ block.end_date }}</td>
+                            <td>{{ block.reason or "-" }}</td>
+                            <td>
+                                <form method="POST"
+                                      action="{{ url_for('delete_non_working_block', block_id=block.id) }}"
+                                      onsubmit="return confirm('Delete this non-working block?');">
+                                    <button type="submit" class="btn btn-danger btn-small">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p>No custom non-working blocks have been added.</p>
+    {% endif %}
+</div>
+
+<div class="form-card danger-zone-card">
+    <div class="section-header">
+        <div>
+            <h2>Delete My Workspace Data</h2>
+            <p>This deletes your private PipeFlow sales data only. Your login profile remains so you can continue using the app.</p>
+        </div>
+    </div>
+
+    <div class="danger-zone-panel">
+        <p>This will permanently delete your accounts, contacts, outreach, tasks, partners, partner contacts, account links, custom account values and timeline history.</p>
+        <p><strong>This cannot be undone.</strong></p>
+
+        <form method="POST"
+              action="{{ url_for('delete_profile_data') }}"
+              class="pipeflow-form"
+              onsubmit="return confirm('This permanently deletes your private PipeFlow workspace data. Continue?');">
+            <div class="form-group">
+                <label for="delete_confirmation">Type DELETE MY DATA to confirm</label>
+                <input type="text"
+                       id="delete_confirmation"
+                       name="delete_confirmation"
+                       autocomplete="off"
+                       required>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-danger">Delete My Workspace Data</button>
+            </div>
+        </form>
+    </div>
 </div>
 
 {% endblock %}
