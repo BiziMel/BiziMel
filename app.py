@@ -3116,7 +3116,7 @@ def pg_dashboard_context(connection):
         for contact in contacts:
             contact_id = contact["id"]
             latest_contact_activity = connection.execute("""
-                SELECT MAX(COALESCE(last_updated, activity_date, date_created)) AS latest_activity
+                SELECT MAX(COALESCE(last_updated, date_created)) AS latest_activity
                 FROM outreach
                 WHERE account_id = ?
                   AND contact_id = ?
