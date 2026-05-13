@@ -132,8 +132,14 @@
                        id="sales_play"
                        name="sales_play"
                        value="{{ selected_sales_play }}"
-                       placeholder="One sales play only"
+                       list="sales_play_options"
+                       placeholder="Add or select"
                        required>
+                <datalist id="sales_play_options">
+                    {% for sales_play in sales_play_options %}
+                        <option value="{{ sales_play }}"></option>
+                    {% endfor %}
+                </datalist>
                 <p class="field-help">PipeFlow uses this play plus historic outcomes, industry, account details and selected contact data to shape the activity mix.</p>
             </div>
         </div>
@@ -147,23 +153,37 @@
             </div>
 
             {% if contacts %}
-                <div class="contact-card-grid">
-                    {% for contact in contacts %}
-                        {% set is_selected_account = selected_account_id and contact.account_id|string == selected_account_id %}
-                        <label class="contact-summary-card campaign-contact-option" {% if not is_selected_account %}hidden{% endif %}>
-                            <input type="checkbox"
-                                   name="contact_ids"
-                                   value="{{ contact.id }}"
-                                   data-account-id="{{ contact.account_id }}"
-                                   {% if contact.id|string in selected_contact_ids %}checked{% endif %}
-                                   {% if not is_selected_account %}disabled{% endif %}>
-                            <span>
-                                <strong>{{ contact.name }}</strong>
-                                <p>{{ contact.job_title or "No job title" }}</p>
-                                <p class="muted">{{ contact.account_name or "No account" }}</p>
-                            </span>
-                        </label>
-                    {% endfor %}
+                <div class="table-container">
+                    <table class="report-table campaign-contact-table">
+                        <thead>
+                            <tr>
+                                <th>Select</th>
+                                <th>Contact</th>
+                                <th>Job Title</th>
+                                <th>Account</th>
+                                <th>Open</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for contact in contacts %}
+                                {% set is_selected_account = selected_account_id and contact.account_id|string == selected_account_id %}
+                                <tr class="campaign-contact-option {% if is_selected_account %}campaign-contact-available{% else %}campaign-contact-unavailable{% endif %}">
+                                    <td>
+                                        <input type="checkbox"
+                                               name="contact_ids"
+                                               value="{{ contact.id }}"
+                                               data-account-id="{{ contact.account_id }}"
+                                               {% if contact.id|string in selected_contact_ids %}checked{% endif %}
+                                               {% if not is_selected_account %}disabled{% endif %}>
+                                    </td>
+                                    <td>{{ contact.name }}</td>
+                                    <td>{{ contact.job_title or "No job title" }}</td>
+                                    <td>{{ contact.account_name or "No account" }}</td>
+                                    <td><a href="{{ url_for('view_contact', contact_id=contact.id) }}" target="_blank" class="btn btn-secondary btn-small">Open</a></td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
             {% else %}
                 <p>No contacts available yet.</p>
@@ -237,7 +257,9 @@
         contactOptions.forEach((option) => {
             const checkbox = option.querySelector("input[type='checkbox']");
             const belongsToSelectedAccount = checkbox && checkbox.dataset.accountId === selectedAccountId;
-            option.hidden = !belongsToSelectedAccount;
+            option.hidden = false;
+            option.classList.toggle("campaign-contact-available", belongsToSelectedAccount);
+            option.classList.toggle("campaign-contact-unavailable", !belongsToSelectedAccount);
             if (checkbox) {
                 checkbox.disabled = !belongsToSelectedAccount;
                 if (checkbox.disabled) {

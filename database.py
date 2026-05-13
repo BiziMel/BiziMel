@@ -150,6 +150,8 @@ def initialise_database(force=False):
             education TEXT,
             social_media TEXT,
             additional_notes TEXT,
+            status TEXT DEFAULT 'Active',
+            archived_at TEXT,
             date_created TEXT DEFAULT CURRENT_TIMESTAMP,
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(account_id) REFERENCES accounts(id)
@@ -362,6 +364,8 @@ def initialise_database(force=False):
 
     # Safe migrations for contacts
     add_column_if_missing(cursor, "contacts", "team_id", "INTEGER DEFAULT 1")
+    add_column_if_missing(cursor, "contacts", "status", "TEXT DEFAULT 'Active'")
+    add_column_if_missing(cursor, "contacts", "archived_at", "TEXT")
 
     # Safe migrations for outreach
     add_column_if_missing(cursor, "outreach", "team_id", "INTEGER DEFAULT 1")

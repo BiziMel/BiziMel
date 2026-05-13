@@ -126,16 +126,6 @@
             </div>
 
             <div class="form-group">
-                <label for="partner_role">Partner Role</label>
-                <select id="partner_role" name="partner_role">
-                    <option value="">Select partner role</option>
-                    {% for role in dropdown_values.partner_contact_roles %}
-                        <option value="{{ role }}">{{ role }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="form-group">
                 <label for="involvement_status">Involvement Status</label>
                 <select id="involvement_status" name="involvement_status">
                     <option value="">Select status</option>
@@ -177,7 +167,7 @@
                                     {{ relationship.account_name or "Unknown account" }}
                                 </a>
                             </strong>
-                            <p>{{ relationship.partner_role or "No partner role set" }}</p>
+                            <p>{{ partner.partner_type or "Partner type not set" }}</p>
                             <p class="muted">{{ relationship.industry or "Industry not set" }}</p>
                         </div>
 
@@ -219,16 +209,6 @@
             <div class="form-group">
                 <label for="job_title">Job Title</label>
                 <input type="text" id="job_title" name="job_title">
-            </div>
-
-            <div class="form-group">
-                <label for="partner_contact_role">Partner Role</label>
-                <select id="partner_contact_role" name="partner_contact_role">
-                    <option value="">Select partner role</option>
-                    {% for role in dropdown_values.partner_contact_roles %}
-                        <option value="{{ role }}">{{ role }}</option>
-                    {% endfor %}
-                </select>
             </div>
 
             <div class="form-group">
@@ -304,7 +284,6 @@
                     <div>
                         <strong>{{ contact.name }}</strong>
                         <p>{{ contact.job_title or "No job title" }}</p>
-                        <p class="muted">{{ contact.partner_contact_role or "No partner role set" }}</p>
                         <p class="muted">Responsible account: {{ contact.account_name or "Not assigned" }}</p>
                         <p class="muted">{{ contact.coverage_area or "No coverage area" }}</p>
                     </div>
@@ -313,9 +292,6 @@
                         <span class="status-pill">{{ contact.relationship_status or "No engagement" }}</span>
                         {% if contact.email %}
                             <a href="mailto:{{ contact.email }}" class="btn btn-secondary">Email</a>
-                        {% endif %}
-                        {% if contact.linkedin %}
-                            <a href="{{ contact.linkedin }}" target="_blank" class="btn btn-secondary">LinkedIn</a>
                         {% endif %}
                         <form method="POST"
                               action="{{ url_for('delete_partner_contact', partner_id=partner.id, contact_id=contact.id) }}"
@@ -342,6 +318,77 @@
                             {{ contact.notes or "" }}
                         </p>
                     {% endif %}
+
+                    <details class="inline-edit-panel full-width">
+                        <summary class="btn btn-secondary btn-small">Edit Partner Contact</summary>
+                        <form method="POST"
+                              action="{{ url_for('edit_partner_contact', partner_id=partner.id, contact_id=contact.id) }}"
+                              class="pipeflow-form compact-inline-form">
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="edit_partner_contact_name_{{ contact.id }}">Name</label>
+                                    <input type="text" id="edit_partner_contact_name_{{ contact.id }}" name="name" value="{{ contact.name or '' }}" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="edit_partner_contact_title_{{ contact.id }}">Job Title</label>
+                                    <input type="text" id="edit_partner_contact_title_{{ contact.id }}" name="job_title" value="{{ contact.job_title or '' }}">
+                                </div>
+                                <div class="form-group">
+                                    <label for="edit_partner_contact_account_{{ contact.id }}">Responsible Account</label>
+                                    <select id="edit_partner_contact_account_{{ contact.id }}" name="account_id">
+                                        <option value="">No account assigned</option>
+                                        {% for account in accounts %}
+                                            <option value="{{ account.id }}" {% if contact.account_id == account.id %}selected{% endif %}>{{ account.account_name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="edit_partner_contact_status_{{ contact.id }}">Partner Engagement</label>
+                                    <select id="edit_partner_contact_status_{{ contact.id }}" name="relationship_status">
+                                        <option value="">Select engagement</option>
+                                        {% for status in dropdown_values.partner_engagement_statuses %}
+                                            <option value="{{ status }}" {% if contact.relationship_status == status %}selected{% endif %}>{{ status }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="edit_partner_contact_owner_{{ contact.id }}">Relationship Owner</label>
+                                    <input type="text" id="edit_partner_contact_owner_{{ contact.id }}" name="relationship_owner" value="{{ contact.relationship_owner or '' }}">
+                                </div>
+                                <div class="form-group">
+                                    <label for="edit_partner_contact_coverage_{{ contact.id }}">Coverage / Influence Area</label>
+                                    <input type="text" id="edit_partner_contact_coverage_{{ contact.id }}" name="coverage_area" value="{{ contact.coverage_area or '' }}">
+                                </div>
+                                <div class="form-group">
+                                    <label for="edit_partner_contact_email_{{ contact.id }}">Email</label>
+                                    <input type="email" id="edit_partner_contact_email_{{ contact.id }}" name="email" value="{{ contact.email or '' }}">
+                                </div>
+                                <div class="form-group">
+                                    <label for="edit_partner_contact_phone_{{ contact.id }}">Phone</label>
+                                    <input type="text" id="edit_partner_contact_phone_{{ contact.id }}" name="phone" value="{{ contact.phone or '' }}">
+                                </div>
+                                <div class="form-group">
+                                    <label for="edit_partner_contact_location_{{ contact.id }}">Location</label>
+                                    <input type="text" id="edit_partner_contact_location_{{ contact.id }}" name="location" value="{{ contact.location or '' }}">
+                                </div>
+                                <div class="form-group">
+                                    <label for="edit_partner_contact_linkedin_{{ contact.id }}">LinkedIn</label>
+                                    <input type="text" id="edit_partner_contact_linkedin_{{ contact.id }}" name="linkedin" value="{{ contact.linkedin or '' }}">
+                                </div>
+                                <div class="form-group full-width">
+                                    <label for="edit_partner_contact_next_action_{{ contact.id }}">Next Partner Action</label>
+                                    <input type="text" id="edit_partner_contact_next_action_{{ contact.id }}" name="next_action" value="{{ contact.next_action or '' }}">
+                                </div>
+                                <div class="form-group full-width">
+                                    <label for="edit_partner_contact_notes_{{ contact.id }}">Notes</label>
+                                    <textarea id="edit_partner_contact_notes_{{ contact.id }}" name="notes" rows="3">{{ contact.notes or '' }}</textarea>
+                                </div>
+                            </div>
+                            <div class="button-group">
+                                <button type="submit" class="btn btn-primary btn-small">Save Partner Contact</button>
+                            </div>
+                        </form>
+                    </details>
                 </div>
             {% endfor %}
         </div>

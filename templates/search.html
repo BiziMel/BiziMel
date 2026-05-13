@@ -130,7 +130,7 @@
                 {% for contact in partner_contact_results %}
                     <div class="search-result-card">
                         <strong>{{ contact.name }}</strong>
-                        <p>{{ contact.partner_contact_role or contact.job_title or "No partner role" }} · {{ contact.partner_name or "No partner" }}{% if contact.account_name %} · {{ contact.account_name }}{% endif %}</p>
+                        <p>{{ contact.job_title or "No job title" }} · {{ contact.partner_name or "No partner" }}{% if contact.account_name %} · {{ contact.account_name }}{% endif %}</p>
                         <a href="{{ url_for('view_partner', partner_id=contact.partner_id) }}" class="btn btn-secondary">View Partner</a>
                     </div>
                 {% endfor %}

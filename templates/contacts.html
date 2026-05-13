@@ -13,6 +13,39 @@
     </a>
 </div>
 
+<div class="form-card compact-filter-card">
+    <form method="GET" action="{{ url_for('contacts') }}" class="pipeflow-form compact-filter-form">
+        <div class="form-grid contact-filter-grid">
+            <div class="form-group">
+                <label for="account_id">Account</label>
+                <select id="account_id" name="account_id">
+                    <option value="">All accounts</option>
+                    {% for account in accounts %}
+                        <option value="{{ account.id }}" {% if account_filter == account.id|string %}selected{% endif %}>{{ account.account_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="contact_name">Contact Name</label>
+                <input type="text" id="contact_name" name="contact_name" value="{{ name_filter or '' }}" placeholder="Search name">
+            </div>
+            <div class="form-group">
+                <label for="status">Status</label>
+                <select id="status" name="status">
+                    <option value="">All active statuses</option>
+                    <option value="Active" {% if status_filter == 'Active' %}selected{% endif %}>Active</option>
+                    <option value="Inactive" {% if status_filter == 'Inactive' %}selected{% endif %}>Inactive</option>
+                </select>
+            </div>
+            <div class="form-group outreach-filter-actions">
+                <label>&nbsp;</label>
+                <button type="submit" class="btn btn-primary">Apply</button>
+                <a href="{{ url_for('contacts') }}" class="btn btn-secondary">Clear</a>
+            </div>
+        </div>
+    </form>
+</div>
+
 {% if contacts %}
 
 <form id="bulk-delete-contacts-form"
@@ -25,14 +58,15 @@
     <button type="submit" form="bulk-delete-contacts-form" class="btn btn-danger btn-small">Delete Selected</button>
 </div>
 
-<div class="table-container">
-    <table class="report-table">
+<div class="table-container full-width-table-container contact-table-container">
+    <table class="report-table contact-list-table">
         <thead>
             <tr>
                 <th class="bulk-select-col">Select</th>
                 <th>Contact</th>
                 <th>Account</th>
                 <th>Account Tier</th>
+                <th>Status</th>
                 <th>Role</th>
                 <th>Relationship</th>
                 <th>Email</th>
@@ -58,8 +92,10 @@
 
                     <td>
                         {{ contact["account_name"] or "Unknown account" }}
-                        <br>
-                        <small>{{ contact["business_unit"] or "Business org not set" }}</small>
+                        {% if contact["business_unit"] %}
+                            <br>
+                            <small>{{ contact["business_unit"] }}</small>
+                        {% endif %}
                     </td>
 
                     <td>
@@ -70,6 +106,10 @@
                                 Not set
                             {% endif %}
                         </span>
+                    </td>
+
+                    <td>
+                        <span class="status-pill">{{ contact["status"] or "Active" }}</span>
                     </td>
 
                     <td>

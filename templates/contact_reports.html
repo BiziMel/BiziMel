@@ -9,6 +9,43 @@
     <a href="{{ url_for('export_contact_reports') }}" class="btn btn-primary">Export Contact Report</a>
 </div>
 
+{% if message %}
+    <div class="alert-success">{{ message }}</div>
+{% endif %}
+
+{% if current_user and current_user["role"] == "admin" %}
+<div class="form-card compact-filter-card">
+    <div class="section-header">
+        <div>
+            <h2>Archive Inactive Contacts</h2>
+            <p>Admins can export or archive inactive contacts changed within a selected date range.</p>
+        </div>
+    </div>
+    <form method="POST" action="{{ url_for('archive_inactive_contacts') }}" class="pipeflow-form compact-filter-form">
+        <div class="form-grid contact-filter-grid">
+            <div class="form-group">
+                <label for="archive_start_date">Start Date</label>
+                <input type="date" id="archive_start_date" name="archive_start_date">
+            </div>
+            <div class="form-group">
+                <label for="archive_end_date">End Date</label>
+                <input type="date" id="archive_end_date" name="archive_end_date">
+            </div>
+            <div class="form-group outreach-filter-actions">
+                <label>&nbsp;</label>
+                <button type="submit" class="btn btn-danger" onclick="return confirm('Archive inactive contacts in this date range?');">Archive Inactive</button>
+                <button type="submit"
+                        class="btn btn-secondary"
+                        formaction="{{ url_for('export_inactive_contacts_for_archive') }}"
+                        formmethod="GET">
+                    Export Inactive CSV
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endif %}
+
 <div class="report-grid">
 
     <div class="report-card">
@@ -41,13 +78,14 @@
         </div>
     </div>
 
-    <div class="table-container">
-        <table class="report-table">
+    <div class="table-container full-width-table-container contact-report-table-container">
+        <table class="report-table contact-report-table">
             <thead>
                 <tr>
                     <th>Name</th>
                     <th>Job Title</th>
                     <th>Category</th>
+                    <th>Status</th>
                     <th>Relationship</th>
                     <th>Email</th>
                     <th>Account</th>
@@ -68,6 +106,7 @@
                         </td>
                         <td>{{ contact["job_title"] or "Not set" }}</td>
                         <td>{{ contact["category"] or "Unknown" }}</td>
+                        <td>{{ contact["status"] or "Active" }}</td>
                         <td>{{ contact["bmc_relationship"] or "Unknown" }}</td>
                         <td>{{ contact["email"] or "Not set" }}</td>
                         <td>{{ contact["account_name"] or "Unknown" }}</td>
@@ -75,7 +114,7 @@
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="7">No contacts found.</td>
+                        <td colspan="8">No contacts found.</td>
                     </tr>
                 {% endfor %}
             </tbody>

@@ -33,12 +33,11 @@
                 </select>
             </div>
 
-            <div class="form-group">
+            <div class="form-group" id="selected_account_business_unit_group" hidden>
                 <label for="selected_account_business_unit">Account Business Unit / Org</label>
                 <input type="text"
                        id="selected_account_business_unit"
                        value=""
-                       placeholder="Select an account to show its business org"
                        readonly>
             </div>
 
@@ -49,6 +48,14 @@
                     {% for category in dropdown_values.contact_categories %}
                         <option value="{{ category }}">{{ category }}</option>
                     {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="status">Status</label>
+                <select id="status" name="status" required>
+                    <option value="Active" selected>Active</option>
+                    <option value="Inactive">Inactive</option>
                 </select>
             </div>
 
@@ -165,11 +172,16 @@
 <script>
     const accountSelect = document.getElementById("account_id");
     const businessUnitField = document.getElementById("selected_account_business_unit");
+    const businessUnitGroup = document.getElementById("selected_account_business_unit_group");
 
     function updateSelectedBusinessUnit() {
         if (!accountSelect || !businessUnitField) return;
         const selectedOption = accountSelect.options[accountSelect.selectedIndex];
-        businessUnitField.value = selectedOption ? selectedOption.dataset.businessUnit || "Business org not set" : "";
+        const businessUnit = selectedOption ? selectedOption.dataset.businessUnit || "" : "";
+        businessUnitField.value = businessUnit;
+        if (businessUnitGroup) {
+            businessUnitGroup.hidden = !businessUnit;
+        }
     }
 
     if (accountSelect) {

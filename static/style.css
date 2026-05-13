@@ -3899,3 +3899,116 @@ body {
         hyphens: none;
     }
 }
+
+.contact-filter-grid {
+    grid-template-columns: minmax(180px, 1.2fr) minmax(180px, 1fr) minmax(140px, 0.7fr) auto;
+}
+
+.full-width-table-container {
+    width: 100%;
+    max-width: 100%;
+}
+
+.contact-list-table,
+.contact-report-table {
+    table-layout: auto;
+    min-width: 0;
+}
+
+.contact-list-table th,
+.contact-list-table td,
+.contact-report-table th,
+.contact-report-table td {
+    vertical-align: top;
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+}
+
+.contact-list-table td:nth-child(2),
+.contact-list-table td:nth-child(3),
+.contact-report-table td:nth-child(1),
+.contact-report-table td:nth-child(2),
+.contact-report-table td:nth-child(6) {
+    min-width: 150px;
+}
+
+.inline-edit-panel {
+    margin-top: 12px;
+}
+
+.inline-edit-panel > summary {
+    display: inline-flex;
+    cursor: pointer;
+    list-style: none;
+}
+
+.compact-inline-form {
+    margin-top: 12px;
+}
+
+.contact-open-button {
+    margin-top: 8px;
+}
+
+.campaign-contact-table td,
+.campaign-contact-table th {
+    vertical-align: middle;
+}
+
+.campaign-contact-available {
+    background: #ecfdf5;
+}
+
+.campaign-contact-unavailable {
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+.campaign-contact-unavailable a {
+    color: #64748b;
+}
+
+.outreach-main-row.rag-green {
+    background: #f0fdf4;
+}
+
+.outreach-main-row.rag-amber {
+    background: #fffbeb;
+}
+
+.outreach-main-row.rag-red {
+    background: #fef2f2;
+}
+
+.outreach-main-row.rag-closed {
+    background: #f8fafc;
+}
+
+.outreach-contact-system-fields {
+    display: grid;
+    gap: 2px;
+    margin-top: 6px;
+    color: #475569;
+    font-size: 12px;
+    line-height: 1.25;
+}
+
+.system-inline-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid #dbe3ef;
+    border-radius: 8px;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 13px;
+}
+
+@media (max-width: 900px) {
+    .contact-filter-grid {
+        grid-template-columns: 1fr;
+    }
+}

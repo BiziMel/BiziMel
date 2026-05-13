@@ -236,16 +236,6 @@
             </div>
 
             <div class="form-group">
-                <label for="partner_role">Partner Role</label>
-                <select id="partner_role" name="partner_role">
-                    <option value="">Select partner role</option>
-                    {% for role in dropdown_values.partner_contact_roles %}
-                        <option value="{{ role }}">{{ role }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="form-group">
                 <label for="involvement_status">Involvement Status</label>
                 <select id="involvement_status" name="involvement_status">
                     <option value="">Select status</option>
@@ -297,9 +287,10 @@
                                     {{ partner.partner_name }}
                                 {% endif %}
                             </strong>
-                            <p>{{ partner.partner_role or "No partner role set" }}</p>
                             {% if partner.partner_type %}
                                 <p class="muted">{{ partner.partner_type }}</p>
+                            {% else %}
+                                <p class="muted">Partner type not set</p>
                             {% endif %}
                         </div>
 
@@ -354,18 +345,6 @@
                                                list="partner-name-options"
                                                value="{{ partner.partner_name }}"
                                                required>
-                                    </div>
-
-                                    <div class="form-group">
-                                        <label for="partner_role_{{ partner.id }}">Partner Role</label>
-                                        <select id="partner_role_{{ partner.id }}" name="partner_role">
-                                            <option value="">Select partner role</option>
-                                            {% for role in dropdown_values.partner_contact_roles %}
-                                                <option value="{{ role }}" {% if partner.partner_role == role %}selected{% endif %}>
-                                                    {{ role }}
-                                                </option>
-                                            {% endfor %}
-                                        </select>
                                     </div>
 
                                     <div class="form-group">

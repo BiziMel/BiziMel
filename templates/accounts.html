@@ -127,7 +127,7 @@
                 {% if current_user and current_user["role"] == "admin" %}
                     <th class="bulk-select-col">Select</th>
                 {% endif %}
-                <th>PG Order</th>
+                <th>Account Tier</th>
                 <th>Account</th>
                 <th>Health & Coverage</th>
                 <th>Pipeline & Location</th>
@@ -143,14 +143,8 @@
                         </td>
                     {% endif %}
                     <td>
-                        <span class="account-order-pill">{{ account["pg_bible_order"] or "-" }}</span>
-                        <span class="account-tier-mini">
-                            {% if account["account_tier"] %}
-                                Tier {{ account["account_tier"] }}
-                            {% else %}
-                                No tier
-                            {% endif %}
-                        </span>
+                        <span class="account-order-pill">{{ account["account_tier"] or "-" }}</span>
+                        <span class="account-tier-mini">PG Plan {{ account["pg_bible_order"] or "-" }}</span>
                     </td>
 
                     <td>
@@ -161,7 +155,7 @@
                             {{ account["account_name"] or "Unknown" }}
                         </a>
                         <div class="account-meta-stack">
-                            <span>{{ account["business_unit"] or "Business org not set" }}</span>
+                            {% if account["business_unit"] %}<span>{{ account["business_unit"] }}</span>{% endif %}
                             <span>{{ account["industry"] or "Industry not set" }}</span>
                             {% if account["website"] %}
                                 <a href="{{ account['website'] }}" target="_blank" class="account-text-link">Website</a>

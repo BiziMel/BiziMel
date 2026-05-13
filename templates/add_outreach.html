@@ -41,15 +41,6 @@
             </div>
 
             <div class="form-group">
-                <label for="sales_play">Sales Play or Initiative</label>
-                <input type="text"
-                       id="sales_play"
-                       name="sales_play"
-                       value="{{ prefill.sales_play or '' }}"
-                       placeholder="Sales play or initiative">
-            </div>
-
-            <div class="form-group">
                 <label for="account_id">Account</label>
                 <select id="account_id" name="account_id" required>
                     <option value="">Select account</option>
@@ -60,17 +51,38 @@
             </div>
 
             <div class="form-group">
+                <label for="sales_play">Sales Play or Initiative</label>
+                <input type="text"
+                       id="sales_play"
+                       name="sales_play"
+                       value="{{ prefill.sales_play or '' }}"
+                       list="sales_play_options"
+                       placeholder="Add or select"
+                       required>
+                <datalist id="sales_play_options">
+                    {% for sales_play in sales_play_options %}
+                        <option value="{{ sales_play }}"></option>
+                    {% endfor %}
+                </datalist>
+                <p class="field-help">Add or select an active sales play or initiative.</p>
+            </div>
+
+            <div class="form-group">
                 <label for="contact_id">Contact</label>
                 <select id="contact_id" name="contact_id">
                     <option value="">Select contact</option>
                     {% for contact in contacts %}
                         <option value="{{ contact.id }}"
                                 data-account-id="{{ contact.account_id or '' }}"
+                                data-email="{{ contact.email or '' }}"
+                                data-phone="{{ contact.phone or '' }}"
+                                data-linkedin="{{ contact.linkedin or '' }}"
                                 {% if prefill.contact_id|string == contact.id|string %}selected{% endif %}>
                             {{ contact.name }}{% if contact.account_name %} - {{ contact.account_name }}{% endif %}
                         </option>
                     {% endfor %}
                 </select>
+                <a href="#" id="open_contact_record" target="_blank" class="btn btn-secondary btn-small contact-open-button" hidden>Open Contact</a>
             </div>
 
             <div class="form-group">
@@ -130,6 +142,11 @@
             <div class="form-group full-width">
                 <label for="subject">Subject</label>
                 <input type="text" id="subject" name="subject" value="{{ prefill.subject or '' }}" required>
+            </div>
+
+            <div class="form-group full-width">
+                <label>Contact System Fields</label>
+                <div id="contact_system_fields" class="system-inline-fields">Select a contact to show phone, email and LinkedIn.</div>
             </div>
 
             <div class="form-group">
@@ -206,6 +223,8 @@
     function constrainContactsByAccount() {
         const accountSelect = document.getElementById("account_id");
         const contactSelect = document.getElementById("contact_id");
+        const openContactButton = document.getElementById("open_contact_record");
+        const contactSystemFields = document.getElementById("contact_system_fields");
         if (!accountSelect || !contactSelect) return;
 
         function applyContactFilter() {
@@ -232,9 +251,27 @@
             }
 
             contactSelect.disabled = !selectedAccountId;
+            if (openContactButton) {
+                if (contactSelect.value) {
+                    openContactButton.href = `/contacts/${contactSelect.value}`;
+                    openContactButton.hidden = false;
+                } else {
+                    openContactButton.hidden = true;
+                }
+            }
+            if (contactSystemFields) {
+                const selectedContact = contactSelect.options[contactSelect.selectedIndex];
+                const email = selectedContact ? selectedContact.dataset.email || "" : "";
+                const phone = selectedContact ? selectedContact.dataset.phone || "" : "";
+                const linkedin = selectedContact ? selectedContact.dataset.linkedin || "" : "";
+                contactSystemFields.innerHTML = contactSelect.value
+                    ? `<span>Email: ${email || "Not set"}</span><span>Phone: ${phone || "Not set"}</span><span>LinkedIn: ${linkedin || "Not set"}</span>`
+                    : "Select a contact to show phone, email and LinkedIn.";
+            }
         }
 
         accountSelect.addEventListener("change", applyContactFilter);
+        contactSelect.addEventListener("change", applyContactFilter);
         applyContactFilter();
     }
 
