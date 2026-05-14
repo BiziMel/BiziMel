@@ -2,7 +2,7 @@
 
 {% block title %}Org Chart | PipeFlow{% endblock %}
 
-{% macro person_tile(node, active_chart, account, chart_nodes) %}
+{% macro person_tile(node, active_chart, account) %}
     <li class="org-tree-node" data-node-id="{{ node.id }}" data-visual-level="{{ node.visual_level or 0 }}">
         <div class="org-person-card org-chart-draggable"
              draggable="true"
@@ -18,7 +18,7 @@
                 <strong>{{ node.name }}</strong>
                 <span>{{ node.title or "Job title not set" }}</span>
             </a>
-            <span class="org-drag-hint">Drag tile</span>
+            <span class="org-drag-hint">Drag</span>
         </div>
 
         <form method="POST"
@@ -35,7 +35,7 @@
 <div class="page-header">
     <div>
         <h1>{{ account.account_name }} Org Chart</h1>
-        <p>Build account and partner organisation maps using business/org structure, departments and reporting relationships.</p>
+        <p>Drag people into the rows where they belong. Same row means peers; rows above and below show hierarchy.</p>
     </div>
     <div class="button-group">
         <a href="{{ url_for('view_account', account_id=account.id) }}" class="btn btn-secondary">Back to Account</a>
@@ -46,59 +46,52 @@
     <div class="alert-success">{{ message }}</div>
 {% endif %}
 
-<section class="form-card">
-    <div class="section-header">
-        <div>
-        <h2>Org Chart Workspace</h2>
-        <p>Create a chart, then drag customer or partner contact tiles into teams and hierarchy rows.</p>
-        </div>
-    </div>
-    <div class="org-chart-help-strip">
-        <strong>How to build it:</strong>
-        <span>1. Create a chart.</span>
-        <span>2. Drag a contact tile into the row where it belongs.</span>
-        <span>3. People in the same row sit horizontally together.</span>
-        <span>4. Save Org Chart Layout to commit the moves.</span>
-        <span>5. Rows above and below show hierarchy.</span>
-    </div>
-
-    <form method="POST" action="{{ url_for('create_account_org_chart', account_id=account.id) }}" class="pipeflow-form">
-        <div class="form-grid">
-            <div class="form-group">
-                <label for="chart_name">New Chart Name</label>
-                <input type="text" id="chart_name" name="chart_name" value="{{ account.account_name }} Org Chart" required>
-            </div>
-            <div class="form-group">
-                <label for="chart_notes">Notes</label>
-                <input type="text" id="chart_notes" name="notes" placeholder="Optional chart purpose or scope">
-            </div>
-            <div class="form-group outreach-filter-actions">
-                <label>&nbsp;</label>
-                <button type="submit" class="btn btn-primary">Create Chart</button>
-            </div>
-        </div>
-    </form>
-</section>
-
-{% if charts %}
+{% if not charts %}
     <section class="form-card">
         <div class="section-header">
             <div>
-                <h2>Selected Chart</h2>
-                <p>Switch charts, rename the current chart or delete the full chart.</p>
+                <h2>Create Org Chart</h2>
+                <p>Create the chart, then drag customer and partner tiles into the canvas.</p>
+            </div>
+        </div>
+        <form method="POST" action="{{ url_for('create_account_org_chart', account_id=account.id) }}" class="pipeflow-form">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="chart_name">Chart Name</label>
+                    <input type="text" id="chart_name" name="chart_name" value="{{ account.account_name }} Org Chart" required>
+                </div>
+                <div class="form-group">
+                    <label for="chart_notes">Notes</label>
+                    <input type="text" id="chart_notes" name="notes" placeholder="Optional chart purpose or scope">
+                </div>
+                <div class="form-group outreach-filter-actions">
+                    <label>&nbsp;</label>
+                    <button type="submit" class="btn btn-primary">Create Chart</button>
+                </div>
+            </div>
+        </form>
+    </section>
+{% endif %}
+
+{% if charts and active_chart %}
+    <section class="form-card org-builder-shell">
+        <div class="section-header">
+            <div>
+                <h2>Org Chart Builder</h2>
+                <p>Drag a tile into a row. Drop left or right of other people in the same row to place them beside each other.</p>
             </div>
         </div>
 
-        <div class="button-group">
-            {% for chart in charts %}
-                <a href="{{ url_for('account_org_chart', account_id=account.id, chart_id=chart.id) }}"
-                   class="btn {% if active_chart and active_chart.id == chart.id %}btn-primary{% else %}btn-secondary{% endif %}">
-                    {{ chart.chart_name }}
-                </a>
-            {% endfor %}
-        </div>
+        <div class="org-builder-toolbar">
+            <div class="org-chart-switcher">
+                {% for chart in charts %}
+                    <a href="{{ url_for('account_org_chart', account_id=account.id, chart_id=chart.id) }}"
+                       class="btn {% if active_chart and active_chart.id == chart.id %}btn-primary{% else %}btn-secondary{% endif %}">
+                        {{ chart.chart_name }}
+                    </a>
+                {% endfor %}
+            </div>
 
-        {% if active_chart %}
             <form method="POST"
                   action="{{ url_for('update_account_org_chart', account_id=account.id, chart_id=active_chart.id) }}"
                   class="pipeflow-form org-chart-management-form">
@@ -113,15 +106,15 @@
                     </div>
                     <div class="form-group outreach-filter-actions">
                         <label>&nbsp;</label>
-                        <button type="submit" class="btn btn-primary">Save Chart</button>
+                        <button type="submit" class="btn btn-secondary">Save Chart Details</button>
                     </div>
                 </div>
             </form>
 
             <details class="org-chart-danger-zone">
-                <summary>Delete this full org chart</summary>
+                <summary>Delete full chart</summary>
                 <div class="danger-zone-content">
-                    <p>Delete only when you want to remove the whole chart. Contacts and partner contacts will remain in PipeFlow.</p>
+                    <p>Deletes this chart only. Contacts and partner contacts remain in PipeFlow.</p>
                     <form method="POST"
                           action="{{ url_for('delete_account_org_chart', account_id=account.id, chart_id=active_chart.id) }}"
                           onsubmit="return confirm('Delete this full org chart? Contacts will not be deleted.');">
@@ -129,15 +122,12 @@
                     </form>
                 </div>
             </details>
+        </div>
 
-            <div class="org-chart-add-panel">
-                <div class="section-header compact-section-header">
-                    <div>
-                        <h2>Drag People Into The Chart</h2>
-                        <p>Drag from available people, or drag an existing tile, into the row where it should sit in the chart.</p>
-                    </div>
-                </div>
-
+        <div class="org-builder-layout">
+            <aside class="org-builder-tray">
+                <h3>People</h3>
+                <p>Drag these tiles into the chart.</p>
                 {% if available_people %}
                     <div class="org-people-tray" aria-label="Available people">
                         {% for person in available_people %}
@@ -159,124 +149,62 @@
                     </div>
                 {% else %}
                     <div class="empty-state compact-empty-state">
-                        <h3>All available people are already in this chart</h3>
-                        <p>Drag existing tiles to rearrange them or remove someone from the chart so they can be added again.</p>
+                        <h3>All people are already in this chart</h3>
+                        <p>Drag existing tiles around the canvas to change the structure.</p>
                     </div>
                 {% endif %}
+            </aside>
 
-                <form method="POST"
-                      action="{{ url_for('save_account_org_chart_layout', account_id=account.id, chart_id=active_chart.id) }}"
-                      id="orgChartLayoutForm"
-                      class="org-layout-save-form">
-                    <input type="hidden" name="layout_actions" id="orgChartLayoutActions" value="[]">
-                    <div class="org-layout-save-row">
-                        <button type="submit" class="btn btn-primary" id="orgChartSaveButton" disabled>Save Org Chart Layout</button>
-                        <span id="orgChartPendingSummary">No staged moves yet.</span>
+            <div class="org-builder-canvas">
+                <div class="org-canvas-header">
+                    <div>
+                        <h3>{{ active_chart.chart_name }}</h3>
+                        <p>Drop a tile into any row. The tile will move immediately; save when the layout looks right.</p>
                     </div>
-                    <div class="org-pending-list" id="orgChartPendingList" aria-live="polite"></div>
-                </form>
-            </div>
-        {% endif %}
-    </section>
-{% endif %}
-
-{% if active_chart %}
-    <section class="form-card org-chart-group">
-        <div class="section-header">
-            <div>
-                <h2>Chart Canvas</h2>
-        <p>Start anywhere: drag a tile into the row where that person belongs. Same row means peers, rows above and below show hierarchy.</p>
-            </div>
-        </div>
-        <div class="org-canvas-drop-grid">
-            {% for level in visible_levels %}
-                <div class="org-row-drop-zone"
-                     data-visual-level="{{ level.level }}">
-                    {{ level.label }}
-                    <span>Drop into this row</span>
+                    <form method="POST"
+                          action="{{ url_for('save_account_org_chart_layout', account_id=account.id, chart_id=active_chart.id) }}"
+                          id="orgChartLayoutForm"
+                          class="org-layout-save-form">
+                        <input type="hidden" name="layout_actions" id="orgChartLayoutActions" value="[]">
+                        <button type="submit" class="btn btn-primary" id="orgChartSaveButton" disabled>Save Layout</button>
+                    </form>
                 </div>
-            {% endfor %}
-        </div>
-    </section>
 
-    {% if roots_by_group_levels %}
-        <div class="org-chart-grid">
-            {% for group_name, group in roots_by_group_levels.items() %}
-                <section class="form-card org-chart-group">
-                    <div class="section-header">
-                        <div>
-                            <h2>{{ group_name }}</h2>
-                            <p>{{ group.top_count }} mapped contact{% if group.top_count != 1 %}s{% endif %} across hierarchy rows</p>
-                        </div>
-                    </div>
-                    {% for level_row in group.levels %}
-                        <div class="org-level-row"
-                             data-visual-level="{{ level_row.level }}">
-                            <div class="org-level-label">{{ level_row.label }}</div>
-                            <ul class="org-tree">
-                                {% for person in level_row.people %}
-                                    {{ person_tile(person, active_chart, account, chart_nodes) }}
-                                {% endfor %}
-                                <li class="org-row-drop-zone org-row-drop-zone-inline"
-                                    data-visual-level="{{ level_row.level }}">
-                                    Drop here
-                                </li>
-                            </ul>
+                <div class="org-pending-list" id="orgChartPendingList" aria-live="polite"></div>
+                <p class="field-help" id="orgChartPendingSummary">No staged moves yet.</p>
+
+                {% if roots_by_group_levels %}
+                    {% for group_name, group in roots_by_group_levels.items() %}
+                        <div class="org-chart-board">
+                            <h3>{{ group_name }}</h3>
+                            {% for level_row in group.levels %}
+                                <div class="org-level-row"
+                                     data-visual-level="{{ level_row.level }}">
+                                    <div class="org-level-label">{{ level_row.label }}</div>
+                                    <ul class="org-tree org-row-drop-zone" data-visual-level="{{ level_row.level }}">
+                                        {% for person in level_row.people %}
+                                            {{ person_tile(person, active_chart, account) }}
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                            {% endfor %}
                         </div>
                     {% endfor %}
-                </section>
-            {% endfor %}
-        </div>
-    {% endif %}
-
-    {% if not roots_by_group_levels %}
-        <section class="form-card org-chart-group">
-            <div class="section-header">
-                <div>
-                    <h2>Empty Chart Rows</h2>
-                    <p>Drag the first person into any row to start building the chart.</p>
-                </div>
-            </div>
-            {% for level in visible_levels %}
-                <div class="org-level-row"
-                     data-visual-level="{{ level.level }}">
-                    <div class="org-level-label">{{ level.label }}</div>
-                    <div class="org-row-drop-zone org-row-drop-zone-empty"
-                         data-visual-level="{{ level.level }}">
-                        Drop into this row
+                {% else %}
+                    <div class="org-chart-board">
+                        <h3>Organisation Chart</h3>
+                        {% for level in visible_levels %}
+                            <div class="org-level-row"
+                                 data-visual-level="{{ level.level }}">
+                                <div class="org-level-label">{{ level.label }}</div>
+                                <ul class="org-tree org-row-drop-zone" data-visual-level="{{ level.level }}"></ul>
+                            </div>
+                        {% endfor %}
                     </div>
-                </div>
-            {% endfor %}
-        </section>
-    {% endif %}
-
-    {% if unmapped %}
-        <section class="form-card org-chart-group">
-            <div class="section-header">
-                <div>
-                    <h2>Unmapped Contacts</h2>
-                    <p>People where business/org, department or reporting line is not yet known.</p>
-                </div>
+                {% endif %}
             </div>
-            <ul class="org-tree org-tree-unmapped">
-                {% for person in unmapped %}
-                    {{ person_tile(person, active_chart, account, chart_nodes) }}
-                {% endfor %}
-            </ul>
-        </section>
-    {% endif %}
-
-    {% if not roots_by_group_levels and not unmapped %}
-        <div class="empty-state">
-            <h3>No people added yet</h3>
-            <p>Add contacts to this chart to start mapping the account organisation.</p>
         </div>
-    {% endif %}
-{% else %}
-    <div class="empty-state">
-        <h3>No org chart yet</h3>
-        <p>Create a chart to start mapping customer and partner relationships for this account.</p>
-    </div>
+    </section>
 {% endif %}
 
 <script>
@@ -288,6 +216,23 @@ document.addEventListener("DOMContentLoaded", function () {
     const saveButton = document.getElementById("orgChartSaveButton");
     const pendingSummary = document.getElementById("orgChartPendingSummary");
     const pendingList = document.getElementById("orgChartPendingList");
+
+    function createPreviewTile(item) {
+        const wrapper = document.createElement("li");
+        wrapper.className = "org-tree-node org-move-staged";
+        wrapper.dataset.previewPersonRef = item.person_ref || "";
+        const card = document.createElement("div");
+        card.className = "org-person-card org-chart-draggable";
+        card.draggable = true;
+        card.dataset.dragType = item.type;
+        card.dataset.personRef = item.person_ref || "";
+        card.dataset.personName = item.name;
+        card.innerHTML = `<span class="org-person-image"></span><strong></strong><span>New placement</span><span class="org-drag-hint">Drag</span>`;
+        card.querySelector("strong").textContent = item.name;
+        wrapper.appendChild(card);
+        attachDragHandler(card);
+        return wrapper;
+    }
 
     function updatePendingDisplay() {
         const moves = Array.from(stagedMoves.values());
@@ -314,7 +259,24 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    document.querySelectorAll(".org-chart-draggable").forEach(function (tile) {
+    function insertTileAtPointer(row, tile, xPosition) {
+        const existingTiles = Array.from(row.querySelectorAll(":scope > .org-tree-node"))
+            .filter(function (node) { return node !== tile; });
+        let inserted = false;
+        for (const existing of existingTiles) {
+            const rect = existing.getBoundingClientRect();
+            if (xPosition < rect.left + rect.width / 2) {
+                row.insertBefore(tile, existing);
+                inserted = true;
+                break;
+            }
+        }
+        if (!inserted) {
+            row.appendChild(tile);
+        }
+    }
+
+    function attachDragHandler(tile) {
         tile.addEventListener("dragstart", function (event) {
             draggedItem = {
                 type: tile.dataset.dragType,
@@ -329,19 +291,21 @@ document.addEventListener("DOMContentLoaded", function () {
         tile.addEventListener("dragend", function () {
             tile.classList.remove("org-dragging");
         });
-    });
+    }
 
-    document.querySelectorAll(".org-row-drop-zone").forEach(function (zone) {
-        zone.addEventListener("dragover", function (event) {
+    document.querySelectorAll(".org-chart-draggable").forEach(attachDragHandler);
+
+    document.querySelectorAll(".org-row-drop-zone").forEach(function (row) {
+        row.addEventListener("dragover", function (event) {
             event.preventDefault();
-            zone.classList.add("org-drop-zone-active");
+            row.classList.add("org-drop-zone-active");
         });
-        zone.addEventListener("dragleave", function () {
-            zone.classList.remove("org-drop-zone-active");
+        row.addEventListener("dragleave", function () {
+            row.classList.remove("org-drop-zone-active");
         });
-        zone.addEventListener("drop", function (event) {
+        row.addEventListener("drop", function (event) {
             event.preventDefault();
-            zone.classList.remove("org-drop-zone-active");
+            row.classList.remove("org-drop-zone-active");
             let item = draggedItem;
             if (!item) {
                 try {
@@ -353,15 +317,37 @@ document.addEventListener("DOMContentLoaded", function () {
             if (!item) {
                 return;
             }
-            const visualLevel = zone.dataset.visualLevel || "0";
-            const row = zone.closest(".org-level-row");
-            const rowTiles = row ? row.querySelectorAll(".org-tree-node").length : 0;
+
+            let tileWrapper = null;
+            if (item.type === "node") {
+                tileWrapper = document.querySelector(`[data-node-id="${item.node_id}"]`);
+            } else {
+                tileWrapper = document.querySelector(`[data-preview-person-ref="${item.person_ref}"]`);
+                if (!tileWrapper) {
+                    tileWrapper = createPreviewTile(item);
+                }
+                const trayTile = document.querySelector(`[data-person-ref="${item.person_ref}"].org-tray-person`);
+                if (trayTile) {
+                    trayTile.classList.add("org-move-staged");
+                }
+            }
+            if (!tileWrapper) {
+                return;
+            }
+
+            insertTileAtPointer(row, tileWrapper, event.clientX);
+            tileWrapper.classList.add("org-move-staged");
+
+            const visualLevel = row.dataset.visualLevel || "0";
+            const rowTiles = Array.from(row.querySelectorAll(":scope > .org-tree-node"));
+            const sortOrder = rowTiles.indexOf(tileWrapper) + 1;
+            const rowLabel = row.closest(".org-level-row")?.querySelector(".org-level-label")?.textContent || "selected row";
             const move = {
                 relationship: "with",
                 related_node_id: "",
                 visual_level: visualLevel,
-                sort_order: rowTiles + stagedMoves.size + 1,
-                row_label: zone.textContent.trim().replace(/\s+/g, " "),
+                sort_order: sortOrder,
+                row_label: rowLabel,
                 name: item.name
             };
             let key;
@@ -373,9 +359,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 move.person_ref = item.person_ref;
             }
             stagedMoves.set(key, move);
-            document.querySelectorAll(`[data-node-id="${item.node_id}"], [data-person-ref="${item.person_ref}"]`).forEach(function (tile) {
-                tile.classList.add("org-move-staged");
-            });
             updatePendingDisplay();
         });
     });

@@ -4837,7 +4837,7 @@ def org_chart_level_label(level):
     return "Current row"
 
 
-def org_chart_group_levels(nodes):
+def org_chart_group_levels(nodes, visible_levels=None):
     rows = {}
     for node in nodes:
         try:
@@ -4845,6 +4845,9 @@ def org_chart_group_levels(nodes):
         except (TypeError, ValueError):
             level = 0
         rows.setdefault(level, []).append(node)
+    if visible_levels is not None:
+        for level in visible_levels:
+            rows.setdefault(level["level"], [])
     level_rows = []
     for level, people in sorted(rows.items(), key=lambda item: item[0]):
         sort_org_chart_nodes(people)
@@ -4984,14 +4987,14 @@ def org_chart_context(connection, account, chart_id=None):
         for people in roots_by_group.values():
             sort_org_chart_nodes(people)
         sort_org_chart_nodes(unmapped)
+    visible_levels = org_chart_visible_levels(chart_nodes)
     roots_by_group_levels = {
         group_name: {
             "top_count": len(people),
-            "levels": org_chart_group_levels(people),
+            "levels": org_chart_group_levels(people, visible_levels),
         }
         for group_name, people in roots_by_group.items()
     }
-    visible_levels = org_chart_visible_levels(chart_nodes)
 
     used_people = org_chart_existing_people(connection, active_chart["id"]) if active_chart else set()
     available_people = [option for option in person_options if option["value"] not in used_people]
