@@ -4193,3 +4193,18 @@ body {
         grid-template-columns: 1fr;
     }
 }
+
+.contact-open-button,
+.campaign-contact-open-button {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    align-self: flex-start;
+    flex: 0 0 auto;
+    width: fit-content !important;
+    min-width: 0 !important;
+    max-width: 72px;
+    padding: 5px 10px;
+    font-size: 12px;
+    line-height: 1.2;
+}
