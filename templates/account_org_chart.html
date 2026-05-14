@@ -11,7 +11,7 @@
     </div>
     <div class="button-group">
         <a href="{{ url_for('view_account', account_id=account.id) }}" class="btn btn-secondary">Back to Account</a>
-        <a href="{{ url_for('add_contact') }}" class="btn btn-primary">Add Contact</a>
+        <a href="{{ url_for('add_contact') }}" class="btn btn-primary">Edit Org Chart</a>
     </div>
 </div>
 
@@ -27,9 +27,15 @@
             <div class="org-person-grid">
                 {% for person in people %}
                     <a href="{{ person.link }}" class="org-person-card">
+                        <span class="org-person-image">
+                            {% if person.photo %}
+                                <img src="{{ person.photo }}" alt="{{ person.name }}">
+                            {% else %}
+                                {{ (person.name or "?")[:1] }}
+                            {% endif %}
+                        </span>
                         <strong>{{ person.name }}</strong>
                         <span>{{ person.title or "Job title not set" }}</span>
-                        <small>{{ person.type }}</small>
                     </a>
                 {% endfor %}
             </div>
@@ -48,9 +54,15 @@
         <div class="org-person-grid">
             {% for person in unmapped %}
                 <a href="{{ person.link }}" class="org-person-card">
+                    <span class="org-person-image">
+                        {% if person.photo %}
+                            <img src="{{ person.photo }}" alt="{{ person.name }}">
+                        {% else %}
+                            {{ (person.name or "?")[:1] }}
+                        {% endif %}
+                    </span>
                     <strong>{{ person.name }}</strong>
                     <span>{{ person.title or "Job title not set" }}</span>
-                    <small>{{ person.type }}</small>
                 </a>
             {% endfor %}
         </div>

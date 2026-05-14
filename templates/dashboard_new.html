@@ -119,13 +119,9 @@
                             </td>
                             <td>
                                 <strong>{{ row.targeted_discovery or "No account contacts entered" }}</strong>
-                                {% if row.account_name %}
+                                {% if row.contact_job_title %}
                                     <br>
-                                    <span class="muted">{{ row.account_name }}</span>
-                                {% endif %}
-                                {% if row.business_org %}
-                                    <br>
-                                    <span class="muted">{{ row.business_org }}</span>
+                                    <span class="muted">{{ row.contact_job_title }}</span>
                                 {% endif %}
                             </td>
                             <td>

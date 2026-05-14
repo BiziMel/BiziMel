@@ -17,11 +17,34 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection
 
 
-APP_VERSION = "1.3"
-APP_RELEASE_DATE = "2026-05-13"
-APP_BUILD = "2026-05-13-v1.3-partner-contact-outreach-contact-cleanup"
+APP_VERSION = "1.4"
+APP_RELEASE_DATE = "2026-05-14"
+APP_BUILD = "2026-05-14-v1.4-pg-progress-partner-org-chart"
 
 RELEASE_NOTES = [
+    {
+        "version": "1.4",
+        "release_date": "2026-05-14",
+        "title": "Partner activity, contact org charts and outreach scheduling refinement",
+        "new": [
+            "Added partner activity into PG Progress as a separate partner row when activity has occurred against an account.",
+            "Added admin contact archiving for inactive contacts by date range from Admin with CSV export support from reports.",
+            "Added account contact org charts so customer and partner contacts can be viewed by business organisation or partner group, with unmapped contacts listed separately.",
+        ],
+        "enhanced": [
+            "Enhanced Outreach so account partners are clearly identified in the activity selection and only appear when linked to the selected account.",
+            "Enhanced create outreach and campaign pages so the Open contact button is compact and only appears after a contact is selected.",
+            "Enhanced Outreach Tasks so the contact job title appears on its own row beneath the contact name.",
+            "Enhanced outreach activity values so White Paper and Webinar also includes Consensus.",
+            "Enhanced outreach outcomes with Webinar Attended and Consensus Viewed.",
+            "Enhanced PG Progress so partner activity is labelled clearly against the associated account.",
+            "Enhanced manual Outreach scheduling so non-working dates and times warn on save and allow the user to confirm or return to the field.",
+        ],
+        "fixed": [
+            "Restored a single PipeFlow logo in the header.",
+            "Cleaned PG Progress so the discovery contact cell shows only the person name and job title without extra contact detail clutter.",
+        ],
+    },
     {
         "version": "1.3",
         "release_date": "2026-05-13",
@@ -3226,8 +3249,8 @@ def pg_dashboard_context(connection):
                 "target_number": pg_target_number,
                 "colour_index": nbm_colour_index(pg_target_number),
                 "account_name": account["account_name"],
-                "targeted_discovery": f"{contact['name']}{' - ' + contact['job_title'] if contact['job_title'] else ''}",
-                "business_org": contact["business_unit"] or contact["org_dept"] or "",
+                "targeted_discovery": contact["name"] or "No contact name",
+                "contact_job_title": contact["job_title"] or "",
                 "completed_discovery_meeting": (
                     action_update["completed_discovery_meeting"]
                     if action_update
@@ -3309,7 +3332,7 @@ def pg_dashboard_context(connection):
                 "colour_index": nbm_colour_index(pg_target_number),
                 "account_name": account["account_name"],
                 "targeted_discovery": "Partner activity",
-                "business_org": "",
+                "contact_job_title": "",
                 "completed_discovery_meeting": "N/A",
                 "exec_first": "N/A",
                 "nbm_completed": "N/A",
@@ -4593,7 +4616,12 @@ def account_org_chart(account_id):
     unmapped = []
     for contact in contacts:
         group_name = contact["org_dept"] or account["business_unit"] or ""
-        item = {"type": "Customer", "name": contact["name"], "title": contact["job_title"], "link": url_for("edit_contact", contact_id=contact["id"])}
+        item = {
+            "name": contact["name"],
+            "title": contact["job_title"],
+            "photo": contact["photo"] if "photo" in contact.keys() else "",
+            "link": url_for("edit_contact", contact_id=contact["id"]),
+        }
         if group_name:
             groups.setdefault(group_name, []).append(item)
         else:
@@ -4601,9 +4629,9 @@ def account_org_chart(account_id):
     for contact in partner_contacts:
         group_name = contact["partner_name"] or "Partner"
         groups.setdefault(f"Partner: {group_name}", []).append({
-            "type": "Partner",
             "name": contact["name"],
             "title": contact["job_title"],
+            "photo": "",
             "link": url_for("view_partner", partner_id=contact["partner_id"]),
         })
     connection.close()

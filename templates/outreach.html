@@ -201,8 +201,10 @@
                                     {% endif %}
                                 </span>
                                 {% if item.contact_job_title %}
-                                    <br>
-                                    <span class="muted">{{ item.contact_job_title }}</span>
+                                    <div class="outreach-contact-job-title">
+                                        <span class="table-field-label">Job Title</span>
+                                        <span>{{ item.contact_job_title }}</span>
+                                    </div>
                                 {% endif %}
                                 {% if item.contact_email or item.contact_phone or item.contact_linkedin %}
                                     <div class="outreach-contact-system-fields">
