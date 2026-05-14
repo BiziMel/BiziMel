@@ -40,7 +40,7 @@ RELEASE_NOTES = [
             "Enhanced outreach outcomes with Webinar Attended and Consensus Viewed.",
             "Enhanced PG Progress so partner activity is labelled clearly against the associated account.",
             "Enhanced PG Progress so the discovery contact cell is limited to company, business/org, department, contact name and job title.",
-            "Enhanced account org charts with chart-level create, edit and delete plus Works under, Works with and Works above placement shown as clear hierarchy rows.",
+            "Enhanced account org charts with drag-and-drop row placement so users can arrange people horizontally as peers or vertically by hierarchy without relationship dropdowns.",
             "Enhanced manual Outreach scheduling so non-working dates and times warn on save and allow the user to confirm or return to the field.",
         ],
         "fixed": [
@@ -4730,6 +4730,25 @@ def normalise_org_chart_relationship(value):
     return relationship
 
 
+def org_chart_level_for_relationship(connection, chart_id, relationship, related_node_id):
+    relationship = normalise_org_chart_relationship(relationship)
+    offset = {"above": -1, "with": 0, "under": 1}.get(relationship, 0)
+    try:
+        related_node_id = int(related_node_id) if related_node_id else None
+    except (TypeError, ValueError):
+        related_node_id = None
+    if related_node_id:
+        related = connection.execute("""
+            SELECT visual_level
+            FROM account_org_chart_people
+            WHERE chart_id = ?
+              AND id = ?
+        """, (chart_id, related_node_id)).fetchone()
+        related_level = int(related["visual_level"] or 0) if related else 0
+        return related_level + offset
+    return offset
+
+
 def apply_org_chart_above_relationship(connection, chart_id, node_id, related_node_id):
     try:
         related_node_id = int(related_node_id) if related_node_id else None
@@ -4742,41 +4761,107 @@ def apply_org_chart_above_relationship(connection, chart_id, node_id, related_no
         SET manager_node_id = ?,
             relationship_type = 'under',
             related_node_id = ?,
+            visual_level = ?,
             last_updated = CURRENT_TIMESTAMP
         WHERE chart_id = ?
           AND id = ?
-    """, (node_id, node_id, chart_id, related_node_id))
+    """, (
+        node_id,
+        node_id,
+        org_chart_level_for_relationship(connection, chart_id, "under", node_id),
+        chart_id,
+        related_node_id,
+    ))
 
 
-def save_org_chart_node_position(connection, chart_id, node_id, relationship, related_node_id):
-    relationship = normalise_org_chart_relationship(relationship)
+def parse_optional_int(value):
     try:
-        related_node_id_int = int(related_node_id) if related_node_id else None
+        return int(value) if value not in (None, "") else None
     except (TypeError, ValueError):
-        related_node_id_int = None
+        return None
+
+
+def save_org_chart_node_position(connection, chart_id, node_id, relationship, related_node_id, visual_level=None, sort_order=None):
+    relationship = normalise_org_chart_relationship(relationship)
+    related_node_id_int = parse_optional_int(related_node_id)
+    visual_level_int = parse_optional_int(visual_level)
+    sort_order_int = parse_optional_int(sort_order)
     if related_node_id_int == node_id:
         relationship = "with"
         related_node_id_int = None
     elif related_node_id_int in org_chart_descendant_ids(connection, chart_id, node_id):
         raise ValueError("That move would create a reporting loop. Choose a different person.")
 
-    manager_node_id = org_chart_manager_for_relationship(connection, chart_id, relationship, related_node_id_int)
+    if visual_level_int is not None:
+        manager_node_id = None
+        relationship = "with"
+        related_node_id_int = None
+    else:
+        manager_node_id = org_chart_manager_for_relationship(connection, chart_id, relationship, related_node_id_int)
+        visual_level_int = org_chart_level_for_relationship(connection, chart_id, relationship, related_node_id_int)
     connection.execute("""
         UPDATE account_org_chart_people
         SET manager_node_id = ?,
             relationship_type = ?,
             related_node_id = ?,
+            visual_level = ?,
+            sort_order = COALESCE(?, sort_order),
             last_updated = CURRENT_TIMESTAMP
         WHERE chart_id = ?
           AND id = ?
-    """, (manager_node_id, relationship, related_node_id_int, chart_id, node_id))
-    if relationship == "above":
+    """, (manager_node_id, relationship, related_node_id_int, visual_level_int, sort_order_int, chart_id, node_id))
+    if relationship == "above" and related_node_id_int:
         apply_org_chart_above_relationship(connection, chart_id, node_id, related_node_id_int)
     return {
         "manager_node_id": manager_node_id,
         "relationship_type": relationship,
         "related_node_id": related_node_id_int,
+        "visual_level": visual_level_int,
+        "sort_order": sort_order_int,
     }
+
+
+def org_chart_level_label(level):
+    try:
+        level = int(level or 0)
+    except (TypeError, ValueError):
+        level = 0
+    if level <= -2:
+        return "Executive row"
+    if level == -1:
+        return "Senior row"
+    if level == 1:
+        return "Supporting row"
+    if level >= 2:
+        return "Team row"
+    return "Current row"
+
+
+def org_chart_group_levels(nodes):
+    rows = {}
+    for node in nodes:
+        try:
+            level = int(node.get("visual_level") or 0)
+        except (TypeError, ValueError):
+            level = 0
+        rows.setdefault(level, []).append(node)
+    level_rows = []
+    for level, people in sorted(rows.items(), key=lambda item: item[0]):
+        sort_org_chart_nodes(people)
+        level_rows.append({
+            "level": level,
+            "label": org_chart_level_label(level),
+            "people": people,
+        })
+    return level_rows
+
+
+def org_chart_visible_levels(nodes):
+    levels = {-2, -1, 0, 1, 2}
+    for node in nodes:
+        level = parse_optional_int(node.get("visual_level"))
+        levels.add(level if level is not None else 0)
+    return [{"level": level, "label": org_chart_level_label(level)} for level in sorted(levels)]
 
 
 def org_chart_descendant_ids(connection, chart_id, node_id):
@@ -4803,6 +4888,7 @@ def org_chart_descendant_ids(connection, chart_id, node_id):
 
 def sort_org_chart_nodes(nodes):
     nodes.sort(key=lambda node: (
+        node.get("sort_order") if node.get("sort_order") is not None else 999,
         (node.get("name") or "").casefold(),
         (node.get("title") or "").casefold(),
         node.get("id") or 0,
@@ -4875,6 +4961,8 @@ def org_chart_context(connection, account, chart_id=None):
                 "manager_node_id": row["manager_node_id"],
                 "relationship_type": row["relationship_type"] if "relationship_type" in row.keys() else "with",
                 "related_node_id": row["related_node_id"] if "related_node_id" in row.keys() else None,
+                "visual_level": row["visual_level"] if "visual_level" in row.keys() else 0,
+                "sort_order": row["sort_order"] if "sort_order" in row.keys() else None,
                 "name": person["name"],
                 "title": person["title"],
                 "photo": person["photo"],
@@ -4887,15 +4975,8 @@ def org_chart_context(connection, account, chart_id=None):
             chart_nodes.append(node)
 
         for node in chart_nodes:
-            manager = node_lookup.get(node["manager_node_id"])
-            if manager and manager["id"] != node["id"]:
-                manager["children"].append(node)
-            else:
-                display_group = org_chart_display_group(node, node_lookup)
-                if display_group:
-                    roots_by_group.setdefault(display_group, []).append(node)
-                else:
-                    unmapped.append(node)
+            display_group = org_chart_display_group(node, node_lookup)
+            roots_by_group.setdefault(display_group or "Organisation Chart", []).append(node)
         roots_by_group = dict(sorted(
             roots_by_group.items(),
             key=lambda item: (item[0] or "").casefold(),
@@ -4903,6 +4984,14 @@ def org_chart_context(connection, account, chart_id=None):
         for people in roots_by_group.values():
             sort_org_chart_nodes(people)
         sort_org_chart_nodes(unmapped)
+    roots_by_group_levels = {
+        group_name: {
+            "top_count": len(people),
+            "levels": org_chart_group_levels(people),
+        }
+        for group_name, people in roots_by_group.items()
+    }
+    visible_levels = org_chart_visible_levels(chart_nodes)
 
     used_people = org_chart_existing_people(connection, active_chart["id"]) if active_chart else set()
     available_people = [option for option in person_options if option["value"] not in used_people]
@@ -4913,6 +5002,8 @@ def org_chart_context(connection, account, chart_id=None):
         "available_people": available_people,
         "chart_nodes": chart_nodes,
         "roots_by_group": roots_by_group,
+        "roots_by_group_levels": roots_by_group_levels,
+        "visible_levels": visible_levels,
         "unmapped": unmapped,
     }
 
@@ -5030,6 +5121,8 @@ def save_account_org_chart_layout(account_id, chart_id):
                 continue
             relationship = normalise_org_chart_relationship(action.get("relationship"))
             related_node_id = action.get("related_node_id") or None
+            visual_level = action.get("visual_level")
+            sort_order = action.get("sort_order")
             node_id = action.get("node_id")
             if node_id:
                 try:
@@ -5046,7 +5139,7 @@ def save_account_org_chart_layout(account_id, chart_id):
                 if not node:
                     continue
                 old_values = dict(node)
-                new_values = save_org_chart_node_position(connection, chart_id, node_id, relationship, related_node_id)
+                new_values = save_org_chart_node_position(connection, chart_id, node_id, relationship, related_node_id, visual_level, sort_order)
                 audit_record_update(
                     connection,
                     "account_org_chart_person",
@@ -5057,6 +5150,8 @@ def save_account_org_chart_layout(account_id, chart_id):
                         "manager_node_id": "Reports to",
                         "relationship_type": "Relationship",
                         "related_node_id": "Related person",
+                        "visual_level": "Visual row",
+                        "sort_order": "Row order",
                     }
                 )
                 saved_count += 1
@@ -5068,7 +5163,7 @@ def save_account_org_chart_layout(account_id, chart_id):
             existing_node = org_chart_existing_person_node(connection, chart_id, person_type, contact_id, partner_contact_id)
             if existing_node:
                 old_values = dict(existing_node)
-                new_values = save_org_chart_node_position(connection, chart_id, existing_node["id"], relationship, related_node_id)
+                new_values = save_org_chart_node_position(connection, chart_id, existing_node["id"], relationship, related_node_id, visual_level, sort_order)
                 audit_record_update(
                     connection,
                     "account_org_chart_person",
@@ -5079,12 +5174,22 @@ def save_account_org_chart_layout(account_id, chart_id):
                         "manager_node_id": "Reports to",
                         "relationship_type": "Relationship",
                         "related_node_id": "Related person",
+                        "visual_level": "Visual row",
+                        "sort_order": "Row order",
                     }
                 )
                 saved_count += 1
                 continue
 
-            manager_node_id = org_chart_manager_for_relationship(connection, chart_id, relationship, related_node_id)
+            visual_level_int = parse_optional_int(visual_level)
+            sort_order_int = parse_optional_int(sort_order)
+            if visual_level_int is not None:
+                manager_node_id = None
+                relationship = "with"
+                related_node_id = None
+            else:
+                manager_node_id = org_chart_manager_for_relationship(connection, chart_id, relationship, related_node_id)
+                visual_level_int = org_chart_level_for_relationship(connection, chart_id, relationship, related_node_id)
             cursor = connection.execute("""
                 INSERT INTO account_org_chart_people (
                     chart_id,
@@ -5094,9 +5199,11 @@ def save_account_org_chart_layout(account_id, chart_id):
                     partner_contact_id,
                     manager_node_id,
                     relationship_type,
-                    related_node_id
+                    related_node_id,
+                    visual_level,
+                    sort_order
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 chart_id,
                 account_id,
@@ -5106,6 +5213,8 @@ def save_account_org_chart_layout(account_id, chart_id):
                 manager_node_id,
                 relationship,
                 related_node_id,
+                visual_level_int,
+                sort_order_int or 0,
             ))
             new_node_id = cursor.lastrowid
             if relationship == "above":
@@ -5151,6 +5260,7 @@ def add_account_org_chart_person(account_id, chart_id):
     relationship = normalise_org_chart_relationship(request.form.get("relationship", "with"))
     related_node_id = request.form.get("related_node_id") or None
     manager_node_id = org_chart_manager_for_relationship(connection, chart_id, relationship, related_node_id)
+    visual_level = org_chart_level_for_relationship(connection, chart_id, relationship, related_node_id)
     cursor = connection.execute("""
         INSERT INTO account_org_chart_people (
             chart_id,
@@ -5160,9 +5270,10 @@ def add_account_org_chart_person(account_id, chart_id):
             partner_contact_id,
             manager_node_id,
             relationship_type,
-            related_node_id
+            related_node_id,
+            visual_level
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         chart_id,
         account_id,
@@ -5172,6 +5283,7 @@ def add_account_org_chart_person(account_id, chart_id):
         manager_node_id,
         relationship,
         related_node_id,
+        visual_level,
     ))
     node_id = cursor.lastrowid
     if relationship == "above":
@@ -5217,24 +5329,28 @@ def update_account_org_chart_person(account_id, chart_id, node_id):
                 message="That relationship would create a reporting loop. Choose a different related person."
             ))
         manager_node_id = org_chart_manager_for_relationship(connection, chart_id, relationship, related_node_id)
+        visual_level = org_chart_level_for_relationship(connection, chart_id, relationship, related_node_id)
         new_values = {
             "manager_node_id": manager_node_id,
             "relationship_type": relationship,
             "related_node_id": related_node_id,
+            "visual_level": visual_level,
         }
         labels = {
             "manager_node_id": "Reports to",
             "relationship_type": "Relationship",
             "related_node_id": "Related person",
+            "visual_level": "Visual row",
         }
         connection.execute("""
             UPDATE account_org_chart_people
             SET manager_node_id = ?,
                 relationship_type = ?,
                 related_node_id = ?,
+                visual_level = ?,
                 last_updated = CURRENT_TIMESTAMP
             WHERE id = ?
-        """, (manager_node_id, relationship, related_node_id, node_id))
+        """, (manager_node_id, relationship, related_node_id, visual_level, node_id))
         if relationship == "above":
             apply_org_chart_above_relationship(connection, chart_id, node_id, related_node_id)
         audit_record_update(connection, "account_org_chart_person", node_id, node, new_values, labels)

@@ -4096,6 +4096,27 @@ body {
     gap: 16px;
 }
 
+.org-level-row {
+    display: grid;
+    gap: 10px;
+    padding: 12px 0;
+    border-top: 1px solid #e2e8f0;
+}
+
+.org-level-row:first-of-type {
+    border-top: 0;
+}
+
+.org-level-label {
+    justify-self: start;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 800;
+}
+
 .org-tree-node {
     display: grid;
     justify-items: center;
@@ -4296,7 +4317,8 @@ body {
     font-weight: 700;
 }
 
-.org-drop-zone {
+.org-drop-zone,
+.org-row-drop-zone {
     width: 132px;
     min-height: 26px;
     display: grid;
@@ -4309,6 +4331,32 @@ body {
     font-size: 11px;
     font-weight: 800;
     text-align: center;
+}
+
+.org-row-drop-zone {
+    width: auto;
+    min-width: 154px;
+    min-height: 60px;
+    align-content: center;
+    background: #f8fafc;
+    color: #334155;
+}
+
+.org-row-drop-zone span {
+    display: block;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.org-row-drop-zone-inline {
+    align-self: stretch;
+    min-height: 154px;
+    list-style: none;
+}
+
+.org-row-drop-zone-empty {
+    width: 100%;
 }
 
 .org-drop-zone-with {
@@ -4334,6 +4382,12 @@ body {
     min-height: 74px;
     margin-top: 6px;
     font-size: 13px;
+}
+
+.org-canvas-drop-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(180px, 1fr));
+    gap: 12px;
 }
 
 .org-drop-zone-active {

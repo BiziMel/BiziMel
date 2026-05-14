@@ -3,13 +3,7 @@
 {% block title %}Org Chart | PipeFlow{% endblock %}
 
 {% macro person_tile(node, active_chart, account, chart_nodes) %}
-    <li class="org-tree-node" data-node-id="{{ node.id }}">
-        <div class="org-drop-zone org-drop-zone-above"
-             data-relationship="above"
-             data-related-node-id="{{ node.id }}">
-            Drop above
-        </div>
-
+    <li class="org-tree-node" data-node-id="{{ node.id }}" data-visual-level="{{ node.visual_level or 0 }}">
         <div class="org-person-card org-chart-draggable"
              draggable="true"
              data-drag-type="node"
@@ -25,26 +19,6 @@
                 <span>{{ node.title or "Job title not set" }}</span>
             </a>
             <span class="org-drag-hint">Drag tile</span>
-        </div>
-
-        <div class="org-drop-zone org-drop-zone-with"
-             data-relationship="with"
-             data-related-node-id="{{ node.id }}">
-            Drop with
-        </div>
-
-        {% if node.children %}
-            <ul class="org-tree-children">
-                {% for child in node.children %}
-                    {{ person_tile(child, active_chart, account, chart_nodes) }}
-                {% endfor %}
-            </ul>
-        {% endif %}
-
-        <div class="org-drop-zone org-drop-zone-under"
-             data-relationship="under"
-             data-related-node-id="{{ node.id }}">
-            Drop under
         </div>
 
         <form method="POST"
@@ -82,10 +56,10 @@
     <div class="org-chart-help-strip">
         <strong>How to build it:</strong>
         <span>1. Create a chart.</span>
-        <span>2. Drag a contact tile onto the canvas or another person.</span>
-        <span>3. Drop above, with or under to set hierarchy.</span>
+        <span>2. Drag a contact tile into the row where it belongs.</span>
+        <span>3. People in the same row sit horizontally together.</span>
         <span>4. Save Org Chart Layout to commit the moves.</span>
-        <span>5. People are displayed in hierarchy rows.</span>
+        <span>5. Rows above and below show hierarchy.</span>
     </div>
 
     <form method="POST" action="{{ url_for('create_account_org_chart', account_id=account.id) }}" class="pipeflow-form">
@@ -160,7 +134,7 @@
                 <div class="section-header compact-section-header">
                     <div>
                         <h2>Drag People Into The Chart</h2>
-                        <p>Drag from available people, or drag an existing tile. Drop on the canvas for top-level, or onto a person's above, with or under target.</p>
+                        <p>Drag from available people, or drag an existing tile, into the row where it should sit in the chart.</p>
                     </div>
                 </div>
 
@@ -211,34 +185,69 @@
         <div class="section-header">
             <div>
                 <h2>Chart Canvas</h2>
-                <p>Drop people below to make them top-level in the selected chart, or drop them onto another person.</p>
+        <p>Start anywhere: drag a tile into the row where that person belongs. Same row means peers, rows above and below show hierarchy.</p>
             </div>
         </div>
-        <div class="org-drop-zone org-drop-zone-canvas"
-             data-relationship="with"
-             data-related-node-id="">
-            Drop here as top-level
+        <div class="org-canvas-drop-grid">
+            {% for level in visible_levels %}
+                <div class="org-row-drop-zone"
+                     data-visual-level="{{ level.level }}">
+                    {{ level.label }}
+                    <span>Drop into this row</span>
+                </div>
+            {% endfor %}
         </div>
     </section>
 
-    {% if roots_by_group %}
+    {% if roots_by_group_levels %}
         <div class="org-chart-grid">
-            {% for group_name, people in roots_by_group.items() %}
+            {% for group_name, group in roots_by_group_levels.items() %}
                 <section class="form-card org-chart-group">
                     <div class="section-header">
                         <div>
                             <h2>{{ group_name }}</h2>
-                            <p>{{ people|length }} top-level mapped contact{% if people|length != 1 %}s{% endif %}</p>
+                            <p>{{ group.top_count }} mapped contact{% if group.top_count != 1 %}s{% endif %} across hierarchy rows</p>
                         </div>
                     </div>
-                    <ul class="org-tree">
-                        {% for person in people %}
-                            {{ person_tile(person, active_chart, account, chart_nodes) }}
-                        {% endfor %}
-                    </ul>
+                    {% for level_row in group.levels %}
+                        <div class="org-level-row"
+                             data-visual-level="{{ level_row.level }}">
+                            <div class="org-level-label">{{ level_row.label }}</div>
+                            <ul class="org-tree">
+                                {% for person in level_row.people %}
+                                    {{ person_tile(person, active_chart, account, chart_nodes) }}
+                                {% endfor %}
+                                <li class="org-row-drop-zone org-row-drop-zone-inline"
+                                    data-visual-level="{{ level_row.level }}">
+                                    Drop here
+                                </li>
+                            </ul>
+                        </div>
+                    {% endfor %}
                 </section>
             {% endfor %}
         </div>
+    {% endif %}
+
+    {% if not roots_by_group_levels %}
+        <section class="form-card org-chart-group">
+            <div class="section-header">
+                <div>
+                    <h2>Empty Chart Rows</h2>
+                    <p>Drag the first person into any row to start building the chart.</p>
+                </div>
+            </div>
+            {% for level in visible_levels %}
+                <div class="org-level-row"
+                     data-visual-level="{{ level.level }}">
+                    <div class="org-level-label">{{ level.label }}</div>
+                    <div class="org-row-drop-zone org-row-drop-zone-empty"
+                         data-visual-level="{{ level.level }}">
+                        Drop into this row
+                    </div>
+                </div>
+            {% endfor %}
+        </section>
     {% endif %}
 
     {% if unmapped %}
@@ -257,7 +266,7 @@
         </section>
     {% endif %}
 
-    {% if not roots_by_group and not unmapped %}
+    {% if not roots_by_group_levels and not unmapped %}
         <div class="empty-state">
             <h3>No people added yet</h3>
             <p>Add contacts to this chart to start mapping the account organisation.</p>
@@ -280,16 +289,6 @@ document.addEventListener("DOMContentLoaded", function () {
     const pendingSummary = document.getElementById("orgChartPendingSummary");
     const pendingList = document.getElementById("orgChartPendingList");
 
-    function relationshipLabel(value) {
-        if (value === "above") {
-            return "above";
-        }
-        if (value === "under") {
-            return "under";
-        }
-        return "with";
-    }
-
     function updatePendingDisplay() {
         const moves = Array.from(stagedMoves.values());
         if (actionsInput) {
@@ -310,8 +309,7 @@ document.addEventListener("DOMContentLoaded", function () {
         moves.forEach(function (move) {
             const item = document.createElement("div");
             item.className = "org-pending-item";
-            const target = move.related_name ? ` ${relationshipLabel(move.relationship)} ${move.related_name}` : " as top-level";
-            item.textContent = `${move.name}${target}`;
+            item.textContent = `${move.name} to ${move.row_label}`;
             pendingList.appendChild(item);
         });
     }
@@ -333,7 +331,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     });
 
-    document.querySelectorAll(".org-drop-zone").forEach(function (zone) {
+    document.querySelectorAll(".org-row-drop-zone").forEach(function (zone) {
         zone.addEventListener("dragover", function (event) {
             event.preventDefault();
             zone.classList.add("org-drop-zone-active");
@@ -355,18 +353,15 @@ document.addEventListener("DOMContentLoaded", function () {
             if (!item) {
                 return;
             }
-            const relationship = zone.dataset.relationship || "with";
-            const relatedNodeId = zone.dataset.relatedNodeId || "";
-            if (item.type === "node" && item.node_id && item.node_id === relatedNodeId) {
-                return;
-            }
-            const relatedCard = relatedNodeId
-                ? document.querySelector(`[data-node-id="${relatedNodeId}"] .org-person-card`)
-                : null;
+            const visualLevel = zone.dataset.visualLevel || "0";
+            const row = zone.closest(".org-level-row");
+            const rowTiles = row ? row.querySelectorAll(".org-tree-node").length : 0;
             const move = {
-                relationship: relationship,
-                related_node_id: relatedNodeId,
-                related_name: relatedCard ? relatedCard.dataset.personName : "",
+                relationship: "with",
+                related_node_id: "",
+                visual_level: visualLevel,
+                sort_order: rowTiles + stagedMoves.size + 1,
+                row_label: zone.textContent.trim().replace(/\s+/g, " "),
                 name: item.name
             };
             let key;

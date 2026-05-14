@@ -287,6 +287,7 @@ def initialise_database(force=False):
             manager_node_id INTEGER,
             relationship_type TEXT DEFAULT 'with',
             related_node_id INTEGER,
+            visual_level INTEGER DEFAULT 0,
             sort_order INTEGER DEFAULT 0,
             date_created TEXT DEFAULT CURRENT_TIMESTAMP,
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -374,6 +375,7 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "account_org_chart_people", "manager_node_id", "INTEGER")
     add_column_if_missing(cursor, "account_org_chart_people", "relationship_type", "TEXT DEFAULT 'with'")
     add_column_if_missing(cursor, "account_org_chart_people", "related_node_id", "INTEGER")
+    add_column_if_missing(cursor, "account_org_chart_people", "visual_level", "INTEGER DEFAULT 0")
     add_column_if_missing(cursor, "account_org_chart_people", "sort_order", "INTEGER DEFAULT 0")
     add_column_if_missing(cursor, "account_org_chart_people", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "account_org_chart_people", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
