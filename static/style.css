@@ -4078,7 +4078,7 @@ body {
 }
 
 .org-chart-grid {
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    grid-template-columns: 1fr;
 }
 
 .org-tree,
@@ -4089,13 +4089,17 @@ body {
 }
 
 .org-tree {
-    display: grid;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: flex-start;
     gap: 16px;
 }
 
 .org-tree-node {
     display: grid;
     justify-items: center;
+    align-content: start;
     gap: 12px;
 }
 
@@ -4103,13 +4107,15 @@ body {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
+    align-items: flex-start;
     gap: 14px;
+    width: 100%;
     padding-top: 14px;
     border-top: 1px solid #dbe3ef;
 }
 
 .org-tree-unmapped {
-    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+    justify-content: flex-start;
 }
 
 .org-chart-entry-card {

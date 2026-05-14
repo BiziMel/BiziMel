@@ -39,7 +39,7 @@ RELEASE_NOTES = [
             "Enhanced outreach outcomes with Webinar Attended and Consensus Viewed.",
             "Enhanced PG Progress so partner activity is labelled clearly against the associated account.",
             "Enhanced PG Progress so the discovery contact cell is limited to company, business/org, department, contact name and job title.",
-            "Enhanced account org charts with chart-level create, edit and delete plus Works under, Works with and Works above placement ordered alphabetically by organisation.",
+            "Enhanced account org charts with chart-level create, edit and delete plus Works under, Works with and Works above placement shown as clear hierarchy rows.",
             "Enhanced manual Outreach scheduling so non-working dates and times warn on save and allow the user to confirm or return to the field.",
         ],
         "fixed": [
