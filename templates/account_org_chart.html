@@ -24,10 +24,8 @@
                         <div class="form-group">
                             <label for="relationship_{{ node.id }}">Position</label>
                             <select id="relationship_{{ node.id }}" name="relationship">
-                                <option value="top">Top level</option>
                                 <option value="under">Works under</option>
-                                <option value="beside">Works beside</option>
-                                <option value="above">Works above</option>
+                                <option value="with" selected>Works with</option>
                             </select>
                         </div>
                         <div class="form-group">
@@ -40,10 +38,6 @@
                                     {% endif %}
                                 {% endfor %}
                             </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="sort_order_{{ node.id }}">Sort Order</label>
-                            <input type="number" id="sort_order_{{ node.id }}" name="sort_order" value="0">
                         </div>
                     </div>
                     <div class="button-group">
@@ -88,16 +82,17 @@
 <section class="form-card">
     <div class="section-header">
         <div>
-            <h2>Org Chart Workspace</h2>
-            <p>Create a chart, then add customer or partner contacts and define who sits above, beside or under another person.</p>
+        <h2>Org Chart Workspace</h2>
+        <p>Create a chart, then add customer or partner contacts and define who works under or works with another person.</p>
         </div>
     </div>
     <div class="org-chart-help-strip">
         <strong>How to build it:</strong>
         <span>1. Create a chart.</span>
         <span>2. Add a person.</span>
-        <span>3. Choose Top level, Works under, Works beside or Works above.</span>
-        <span>4. Save each person or delete the full chart if you want to restart.</span>
+        <span>3. Choose Works under or Works with.</span>
+        <span>4. Leave Related Person blank for a top-level person.</span>
+        <span>5. People are ordered alphabetically inside their mapped organisation.</span>
     </div>
 
     <form method="POST" action="{{ url_for('create_account_org_chart', account_id=account.id) }}" class="pipeflow-form">
@@ -160,7 +155,7 @@
                 <div class="section-header compact-section-header">
                     <div>
                         <h2>Add Person</h2>
-                        <p>Add a customer or partner contact and choose whether they are top-level, under, beside or above someone else.</p>
+                        <p>Works under places the person below the selected profile. Works with places them in the same team as the selected profile.</p>
                     </div>
                 </div>
 
@@ -181,10 +176,8 @@
                             <div class="form-group">
                                 <label for="relationship">Position</label>
                                 <select id="relationship" name="relationship">
-                                    <option value="top">Top level</option>
                                     <option value="under">Works under</option>
-                                    <option value="beside">Works beside</option>
-                                    <option value="above">Works above</option>
+                                    <option value="with" selected>Works with</option>
                                 </select>
                             </div>
                             <div class="form-group">
@@ -195,10 +188,6 @@
                                         <option value="{{ node.id }}">{{ node.name }}{% if node.title %} - {{ node.title }}{% endif %}</option>
                                     {% endfor %}
                                 </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="sort_order">Sort Order</label>
-                                <input type="number" id="sort_order" name="sort_order" value="0">
                             </div>
                             <div class="form-group outreach-filter-actions">
                                 <label>&nbsp;</label>
