@@ -4130,6 +4130,19 @@ body {
     font-size: 13px;
 }
 
+.org-chart-add-panel {
+    margin: 18px 0;
+    padding: 14px;
+    border: 1px solid #cfe6cc;
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.compact-empty-state {
+    margin-top: 10px;
+    padding: 12px;
+}
+
 .org-person-view {
     display: grid;
     justify-items: center;

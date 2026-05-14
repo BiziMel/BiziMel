@@ -156,6 +156,64 @@
                 </div>
             </form>
 
+            <div class="org-chart-add-panel">
+                <div class="section-header compact-section-header">
+                    <div>
+                        <h2>Add Person</h2>
+                        <p>Add a customer or partner contact and choose whether they are top-level, under, beside or above someone else.</p>
+                    </div>
+                </div>
+
+                {% if available_people %}
+                    <form method="POST"
+                          action="{{ url_for('add_account_org_chart_person', account_id=account.id, chart_id=active_chart.id) }}"
+                          class="pipeflow-form">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="person_ref">Person</label>
+                                <select id="person_ref" name="person_ref" required>
+                                    <option value="">Select person</option>
+                                    {% for person in available_people %}
+                                        <option value="{{ person.value }}">{{ person.name }}{% if person.title %} - {{ person.title }}{% endif %}{% if person.source %} ({{ person.source }}){% endif %}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="relationship">Position</label>
+                                <select id="relationship" name="relationship">
+                                    <option value="top">Top level</option>
+                                    <option value="under">Works under</option>
+                                    <option value="beside">Works beside</option>
+                                    <option value="above">Works above</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="related_node_id">Related Person</label>
+                                <select id="related_node_id" name="related_node_id">
+                                    <option value="">No related person</option>
+                                    {% for node in chart_nodes %}
+                                        <option value="{{ node.id }}">{{ node.name }}{% if node.title %} - {{ node.title }}{% endif %}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="sort_order">Sort Order</label>
+                                <input type="number" id="sort_order" name="sort_order" value="0">
+                            </div>
+                            <div class="form-group outreach-filter-actions">
+                                <label>&nbsp;</label>
+                                <button type="submit" class="btn btn-primary">Add to Chart</button>
+                            </div>
+                        </div>
+                    </form>
+                {% else %}
+                    <div class="empty-state compact-empty-state">
+                        <h3>No available people to add</h3>
+                        <p>Add contacts to this account, add partner contacts linked to this account, or remove someone from this chart so they can be added again.</p>
+                    </div>
+                {% endif %}
+            </div>
+
             <form method="POST"
                   action="{{ url_for('delete_account_org_chart', account_id=account.id, chart_id=active_chart.id) }}"
                   onsubmit="return confirm('Delete this full org chart? Contacts will not be deleted.');">
@@ -166,57 +224,6 @@
 {% endif %}
 
 {% if active_chart %}
-    <section class="form-card">
-        <div class="section-header">
-            <div>
-                <h2>Add Person</h2>
-                <p>Add customer or partner contacts to the selected chart and position them in the reporting structure.</p>
-            </div>
-        </div>
-
-        <form method="POST"
-              action="{{ url_for('add_account_org_chart_person', account_id=account.id, chart_id=active_chart.id) }}"
-              class="pipeflow-form">
-            <div class="form-grid">
-                <div class="form-group">
-                    <label for="person_ref">Person</label>
-                    <select id="person_ref" name="person_ref" required>
-                        <option value="">Select person</option>
-                        {% for person in available_people %}
-                            <option value="{{ person.value }}">{{ person.name }}{% if person.title %} - {{ person.title }}{% endif %}{% if person.source %} ({{ person.source }}){% endif %}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="relationship">Position</label>
-                    <select id="relationship" name="relationship">
-                        <option value="top">Top level</option>
-                        <option value="under">Works under</option>
-                        <option value="beside">Works beside</option>
-                        <option value="above">Works above</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="related_node_id">Related Person</label>
-                    <select id="related_node_id" name="related_node_id">
-                        <option value="">No related person</option>
-                        {% for node in chart_nodes %}
-                            <option value="{{ node.id }}">{{ node.name }}{% if node.title %} - {{ node.title }}{% endif %}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="sort_order">Sort Order</label>
-                    <input type="number" id="sort_order" name="sort_order" value="0">
-                </div>
-                <div class="form-group outreach-filter-actions">
-                    <label>&nbsp;</label>
-                    <button type="submit" class="btn btn-primary">Add to Chart</button>
-                </div>
-            </div>
-        </form>
-    </section>
-
     {% if roots_by_group %}
         <div class="org-chart-grid">
             {% for group_name, people in roots_by_group.items() %}
