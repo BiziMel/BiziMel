@@ -40,7 +40,7 @@ RELEASE_NOTES = [
             "Enhanced outreach outcomes with Webinar Attended and Consensus Viewed.",
             "Enhanced PG Progress so partner activity is labelled clearly against the associated account.",
             "Enhanced PG Progress so the discovery contact cell is limited to company, business/org, department, contact name and job title.",
-            "Enhanced account org charts with drag-and-drop row placement so users can arrange people horizontally as peers or vertically by hierarchy without relationship dropdowns.",
+            "Enhanced account org charts with a single drag-and-drop canvas and connector lines so reporting relationships are visible between managers and direct reports.",
             "Enhanced manual Outreach scheduling so non-working dates and times warn on save and allow the user to confirm or return to the field.",
         ],
         "fixed": [
@@ -4821,52 +4821,6 @@ def save_org_chart_node_position(connection, chart_id, node_id, relationship, re
     }
 
 
-def org_chart_level_label(level):
-    try:
-        level = int(level or 0)
-    except (TypeError, ValueError):
-        level = 0
-    if level <= -2:
-        return "Executive row"
-    if level == -1:
-        return "Senior row"
-    if level == 1:
-        return "Supporting row"
-    if level >= 2:
-        return "Team row"
-    return "Current row"
-
-
-def org_chart_group_levels(nodes, visible_levels=None):
-    rows = {}
-    for node in nodes:
-        try:
-            level = int(node.get("visual_level") or 0)
-        except (TypeError, ValueError):
-            level = 0
-        rows.setdefault(level, []).append(node)
-    if visible_levels is not None:
-        for level in visible_levels:
-            rows.setdefault(level["level"], [])
-    level_rows = []
-    for level, people in sorted(rows.items(), key=lambda item: item[0]):
-        sort_org_chart_nodes(people)
-        level_rows.append({
-            "level": level,
-            "label": org_chart_level_label(level),
-            "people": people,
-        })
-    return level_rows
-
-
-def org_chart_visible_levels(nodes):
-    levels = {-2, -1, 0, 1, 2}
-    for node in nodes:
-        level = parse_optional_int(node.get("visual_level"))
-        levels.add(level if level is not None else 0)
-    return [{"level": level, "label": org_chart_level_label(level)} for level in sorted(levels)]
-
-
 def org_chart_descendant_ids(connection, chart_id, node_id):
     rows = connection.execute("""
         SELECT id, manager_node_id
@@ -4944,6 +4898,7 @@ def org_chart_context(connection, account, chart_id=None):
     person_options = org_chart_person_options(connection, account)
     person_lookup = {option["value"]: option for option in person_options}
     chart_nodes = []
+    chart_roots = []
     roots_by_group = {}
     unmapped = []
     if active_chart:
@@ -4982,6 +4937,7 @@ def org_chart_context(connection, account, chart_id=None):
             if manager and manager["id"] != node["id"]:
                 manager["children"].append(node)
             else:
+                chart_roots.append(node)
                 display_group = org_chart_display_group(node, node_lookup)
                 roots_by_group.setdefault(display_group or "Organisation Chart", []).append(node)
         roots_by_group = dict(sorted(
@@ -4990,16 +4946,8 @@ def org_chart_context(connection, account, chart_id=None):
         ))
         for people in roots_by_group.values():
             sort_org_chart_nodes(people)
+        sort_org_chart_nodes(chart_roots)
         sort_org_chart_nodes(unmapped)
-    visible_levels = org_chart_visible_levels(chart_nodes)
-    roots_by_group_levels = {
-        group_name: {
-            "top_count": len(people),
-            "levels": org_chart_group_levels(people, visible_levels),
-        }
-        for group_name, people in roots_by_group.items()
-    }
-
     used_people = org_chart_existing_people(connection, active_chart["id"]) if active_chart else set()
     available_people = [option for option in person_options if option["value"] not in used_people]
     return {
@@ -5008,9 +4956,8 @@ def org_chart_context(connection, account, chart_id=None):
         "person_options": person_options,
         "available_people": available_people,
         "chart_nodes": chart_nodes,
+        "chart_roots": chart_roots,
         "roots_by_group": roots_by_group,
-        "roots_by_group_levels": roots_by_group_levels,
-        "visible_levels": visible_levels,
         "unmapped": unmapped,
     }
 
