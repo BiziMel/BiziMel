@@ -4720,6 +4720,28 @@ def apply_org_chart_above_relationship(connection, chart_id, node_id, related_no
     """, (node_id, chart_id, related_node_id))
 
 
+def org_chart_descendant_ids(connection, chart_id, node_id):
+    rows = connection.execute("""
+        SELECT id, manager_node_id
+        FROM account_org_chart_people
+        WHERE chart_id = ?
+    """, (chart_id,)).fetchall()
+    children_by_manager = {}
+    for row in rows:
+        manager_id = row["manager_node_id"]
+        if manager_id is not None:
+            children_by_manager.setdefault(manager_id, []).append(row["id"])
+    descendants = set()
+    stack = list(children_by_manager.get(node_id, []))
+    while stack:
+        child_id = stack.pop()
+        if child_id in descendants:
+            continue
+        descendants.add(child_id)
+        stack.extend(children_by_manager.get(child_id, []))
+    return descendants
+
+
 def org_chart_context(connection, account, chart_id=None):
     try:
         chart_id = int(chart_id) if chart_id else None
@@ -4952,9 +4974,21 @@ def update_account_org_chart_person(account_id, chart_id, node_id):
     if node:
         relationship = request.form.get("relationship", "top")
         related_node_id = request.form.get("related_node_id") or None
-        if str(related_node_id) == str(node_id):
+        try:
+            related_node_id_int = int(related_node_id) if related_node_id else None
+        except (TypeError, ValueError):
+            related_node_id_int = None
+        if related_node_id_int == node_id:
             related_node_id = None
             relationship = "top"
+        elif related_node_id_int in org_chart_descendant_ids(connection, chart_id, node_id):
+            connection.close()
+            return redirect(url_for(
+                "account_org_chart",
+                account_id=account_id,
+                chart_id=chart_id,
+                message="That relationship would create a reporting loop. Choose a different related person."
+            ))
         manager_node_id = org_chart_manager_for_relationship(connection, chart_id, relationship, related_node_id)
         new_values = {
             "manager_node_id": manager_node_id,
