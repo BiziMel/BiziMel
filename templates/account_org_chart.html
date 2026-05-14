@@ -24,8 +24,9 @@
                         <div class="form-group">
                             <label for="relationship_{{ node.id }}">Position</label>
                             <select id="relationship_{{ node.id }}" name="relationship">
-                                <option value="under">Works under</option>
-                                <option value="with" selected>Works with</option>
+                                <option value="under" {% if node.relationship_type == "under" %}selected{% endif %}>Works under</option>
+                                <option value="with" {% if node.relationship_type == "with" %}selected{% endif %}>Works with</option>
+                                <option value="above" {% if node.relationship_type == "above" %}selected{% endif %}>Works above</option>
                             </select>
                         </div>
                         <div class="form-group">
@@ -34,7 +35,9 @@
                                 <option value="">No related person</option>
                                 {% for related in chart_nodes %}
                                     {% if related.id != node.id %}
-                                        <option value="{{ related.id }}">{{ related.name }}{% if related.title %} - {{ related.title }}{% endif %}</option>
+                                        <option value="{{ related.id }}" {% if node.related_node_id == related.id %}selected{% endif %}>
+                                            {{ related.name }}{% if related.title %} - {{ related.title }}{% endif %}
+                                        </option>
                                     {% endif %}
                                 {% endfor %}
                             </select>
@@ -83,14 +86,14 @@
     <div class="section-header">
         <div>
         <h2>Org Chart Workspace</h2>
-        <p>Create a chart, then add customer or partner contacts and define who works under or works with another person.</p>
+        <p>Create a chart, then add customer or partner contacts and define who works under, with or above another person.</p>
         </div>
     </div>
     <div class="org-chart-help-strip">
         <strong>How to build it:</strong>
         <span>1. Create a chart.</span>
         <span>2. Add a person.</span>
-        <span>3. Choose Works under or Works with.</span>
+        <span>3. Choose Works under, Works with or Works above.</span>
         <span>4. Leave Related Person blank for a top-level person.</span>
         <span>5. People are ordered alphabetically inside their mapped organisation.</span>
     </div>
@@ -167,7 +170,7 @@
                 <div class="section-header compact-section-header">
                     <div>
                         <h2>Add Person</h2>
-                        <p>Works under places the person below the selected profile. Works with places them in the same team as the selected profile.</p>
+                        <p>Works under places the person below the selected profile. Works with places them in the same team. Works above places a more senior person above the selected profile.</p>
                     </div>
                 </div>
 
@@ -190,6 +193,7 @@
                                 <select id="relationship" name="relationship">
                                     <option value="under">Works under</option>
                                     <option value="with" selected>Works with</option>
+                                    <option value="above">Works above</option>
                                 </select>
                             </div>
                             <div class="form-group">
