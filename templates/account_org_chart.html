@@ -134,7 +134,7 @@
         {% if active_chart %}
             <form method="POST"
                   action="{{ url_for('update_account_org_chart', account_id=account.id, chart_id=active_chart.id) }}"
-                  class="pipeflow-form">
+                  class="pipeflow-form org-chart-management-form">
                 <div class="form-grid">
                     <div class="form-group">
                         <label for="active_chart_name">Chart Name</label>
@@ -150,6 +150,18 @@
                     </div>
                 </div>
             </form>
+
+            <details class="org-chart-danger-zone">
+                <summary>Delete this full org chart</summary>
+                <div class="danger-zone-content">
+                    <p>Delete only when you want to remove the whole chart. Contacts and partner contacts will remain in PipeFlow.</p>
+                    <form method="POST"
+                          action="{{ url_for('delete_account_org_chart', account_id=account.id, chart_id=active_chart.id) }}"
+                          onsubmit="return confirm('Delete this full org chart? Contacts will not be deleted.');">
+                        <button type="submit" class="btn btn-danger">Delete Full Chart</button>
+                    </form>
+                </div>
+            </details>
 
             <div class="org-chart-add-panel">
                 <div class="section-header compact-section-header">
@@ -202,12 +214,6 @@
                     </div>
                 {% endif %}
             </div>
-
-            <form method="POST"
-                  action="{{ url_for('delete_account_org_chart', account_id=account.id, chart_id=active_chart.id) }}"
-                  onsubmit="return confirm('Delete this full org chart? Contacts will not be deleted.');">
-                <button type="submit" class="btn btn-danger">Delete Full Chart</button>
-            </form>
         {% endif %}
     </section>
 {% endif %}

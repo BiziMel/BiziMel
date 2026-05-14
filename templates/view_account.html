@@ -17,10 +17,6 @@
             Edit Account
         </a>
 
-        <a href="{{ url_for('account_org_chart', account_id=account.id) }}" class="btn btn-primary">
-            Build Org Chart
-        </a>
-
         {% if current_user and current_user["role"] == "admin" %}
             <form method="POST"
                   action="{{ url_for('delete_account', account_id=account.id) }}"
@@ -70,7 +66,7 @@
     <div class="section-header">
         <div>
             <h2>Contact Org Chart</h2>
-            <p>Build and manage customer and partner organisation charts for this account. Use it to map who works above, beside or under another person.</p>
+            <p>Build and manage customer and partner organisation charts for this account. Use it to map who works under or works with another person.</p>
         </div>
         <a href="{{ url_for('account_org_chart', account_id=account.id) }}" class="btn btn-primary">
             Build / Manage Org Chart

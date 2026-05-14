@@ -7,9 +7,6 @@
         <p>Update the account record, then save or cancel safely.</p>
     </div>
     <div class="button-group">
-        <a href="{{ url_for('account_org_chart', account_id=account['id']) }}" class="btn btn-primary">
-            Build / Manage Org Chart
-        </a>
         <a href="{{ url_for('view_account', account_id=account['id']) }}" class="btn btn-secondary">
             View Account
         </a>
@@ -20,7 +17,7 @@
     <div class="section-header">
         <div>
             <h2>Contact Org Chart</h2>
-            <p>Open the org chart workspace to map customer and partner contacts above, beside or under each other.</p>
+            <p>Open the org chart workspace to map customer and partner contacts by who works under or works with another person.</p>
         </div>
         <a href="{{ url_for('account_org_chart', account_id=account['id']) }}" class="btn btn-primary">
             Build / Manage Org Chart

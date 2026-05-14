@@ -4138,6 +4138,39 @@ body {
     background: #f8fafc;
 }
 
+.org-chart-management-form {
+    margin-bottom: 14px;
+}
+
+.org-chart-danger-zone {
+    width: fit-content;
+    margin: 10px 0 22px;
+    padding: 8px 10px;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    background: #fff7f7;
+}
+
+.org-chart-danger-zone summary {
+    cursor: pointer;
+    color: #991b1b;
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.danger-zone-content {
+    display: grid;
+    gap: 10px;
+    max-width: 460px;
+    margin-top: 10px;
+}
+
+.danger-zone-content p {
+    margin: 0;
+    color: #7f1d1d;
+    font-size: 13px;
+}
+
 .compact-empty-state {
     margin-top: 10px;
     padding: 12px;
