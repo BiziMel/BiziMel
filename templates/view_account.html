@@ -18,7 +18,7 @@
         </a>
 
         <a href="{{ url_for('account_org_chart', account_id=account.id) }}" class="btn btn-primary">
-            Org Chart
+            Build Org Chart
         </a>
 
         {% if current_user and current_user["role"] == "admin" %}
@@ -64,6 +64,19 @@
         </p>
     </div>
 
+</div>
+
+<div class="form-card org-chart-entry-card">
+    <div class="section-header">
+        <div>
+            <h2>Contact Org Chart</h2>
+            <p>Build and manage customer and partner organisation charts for this account. Use it to map who works above, beside or under another person.</p>
+        </div>
+        <a href="{{ url_for('account_org_chart', account_id=account.id) }}" class="btn btn-primary">
+            Build / Manage Org Chart
+        </a>
+    </div>
+    <p class="field-help">Add contacts or partner contacts first, then open the org chart to place them into the account structure.</p>
 </div>
 
 <div class="form-card">

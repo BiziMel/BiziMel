@@ -92,6 +92,13 @@
             <p>Create a chart, then add customer or partner contacts and define who sits above, beside or under another person.</p>
         </div>
     </div>
+    <div class="org-chart-help-strip">
+        <strong>How to build it:</strong>
+        <span>1. Create a chart.</span>
+        <span>2. Add a person.</span>
+        <span>3. Choose Top level, Works under, Works beside or Works above.</span>
+        <span>4. Save each person or delete the full chart if you want to restart.</span>
+    </div>
 
     <form method="POST" action="{{ url_for('create_account_org_chart', account_id=account.id) }}" class="pipeflow-form">
         <div class="form-grid">
