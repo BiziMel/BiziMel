@@ -265,6 +265,34 @@ def initialise_database(force=False):
     """)
 
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS account_org_charts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            chart_name TEXT NOT NULL,
+            notes TEXT,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(account_id) REFERENCES accounts(id)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS account_org_chart_people (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chart_id INTEGER NOT NULL,
+            account_id INTEGER NOT NULL,
+            person_type TEXT NOT NULL,
+            contact_id INTEGER,
+            partner_contact_id INTEGER,
+            manager_node_id INTEGER,
+            sort_order INTEGER DEFAULT 0,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(chart_id) REFERENCES account_org_charts(id)
+        )
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS timeline_entries (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             related_type TEXT NOT NULL,
@@ -327,6 +355,24 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "account_custom_values", "field_value", "TEXT")
     add_column_if_missing(cursor, "account_custom_values", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "account_custom_values", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
+
+    # Safe migrations for account org charts
+    add_column_if_missing(cursor, "account_org_charts", "team_id", "INTEGER DEFAULT 1")
+    add_column_if_missing(cursor, "account_org_charts", "account_id", "INTEGER")
+    add_column_if_missing(cursor, "account_org_charts", "chart_name", "TEXT")
+    add_column_if_missing(cursor, "account_org_charts", "notes", "TEXT")
+    add_column_if_missing(cursor, "account_org_charts", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "account_org_charts", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "account_org_chart_people", "team_id", "INTEGER DEFAULT 1")
+    add_column_if_missing(cursor, "account_org_chart_people", "chart_id", "INTEGER")
+    add_column_if_missing(cursor, "account_org_chart_people", "account_id", "INTEGER")
+    add_column_if_missing(cursor, "account_org_chart_people", "person_type", "TEXT")
+    add_column_if_missing(cursor, "account_org_chart_people", "contact_id", "INTEGER")
+    add_column_if_missing(cursor, "account_org_chart_people", "partner_contact_id", "INTEGER")
+    add_column_if_missing(cursor, "account_org_chart_people", "manager_node_id", "INTEGER")
+    add_column_if_missing(cursor, "account_org_chart_people", "sort_order", "INTEGER DEFAULT 0")
+    add_column_if_missing(cursor, "account_org_chart_people", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "account_org_chart_people", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
 
     # Safe migrations for accounts
     add_column_if_missing(cursor, "accounts", "team_id", "INTEGER DEFAULT 1")
@@ -540,6 +586,9 @@ def initialise_database(force=False):
         ("idx_partner_contacts_partner", "partner_contacts", ["partner_id"]),
         ("idx_timeline_related", "timeline_entries", ["related_type", "related_id"]),
         ("idx_account_custom_values_account", "account_custom_values", ["account_id"]),
+        ("idx_account_org_charts_account", "account_org_charts", ["account_id"]),
+        ("idx_account_org_chart_people_chart", "account_org_chart_people", ["chart_id"]),
+        ("idx_account_org_chart_people_account", "account_org_chart_people", ["account_id"]),
         ("idx_audit_entity", "audit_entries", ["entity_type", "entity_id"]),
         ("idx_non_working_blocks_dates", "non_working_blocks", ["start_date", "end_date"]),
     ]

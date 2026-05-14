@@ -179,7 +179,14 @@
                                     <td>{{ contact.name }}</td>
                                     <td>{{ contact.job_title or "No job title" }}</td>
                                     <td>{{ contact.account_name or "No account" }}</td>
-                                    <td><a href="{{ url_for('view_contact', contact_id=contact.id) }}" target="_blank" class="btn btn-secondary btn-small">Open</a></td>
+                                    <td>
+                                        <a href="{{ url_for('view_contact', contact_id=contact.id) }}"
+                                           target="_blank"
+                                           class="btn btn-secondary btn-small contact-open-button campaign-contact-open-button"
+                                           {% if contact.id|string not in selected_contact_ids %}hidden{% endif %}>
+                                            Open
+                                        </a>
+                                    </td>
                                 </tr>
                             {% endfor %}
                         </tbody>
@@ -261,6 +268,7 @@
         const selectedAccountId = accountInput.value;
         contactOptions.forEach((option) => {
             const checkbox = option.querySelector("input[type='checkbox']");
+            const openButton = option.querySelector(".campaign-contact-open-button");
             const belongsToSelectedAccount = checkbox && checkbox.dataset.accountId === selectedAccountId;
             option.hidden = !belongsToSelectedAccount;
             option.classList.toggle("campaign-contact-available", belongsToSelectedAccount);
@@ -270,6 +278,9 @@
                 if (checkbox.disabled) {
                     checkbox.checked = false;
                 }
+            }
+            if (openButton) {
+                openButton.hidden = !(belongsToSelectedAccount && checkbox && checkbox.checked);
             }
         });
         if (salesPlayDatalist) {
@@ -286,6 +297,12 @@
 
     if (accountInput) {
         accountInput.addEventListener("change", filterContactsForAccount);
+        contactOptions.forEach((option) => {
+            const checkbox = option.querySelector("input[type='checkbox']");
+            if (checkbox) {
+                checkbox.addEventListener("change", filterContactsForAccount);
+            }
+        });
         filterContactsForAccount();
     }
 </script>

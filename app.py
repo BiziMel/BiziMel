@@ -29,7 +29,7 @@ RELEASE_NOTES = [
         "new": [
             "Added partner activity into PG Progress as a separate partner row when activity has occurred against an account.",
             "Added admin contact archiving for inactive contacts by date range from Admin with CSV export support from reports.",
-            "Added account contact org charts so customer and partner contacts can be viewed by business organisation or partner group, with unmapped contacts listed separately.",
+            "Added editable account contact org charts so customer and partner contacts can be mapped by business organisation, department and reporting relationship.",
         ],
         "enhanced": [
             "Enhanced Outreach so account partners are clearly identified in the activity selection and only appear when linked to the selected account.",
@@ -38,6 +38,8 @@ RELEASE_NOTES = [
             "Enhanced outreach activity values so White Paper and Webinar also includes Consensus.",
             "Enhanced outreach outcomes with Webinar Attended and Consensus Viewed.",
             "Enhanced PG Progress so partner activity is labelled clearly against the associated account.",
+            "Enhanced PG Progress so the discovery contact cell is limited to company, business/org, department, contact name and job title.",
+            "Enhanced account org charts with chart-level create, edit and delete plus person-level add, edit, delete and above, beside or under relationship placement.",
             "Enhanced manual Outreach scheduling so non-working dates and times warn on save and allow the user to confirm or return to the field.",
         ],
         "fixed": [
@@ -3151,7 +3153,13 @@ def pg_dashboard_context(connection):
         account_id = account["id"]
         pg_target_number = account["pg_bible_order"] or ""
         contacts = connection.execute("""
-            SELECT contacts.id, contacts.name, contacts.job_title, contacts.org_dept, accounts.business_unit
+            SELECT
+                contacts.id,
+                contacts.name,
+                contacts.job_title,
+                contacts.org_dept,
+                accounts.account_name,
+                accounts.business_unit
             FROM contacts
             LEFT JOIN accounts ON accounts.id = contacts.account_id
             WHERE contacts.account_id = ?
@@ -3251,6 +3259,9 @@ def pg_dashboard_context(connection):
                 "account_name": account["account_name"],
                 "targeted_discovery": contact["name"] or "No contact name",
                 "contact_job_title": contact["job_title"] or "",
+                "company_name": contact["account_name"] or account["account_name"],
+                "business_org": contact["business_unit"] or "",
+                "department": contact["org_dept"] or "",
                 "completed_discovery_meeting": (
                     action_update["completed_discovery_meeting"]
                     if action_update
@@ -3333,6 +3344,9 @@ def pg_dashboard_context(connection):
                 "account_name": account["account_name"],
                 "targeted_discovery": "Partner activity",
                 "contact_job_title": "",
+                "company_name": account["account_name"],
+                "business_org": "",
+                "department": "",
                 "completed_discovery_meeting": "N/A",
                 "exec_first": "N/A",
                 "nbm_completed": "N/A",
@@ -4591,13 +4605,9 @@ def add_account_timeline(account_id):
     return redirect(url_for("view_account", account_id=account_id))
 
 
-@app.route("/accounts/<int:account_id>/org-chart")
-def account_org_chart(account_id):
-    connection = get_db_connection()
-    account = connection.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
-    if not account:
-        connection.close()
-        return redirect(url_for("accounts"))
+def org_chart_person_options(connection, account):
+    account_id = account["id"]
+    options = []
     contacts = connection.execute("""
         SELECT *
         FROM contacts
@@ -4605,6 +4615,21 @@ def account_org_chart(account_id):
           AND COALESCE(status, 'Active') != 'Archived'
         ORDER BY COALESCE(NULLIF(org_dept, ''), 'Unmapped'), name
     """, (account_id,)).fetchall()
+    for contact in contacts:
+        group_name = contact["org_dept"] or account["business_unit"] or ""
+        options.append({
+            "value": f"contact:{contact['id']}",
+            "person_type": "contact",
+            "contact_id": contact["id"],
+            "partner_contact_id": None,
+            "name": contact["name"] or "Unknown contact",
+            "title": contact["job_title"] or "",
+            "photo": contact["photo"] if "photo" in contact.keys() else "",
+            "group_name": group_name,
+            "source": "Customer",
+            "link": url_for("edit_contact", contact_id=contact["id"]),
+        })
+
     partner_contacts = connection.execute("""
         SELECT partner_contacts.*, partners.partner_name
         FROM partner_contacts
@@ -4612,30 +4637,367 @@ def account_org_chart(account_id):
         WHERE partner_contacts.account_id = ?
         ORDER BY partners.partner_name, partner_contacts.name
     """, (account_id,)).fetchall()
-    groups = {}
-    unmapped = []
-    for contact in contacts:
-        group_name = contact["org_dept"] or account["business_unit"] or ""
-        item = {
-            "name": contact["name"],
-            "title": contact["job_title"],
-            "photo": contact["photo"] if "photo" in contact.keys() else "",
-            "link": url_for("edit_contact", contact_id=contact["id"]),
-        }
-        if group_name:
-            groups.setdefault(group_name, []).append(item)
-        else:
-            unmapped.append(item)
     for contact in partner_contacts:
-        group_name = contact["partner_name"] or "Partner"
-        groups.setdefault(f"Partner: {group_name}", []).append({
-            "name": contact["name"],
-            "title": contact["job_title"],
+        partner_name = contact["partner_name"] or "Partner"
+        options.append({
+            "value": f"partner:{contact['id']}",
+            "person_type": "partner",
+            "contact_id": None,
+            "partner_contact_id": contact["id"],
+            "name": contact["name"] or "Unknown partner contact",
+            "title": contact["job_title"] or "",
             "photo": "",
+            "group_name": f"Partner: {partner_name}",
+            "source": partner_name,
             "link": url_for("view_partner", partner_id=contact["partner_id"]),
         })
+    return options
+
+
+def parse_org_chart_person(value):
+    raw_value = str(value or "")
+    if ":" not in raw_value:
+        return None, None, None
+    person_type, raw_id = raw_value.split(":", 1)
+    try:
+        person_id = int(raw_id)
+    except (TypeError, ValueError):
+        return None, None, None
+    if person_type == "contact":
+        return "contact", person_id, None
+    if person_type == "partner":
+        return "partner", None, person_id
+    return None, None, None
+
+
+def org_chart_person_key(row):
+    if row["person_type"] == "partner":
+        return f"partner:{row['partner_contact_id']}"
+    return f"contact:{row['contact_id']}"
+
+
+def org_chart_existing_people(connection, chart_id):
+    rows = connection.execute("""
+        SELECT person_type, contact_id, partner_contact_id
+        FROM account_org_chart_people
+        WHERE chart_id = ?
+    """, (chart_id,)).fetchall()
+    return {org_chart_person_key(row) for row in rows}
+
+
+def org_chart_manager_for_relationship(connection, chart_id, relationship, related_node_id):
+    relationship = relationship or "top"
+    try:
+        related_node_id = int(related_node_id) if related_node_id else None
+    except (TypeError, ValueError):
+        related_node_id = None
+    if relationship == "under" and related_node_id:
+        return related_node_id
+    if relationship in ("beside", "above") and related_node_id:
+        related = connection.execute("""
+            SELECT manager_node_id
+            FROM account_org_chart_people
+            WHERE chart_id = ?
+              AND id = ?
+        """, (chart_id, related_node_id)).fetchone()
+        return related["manager_node_id"] if related else None
+    return None
+
+
+def apply_org_chart_above_relationship(connection, chart_id, node_id, related_node_id):
+    try:
+        related_node_id = int(related_node_id) if related_node_id else None
+    except (TypeError, ValueError):
+        related_node_id = None
+    if not related_node_id or node_id == related_node_id:
+        return
+    connection.execute("""
+        UPDATE account_org_chart_people
+        SET manager_node_id = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE chart_id = ?
+          AND id = ?
+    """, (node_id, chart_id, related_node_id))
+
+
+def org_chart_context(connection, account, chart_id=None):
+    try:
+        chart_id = int(chart_id) if chart_id else None
+    except (TypeError, ValueError):
+        chart_id = None
+    charts = connection.execute("""
+        SELECT *
+        FROM account_org_charts
+        WHERE account_id = ?
+        ORDER BY last_updated DESC, chart_name
+    """, (account["id"],)).fetchall()
+    active_chart = None
+    if chart_id:
+        active_chart = connection.execute("""
+            SELECT *
+            FROM account_org_charts
+            WHERE account_id = ?
+              AND id = ?
+        """, (account["id"], chart_id)).fetchone()
+    if not active_chart and charts:
+        active_chart = charts[0]
+
+    person_options = org_chart_person_options(connection, account)
+    person_lookup = {option["value"]: option for option in person_options}
+    chart_nodes = []
+    roots_by_group = {}
+    unmapped = []
+    if active_chart:
+        rows = connection.execute("""
+            SELECT *
+            FROM account_org_chart_people
+            WHERE chart_id = ?
+            ORDER BY sort_order, id
+        """, (active_chart["id"],)).fetchall()
+        node_lookup = {}
+        for row in rows:
+            key = org_chart_person_key(row)
+            person = person_lookup.get(key)
+            if not person:
+                continue
+            node = {
+                "id": row["id"],
+                "manager_node_id": row["manager_node_id"],
+                "name": person["name"],
+                "title": person["title"],
+                "photo": person["photo"],
+                "group_name": person["group_name"],
+                "source": person["source"],
+                "link": person["link"],
+                "children": [],
+            }
+            node_lookup[node["id"]] = node
+            chart_nodes.append(node)
+
+        for node in chart_nodes:
+            manager = node_lookup.get(node["manager_node_id"])
+            if manager and manager["id"] != node["id"]:
+                manager["children"].append(node)
+            elif node["group_name"]:
+                roots_by_group.setdefault(node["group_name"], []).append(node)
+            else:
+                unmapped.append(node)
+
+    used_people = org_chart_existing_people(connection, active_chart["id"]) if active_chart else set()
+    available_people = [option for option in person_options if option["value"] not in used_people]
+    return {
+        "charts": charts,
+        "active_chart": active_chart,
+        "person_options": person_options,
+        "available_people": available_people,
+        "chart_nodes": chart_nodes,
+        "roots_by_group": roots_by_group,
+        "unmapped": unmapped,
+    }
+
+
+@app.route("/accounts/<int:account_id>/org-chart")
+def account_org_chart(account_id):
+    connection = get_db_connection()
+    account = connection.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    if not account:
+        connection.close()
+        return redirect(url_for("accounts"))
+    context = org_chart_context(connection, account, request.args.get("chart_id"))
     connection.close()
-    return render_template("account_org_chart.html", account=account, groups=groups, unmapped=unmapped)
+    return render_template(
+        "account_org_chart.html",
+        account=account,
+        message=request.args.get("message", ""),
+        **context,
+    )
+
+
+@app.route("/accounts/<int:account_id>/org-chart/create", methods=("POST",))
+def create_account_org_chart(account_id):
+    connection = get_db_connection()
+    account = connection.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    if not account:
+        connection.close()
+        return redirect(url_for("accounts"))
+    chart_name = (request.form.get("chart_name") or "Account Org Chart").strip()
+    cursor = connection.execute("""
+        INSERT INTO account_org_charts (account_id, chart_name, notes)
+        VALUES (?, ?, ?)
+    """, (account_id, chart_name, request.form.get("notes", "")))
+    chart_id = cursor.lastrowid
+    audit_record_create(connection, "account_org_chart", chart_id, {
+        "account_id": account_id,
+        "chart_name": chart_name,
+    })
+    connection.commit()
+    connection.close()
+    return redirect(url_for("account_org_chart", account_id=account_id, chart_id=chart_id, message="Org chart created."))
+
+
+@app.route("/accounts/<int:account_id>/org-chart/<int:chart_id>/update", methods=("POST",))
+def update_account_org_chart(account_id, chart_id):
+    connection = get_db_connection()
+    chart = connection.execute("""
+        SELECT *
+        FROM account_org_charts
+        WHERE account_id = ?
+          AND id = ?
+    """, (account_id, chart_id)).fetchone()
+    if chart:
+        new_values = {
+            "chart_name": (request.form.get("chart_name") or chart["chart_name"]).strip(),
+            "notes": request.form.get("notes", ""),
+        }
+        labels = {"chart_name": "Chart name", "notes": "Notes"}
+        connection.execute("""
+            UPDATE account_org_charts
+            SET chart_name = ?,
+                notes = ?,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (new_values["chart_name"], new_values["notes"], chart_id))
+        audit_record_update(connection, "account_org_chart", chart_id, chart, new_values, labels)
+        connection.commit()
+    connection.close()
+    return redirect(url_for("account_org_chart", account_id=account_id, chart_id=chart_id, message="Org chart updated."))
+
+
+@app.route("/accounts/<int:account_id>/org-chart/<int:chart_id>/delete", methods=("POST",))
+def delete_account_org_chart(account_id, chart_id):
+    connection = get_db_connection()
+    chart = connection.execute("""
+        SELECT *
+        FROM account_org_charts
+        WHERE account_id = ?
+          AND id = ?
+    """, (account_id, chart_id)).fetchone()
+    if chart:
+        audit_record_delete(connection, "account_org_chart", chart_id, chart["chart_name"])
+        connection.execute("DELETE FROM account_org_chart_people WHERE chart_id = ?", (chart_id,))
+        connection.execute("DELETE FROM account_org_charts WHERE id = ?", (chart_id,))
+        connection.commit()
+    connection.close()
+    return redirect(url_for("account_org_chart", account_id=account_id, message="Org chart deleted."))
+
+
+@app.route("/accounts/<int:account_id>/org-chart/<int:chart_id>/people/add", methods=("POST",))
+def add_account_org_chart_person(account_id, chart_id):
+    connection = get_db_connection()
+    chart = connection.execute("""
+        SELECT *
+        FROM account_org_charts
+        WHERE account_id = ?
+          AND id = ?
+    """, (account_id, chart_id)).fetchone()
+    if not chart:
+        connection.close()
+        return redirect(url_for("account_org_chart", account_id=account_id))
+    person_type, contact_id, partner_contact_id = parse_org_chart_person(request.form.get("person_ref"))
+    if not person_type:
+        connection.close()
+        return redirect(url_for("account_org_chart", account_id=account_id, chart_id=chart_id, message="Select a person before adding them to the chart."))
+    person_key = f"partner:{partner_contact_id}" if person_type == "partner" else f"contact:{contact_id}"
+    if person_key in org_chart_existing_people(connection, chart_id):
+        connection.close()
+        return redirect(url_for("account_org_chart", account_id=account_id, chart_id=chart_id, message="That person is already on this chart."))
+    relationship = request.form.get("relationship", "top")
+    related_node_id = request.form.get("related_node_id") or None
+    manager_node_id = org_chart_manager_for_relationship(connection, chart_id, relationship, related_node_id)
+    cursor = connection.execute("""
+        INSERT INTO account_org_chart_people (
+            chart_id,
+            account_id,
+            person_type,
+            contact_id,
+            partner_contact_id,
+            manager_node_id,
+            sort_order
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (
+        chart_id,
+        account_id,
+        person_type,
+        contact_id,
+        partner_contact_id,
+        manager_node_id,
+        request.form.get("sort_order") or 0,
+    ))
+    node_id = cursor.lastrowid
+    if relationship == "above":
+        apply_org_chart_above_relationship(connection, chart_id, node_id, related_node_id)
+    audit_record_create(connection, "account_org_chart_person", node_id, {
+        "account_id": account_id,
+        "chart_id": chart_id,
+        "person_type": person_type,
+        "contact_id": contact_id,
+        "partner_contact_id": partner_contact_id,
+    })
+    connection.commit()
+    connection.close()
+    return redirect(url_for("account_org_chart", account_id=account_id, chart_id=chart_id, message="Person added to org chart."))
+
+
+@app.route("/accounts/<int:account_id>/org-chart/<int:chart_id>/people/<int:node_id>/update", methods=("POST",))
+def update_account_org_chart_person(account_id, chart_id, node_id):
+    connection = get_db_connection()
+    node = connection.execute("""
+        SELECT *
+        FROM account_org_chart_people
+        WHERE account_id = ?
+          AND chart_id = ?
+          AND id = ?
+    """, (account_id, chart_id, node_id)).fetchone()
+    if node:
+        relationship = request.form.get("relationship", "top")
+        related_node_id = request.form.get("related_node_id") or None
+        if str(related_node_id) == str(node_id):
+            related_node_id = None
+            relationship = "top"
+        manager_node_id = org_chart_manager_for_relationship(connection, chart_id, relationship, related_node_id)
+        new_values = {
+            "manager_node_id": manager_node_id,
+            "sort_order": request.form.get("sort_order") or 0,
+        }
+        labels = {"manager_node_id": "Reports to", "sort_order": "Sort order"}
+        connection.execute("""
+            UPDATE account_org_chart_people
+            SET manager_node_id = ?,
+                sort_order = ?,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (manager_node_id, new_values["sort_order"], node_id))
+        if relationship == "above":
+            apply_org_chart_above_relationship(connection, chart_id, node_id, related_node_id)
+        audit_record_update(connection, "account_org_chart_person", node_id, node, new_values, labels)
+        connection.commit()
+    connection.close()
+    return redirect(url_for("account_org_chart", account_id=account_id, chart_id=chart_id, message="Org chart person updated."))
+
+
+@app.route("/accounts/<int:account_id>/org-chart/<int:chart_id>/people/<int:node_id>/delete", methods=("POST",))
+def delete_account_org_chart_person(account_id, chart_id, node_id):
+    connection = get_db_connection()
+    node = connection.execute("""
+        SELECT *
+        FROM account_org_chart_people
+        WHERE account_id = ?
+          AND chart_id = ?
+          AND id = ?
+    """, (account_id, chart_id, node_id)).fetchone()
+    if node:
+        connection.execute("""
+            UPDATE account_org_chart_people
+            SET manager_node_id = ?
+            WHERE chart_id = ?
+              AND manager_node_id = ?
+        """, (node["manager_node_id"], chart_id, node_id))
+        audit_record_delete(connection, "account_org_chart_person", node_id, f"Node {node_id}")
+        connection.execute("DELETE FROM account_org_chart_people WHERE id = ?", (node_id,))
+        connection.commit()
+    connection.close()
+    return redirect(url_for("account_org_chart", account_id=account_id, chart_id=chart_id, message="Person removed from org chart."))
 
 
 @app.route("/contacts")

@@ -118,10 +118,18 @@
                                 {{ row.target_number or "-" }}
                             </td>
                             <td>
-                                <strong>{{ row.targeted_discovery or "No account contacts entered" }}</strong>
+                                {% if row.company_name %}
+                                    <div class="pg-person-line"><span>Company</span><strong>{{ row.company_name }}</strong></div>
+                                {% endif %}
+                                {% if row.business_org %}
+                                    <div class="pg-person-line"><span>Business / Org</span><strong>{{ row.business_org }}</strong></div>
+                                {% endif %}
+                                {% if row.department %}
+                                    <div class="pg-person-line"><span>Department</span><strong>{{ row.department }}</strong></div>
+                                {% endif %}
+                                <div class="pg-person-line"><span>Contact</span><strong>{{ row.targeted_discovery or "No account contacts entered" }}</strong></div>
                                 {% if row.contact_job_title %}
-                                    <br>
-                                    <span class="muted">{{ row.contact_job_title }}</span>
+                                    <div class="pg-person-line"><span>Job Title</span><strong>{{ row.contact_job_title }}</strong></div>
                                 {% endif %}
                             </td>
                             <td>

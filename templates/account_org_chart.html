@@ -2,77 +2,260 @@
 
 {% block title %}Org Chart | PipeFlow{% endblock %}
 
+{% macro person_tile(node, active_chart, account, chart_nodes) %}
+    <li class="org-tree-node">
+        <div class="org-person-card">
+            <a href="{{ node.link }}" class="org-person-view">
+                <span class="org-person-image">
+                    {% if node.photo %}
+                        <img src="{{ node.photo }}" alt="{{ node.name }}">
+                    {% endif %}
+                </span>
+                <strong>{{ node.name }}</strong>
+                <span>{{ node.title or "Job title not set" }}</span>
+            </a>
+
+            <details class="org-person-edit">
+                <summary>Edit</summary>
+                <form method="POST"
+                      action="{{ url_for('update_account_org_chart_person', account_id=account.id, chart_id=active_chart.id, node_id=node.id) }}"
+                      class="pipeflow-form compact-org-form">
+                    <div class="form-grid compact-filter-grid">
+                        <div class="form-group">
+                            <label for="relationship_{{ node.id }}">Position</label>
+                            <select id="relationship_{{ node.id }}" name="relationship">
+                                <option value="top">Top level</option>
+                                <option value="under">Works under</option>
+                                <option value="beside">Works beside</option>
+                                <option value="above">Works above</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="related_node_{{ node.id }}">Related person</label>
+                            <select id="related_node_{{ node.id }}" name="related_node_id">
+                                <option value="">No related person</option>
+                                {% for related in chart_nodes %}
+                                    {% if related.id != node.id %}
+                                        <option value="{{ related.id }}">{{ related.name }}{% if related.title %} - {{ related.title }}{% endif %}</option>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="sort_order_{{ node.id }}">Sort Order</label>
+                            <input type="number" id="sort_order_{{ node.id }}" name="sort_order" value="0">
+                        </div>
+                    </div>
+                    <div class="button-group">
+                        <button type="submit" class="btn btn-primary btn-small">Save Person</button>
+                    </div>
+                </form>
+
+                <form method="POST"
+                      action="{{ url_for('delete_account_org_chart_person', account_id=account.id, chart_id=active_chart.id, node_id=node.id) }}"
+                      onsubmit="return confirm('Remove this person from the org chart?');">
+                    <button type="submit" class="btn btn-danger btn-small">Delete Person</button>
+                </form>
+            </details>
+        </div>
+
+        {% if node.children %}
+            <ul class="org-tree-children">
+                {% for child in node.children %}
+                    {{ person_tile(child, active_chart, account, chart_nodes) }}
+                {% endfor %}
+            </ul>
+        {% endif %}
+    </li>
+{% endmacro %}
+
 {% block content %}
 
 <div class="page-header">
     <div>
         <h1>{{ account.account_name }} Org Chart</h1>
-        <p>Map known customer and partner contacts by business organisation or relationship group.</p>
+        <p>Build account and partner organisation maps using business/org structure, departments and reporting relationships.</p>
     </div>
     <div class="button-group">
         <a href="{{ url_for('view_account', account_id=account.id) }}" class="btn btn-secondary">Back to Account</a>
-        <a href="{{ url_for('add_contact') }}" class="btn btn-primary">Edit Org Chart</a>
     </div>
 </div>
 
-<div class="org-chart-grid">
-    {% for group_name, people in groups.items() %}
-        <section class="form-card org-chart-group">
-            <div class="section-header">
-                <div>
-                    <h2>{{ group_name }}</h2>
-                    <p>{{ people|length }} mapped contact{% if people|length != 1 %}s{% endif %}</p>
-                </div>
-            </div>
-            <div class="org-person-grid">
-                {% for person in people %}
-                    <a href="{{ person.link }}" class="org-person-card">
-                        <span class="org-person-image">
-                            {% if person.photo %}
-                                <img src="{{ person.photo }}" alt="{{ person.name }}">
-                            {% else %}
-                                {{ (person.name or "?")[:1] }}
-                            {% endif %}
-                        </span>
-                        <strong>{{ person.name }}</strong>
-                        <span>{{ person.title or "Job title not set" }}</span>
-                    </a>
-                {% endfor %}
-            </div>
-        </section>
-    {% endfor %}
-</div>
+{% if message %}
+    <div class="alert-success">{{ message }}</div>
+{% endif %}
 
-{% if unmapped %}
-    <section class="form-card org-chart-group">
-        <div class="section-header">
-            <div>
-                <h2>Unmapped Contacts</h2>
-                <p>Contacts where the reporting line or business organisation is not yet known.</p>
+<section class="form-card">
+    <div class="section-header">
+        <div>
+            <h2>Org Chart Workspace</h2>
+            <p>Create a chart, then add customer or partner contacts and define who sits above, beside or under another person.</p>
+        </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('create_account_org_chart', account_id=account.id) }}" class="pipeflow-form">
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="chart_name">New Chart Name</label>
+                <input type="text" id="chart_name" name="chart_name" value="{{ account.account_name }} Org Chart" required>
+            </div>
+            <div class="form-group">
+                <label for="chart_notes">Notes</label>
+                <input type="text" id="chart_notes" name="notes" placeholder="Optional chart purpose or scope">
+            </div>
+            <div class="form-group outreach-filter-actions">
+                <label>&nbsp;</label>
+                <button type="submit" class="btn btn-primary">Create Chart</button>
             </div>
         </div>
-        <div class="org-person-grid">
-            {% for person in unmapped %}
-                <a href="{{ person.link }}" class="org-person-card">
-                    <span class="org-person-image">
-                        {% if person.photo %}
-                            <img src="{{ person.photo }}" alt="{{ person.name }}">
-                        {% else %}
-                            {{ (person.name or "?")[:1] }}
-                        {% endif %}
-                    </span>
-                    <strong>{{ person.name }}</strong>
-                    <span>{{ person.title or "Job title not set" }}</span>
+    </form>
+</section>
+
+{% if charts %}
+    <section class="form-card">
+        <div class="section-header">
+            <div>
+                <h2>Selected Chart</h2>
+                <p>Switch charts, rename the current chart or delete the full chart.</p>
+            </div>
+        </div>
+
+        <div class="button-group">
+            {% for chart in charts %}
+                <a href="{{ url_for('account_org_chart', account_id=account.id, chart_id=chart.id) }}"
+                   class="btn {% if active_chart and active_chart.id == chart.id %}btn-primary{% else %}btn-secondary{% endif %}">
+                    {{ chart.chart_name }}
                 </a>
             {% endfor %}
         </div>
+
+        {% if active_chart %}
+            <form method="POST"
+                  action="{{ url_for('update_account_org_chart', account_id=account.id, chart_id=active_chart.id) }}"
+                  class="pipeflow-form">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="active_chart_name">Chart Name</label>
+                        <input type="text" id="active_chart_name" name="chart_name" value="{{ active_chart.chart_name }}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="active_chart_notes">Notes</label>
+                        <input type="text" id="active_chart_notes" name="notes" value="{{ active_chart.notes or '' }}">
+                    </div>
+                    <div class="form-group outreach-filter-actions">
+                        <label>&nbsp;</label>
+                        <button type="submit" class="btn btn-primary">Save Chart</button>
+                    </div>
+                </div>
+            </form>
+
+            <form method="POST"
+                  action="{{ url_for('delete_account_org_chart', account_id=account.id, chart_id=active_chart.id) }}"
+                  onsubmit="return confirm('Delete this full org chart? Contacts will not be deleted.');">
+                <button type="submit" class="btn btn-danger">Delete Full Chart</button>
+            </form>
+        {% endif %}
     </section>
 {% endif %}
 
-{% if not groups and not unmapped %}
+{% if active_chart %}
+    <section class="form-card">
+        <div class="section-header">
+            <div>
+                <h2>Add Person</h2>
+                <p>Add customer or partner contacts to the selected chart and position them in the reporting structure.</p>
+            </div>
+        </div>
+
+        <form method="POST"
+              action="{{ url_for('add_account_org_chart_person', account_id=account.id, chart_id=active_chart.id) }}"
+              class="pipeflow-form">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="person_ref">Person</label>
+                    <select id="person_ref" name="person_ref" required>
+                        <option value="">Select person</option>
+                        {% for person in available_people %}
+                            <option value="{{ person.value }}">{{ person.name }}{% if person.title %} - {{ person.title }}{% endif %}{% if person.source %} ({{ person.source }}){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="relationship">Position</label>
+                    <select id="relationship" name="relationship">
+                        <option value="top">Top level</option>
+                        <option value="under">Works under</option>
+                        <option value="beside">Works beside</option>
+                        <option value="above">Works above</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="related_node_id">Related Person</label>
+                    <select id="related_node_id" name="related_node_id">
+                        <option value="">No related person</option>
+                        {% for node in chart_nodes %}
+                            <option value="{{ node.id }}">{{ node.name }}{% if node.title %} - {{ node.title }}{% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="sort_order">Sort Order</label>
+                    <input type="number" id="sort_order" name="sort_order" value="0">
+                </div>
+                <div class="form-group outreach-filter-actions">
+                    <label>&nbsp;</label>
+                    <button type="submit" class="btn btn-primary">Add to Chart</button>
+                </div>
+            </div>
+        </form>
+    </section>
+
+    {% if roots_by_group %}
+        <div class="org-chart-grid">
+            {% for group_name, people in roots_by_group.items() %}
+                <section class="form-card org-chart-group">
+                    <div class="section-header">
+                        <div>
+                            <h2>{{ group_name }}</h2>
+                            <p>{{ people|length }} top-level mapped contact{% if people|length != 1 %}s{% endif %}</p>
+                        </div>
+                    </div>
+                    <ul class="org-tree">
+                        {% for person in people %}
+                            {{ person_tile(person, active_chart, account, chart_nodes) }}
+                        {% endfor %}
+                    </ul>
+                </section>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    {% if unmapped %}
+        <section class="form-card org-chart-group">
+            <div class="section-header">
+                <div>
+                    <h2>Unmapped Contacts</h2>
+                    <p>People where business/org, department or reporting line is not yet known.</p>
+                </div>
+            </div>
+            <ul class="org-tree org-tree-unmapped">
+                {% for person in unmapped %}
+                    {{ person_tile(person, active_chart, account, chart_nodes) }}
+                {% endfor %}
+            </ul>
+        </section>
+    {% endif %}
+
+    {% if not roots_by_group and not unmapped %}
+        <div class="empty-state">
+            <h3>No people added yet</h3>
+            <p>Add contacts to this chart to start mapping the account organisation.</p>
+        </div>
+    {% endif %}
+{% else %}
     <div class="empty-state">
-        <h3>No contacts mapped yet</h3>
-        <p>Add contacts to the account to start building the org chart.</p>
+        <h3>No org chart yet</h3>
+        <p>Create a chart to start mapping customer and partner relationships for this account.</p>
     </div>
 {% endif %}
 
