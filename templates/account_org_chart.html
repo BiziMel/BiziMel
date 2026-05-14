@@ -8,7 +8,8 @@
              draggable="true"
              data-drag-type="node"
              data-node-id="{{ node.id }}"
-             data-person-name="{{ node.name }}">
+             data-person-name="{{ node.name }}"
+             data-manager-drop-target="true">
             <a href="{{ node.link }}" class="org-person-view">
                 <span class="org-person-image">
                     {% if node.photo %}
@@ -27,6 +28,12 @@
               class="org-person-delete-form">
             <button type="submit" class="btn btn-danger btn-small">Remove</button>
         </form>
+
+        <ul class="org-tree-children org-manager-drop-zone" data-manager-node-id="{{ node.id }}">
+            {% for child in node.children %}
+                {{ person_tile(child, active_chart, account) }}
+            {% endfor %}
+        </ul>
     </li>
 {% endmacro %}
 
@@ -78,7 +85,7 @@
         <div class="section-header">
             <div>
                 <h2>Org Chart Builder</h2>
-                <p>Drag a tile into a row. Drop left or right of other people in the same row to place them beside each other.</p>
+                <p>Drop a tile onto a person to link them as working for that person. Drop into a row to place peers beside each other.</p>
             </div>
         </div>
 
@@ -159,7 +166,7 @@
                 <div class="org-canvas-header">
                     <div>
                         <h3>{{ active_chart.chart_name }}</h3>
-                        <p>Drop a tile into any row. The tile will move immediately; save when the layout looks right.</p>
+                        <p>Drop onto a person to create a reporting link, or drop into a row to place peers left and right.</p>
                     </div>
                     <form method="POST"
                           action="{{ url_for('save_account_org_chart_layout', account_id=account.id, chart_id=active_chart.id) }}"
@@ -276,6 +283,17 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
+    function childRowForTile(tileWrapper) {
+        let childRow = tileWrapper.querySelector(":scope > .org-manager-drop-zone");
+        if (!childRow) {
+            childRow = document.createElement("ul");
+            childRow.className = "org-tree-children org-manager-drop-zone";
+            childRow.dataset.managerNodeId = tileWrapper.dataset.nodeId || "";
+            tileWrapper.appendChild(childRow);
+        }
+        return childRow;
+    }
+
     function attachDragHandler(tile) {
         tile.addEventListener("dragstart", function (event) {
             draggedItem = {
@@ -294,6 +312,75 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     document.querySelectorAll(".org-chart-draggable").forEach(attachDragHandler);
+
+    document.querySelectorAll("[data-manager-drop-target='true']").forEach(function (card) {
+        card.addEventListener("dragover", function (event) {
+            event.preventDefault();
+            card.classList.add("org-manager-drop-active");
+        });
+        card.addEventListener("dragleave", function () {
+            card.classList.remove("org-manager-drop-active");
+        });
+        card.addEventListener("drop", function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            card.classList.remove("org-manager-drop-active");
+            let item = draggedItem;
+            if (!item) {
+                try {
+                    item = JSON.parse(event.dataTransfer.getData("text/plain"));
+                } catch (error) {
+                    item = null;
+                }
+            }
+            if (!item) {
+                return;
+            }
+            const managerNodeId = card.dataset.nodeId || "";
+            if (item.type === "node" && item.node_id === managerNodeId) {
+                return;
+            }
+            const managerWrapper = card.closest(".org-tree-node");
+            const childRow = childRowForTile(managerWrapper);
+            let tileWrapper = null;
+            if (item.type === "node") {
+                tileWrapper = document.querySelector(`[data-node-id="${item.node_id}"]`);
+            } else {
+                tileWrapper = document.querySelector(`[data-preview-person-ref="${item.person_ref}"]`);
+                if (!tileWrapper) {
+                    tileWrapper = createPreviewTile(item);
+                }
+                const trayTile = document.querySelector(`[data-person-ref="${item.person_ref}"].org-tray-person`);
+                if (trayTile) {
+                    trayTile.classList.add("org-move-staged");
+                }
+            }
+            if (!tileWrapper) {
+                return;
+            }
+            childRow.appendChild(tileWrapper);
+            tileWrapper.classList.add("org-move-staged");
+            const childCount = Array.from(childRow.querySelectorAll(":scope > .org-tree-node")).length;
+            const move = {
+                relationship: "under",
+                related_node_id: managerNodeId,
+                manager_node_id: managerNodeId,
+                sort_order: childCount,
+                row_label: `under ${card.dataset.personName || "selected person"}`,
+                name: item.name
+            };
+            let key;
+            if (item.type === "node") {
+                key = `node:${item.node_id}`;
+                move.node_id = item.node_id;
+            } else {
+                key = `person:${item.person_ref}`;
+                move.person_ref = item.person_ref;
+            }
+            stagedMoves.set(key, move);
+            updatePendingDisplay();
+        });
+    });
 
     document.querySelectorAll(".org-row-drop-zone").forEach(function (row) {
         row.addEventListener("dragover", function (event) {

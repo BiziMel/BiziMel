@@ -4978,8 +4978,12 @@ def org_chart_context(connection, account, chart_id=None):
             chart_nodes.append(node)
 
         for node in chart_nodes:
-            display_group = org_chart_display_group(node, node_lookup)
-            roots_by_group.setdefault(display_group or "Organisation Chart", []).append(node)
+            manager = node_lookup.get(node["manager_node_id"])
+            if manager and manager["id"] != node["id"]:
+                manager["children"].append(node)
+            else:
+                display_group = org_chart_display_group(node, node_lookup)
+                roots_by_group.setdefault(display_group or "Organisation Chart", []).append(node)
         roots_by_group = dict(sorted(
             roots_by_group.items(),
             key=lambda item: (item[0] or "").casefold(),
@@ -5124,6 +5128,10 @@ def save_account_org_chart_layout(account_id, chart_id):
                 continue
             relationship = normalise_org_chart_relationship(action.get("relationship"))
             related_node_id = action.get("related_node_id") or None
+            manager_node_id = action.get("manager_node_id") or None
+            if manager_node_id:
+                relationship = "under"
+                related_node_id = manager_node_id
             visual_level = action.get("visual_level")
             sort_order = action.get("sort_order")
             node_id = action.get("node_id")

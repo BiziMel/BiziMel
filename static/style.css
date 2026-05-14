@@ -4137,6 +4137,8 @@ body {
     align-items: flex-start;
     gap: 14px;
     width: 100%;
+    min-height: 34px;
+    margin-top: 10px;
     padding-top: 14px;
     border-top: 1px solid #dbe3ef;
 }
@@ -4380,6 +4382,26 @@ body {
 .org-tray-person:hover {
     border-color: #60a5fa;
     box-shadow: 0 8px 18px rgba(15, 23, 42, 0.10);
+}
+
+.org-manager-drop-active {
+    border-color: #16a34a;
+    box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.16);
+    background: #f0fdf4;
+}
+
+.org-manager-drop-zone:empty::after {
+    content: "Drop a tile onto this person to show who works for them";
+    display: block;
+    width: 150px;
+    padding: 6px 8px;
+    border: 1px dashed #bbf7d0;
+    border-radius: 8px;
+    color: #166534;
+    background: #f0fdf4;
+    font-size: 11px;
+    font-weight: 700;
+    text-align: center;
 }
 
 .org-dragging {
