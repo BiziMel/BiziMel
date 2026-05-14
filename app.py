@@ -7,6 +7,7 @@ import csv
 import io
 import re
 import traceback
+import json
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
@@ -4685,6 +4686,24 @@ def org_chart_existing_people(connection, chart_id):
     return {org_chart_person_key(row) for row in rows}
 
 
+def org_chart_existing_person_node(connection, chart_id, person_type, contact_id, partner_contact_id):
+    if person_type == "partner":
+        return connection.execute("""
+            SELECT *
+            FROM account_org_chart_people
+            WHERE chart_id = ?
+              AND person_type = 'partner'
+              AND partner_contact_id = ?
+        """, (chart_id, partner_contact_id)).fetchone()
+    return connection.execute("""
+        SELECT *
+        FROM account_org_chart_people
+        WHERE chart_id = ?
+          AND person_type = 'contact'
+          AND contact_id = ?
+    """, (chart_id, contact_id)).fetchone()
+
+
 def org_chart_manager_for_relationship(connection, chart_id, relationship, related_node_id):
     relationship = relationship or "with"
     try:
@@ -4704,6 +4723,13 @@ def org_chart_manager_for_relationship(connection, chart_id, relationship, relat
     return None
 
 
+def normalise_org_chart_relationship(value):
+    relationship = value or "with"
+    if relationship not in ("under", "with", "above"):
+        relationship = "with"
+    return relationship
+
+
 def apply_org_chart_above_relationship(connection, chart_id, node_id, related_node_id):
     try:
         related_node_id = int(related_node_id) if related_node_id else None
@@ -4720,6 +4746,37 @@ def apply_org_chart_above_relationship(connection, chart_id, node_id, related_no
         WHERE chart_id = ?
           AND id = ?
     """, (node_id, node_id, chart_id, related_node_id))
+
+
+def save_org_chart_node_position(connection, chart_id, node_id, relationship, related_node_id):
+    relationship = normalise_org_chart_relationship(relationship)
+    try:
+        related_node_id_int = int(related_node_id) if related_node_id else None
+    except (TypeError, ValueError):
+        related_node_id_int = None
+    if related_node_id_int == node_id:
+        relationship = "with"
+        related_node_id_int = None
+    elif related_node_id_int in org_chart_descendant_ids(connection, chart_id, node_id):
+        raise ValueError("That move would create a reporting loop. Choose a different person.")
+
+    manager_node_id = org_chart_manager_for_relationship(connection, chart_id, relationship, related_node_id_int)
+    connection.execute("""
+        UPDATE account_org_chart_people
+        SET manager_node_id = ?,
+            relationship_type = ?,
+            related_node_id = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE chart_id = ?
+          AND id = ?
+    """, (manager_node_id, relationship, related_node_id_int, chart_id, node_id))
+    if relationship == "above":
+        apply_org_chart_above_relationship(connection, chart_id, node_id, related_node_id_int)
+    return {
+        "manager_node_id": manager_node_id,
+        "relationship_type": relationship,
+        "related_node_id": related_node_id_int,
+    }
 
 
 def org_chart_descendant_ids(connection, chart_id, node_id):
@@ -4945,6 +5002,132 @@ def delete_account_org_chart(account_id, chart_id):
     return redirect(url_for("account_org_chart", account_id=account_id, message="Org chart deleted."))
 
 
+@app.route("/accounts/<int:account_id>/org-chart/<int:chart_id>/layout/save", methods=("POST",))
+def save_account_org_chart_layout(account_id, chart_id):
+    connection = get_db_connection()
+    chart = connection.execute("""
+        SELECT *
+        FROM account_org_charts
+        WHERE account_id = ?
+          AND id = ?
+    """, (account_id, chart_id)).fetchone()
+    if not chart:
+        connection.close()
+        return redirect(url_for("account_org_chart", account_id=account_id))
+
+    try:
+        actions = json.loads(request.form.get("layout_actions") or "[]")
+    except json.JSONDecodeError:
+        actions = []
+    if not isinstance(actions, list):
+        actions = []
+
+    saved_count = 0
+    error_message = ""
+    try:
+        for action in actions:
+            if not isinstance(action, dict):
+                continue
+            relationship = normalise_org_chart_relationship(action.get("relationship"))
+            related_node_id = action.get("related_node_id") or None
+            node_id = action.get("node_id")
+            if node_id:
+                try:
+                    node_id = int(node_id)
+                except (TypeError, ValueError):
+                    continue
+                node = connection.execute("""
+                    SELECT *
+                    FROM account_org_chart_people
+                    WHERE account_id = ?
+                      AND chart_id = ?
+                      AND id = ?
+                """, (account_id, chart_id, node_id)).fetchone()
+                if not node:
+                    continue
+                old_values = dict(node)
+                new_values = save_org_chart_node_position(connection, chart_id, node_id, relationship, related_node_id)
+                audit_record_update(
+                    connection,
+                    "account_org_chart_person",
+                    node_id,
+                    old_values,
+                    new_values,
+                    {
+                        "manager_node_id": "Reports to",
+                        "relationship_type": "Relationship",
+                        "related_node_id": "Related person",
+                    }
+                )
+                saved_count += 1
+                continue
+
+            person_type, contact_id, partner_contact_id = parse_org_chart_person(action.get("person_ref"))
+            if not person_type:
+                continue
+            existing_node = org_chart_existing_person_node(connection, chart_id, person_type, contact_id, partner_contact_id)
+            if existing_node:
+                old_values = dict(existing_node)
+                new_values = save_org_chart_node_position(connection, chart_id, existing_node["id"], relationship, related_node_id)
+                audit_record_update(
+                    connection,
+                    "account_org_chart_person",
+                    existing_node["id"],
+                    old_values,
+                    new_values,
+                    {
+                        "manager_node_id": "Reports to",
+                        "relationship_type": "Relationship",
+                        "related_node_id": "Related person",
+                    }
+                )
+                saved_count += 1
+                continue
+
+            manager_node_id = org_chart_manager_for_relationship(connection, chart_id, relationship, related_node_id)
+            cursor = connection.execute("""
+                INSERT INTO account_org_chart_people (
+                    chart_id,
+                    account_id,
+                    person_type,
+                    contact_id,
+                    partner_contact_id,
+                    manager_node_id,
+                    relationship_type,
+                    related_node_id
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                chart_id,
+                account_id,
+                person_type,
+                contact_id,
+                partner_contact_id,
+                manager_node_id,
+                relationship,
+                related_node_id,
+            ))
+            new_node_id = cursor.lastrowid
+            if relationship == "above":
+                apply_org_chart_above_relationship(connection, chart_id, new_node_id, related_node_id)
+            audit_record_create(connection, "account_org_chart_person", new_node_id, {
+                "account_id": account_id,
+                "chart_id": chart_id,
+                "person_type": person_type,
+                "contact_id": contact_id,
+                "partner_contact_id": partner_contact_id,
+            })
+            saved_count += 1
+        connection.commit()
+    except ValueError as exc:
+        connection.rollback()
+        error_message = str(exc)
+    connection.close()
+
+    message = error_message or f"Saved {saved_count} org chart move(s)."
+    return redirect(url_for("account_org_chart", account_id=account_id, chart_id=chart_id, message=message))
+
+
 @app.route("/accounts/<int:account_id>/org-chart/<int:chart_id>/people/add", methods=("POST",))
 def add_account_org_chart_person(account_id, chart_id):
     connection = get_db_connection()
@@ -4965,9 +5148,7 @@ def add_account_org_chart_person(account_id, chart_id):
     if person_key in org_chart_existing_people(connection, chart_id):
         connection.close()
         return redirect(url_for("account_org_chart", account_id=account_id, chart_id=chart_id, message="That person is already on this chart."))
-    relationship = request.form.get("relationship", "with")
-    if relationship not in ("under", "with", "above"):
-        relationship = "with"
+    relationship = normalise_org_chart_relationship(request.form.get("relationship", "with"))
     related_node_id = request.form.get("related_node_id") or None
     manager_node_id = org_chart_manager_for_relationship(connection, chart_id, relationship, related_node_id)
     cursor = connection.execute("""
@@ -5018,9 +5199,7 @@ def update_account_org_chart_person(account_id, chart_id, node_id):
           AND id = ?
     """, (account_id, chart_id, node_id)).fetchone()
     if node:
-        relationship = request.form.get("relationship", "with")
-        if relationship not in ("under", "with", "above"):
-            relationship = "with"
+        relationship = normalise_org_chart_relationship(request.form.get("relationship", "with"))
         related_node_id = request.form.get("related_node_id") or None
         try:
             related_node_id_int = int(related_node_id) if related_node_id else None

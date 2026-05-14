@@ -4101,6 +4101,7 @@ body {
     justify-items: center;
     align-content: start;
     gap: 12px;
+    min-width: 150px;
 }
 
 .org-tree-children {
@@ -4142,6 +4143,74 @@ body {
     border: 1px solid #cfe6cc;
     border-radius: 8px;
     background: #f8fafc;
+}
+
+.org-people-tray {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.org-tray-person {
+    display: grid;
+    justify-items: center;
+    gap: 5px;
+    width: 128px;
+    min-height: 150px;
+    padding: 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #ffffff;
+    text-align: center;
+    cursor: grab;
+}
+
+.org-tray-person strong,
+.org-tray-person span,
+.org-tray-person small {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+.org-tray-person small {
+    color: #64748b;
+    font-size: 11px;
+}
+
+.org-layout-save-form {
+    display: grid;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.org-layout-save-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+}
+
+.org-layout-save-row span {
+    color: #475569;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.org-pending-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.org-pending-item {
+    padding: 6px 8px;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    background: #eff6ff;
+    color: #1e3a8a;
+    font-size: 12px;
+    font-weight: 700;
 }
 
 .org-chart-management-form {
@@ -4202,6 +4271,79 @@ body {
     background: #f8fafc;
     color: inherit;
     text-align: center;
+    cursor: grab;
+    transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.org-person-card:hover,
+.org-tray-person:hover {
+    border-color: #60a5fa;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.10);
+}
+
+.org-dragging {
+    opacity: 0.55;
+}
+
+.org-move-staged {
+    outline: 2px solid #22c55e;
+    outline-offset: 2px;
+}
+
+.org-drag-hint {
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.org-drop-zone {
+    width: 132px;
+    min-height: 26px;
+    display: grid;
+    place-items: center;
+    padding: 5px 7px;
+    border: 1px dashed #93c5fd;
+    border-radius: 8px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 11px;
+    font-weight: 800;
+    text-align: center;
+}
+
+.org-drop-zone-with {
+    background: #f0fdf4;
+    border-color: #86efac;
+    color: #166534;
+}
+
+.org-drop-zone-under {
+    background: #fefce8;
+    border-color: #fde68a;
+    color: #854d0e;
+}
+
+.org-drop-zone-above {
+    background: #eef2ff;
+    border-color: #a5b4fc;
+    color: #3730a3;
+}
+
+.org-drop-zone-canvas {
+    width: 100%;
+    min-height: 74px;
+    margin-top: 6px;
+    font-size: 13px;
+}
+
+.org-drop-zone-active {
+    border-style: solid;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+    transform: scale(1.02);
+}
+
+.org-person-delete-form {
+    margin-top: -4px;
 }
 
 .org-person-image {

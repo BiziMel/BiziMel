@@ -3,8 +3,18 @@
 {% block title %}Org Chart | PipeFlow{% endblock %}
 
 {% macro person_tile(node, active_chart, account, chart_nodes) %}
-    <li class="org-tree-node">
-        <div class="org-person-card">
+    <li class="org-tree-node" data-node-id="{{ node.id }}">
+        <div class="org-drop-zone org-drop-zone-above"
+             data-relationship="above"
+             data-related-node-id="{{ node.id }}">
+            Drop above
+        </div>
+
+        <div class="org-person-card org-chart-draggable"
+             draggable="true"
+             data-drag-type="node"
+             data-node-id="{{ node.id }}"
+             data-person-name="{{ node.name }}">
             <a href="{{ node.link }}" class="org-person-view">
                 <span class="org-person-image">
                     {% if node.photo %}
@@ -14,46 +24,13 @@
                 <strong>{{ node.name }}</strong>
                 <span>{{ node.title or "Job title not set" }}</span>
             </a>
+            <span class="org-drag-hint">Drag tile</span>
+        </div>
 
-            <details class="org-person-edit">
-                <summary>Edit</summary>
-                <form method="POST"
-                      action="{{ url_for('update_account_org_chart_person', account_id=account.id, chart_id=active_chart.id, node_id=node.id) }}"
-                      class="pipeflow-form compact-org-form">
-                    <div class="form-grid compact-filter-grid">
-                        <div class="form-group">
-                            <label for="relationship_{{ node.id }}">Position</label>
-                            <select id="relationship_{{ node.id }}" name="relationship">
-                                <option value="under" {% if node.relationship_type == "under" %}selected{% endif %}>Works under</option>
-                                <option value="with" {% if node.relationship_type == "with" %}selected{% endif %}>Works with</option>
-                                <option value="above" {% if node.relationship_type == "above" %}selected{% endif %}>Works above</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="related_node_{{ node.id }}">Related person</label>
-                            <select id="related_node_{{ node.id }}" name="related_node_id">
-                                <option value="">No related person</option>
-                                {% for related in chart_nodes %}
-                                    {% if related.id != node.id %}
-                                        <option value="{{ related.id }}" {% if node.related_node_id == related.id %}selected{% endif %}>
-                                            {{ related.name }}{% if related.title %} - {{ related.title }}{% endif %}
-                                        </option>
-                                    {% endif %}
-                                {% endfor %}
-                            </select>
-                        </div>
-                    </div>
-                    <div class="button-group">
-                        <button type="submit" class="btn btn-primary btn-small">Save Person</button>
-                    </div>
-                </form>
-
-                <form method="POST"
-                      action="{{ url_for('delete_account_org_chart_person', account_id=account.id, chart_id=active_chart.id, node_id=node.id) }}"
-                      onsubmit="return confirm('Remove this person from the org chart?');">
-                    <button type="submit" class="btn btn-danger btn-small">Delete Person</button>
-                </form>
-            </details>
+        <div class="org-drop-zone org-drop-zone-with"
+             data-relationship="with"
+             data-related-node-id="{{ node.id }}">
+            Drop with
         </div>
 
         {% if node.children %}
@@ -63,6 +40,19 @@
                 {% endfor %}
             </ul>
         {% endif %}
+
+        <div class="org-drop-zone org-drop-zone-under"
+             data-relationship="under"
+             data-related-node-id="{{ node.id }}">
+            Drop under
+        </div>
+
+        <form method="POST"
+              action="{{ url_for('delete_account_org_chart_person', account_id=account.id, chart_id=active_chart.id, node_id=node.id) }}"
+              onsubmit="return confirm('Remove this person from the org chart?');"
+              class="org-person-delete-form">
+            <button type="submit" class="btn btn-danger btn-small">Remove</button>
+        </form>
     </li>
 {% endmacro %}
 
@@ -86,16 +76,16 @@
     <div class="section-header">
         <div>
         <h2>Org Chart Workspace</h2>
-        <p>Create a chart, then add customer or partner contacts and define who works under, with or above another person.</p>
+        <p>Create a chart, then drag customer or partner contact tiles into teams and hierarchy rows.</p>
         </div>
     </div>
     <div class="org-chart-help-strip">
         <strong>How to build it:</strong>
         <span>1. Create a chart.</span>
-        <span>2. Add a person.</span>
-        <span>3. Choose Works under, Works with or Works above.</span>
-        <span>4. Leave Related Person blank for a top-level person.</span>
-        <span>5. People are ordered alphabetically inside their mapped organisation.</span>
+        <span>2. Drag a contact tile onto the canvas or another person.</span>
+        <span>3. Drop above, with or under to set hierarchy.</span>
+        <span>4. Save Org Chart Layout to commit the moves.</span>
+        <span>5. People are displayed in hierarchy rows.</span>
     </div>
 
     <form method="POST" action="{{ url_for('create_account_org_chart', account_id=account.id) }}" class="pipeflow-form">
@@ -169,60 +159,68 @@
             <div class="org-chart-add-panel">
                 <div class="section-header compact-section-header">
                     <div>
-                        <h2>Add Person</h2>
-                        <p>Works under places the person below the selected profile. Works with places them in the same team. Works above places a more senior person above the selected profile.</p>
+                        <h2>Drag People Into The Chart</h2>
+                        <p>Drag from available people, or drag an existing tile. Drop on the canvas for top-level, or onto a person's above, with or under target.</p>
                     </div>
                 </div>
 
                 {% if available_people %}
-                    <form method="POST"
-                          action="{{ url_for('add_account_org_chart_person', account_id=account.id, chart_id=active_chart.id) }}"
-                          class="pipeflow-form">
-                        <div class="form-grid">
-                            <div class="form-group">
-                                <label for="person_ref">Person</label>
-                                <select id="person_ref" name="person_ref" required>
-                                    <option value="">Select person</option>
-                                    {% for person in available_people %}
-                                        <option value="{{ person.value }}">{{ person.name }}{% if person.title %} - {{ person.title }}{% endif %}{% if person.source %} ({{ person.source }}){% endif %}</option>
-                                    {% endfor %}
-                                </select>
+                    <div class="org-people-tray" aria-label="Available people">
+                        {% for person in available_people %}
+                            <div class="org-tray-person org-chart-draggable"
+                                 draggable="true"
+                                 data-drag-type="person"
+                                 data-person-ref="{{ person.value }}"
+                                 data-person-name="{{ person.name }}">
+                                <span class="org-person-image">
+                                    {% if person.photo %}
+                                        <img src="{{ person.photo }}" alt="{{ person.name }}">
+                                    {% endif %}
+                                </span>
+                                <strong>{{ person.name }}</strong>
+                                <span>{{ person.title or person.source }}</span>
+                                <small>{{ person.source }}</small>
                             </div>
-                            <div class="form-group">
-                                <label for="relationship">Position</label>
-                                <select id="relationship" name="relationship">
-                                    <option value="under">Works under</option>
-                                    <option value="with" selected>Works with</option>
-                                    <option value="above">Works above</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="related_node_id">Related Person</label>
-                                <select id="related_node_id" name="related_node_id">
-                                    <option value="">No related person</option>
-                                    {% for node in chart_nodes %}
-                                        <option value="{{ node.id }}">{{ node.name }}{% if node.title %} - {{ node.title }}{% endif %}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div class="form-group outreach-filter-actions">
-                                <label>&nbsp;</label>
-                                <button type="submit" class="btn btn-primary">Add to Chart</button>
-                            </div>
-                        </div>
-                    </form>
+                        {% endfor %}
+                    </div>
                 {% else %}
                     <div class="empty-state compact-empty-state">
-                        <h3>No available people to add</h3>
-                        <p>Add contacts to this account, add partner contacts linked to this account, or remove someone from this chart so they can be added again.</p>
+                        <h3>All available people are already in this chart</h3>
+                        <p>Drag existing tiles to rearrange them or remove someone from the chart so they can be added again.</p>
                     </div>
                 {% endif %}
+
+                <form method="POST"
+                      action="{{ url_for('save_account_org_chart_layout', account_id=account.id, chart_id=active_chart.id) }}"
+                      id="orgChartLayoutForm"
+                      class="org-layout-save-form">
+                    <input type="hidden" name="layout_actions" id="orgChartLayoutActions" value="[]">
+                    <div class="org-layout-save-row">
+                        <button type="submit" class="btn btn-primary" id="orgChartSaveButton" disabled>Save Org Chart Layout</button>
+                        <span id="orgChartPendingSummary">No staged moves yet.</span>
+                    </div>
+                    <div class="org-pending-list" id="orgChartPendingList" aria-live="polite"></div>
+                </form>
             </div>
         {% endif %}
     </section>
 {% endif %}
 
 {% if active_chart %}
+    <section class="form-card org-chart-group">
+        <div class="section-header">
+            <div>
+                <h2>Chart Canvas</h2>
+                <p>Drop people below to make them top-level in the selected chart, or drop them onto another person.</p>
+            </div>
+        </div>
+        <div class="org-drop-zone org-drop-zone-canvas"
+             data-relationship="with"
+             data-related-node-id="">
+            Drop here as top-level
+        </div>
+    </section>
+
     {% if roots_by_group %}
         <div class="org-chart-grid">
             {% for group_name, people in roots_by_group.items() %}
@@ -271,5 +269,128 @@
         <p>Create a chart to start mapping customer and partner relationships for this account.</p>
     </div>
 {% endif %}
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const stagedMoves = new Map();
+    let draggedItem = null;
+    const saveForm = document.getElementById("orgChartLayoutForm");
+    const actionsInput = document.getElementById("orgChartLayoutActions");
+    const saveButton = document.getElementById("orgChartSaveButton");
+    const pendingSummary = document.getElementById("orgChartPendingSummary");
+    const pendingList = document.getElementById("orgChartPendingList");
+
+    function relationshipLabel(value) {
+        if (value === "above") {
+            return "above";
+        }
+        if (value === "under") {
+            return "under";
+        }
+        return "with";
+    }
+
+    function updatePendingDisplay() {
+        const moves = Array.from(stagedMoves.values());
+        if (actionsInput) {
+            actionsInput.value = JSON.stringify(moves);
+        }
+        if (saveButton) {
+            saveButton.disabled = moves.length === 0;
+        }
+        if (pendingSummary) {
+            pendingSummary.textContent = moves.length
+                ? `${moves.length} staged move${moves.length === 1 ? "" : "s"} ready to save.`
+                : "No staged moves yet.";
+        }
+        if (!pendingList) {
+            return;
+        }
+        pendingList.innerHTML = "";
+        moves.forEach(function (move) {
+            const item = document.createElement("div");
+            item.className = "org-pending-item";
+            const target = move.related_name ? ` ${relationshipLabel(move.relationship)} ${move.related_name}` : " as top-level";
+            item.textContent = `${move.name}${target}`;
+            pendingList.appendChild(item);
+        });
+    }
+
+    document.querySelectorAll(".org-chart-draggable").forEach(function (tile) {
+        tile.addEventListener("dragstart", function (event) {
+            draggedItem = {
+                type: tile.dataset.dragType,
+                node_id: tile.dataset.nodeId || "",
+                person_ref: tile.dataset.personRef || "",
+                name: tile.dataset.personName || "Selected person"
+            };
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("text/plain", JSON.stringify(draggedItem));
+            tile.classList.add("org-dragging");
+        });
+        tile.addEventListener("dragend", function () {
+            tile.classList.remove("org-dragging");
+        });
+    });
+
+    document.querySelectorAll(".org-drop-zone").forEach(function (zone) {
+        zone.addEventListener("dragover", function (event) {
+            event.preventDefault();
+            zone.classList.add("org-drop-zone-active");
+        });
+        zone.addEventListener("dragleave", function () {
+            zone.classList.remove("org-drop-zone-active");
+        });
+        zone.addEventListener("drop", function (event) {
+            event.preventDefault();
+            zone.classList.remove("org-drop-zone-active");
+            let item = draggedItem;
+            if (!item) {
+                try {
+                    item = JSON.parse(event.dataTransfer.getData("text/plain"));
+                } catch (error) {
+                    item = null;
+                }
+            }
+            if (!item) {
+                return;
+            }
+            const relationship = zone.dataset.relationship || "with";
+            const relatedNodeId = zone.dataset.relatedNodeId || "";
+            if (item.type === "node" && item.node_id && item.node_id === relatedNodeId) {
+                return;
+            }
+            const relatedCard = relatedNodeId
+                ? document.querySelector(`[data-node-id="${relatedNodeId}"] .org-person-card`)
+                : null;
+            const move = {
+                relationship: relationship,
+                related_node_id: relatedNodeId,
+                related_name: relatedCard ? relatedCard.dataset.personName : "",
+                name: item.name
+            };
+            let key;
+            if (item.type === "node") {
+                key = `node:${item.node_id}`;
+                move.node_id = item.node_id;
+            } else {
+                key = `person:${item.person_ref}`;
+                move.person_ref = item.person_ref;
+            }
+            stagedMoves.set(key, move);
+            document.querySelectorAll(`[data-node-id="${item.node_id}"], [data-person-ref="${item.person_ref}"]`).forEach(function (tile) {
+                tile.classList.add("org-move-staged");
+            });
+            updatePendingDisplay();
+        });
+    });
+
+    if (saveForm) {
+        saveForm.addEventListener("submit", function () {
+            updatePendingDisplay();
+        });
+    }
+});
+</script>
 
 {% endblock %}
