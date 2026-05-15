@@ -22,13 +22,29 @@ for vendor_base in (
 
 from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
+from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from models import GoalsSummary, OwnerReport, PGBibleExportError
 
 
 SECTION_LABELS = ["PG GOALS", "PG PLAN", "PG ACTIONS", "PG RESULTS"]
+MAY_2026_SECTION_LABELS = ["PG GOALS", "PG PLAN", "PG ACTIONS"]
 INVALID_SHEET_CHARS = r"[]:*?/\\"
+NBM_COLOURS = {
+    0: ("D90000", "FFFFFF"),
+    1: ("F00000", "FFFFFF"),
+    2: ("FFC000", "FFFFFF"),
+    3: ("FFF200", "111111"),
+    4: ("92D050", "111111"),
+    5: ("00B050", "FFFFFF"),
+    6: ("00B0F0", "FFFFFF"),
+    7: ("0070C0", "FFFFFF"),
+    8: ("002060", "FFFFFF"),
+    9: ("000000", "FFFFFF"),
+    10: ("7F7F7F", "FFFFFF"),
+    11: ("595959", "FFFFFF"),
+}
 MONTH_ORDER = {
     "april": 1,
     "may": 2,
@@ -135,16 +151,17 @@ class PGBibleExporter:
         reporting_date = reporting_date or date.today()
         wb = load_workbook(self.template_path, data_only=False)
 
-        if "Real example" not in wb.sheetnames:
+        template_sheet_name = "Real example" if "Real example" in wb.sheetnames else ("Name" if "Name" in wb.sheetnames else None)
+        if template_sheet_name is None:
             raise PGBibleExportError(
                 "TEMPLATE_SHEET_MISSING",
-                "The template workbook is missing the Real example worksheet.",
-                ["Real example"],
+                "The template workbook is missing a supported PG Bible worksheet.",
+                ["Real example", "Name"],
             )
 
-        ws = wb["Real example"]
+        ws = wb[template_sheet_name]
         for other in list(wb.worksheets):
-            if other.title != "Real example":
+            if other.title != template_sheet_name:
                 wb.remove(other)
 
         final_sheet_name = sanitize_excel_name(report.profile.profile_name)
@@ -152,20 +169,31 @@ class PGBibleExporter:
         print(f"profile name used: {report.profile.profile_name}")
         print(f"sheet name final: {final_sheet_name}")
 
-        self._validate_sections(ws)
-        self._validate_tables(ws)
-        baseline = self._structural_snapshot(ws)
-        report.goals = report.goals or self._compute_goals(report, reporting_date)
+        if self._is_may_2026_template(ws):
+            self._validate_sections(ws, MAY_2026_SECTION_LABELS)
+            self._configure_may_2026_mapping()
+            self._prepare_may_2026_capacity(ws, report)
+            baseline = self._structural_snapshot(ws)
+            self._clear_may_2026_template(ws)
+            self._write_may_2026_goals(ws, report)
+            plan_count = self._write_may_2026_plan(ws, report)
+            action_count = self._write_may_2026_actions(ws, report)
+            weekly_count = 0
+        else:
+            self._validate_sections(ws)
+            self._validate_tables(ws)
+            baseline = self._structural_snapshot(ws)
+            report.goals = report.goals or self._compute_goals(report, reporting_date)
 
-        self._clear_goals(ws)
-        self._clear_table(ws, self.header_cache["PG PLAN"])
-        self._clear_table(ws, self.header_cache["PG ACTIONS"])
-        self._clear_weekly_rows(ws, self.header_cache["PG RESULTS"])
+            self._clear_goals(ws)
+            self._clear_table(ws, self.header_cache["PG PLAN"])
+            self._clear_table(ws, self.header_cache["PG ACTIONS"])
+            self._clear_weekly_rows(ws, self.header_cache["PG RESULTS"])
 
-        self._write_goals(ws, report.goals)
-        plan_count = self._write_plan(ws, report)
-        action_count = self._write_actions(ws, report)
-        weekly_count = self._write_weekly_results(ws, report)
+            self._write_goals(ws, report.goals)
+            plan_count = self._write_plan(ws, report)
+            action_count = self._write_actions(ws, report)
+            weekly_count = self._write_weekly_results(ws, report)
 
         print(f"plan rows written: {plan_count}")
         print(f"action rows written: {action_count}")
@@ -192,9 +220,40 @@ class PGBibleExporter:
         print(f"calculation pipeline_gap output: {gap}")
         return GoalsSummary(starting_pipeline=starting, pipeline_added=added, pipeline_target=target, pipeline_gap=gap)
 
-    def _validate_sections(self, ws) -> None:
+    def _is_may_2026_template(self, ws) -> bool:
+        return bool(self._find_exact(ws, "FY Current Pipeline")) and not bool(self._find_exact(ws, "PG RESULTS"))
+
+    def _configure_may_2026_mapping(self) -> None:
+        self.header_cache["PG PLAN"] = TableRegion(
+            "PG PLAN",
+            {8, 9},
+            {
+                "nbm_target": 2,
+                "sales_play": 4,
+                "customer": 12,
+                "estimated_value": 13,
+            },
+            11,
+            29,
+        )
+        self.header_cache["PG ACTIONS"] = TableRegion(
+            "PG ACTIONS",
+            {31, 32},
+            {
+                "related_nbm_target": 2,
+                "account_contact": 3,
+                "discovery_completed": 6,
+                "discovery_next_action": 7,
+                "nbm_booked": 10,
+                "exec_first": 14,
+            },
+            33,
+            79,
+        )
+
+    def _validate_sections(self, ws, labels: list[str] | None = None) -> None:
         missing = []
-        for label in SECTION_LABELS:
+        for label in labels or SECTION_LABELS:
             matches = self._find_exact(ws, label)
             if not matches:
                 missing.append(label)
@@ -206,6 +265,101 @@ class PGBibleExporter:
 
         if missing:
             raise PGBibleExportError("SECTION_MISSING", "The template is missing one or more required sections.", missing)
+
+    def _clear_may_2026_template(self, ws) -> None:
+        for coordinate in ("F3", "L3"):
+            cell = ws[coordinate]
+            if not self._is_formula(cell):
+                cell.value = None
+        self._clear_mapped_rows(ws, 11, 29, range(2, 14))
+        action_region = self.header_cache["PG ACTIONS"]
+        self._clear_mapped_rows(ws, action_region.start_row, action_region.end_row, range(2, 21))
+
+    def _prepare_may_2026_capacity(self, ws, report: OwnerReport) -> None:
+        plan_region = self.header_cache["PG PLAN"]
+        self._ensure_capacity(ws, plan_region, len(report.plan_items))
+        self._sync_following_region_after_insert("PG ACTIONS", plan_region)
+        self._ensure_capacity(ws, self.header_cache["PG ACTIONS"], len(report.action_items))
+
+    def _clear_mapped_rows(self, ws, start_row: int, end_row: int, columns) -> None:
+        for row in range(start_row, end_row + 1):
+            for col in columns:
+                cell = ws.cell(row, col)
+                if isinstance(cell, MergedCell) or self._is_formula(cell):
+                    continue
+                cell.value = None
+
+    def _write_may_2026_goals(self, ws, report: OwnerReport) -> None:
+        target = report.calc_payload.get("pipeline_target")
+        current = report.calc_payload.get("current_pipeline", report.calc_payload.get("starting_pipeline"))
+        self._write_value(ws["L3"], decimal_value(target or 0))
+        self._write_value(ws["F3"], decimal_value(current or 0))
+
+    def _write_may_2026_plan(self, ws, report: OwnerReport) -> int:
+        region = self.header_cache["PG PLAN"]
+        rows = sorted(
+            report.plan_items,
+            key=lambda item: (
+                item.pg_bible_order if item.pg_bible_order is not None else 999999,
+                item.customer.casefold(),
+            ),
+        )
+        for offset, item in enumerate(rows):
+            row = region.start_row + offset
+            nbm_value = item.nbm_target or item.pg_bible_order or ""
+            self._write_value(ws.cell(row, 2), nbm_value)
+            self._apply_nbm_fill(ws.cell(row, 2), nbm_value)
+            self._write_value(ws.cell(row, 4), item.sales_play)
+            self._write_value(ws.cell(row, 12), item.customer)
+            self._write_value(ws.cell(row, 13), item.estimated_value)
+        return len(rows)
+
+    def _write_may_2026_actions(self, ws, report: OwnerReport) -> int:
+        region = self.header_cache["PG ACTIONS"]
+        for offset, item in enumerate(report.action_items):
+            row = region.start_row + offset
+            nbm_value = item.related_nbm_target or ""
+            self._write_value(ws.cell(row, 2), nbm_value)
+            self._apply_nbm_fill(ws.cell(row, 2), nbm_value)
+            self._write_value(ws.cell(row, 3), item.discovery_target_name_title)
+            ws.cell(row, 3).alignment = copy.copy(ws.cell(row, 3).alignment)
+            ws.cell(row, 3).alignment = ws.cell(row, 3).alignment.copy(wrap_text=True, vertical="top")
+            self._write_value(ws.cell(row, 6), self._yes_no(item.discovery_completed))
+            self._write_value(ws.cell(row, 7), item.discovery_next_action)
+            ws.cell(row, 7).alignment = copy.copy(ws.cell(row, 7).alignment)
+            ws.cell(row, 7).alignment = ws.cell(row, 7).alignment.copy(wrap_text=True, vertical="top")
+            self._write_value(ws.cell(row, 10), self._yes_no(item.nbm_booked or item.nbm_booked_date))
+            self._write_value(ws.cell(row, 14), self._yes_no(item.exec_first))
+        return len(report.action_items)
+
+    def _sync_following_region_after_insert(self, following_region_name: str, preceding_region: TableRegion) -> None:
+        following = self.header_cache.get(following_region_name)
+        if not following:
+            return
+        expected_start = 33
+        shift = preceding_region.end_row - 29
+        following.header_rows = {row + shift for row in {31, 32}}
+        following.start_row = expected_start + shift
+        following.end_row = 79 + shift
+
+    def _apply_nbm_fill(self, cell, value: Any) -> None:
+        try:
+            colour_index = int(str(value or "0")) % 12
+        except ValueError:
+            colour_index = 0
+        fill_colour, font_colour = NBM_COLOURS[colour_index]
+        cell.fill = PatternFill(fill_type="solid", fgColor=fill_colour)
+        cell.font = copy.copy(cell.font)
+        cell.font = Font(
+            name=cell.font.name,
+            sz=cell.font.sz,
+            b=cell.font.b,
+            i=cell.font.i,
+            vertAlign=cell.font.vertAlign,
+            underline=cell.font.underline,
+            strike=cell.font.strike,
+            color=font_colour,
+        )
 
     def _validate_tables(self, ws) -> None:
         self.header_cache["PG PLAN"] = self._discover_plan(ws)
@@ -567,6 +721,11 @@ class PGBibleExporter:
         return values
 
     def _copy_row_style(self, ws, source_row: int, target_row: int) -> None:
+        source_merges = [
+            merged
+            for merged in list(ws.merged_cells.ranges)
+            if merged.min_row == source_row and merged.max_row == source_row
+        ]
         ws.row_dimensions[target_row].height = ws.row_dimensions[source_row].height
         for col in range(1, ws.max_column + 1):
             source = ws.cell(source_row, col)
@@ -575,6 +734,10 @@ class PGBibleExporter:
                 target._style = copy.copy(source._style)
             if source.number_format:
                 target.number_format = source.number_format
+        for merged in source_merges:
+            target_range = f"{get_column_letter(merged.min_col)}{target_row}:{get_column_letter(merged.max_col)}{target_row}"
+            if target_range not in {str(rng) for rng in ws.merged_cells.ranges}:
+                ws.merge_cells(target_range)
 
     def _find_exact(self, ws, text: str):
         matches = []

@@ -75,6 +75,8 @@ RELEASE_NOTES = [
                 "enhanced": [
                     "Simplified Outreach edit actions to Save, Complete and Create Follow-Up, and Cancel.",
                     "Updated Complete and Create Follow-Up so it completes the current activity and opens a new pre-populated Outreach activity form.",
+                    "Enhanced Org Chart visuals so peer relationships display connector lines as well as manager and direct report relationships.",
+                    "Enhanced PG Bible export to use the May 2026 template and map PG Goals, PG Plan and PG Actions from PipeFlow PG Progress data.",
                 ],
             },
         ],
@@ -8135,10 +8137,66 @@ def build_pg_bible_report_from_db(connection):
 
     total_account_target = sum(account["pipeline_target"] or 0 for account in accounts)
     total_pipeline_added = sum(row.pipeline_generated_value or 0 for row in weekly_results)
+    pg_context = pg_dashboard_context(connection)
+    plan_items = [
+        PlanItem(
+            pg_bible_order=int(row["target_number"]) if str(row["target_number"] or "").isdigit() else None,
+            pipeline_target_value=row["estimated_value"] or 0,
+            nbm_target=str(row["target_number"] or ""),
+            customer=row["account_name"] or "",
+            sales_play=" | ".join(
+                part.strip()
+                for part in str(row["sales_play"] or "").replace(";", "|").split("|")
+                if part.strip()
+            ),
+            estimated_value=row["estimated_value"] or 0,
+        )
+        for row in pg_context["pg_plan_rows"]
+    ]
+
+    action_items = []
+    for row in pg_context["pg_action_rows"]:
+        account_contact_parts = []
+        if row.get("company_name"):
+            account_contact_parts.append(f"Account: {row['company_name']}")
+        if row.get("business_org") and not row.get("is_partner_row"):
+            account_contact_parts.append(f"Business / Org: {row['business_org']}")
+        if row.get("department"):
+            label = "Partner Company" if row.get("is_partner_row") else "Department"
+            account_contact_parts.append(f"{label}: {row['department']}")
+        if row.get("targeted_discovery"):
+            label = "Partner Contact" if row.get("is_partner_row") else "Contact"
+            account_contact_parts.append(f"{label}: {row['targeted_discovery']}")
+        if row.get("contact_job_title"):
+            account_contact_parts.append(f"Job Title: {row['contact_job_title']}")
+
+        scheduled_actions = []
+        for action in row.get("next_7_days_actions") or []:
+            action_text = action.get("subject") or "Scheduled action"
+            if action.get("due"):
+                action_text = f"{action_text} ({action['due']})"
+            scheduled_actions.append(action_text)
+
+        nbm_booked = ""
+        if any("nbm" in action.casefold() or "meeting" in action.casefold() for action in scheduled_actions):
+            nbm_booked = "Yes"
+        elif row.get("nbm_completed") in ("Yes", "N/A"):
+            nbm_booked = row["nbm_completed"]
+
+        action_items.append(ActionItem(
+            related_nbm_target=str(row.get("target_number") or ""),
+            discovery_target_name_title="\n".join(account_contact_parts),
+            discovery_completed=row.get("completed_discovery_meeting") or "",
+            discovery_next_action="\n".join(scheduled_actions),
+            nbm_booked=nbm_booked,
+            exec_first=row.get("exec_first") or "",
+        ))
+
     calc_payload = {
-        "starting_pipeline": os.environ.get("PIPEFLOW_PG_STARTING_PIPELINE", total_account_target),
+        "starting_pipeline": os.environ.get("PIPEFLOW_PG_STARTING_PIPELINE", pg_context["current_pipeline"]),
+        "current_pipeline": pg_context["current_pipeline"],
         "pipeline_added": os.environ.get("PIPEFLOW_PG_PIPELINE_ADDED", total_pipeline_added),
-        "pipeline_target": os.environ.get("PIPEFLOW_PG_PIPELINE_TARGET", total_account_target),
+        "pipeline_target": os.environ.get("PIPEFLOW_PG_PIPELINE_TARGET", pg_context["fy_pipeline_target"]),
     }
 
     return OwnerReport(
@@ -8154,7 +8212,7 @@ def build_pg_bible_report_from_db(connection):
 def export_pg_bible():
     template_setting = os.environ.get("PG_BIBLE_TEMPLATE_PATH", "").strip()
     if not template_setting:
-        bundled_template = Path(__file__).resolve().parent / "pg_bible_templates" / "PG Bible FY27.xlsx"
+        bundled_template = Path(__file__).resolve().parent / "pg_bible_templates" / "PGBible_Template_May2026.xlsx"
         template_setting = str(bundled_template)
 
     try:
