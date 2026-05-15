@@ -6,8 +6,8 @@ import webbrowser
 import csv
 import io
 import re
-import traceback
 import json
+import secrets
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
@@ -71,12 +71,18 @@ RELEASE_NOTES = [
                     "Moved the Outreach edit contact job title display directly beneath the Contact field.",
                     "Fixed the hosted Org Chart page by ensuring the new org chart persistence tables work with the database compatibility layer.",
                     "Removed Closed as a selectable Outreach task status and migrated old Closed values to Completed.",
+                    "Hardened workspace security so cross-workspace task reassignment requires explicit account access and storage health no longer displays user email or workspace schema.",
+                    "Fixed PG Bible PG Actions mapping so Discovery meeting completed, Exec First and next seven day action notes populate in the May 2026 template.",
                 ],
                 "enhanced": [
                     "Simplified Outreach edit actions to Save, Complete and Create Follow-Up, and Cancel.",
                     "Updated Complete and Create Follow-Up so it completes the current activity and opens a new pre-populated Outreach activity form.",
                     "Enhanced Org Chart visuals so peer relationships display connector lines as well as manager and direct report relationships.",
                     "Enhanced PG Bible export to use the May 2026 template and map PG Goals, PG Plan and PG Actions from PipeFlow PG Progress data.",
+                    "Enhanced browser-side security by using safer session cookie defaults and no-store headers on authenticated app pages.",
+                    "Enhanced PG Bible PG Plan and PG Actions mapping to include account business unit or organisation values in the required output cells.",
+                    "Enhanced account navigation so selecting an account opens View Account first, with Edit available from the account view.",
+                    "Enhanced Outreach activity types by replacing Meeting with Discovery Meeting and NBM Booked.",
                 ],
             },
         ],
@@ -561,9 +567,23 @@ app = Flask(
     template_folder=resource_path("templates"),
     static_folder=resource_path("static")
 )
-app.config["SECRET_KEY"] = os.environ.get("PIPEFLOW_SECRET_KEY", "pipeflow-server-dev-secret-change-me")
+app.config["SECRET_KEY"] = os.environ.get("PIPEFLOW_SECRET_KEY") or secrets.token_hex(32)
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("PIPEFLOW_COOKIE_SECURE", "1" if os.environ.get("RENDER") else "0") == "1"
 
 initialise_auth_database()
+
+
+@app.after_request
+def apply_security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    if request.endpoint != "static":
+        response.headers.setdefault("Cache-Control", "no-store, max-age=0")
+        response.headers.setdefault("Pragma", "no-cache")
+    return response
 
 
 @app.context_processor
@@ -919,9 +939,7 @@ def storage_health():
     lines = [
         f"backend={backend}",
         f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
-        f"user_id={session.get('user_id', '')}",
-        f"user_email={session.get('user_email', '')}",
-        f"workspace_schema={current_user_schema() if using_postgres() else ''}",
+        "user_authenticated=true" if session.get("user_id") else "user_authenticated=false",
     ]
     return Response("\n".join(lines), mimetype="text/plain")
 
@@ -1858,7 +1876,7 @@ def build_campaign_success_context(connection, account_id, contact_ids, sales_pl
         if row["outcome"] in POSITIVE_OUTCOMES:
             row_score += 8
             evidence[activity_type]["positive"] += 1
-        if row["outcome"] == "Meeting Booked" or activity_type == "Meeting":
+        if row["outcome"] == "Meeting Booked" or is_meeting_activity_type(activity_type):
             row_score += 5
             evidence[activity_type]["meeting"] += 1
         if row["outcome"] in NEGATIVE_OUTCOMES:
@@ -2045,6 +2063,7 @@ def build_pg_campaign_steps(pg_week_start):
 POSITIVE_OUTCOMES = (
     "Positive Response",
     "Meeting Booked",
+    "NBM Booked",
     "Referral Made",
     "Follow-up Required",
 )
@@ -2058,6 +2077,18 @@ CLOSED_TASK_STATUSES = (
     "Completed",
     "Cancelled",
 )
+
+
+MEETING_ACTIVITY_TYPES = {
+    "Meeting",
+    "Meeting Booked",
+    "Discovery Meeting",
+    "NBM Booked",
+}
+
+
+def is_meeting_activity_type(value):
+    return (value or "").strip() in MEETING_ACTIVITY_TYPES
 
 
 def is_closed_task_status(status):
@@ -2207,12 +2238,12 @@ def build_learning_insights(connection):
         COUNT(outreach.id) AS total,
         SUM(CASE
             WHEN outreach.outcome IN ({positive_placeholders})
-              OR outreach.activity_type = 'Meeting'
+              OR outreach.activity_type IN ('Meeting', 'Meeting Booked', 'Discovery Meeting', 'NBM Booked')
             THEN 1 ELSE 0
         END) AS positive_total,
         SUM(CASE
             WHEN outreach.outcome = 'Meeting Booked'
-              OR outreach.activity_type = 'Meeting'
+              OR outreach.activity_type IN ('Meeting', 'Meeting Booked', 'Discovery Meeting', 'NBM Booked')
             THEN 1 ELSE 0
         END) AS meeting_total,
         SUM(CASE
@@ -2450,9 +2481,8 @@ def home():
     connection = get_db_connection()
     try:
         return build_dashboard_response(connection)
-    except Exception as exc:
-        print(f"Dashboard failed: {exc!r}", file=sys.stderr)
-        traceback.print_exc()
+    except Exception:
+        print("Dashboard failed; fallback rendered.", file=sys.stderr)
         return render_dashboard_fallback()
     finally:
         connection.close()
@@ -2555,7 +2585,7 @@ def build_dashboard_response(connection):
                 this_week_completed += 1
 
         if activity_date and week_start <= activity_date <= week_end:
-            if row["outcome"] == "Meeting Booked" or row["activity_type"] == "Meeting":
+            if row["outcome"] == "Meeting Booked" or is_meeting_activity_type(row["activity_type"]):
                 this_week_meetings_booked += 1
 
     this_week_untouched_accounts = connection.execute("""
@@ -2576,7 +2606,7 @@ def build_dashboard_response(connection):
     meetings_booked = connection.execute("""
         SELECT COUNT(*) FROM outreach
         WHERE outcome = 'Meeting Booked'
-           OR activity_type = 'Meeting'
+           OR activity_type IN ('Meeting', 'Meeting Booked', 'Discovery Meeting', 'NBM Booked')
     """).fetchone()[0]
 
     follow_ups_due = connection.execute("""
@@ -2673,7 +2703,7 @@ def build_dashboard_response(connection):
                 WHERE outreach.account_id = accounts.id
                   AND (
                         outreach.outcome = 'Meeting Booked'
-                     OR outreach.activity_type = 'Meeting'
+                     OR outreach.activity_type IN ('Meeting', 'Meeting Booked', 'Discovery Meeting', 'NBM Booked')
                   )
             ) AS meeting_count,
 
@@ -3222,6 +3252,7 @@ def pg_dashboard_context(connection):
             "colour_index": nbm_colour_index(pg_target_number),
             "sales_play": pg_sales_play,
             "account_name": account["account_name"],
+            "business_unit": account["business_unit"] or "",
             "estimated_value": money_value(account["pipeline_target"]),
         })
 
@@ -3242,7 +3273,7 @@ def pg_dashboard_context(connection):
             if latest_contact_activity and str(latest_contact_activity)[:10] < (datetime.now() - timedelta(days=14)).date().isoformat():
                 continue
             scheduled_action_rows = connection.execute("""
-                SELECT subject, next_action_date, next_action_time
+                SELECT subject, next_action, next_action_date, next_action_time
                 FROM outreach
                 WHERE account_id = ?
                   AND contact_id = ?
@@ -3271,10 +3302,12 @@ def pg_dashboard_context(connection):
 
             next_7_days_actions = []
             for action_row in scheduled_action_rows:
-                subject = action_row["subject"] or "Scheduled action"
+                subject_parts = [action_row["subject"] or "Scheduled action"]
+                if action_row["next_action"]:
+                    subject_parts.append(action_row["next_action"])
                 due_parts = [action_row["next_action_date"] or "", action_row["next_action_time"] or ""]
                 next_7_days_actions.append({
-                    "subject": subject,
+                    "subject": " - ".join(subject_parts),
                     "due": " ".join(part for part in due_parts if part),
                 })
             last_7_days_activity_entries = []
@@ -3372,8 +3405,11 @@ def pg_dashboard_context(connection):
                 if key not in seen_partner_entries:
                     seen_partner_entries.add(key)
                     due_parts = [row["next_action_date"] or "", row["next_action_time"] or ""]
+                    subject_parts = [row["subject"] or f"Partner activity - {partner_name}"]
+                    if row["next_action"]:
+                        subject_parts.append(row["next_action"])
                     partner_scheduled_actions.append({
-                        "subject": row["subject"] or f"Partner activity - {partner_name}",
+                        "subject": " - ".join(subject_parts),
                         "due": " ".join(part for part in due_parts if part),
                     })
         if partner_activity_entries or partner_scheduled_actions:
@@ -3499,7 +3535,7 @@ def accounts():
                 WHERE outreach.account_id = accounts.id
                   AND (
                         outreach.outcome = 'Meeting Booked'
-                     OR outreach.activity_type = 'Meeting'
+                     OR outreach.activity_type IN ('Meeting', 'Meeting Booked', 'Discovery Meeting', 'NBM Booked')
                   )
             ) AS meeting_count,
 
@@ -4152,7 +4188,7 @@ def view_account(account_id):
                 WHERE outreach.account_id = accounts.id
                   AND (
                         outreach.outcome = 'Meeting Booked'
-                     OR outreach.activity_type = 'Meeting'
+                     OR outreach.activity_type IN ('Meeting', 'Meeting Booked', 'Discovery Meeting', 'NBM Booked')
                   )
             ) AS meeting_count,
 
@@ -6934,7 +6970,7 @@ def upsert_account_share(connection, account_id, target_member):
     return cursor.lastrowid
 
 
-def account_access_user_ids(connection, account):
+def account_access_user_ids(connection, account, include_current_user=True):
     owner = account_owner_payload(account)
     allowed_user_ids = set()
     if owner["owner_user_id"]:
@@ -6946,7 +6982,7 @@ def account_access_user_ids(connection, account):
     """, (account["id"],)).fetchall()
     allowed_user_ids.update(str(row["user_id"]) for row in rows if row["user_id"])
     current = current_user()
-    if current:
+    if include_current_user and current:
         allowed_user_ids.add(str(current["id"]))
     return allowed_user_ids
 
@@ -6955,6 +6991,32 @@ def assignee_has_account_access(connection, account, assigned_to_user_id):
     if not assigned_to_user_id:
         return True
     return str(assigned_to_user_id) in account_access_user_ids(connection, account)
+
+
+def current_user_has_workspace_account_access(connection, account, workspace_schema):
+    user = current_user()
+    if not user or not account:
+        return False
+    if using_postgres() and workspace_schema == current_user_schema():
+        return True
+    owner = account_owner_payload(account)
+    if owner["owner_user_id"] and str(owner["owner_user_id"]) == str(user["id"]):
+        return True
+    share = connection.execute("""
+        SELECT id
+        FROM account_shared_users
+        WHERE account_id = ?
+          AND user_id = ?
+    """, (account["id"], user["id"])).fetchone()
+    return bool(share)
+
+
+def known_user_workspace_schemas():
+    schemas = {current_user_schema()} if using_postgres() else {""}
+    for assignable_user in list_assignable_users():
+        if "workspace_schema" in assignable_user.keys() and assignable_user["workspace_schema"]:
+            schemas.add(assignable_user["workspace_schema"])
+    return schemas
 
 
 def share_full_account_to_member(source_schema, account_id, target_member, actor_name):
@@ -7320,11 +7382,8 @@ def revoke_account_share_from_outreach(share_id):
 @app.route("/team-outreach/reassign", methods=("POST",))
 def reassign_team_outreach():
     user = current_user()
-    members = list_active_team_members(user)
     assignable_users = list_assignable_users()
-    allowed_schemas = {member["workspace_schema"] for member in members if member["workspace_schema"]}
-    if not using_postgres():
-        allowed_schemas.add("")
+    allowed_schemas = known_user_workspace_schemas()
     allowed_user_ids = {str(member["id"]) for member in assignable_users}
     workspace_schema = request.form.get("workspace_schema")
     outreach_id = request.form.get("outreach_id")
@@ -7341,6 +7400,12 @@ def reassign_team_outreach():
             connection.close()
             return redirect(url_for("outreach", error="Completed and cancelled tasks cannot be reassigned."))
         account = connection.execute("SELECT * FROM accounts WHERE id = ?", (outreach_item["account_id"],)).fetchone()
+        if not current_user_has_workspace_account_access(connection, account, workspace_schema):
+            connection.close()
+            return redirect(url_for(
+                "outreach",
+                error="You do not have permission to update this account or task."
+            ))
         if account and not assignee_has_account_access(connection, account, assigned_to_user_id):
             connection.close()
             return redirect(url_for(
@@ -8038,7 +8103,7 @@ def build_pg_bible_report_from_db(connection):
             WHERE contact_id = ?
               AND (
                     outcome = 'Meeting Booked'
-                 OR activity_type = 'Meeting'
+                 OR activity_type IN ('Meeting', 'Meeting Booked', 'Discovery Meeting', 'NBM Booked')
               )
         """, (contact["id"],)).fetchone()[0]
 
@@ -8105,9 +8170,9 @@ def build_pg_bible_report_from_db(connection):
             totals["vitos_sent"] += 1
             if row["outcome"] != "No Response Yet":
                 totals["vitos_chased"] += 1
-        if row["activity_type"] == "Meeting" or is_meeting_booked:
+        if is_meeting_activity_type(row["activity_type"]) or is_meeting_booked:
             totals["discovery_booked"] += 1
-        if row["activity_type"] == "Meeting":
+        if is_meeting_activity_type(row["activity_type"]):
             totals["discovery_completed"] += 1
         if is_meeting_booked:
             totals["nbms_booked"] += 1
@@ -8144,6 +8209,7 @@ def build_pg_bible_report_from_db(connection):
             pipeline_target_value=row["estimated_value"] or 0,
             nbm_target=str(row["target_number"] or ""),
             customer=row["account_name"] or "",
+            customer_business_unit=row.get("business_unit") or "",
             sales_play=" | ".join(
                 part.strip()
                 for part in str(row["sales_play"] or "").replace(";", "|").split("|")
@@ -8158,17 +8224,13 @@ def build_pg_bible_report_from_db(connection):
     for row in pg_context["pg_action_rows"]:
         account_contact_parts = []
         if row.get("company_name"):
-            account_contact_parts.append(f"Account: {row['company_name']}")
+            account_contact_parts.append(row["company_name"])
         if row.get("business_org") and not row.get("is_partner_row"):
-            account_contact_parts.append(f"Business / Org: {row['business_org']}")
+            account_contact_parts.append(row["business_org"])
         if row.get("department"):
-            label = "Partner Company" if row.get("is_partner_row") else "Department"
-            account_contact_parts.append(f"{label}: {row['department']}")
+            account_contact_parts.append(row["department"])
         if row.get("targeted_discovery"):
-            label = "Partner Contact" if row.get("is_partner_row") else "Contact"
-            account_contact_parts.append(f"{label}: {row['targeted_discovery']}")
-        if row.get("contact_job_title"):
-            account_contact_parts.append(f"Job Title: {row['contact_job_title']}")
+            account_contact_parts.append(row["targeted_discovery"])
 
         scheduled_actions = []
         for action in row.get("next_7_days_actions") or []:
@@ -8177,19 +8239,17 @@ def build_pg_bible_report_from_db(connection):
                 action_text = f"{action_text} ({action['due']})"
             scheduled_actions.append(action_text)
 
-        nbm_booked = ""
-        if any("nbm" in action.casefold() or "meeting" in action.casefold() for action in scheduled_actions):
-            nbm_booked = "Yes"
-        elif row.get("nbm_completed") in ("Yes", "N/A"):
-            nbm_booked = row["nbm_completed"]
+        discovery_completed = row.get("completed_discovery_meeting") or ("N/A" if row.get("is_partner_row") else "No")
+        exec_first = row.get("exec_first") or ("N/A" if row.get("is_partner_row") else "No")
+        nbm_completed = row.get("nbm_completed") or ("N/A" if row.get("is_partner_row") else "No")
 
         action_items.append(ActionItem(
             related_nbm_target=str(row.get("target_number") or ""),
-            discovery_target_name_title="\n".join(account_contact_parts),
-            discovery_completed=row.get("completed_discovery_meeting") or "",
+            discovery_target_name_title=" | ".join(account_contact_parts),
+            discovery_completed=discovery_completed,
             discovery_next_action="\n".join(scheduled_actions),
-            nbm_booked=nbm_booked,
-            exec_first=row.get("exec_first") or "",
+            nbm_completed=nbm_completed,
+            exec_first=exec_first,
         ))
 
     calc_payload = {
@@ -8708,7 +8768,7 @@ def outreach_reports():
     total_outreach = len(filtered_outreach)
     meetings_booked = sum(
         1 for item in filtered_outreach
-        if item["outcome"] == "Meeting Booked" or item["activity_type"] == "Meeting"
+        if item["outcome"] == "Meeting Booked" or is_meeting_activity_type(item["activity_type"])
     )
     meeting_conversion_total = meetings_booked
 
@@ -8726,7 +8786,7 @@ def outreach_reports():
             if month not in monthly_totals:
                 monthly_totals[month] = {"total_outreach": 0, "meetings_booked": 0}
             monthly_totals[month]["total_outreach"] += 1
-            if item["outcome"] == "Meeting Booked" or item["activity_type"] == "Meeting":
+            if item["outcome"] == "Meeting Booked" or is_meeting_activity_type(item["activity_type"]):
                 monthly_totals[month]["meetings_booked"] += 1
 
     outcome_breakdown = [

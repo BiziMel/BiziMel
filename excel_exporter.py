@@ -244,7 +244,7 @@ class PGBibleExporter:
                 "account_contact": 3,
                 "discovery_completed": 6,
                 "discovery_next_action": 7,
-                "nbm_booked": 10,
+                "nbm_booked": 16,
                 "exec_first": 14,
             },
             33,
@@ -310,7 +310,7 @@ class PGBibleExporter:
             self._write_value(ws.cell(row, 2), nbm_value)
             self._apply_nbm_fill(ws.cell(row, 2), nbm_value)
             self._write_value(ws.cell(row, 4), item.sales_play)
-            self._write_value(ws.cell(row, 12), item.customer)
+            self._write_value(ws.cell(row, 12), self._join_parts([item.customer, item.customer_business_unit], ", "))
             self._write_value(ws.cell(row, 13), item.estimated_value)
         return len(rows)
 
@@ -328,7 +328,7 @@ class PGBibleExporter:
             self._write_value(ws.cell(row, 7), item.discovery_next_action)
             ws.cell(row, 7).alignment = copy.copy(ws.cell(row, 7).alignment)
             ws.cell(row, 7).alignment = ws.cell(row, 7).alignment.copy(wrap_text=True, vertical="top")
-            self._write_value(ws.cell(row, 10), self._yes_no(item.nbm_booked or item.nbm_booked_date))
+            self._write_value(ws.cell(row, 16), self._yes_no_or_na(item.nbm_completed or item.nbm_booked or item.nbm_booked_date))
             self._write_value(ws.cell(row, 14), self._yes_no(item.exec_first))
         return len(report.action_items)
 
@@ -671,6 +671,17 @@ class PGBibleExporter:
         if text in {"no", "n", "false", "0"}:
             return "No"
         return str(value).strip()
+
+    def _yes_no_or_na(self, value: Any) -> str:
+        if value in (None, ""):
+            return ""
+        text = str(value).strip().casefold()
+        if text in {"n/a", "na", "not applicable"}:
+            return "N/A"
+        return self._yes_no(value)
+
+    def _join_parts(self, parts: list[Any], separator: str) -> str:
+        return separator.join(str(part).strip() for part in parts if str(part or "").strip())
 
     def _coerce_week_key(self, value: Any, data_type: str):
         if data_type == "date" and isinstance(value, str):

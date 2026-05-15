@@ -46,6 +46,7 @@ class PlanItem:
     nbm_target: str = ""
     sales_play: str = ""
     customer: str = ""
+    customer_business_unit: str = ""
     estimated_value: Decimal = Decimal("0")
 
 
