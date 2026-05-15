@@ -478,6 +478,7 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "outreach", "next_action_time", "TEXT")
     add_column_if_missing(cursor, "outreach", "task_status", "TEXT DEFAULT 'Not Started'")
     add_column_if_missing(cursor, "outreach", "assigned_to", "TEXT")
+    cursor.execute("UPDATE outreach SET task_status = 'Completed' WHERE task_status = 'Closed'")
 
     # Safe migrations for account partners
     add_column_if_missing(cursor, "account_partners", "team_id", "INTEGER DEFAULT 1")

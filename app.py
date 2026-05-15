@@ -28,9 +28,9 @@ from orgchart_service import (
 )
 
 
-APP_VERSION = "1.4"
+APP_VERSION = "1.4.1"
 APP_RELEASE_DATE = "2026-05-15"
-APP_BUILD = "2026-05-15-v1.4-pg-progress-orgchart-rag"
+APP_BUILD = "2026-05-15-v1.4.1-outreach-orgchart-fixes"
 
 RELEASE_NOTES = [
     {
@@ -63,6 +63,21 @@ RELEASE_NOTES = [
             "Cleaned Outreach forms so contact job title appears without email, phone or LinkedIn details.",
             "Renamed the account table action from Build Org Chart to Org Chart.",
         ],
+        "sub_releases": [
+            {
+                "version": "1.4.1",
+                "release_date": "2026-05-15",
+                "fixed": [
+                    "Moved the Outreach edit contact job title display directly beneath the Contact field.",
+                    "Fixed the hosted Org Chart page by ensuring the new org chart persistence tables work with the database compatibility layer.",
+                    "Removed Closed as a selectable Outreach task status and migrated old Closed values to Completed.",
+                ],
+                "enhanced": [
+                    "Simplified Outreach edit actions to Save, Complete and Create Follow-Up, and Cancel.",
+                    "Updated Complete and Create Follow-Up so it completes the current activity and opens a new pre-populated Outreach activity form.",
+                ],
+            },
+        ],
     },
     {
         "version": "1.3",
@@ -84,7 +99,7 @@ RELEASE_NOTES = [
             "Enhanced standalone outreach creation so Account is placed before Sales Play or Initiative and sales play suggestions only show plays previously used on the selected account.",
             "Enhanced Outreach Tasks with light green, amber and red due-date row shading as due dates approach or expire.",
             "Enhanced Campaign Builder contact selection from tiles into a table that only presents contacts associated to the selected account.",
-            "Enhanced closed, completed and cancelled outreach tasks so they can no longer be modified or reassigned.",
+            "Enhanced completed and cancelled outreach tasks so they can no longer be modified or reassigned.",
             "Enhanced outreach and campaign creation with compact Open buttons that appear only after a contact is selected.",
             "Enhanced Accounts so Account Tier is the primary ordering field and PG Plan number is shown beneath it.",
             "Enhanced tables so blank Business Org values are not displayed.",
@@ -139,7 +154,7 @@ RELEASE_NOTES = [
             "Enhanced account ownership so each account records an owner by default and the edit account form can transfer ownership to another active user.",
             "Enhanced sharing management so account owners can revoke shared access and assigned outreach tasks are returned to the account owner.",
             "Enhanced task responsibility reporting so SLA-style task measures are grouped by assigned user.",
-            "Enhanced Outreach filters with a compact status menu for All Open, All Closed, All and individual statuses including Cancelled.",
+            "Enhanced Outreach filters with a compact status menu for All Open, All Completed, All and individual statuses including Cancelled.",
             "Enhanced Outreach sharing controls so account sharing fields are smaller and easier to scan.",
             "Enhanced the User Guide so account ownership, sharing, assignment and status filtering instructions reflect the current workflow.",
             "Enhanced the User Guide with more detailed navigation guidance and clearer admin-only access explanations.",
@@ -165,7 +180,7 @@ RELEASE_NOTES = [
             "Enhanced PG Progress activity rules so Last 7 Days Activity shows only completed activity updates and scheduled actions include overdue open work plus the next 7 days.",
             "Enhanced Outreach task pages by simplifying the table, reordering key fields and renaming Content and Thought Leadership activity to White Paper / Webinar.",
             "Enhanced Outreach Reports so Monthly Meeting Conversion is shown as meetings booked each month.",
-            "Enhanced Outreach so Activity Update is only mandatory when a task is being completed, closed or cancelled.",
+            "Enhanced Outreach so Activity Update is only mandatory when a task is being completed or cancelled.",
             "Enhanced account partner linking so multiple partner organisations can be associated to an account at once.",
             "Enhanced PG Bible mapping so NBM Target and Related NBM Target use the account PG Bible Order.",
             "Enhanced Outreach Tasks so the task table uses one row per task and shows Activity Start Date in its own column.",
@@ -274,7 +289,7 @@ USER_GUIDE_SECTIONS = [
         ],
         "tips": [
             "Untouched accounts are accounts with no active campaign or outreach tasks.",
-            "Closed, completed and cancelled work is removed from active execution views by default.",
+            "Completed and cancelled work is removed from active execution views by default.",
             "Pipeline generated value should be treated as a source-system metric when it belongs in SFDC rather than PipeFlow.",
         ],
     },
@@ -341,14 +356,14 @@ USER_GUIDE_SECTIONS = [
             "Use the Share Full Account panel to copy an account package to one or more users and record their access.",
             "Group outreach by account and campaign to understand execution context.",
             "Use the Assigned To dropdown in each row and click Save Assignment to commit task ownership.",
-            "Use the compact status filter to show All Open, All Closed, All or specific statuses.",
+            "Use the compact status filter to show All Open, All Completed, All or specific statuses.",
             "Add an Activity Update before closing or completing an outreach task.",
-            "Use Complete and Create Follow-on when the current task is done but another task is needed.",
+            "Use Complete and Create Follow-Up when the current task is done but another task is needed.",
         ],
         "tips": [
             "The due date is the Activity Due Date, based on the next action date.",
             "Tasks can only be assigned to users who have access to the related account.",
-            "Closed, completed and cancelled outreach is hidden unless you explicitly filter for it.",
+            "Completed and cancelled outreach is hidden unless you explicitly filter for it.",
             "If a user is missing from the assignment dropdown, check that the account has been shared with them first.",
         ],
     },
@@ -575,9 +590,9 @@ PAGE_INSTRUCTIONS = {
         "title": "Outreach Tasks Guidance",
         "items": [
             "Only account owners can share accounts, revoke account sharing or see account sharing assignments.",
-            "Use the filters to focus active work. All Open excludes Completed, Closed and Cancelled records.",
+            "Use the filters to focus active work. All Open excludes Completed and Cancelled records.",
             "Use Save Assignment after changing the assignee. The selected user must already have access to the account.",
-            "Open the task to complete it, add a mandatory Activity Update or create a follow-on task.",
+            "Open the task to complete it, add a mandatory Activity Update or create a follow-up task.",
         ],
     },
     "accounts": {
@@ -672,8 +687,8 @@ PAGE_INSTRUCTIONS = {
         "title": "Edit Outreach Guidance",
         "items": [
             "Add an Activity Update before completing or closing a task.",
-            "Complete Only closes the current task without creating a follow-on.",
-            "Complete and Create Follow-on saves the current task as completed, then opens a new outreach form for the next step.",
+            "Save with Completed or Cancelled closes the current task without creating a follow-up.",
+            "Complete and Create Follow-Up saves the current task as completed, then opens a new outreach form for the next step.",
         ],
     },
     "view_outreach": {
@@ -727,7 +742,7 @@ PAGE_INSTRUCTIONS = {
     "task_reports": {
         "title": "Task Reports Guidance",
         "items": [
-            "Use SLA by Assignee to see who owns active, overdue and closed tasks.",
+            "Use SLA by Assignee to see who owns active, overdue and completed tasks.",
             "Task timeliness is measured against the current assignee.",
             "Filter by account, status or assignee before exporting.",
         ],
@@ -813,7 +828,7 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "Tasks are managed through the dashboard and Outreach Tasks page.",
             "Use status and due date updates to keep accountability current.",
-            "Closed, Completed and Cancelled work is hidden from active views by default.",
+            "Completed and Cancelled work is hidden from active views by default.",
         ],
     },
     "login": {
@@ -2038,7 +2053,6 @@ NEGATIVE_OUTCOMES = (
 )
 
 CLOSED_TASK_STATUSES = (
-    "Closed",
     "Completed",
     "Cancelled",
 )
@@ -2204,7 +2218,7 @@ def build_learning_insights(connection):
             THEN 1 ELSE 0
         END) AS negative_total,
         SUM(CASE
-            WHEN COALESCE(outreach.task_status, '') IN ('Closed', 'Completed')
+            WHEN COALESCE(outreach.task_status, '') IN ('Completed', 'Cancelled')
             THEN 1 ELSE 0
         END) AS completed_total,
         SUM(CASE
@@ -2214,7 +2228,7 @@ def build_learning_insights(connection):
                     outreach.next_action_date || ' ' ||
                     IFNULL(outreach.next_action_time, '00:00')
                   ) < datetime('now', '-1 hour')
-              AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
+              AND COALESCE(outreach.task_status, '') NOT IN ('Completed', 'Cancelled')
             THEN 1 ELSE 0
         END) AS overdue_total
     """
@@ -2549,7 +2563,7 @@ def build_dashboard_response(connection):
             SELECT 1
             FROM outreach
             WHERE outreach.account_id = accounts.id
-              AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
+              AND COALESCE(outreach.task_status, '') NOT IN ('Completed', 'Cancelled')
               AND (
                     (outreach.sales_play IS NOT NULL AND outreach.sales_play != '')
                  OR (outreach.next_action IS NOT NULL AND outreach.next_action != '')
@@ -2568,7 +2582,7 @@ def build_dashboard_response(connection):
         WHERE next_action_date IS NOT NULL
           AND next_action_date != ''
           AND date(next_action_date) <= date('now', '+7 days')
-          AND COALESCE(task_status, '') NOT IN ('Closed', 'Completed')
+          AND COALESCE(task_status, '') NOT IN ('Completed', 'Cancelled')
     """).fetchone()[0]
 
     outreach_by_account = connection.execute("""
@@ -2627,7 +2641,7 @@ def build_dashboard_response(connection):
           AND outreach.next_action != ''
           AND outreach.next_action_date IS NOT NULL
           AND outreach.next_action_date != ''
-          AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
+          AND COALESCE(outreach.task_status, '') NOT IN ('Completed', 'Cancelled')
         ORDER BY
             CASE WHEN date(outreach.next_action_date) < date('now') THEN 0 ELSE 1 END,
             outreach.next_action_date ASC,
@@ -2671,7 +2685,7 @@ def build_dashboard_response(connection):
                         outreach.next_action_date || ' ' ||
                         IFNULL(outreach.next_action_time, '00:00')
                       ) < datetime('now', '-1 hour')
-                  AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
+                  AND COALESCE(outreach.task_status, '') NOT IN ('Completed', 'Cancelled')
             ) AS overdue_followups,
 
             (
@@ -3140,7 +3154,7 @@ def account_partner_activity_options(connection):
 
 
 def activity_update_required_message():
-    return "Activity Update must be at least 5 characters before a task can be completed, closed or cancelled."
+    return "Activity Update must be at least 5 characters before a task can be completed or cancelled."
 
 
 def fy_quarter_required_message():
@@ -3233,7 +3247,7 @@ def pg_dashboard_context(connection):
                   AND next_action_date IS NOT NULL
                   AND next_action_date != ''
                   AND next_action_date <= ?
-                  AND COALESCE(task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
+                  AND COALESCE(task_status, '') NOT IN ('Completed', 'Cancelled')
                 ORDER BY next_action_date ASC, next_action_time ASC, id DESC
             """, (account_id, contact_id, seven_days_forward)).fetchall()
             recent_activity_rows = connection.execute("""
@@ -3244,7 +3258,7 @@ def pg_dashboard_context(connection):
                   AND last_updated >= ?
                   AND next_action IS NOT NULL
                   AND next_action != ''
-                  AND COALESCE(task_status, '') IN ('Closed', 'Completed', 'Cancelled')
+                  AND COALESCE(task_status, '') IN ('Completed', 'Cancelled')
                 ORDER BY last_updated DESC, id DESC
             """, (account_id, contact_id, seven_days_ago)).fetchall()
             action_update = connection.execute("""
@@ -3497,7 +3511,7 @@ def accounts():
                         outreach.next_action_date || ' ' ||
                         IFNULL(outreach.next_action_time, '00:00')
                       ) < datetime('now', '-1 hour')
-                  AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
+                  AND COALESCE(outreach.task_status, '') NOT IN ('Completed', 'Cancelled')
             ) AS overdue_followups,
 
             (
@@ -4150,7 +4164,7 @@ def view_account(account_id):
                         outreach.next_action_date || ' ' ||
                         IFNULL(outreach.next_action_time, '00:00')
                       ) < datetime('now', '-1 hour')
-                  AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
+                  AND COALESCE(outreach.task_status, '') NOT IN ('Completed', 'Cancelled')
             ) AS overdue_followups,
 
             (
@@ -4736,6 +4750,7 @@ def account_orgchart(account_id):
         connection.close()
         return redirect(url_for("accounts"))
     payload = orgchart_json_payload(connection, account_id)
+    connection.commit()
     connection.close()
     return render_template(
         "org_chart.html",
@@ -5877,7 +5892,7 @@ def outreach():
     selected_statuses = request.args.getlist("task_status")
     if not selected_statuses:
         selected_statuses = ["All Open"]
-    closed_statuses = ["Closed", "Completed", "Cancelled"]
+    closed_statuses = ["Completed", "Cancelled"]
 
     connection = get_db_connection()
 
@@ -5925,7 +5940,7 @@ def outreach():
 
     if "All" in selected_statuses:
         pass
-    elif "All Closed" in selected_statuses:
+    elif "All Completed" in selected_statuses:
         placeholders = ",".join("?" for _ in closed_statuses)
         query += f" AND COALESCE(outreach.task_status, 'Not Started') IN ({placeholders})"
         params.extend(closed_statuses)
@@ -6008,7 +6023,8 @@ def add_outreach():
             prefill = {
                 "account_id": source["account_id"],
                 "contact_id": f"partner_contact:{source['partner_contact_id']}" if source["partner_contact_id"] else source["contact_id"],
-                "notes": f"Follow-on task from completed outreach #{source['id']}.",
+                "sales_play": source["sales_play"] or source["campaign"] or "",
+                "notes": f"Follow-up task from completed outreach #{source['id']}.",
             }
 
     if request.method == "POST":
@@ -6227,7 +6243,7 @@ def campaign_builder():
                     FROM outreach
                     WHERE next_action_date IS NOT NULL
                       AND next_action_date != ''
-                      AND COALESCE(task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
+                      AND COALESCE(task_status, '') NOT IN ('Completed', 'Cancelled')
                 """).fetchall()
                 reserved_slots = {
                     (row["next_action_date"], row["next_action_time"] or "09:00")
@@ -6482,7 +6498,7 @@ def edit_outreach(outreach_id):
     if request.method == "POST":
         if is_closed_task_status(outreach_item["task_status"]):
             connection.close()
-            return redirect(url_for("outreach", error="Closed, completed and cancelled tasks cannot be modified."))
+            return redirect(url_for("outreach", error="Completed and cancelled tasks cannot be modified."))
         submit_action = request.form.get("submit_action", "save")
         sales_play_value = request.form.get("sales_play")
         contact_id, partner_contact_id = parse_outreach_contact_selection(request.form.get("contact_id"))
@@ -6508,7 +6524,7 @@ def edit_outreach(outreach_id):
         }
         follow_on_requested = submit_action == "complete_and_follow"
 
-        if submit_action in ("complete_and_follow", "complete_only"):
+        if submit_action == "complete_and_follow":
             new_values["task_status"] = "Completed"
             new_values["next_action_date"] = ""
             new_values["next_action_time"] = ""
@@ -7141,7 +7157,7 @@ def legacy_team_outreach_context():
                     LEFT JOIN contacts ON outreach.contact_id = contacts.id
                     WHERE outreach.next_action_date IS NOT NULL
                       AND outreach.next_action_date != ''
-                      AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
+                      AND COALESCE(outreach.task_status, '') NOT IN ('Completed', 'Cancelled')
                     ORDER BY
                         outreach.next_action_date ASC,
                         outreach.next_action_time ASC,
@@ -7164,7 +7180,7 @@ def legacy_team_outreach_context():
             LEFT JOIN contacts ON outreach.contact_id = contacts.id
             WHERE outreach.next_action_date IS NOT NULL
               AND outreach.next_action_date != ''
-              AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
+              AND COALESCE(outreach.task_status, '') NOT IN ('Completed', 'Cancelled')
             ORDER BY outreach.next_action_date ASC, outreach.next_action_time ASC
         """).fetchall()
         for row in member_rows:
@@ -7321,7 +7337,7 @@ def reassign_team_outreach():
     if outreach_item:
         if is_closed_task_status(outreach_item["task_status"]):
             connection.close()
-            return redirect(url_for("outreach", error="Closed, completed and cancelled tasks cannot be reassigned."))
+            return redirect(url_for("outreach", error="Completed and cancelled tasks cannot be reassigned."))
         account = connection.execute("SELECT * FROM accounts WHERE id = ?", (outreach_item["account_id"],)).fetchone()
         if account and not assignee_has_account_access(connection, account, assigned_to_user_id):
             connection.close()
@@ -7439,7 +7455,7 @@ def complete_task_from_tasks(outreach_id):
     connection.execute(
         """
         UPDATE outreach
-        SET task_status = 'Closed',
+        SET task_status = 'Completed',
             outcome = ?,
             next_action = ?,
             last_updated = CURRENT_TIMESTAMP
@@ -7448,7 +7464,7 @@ def complete_task_from_tasks(outreach_id):
         (outcome, activity_update, outreach_id),
     )
     audit_record_update(connection, "outreach", outreach_id, outreach_item, {
-        "task_status": "Closed",
+        "task_status": "Completed",
         "outcome": outcome,
         "next_action": activity_update,
     }, {
@@ -7460,8 +7476,8 @@ def complete_task_from_tasks(outreach_id):
         connection,
         "outreach",
         outreach_id,
-        "Task Closed",
-        f"Task marked closed from dashboard with outcome: {outcome}",
+        "Task Completed",
+        f"Task marked completed from dashboard with outcome: {outcome}",
     )
     connection.commit()
     connection.close()

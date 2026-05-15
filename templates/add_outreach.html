@@ -98,6 +98,7 @@
                     {% endfor %}
                 </select>
                 <a href="#" id="open_contact_record" target="_blank" class="btn btn-secondary btn-small contact-open-button" hidden>Open</a>
+                <div id="contact_system_fields" class="system-inline-fields contact-job-title-inline">Select a contact to show their job title.</div>
             </div>
 
             <div class="form-group">
@@ -165,11 +166,6 @@
             <div class="form-group full-width">
                 <label for="subject">Subject</label>
                 <input type="text" id="subject" name="subject" value="{{ prefill.subject or '' }}" required>
-            </div>
-
-            <div class="form-group full-width">
-                <label>Contact Job Title</label>
-                <div id="contact_system_fields" class="system-inline-fields">Select a contact to show their job title.</div>
             </div>
 
             <div class="form-group">

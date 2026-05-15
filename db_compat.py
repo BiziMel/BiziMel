@@ -24,6 +24,8 @@ USER_TABLES = {
     "partner_contacts",
     "account_org_charts",
     "account_org_chart_people",
+    "org_charts",
+    "org_chart_nodes",
     "timeline_entries",
     "user_profile",
 }

@@ -16,7 +16,7 @@
 </div>
 
 <div class="form-card">
-    {% set task_locked = outreach_item.task_status in ['Closed', 'Completed', 'Cancelled'] %}
+    {% set task_locked = outreach_item.task_status in ['Completed', 'Cancelled'] %}
     {% if error %}
         <div class="alert-error">{{ error }}</div>
     {% endif %}
@@ -104,6 +104,7 @@
                     {% endfor %}
                 </select>
                 <a href="#" id="open_contact_record" target="_blank" class="btn btn-secondary btn-small contact-open-button" hidden>Open</a>
+                <div id="contact_system_fields" class="system-inline-fields contact-job-title-inline">Select a contact to show their job title.</div>
             </div>
 
             <div class="form-group">
@@ -177,11 +178,6 @@
                 <input type="text" id="subject" name="subject" value="{{ outreach_item.subject or '' }}" required>
             </div>
 
-            <div class="form-group full-width">
-                <label>Contact Job Title</label>
-                <div id="contact_system_fields" class="system-inline-fields">Select a contact to show their job title.</div>
-            </div>
-
             <div class="form-group">
                 <label for="outcome">Outcome</label>
                 <select id="outcome" name="outcome">
@@ -208,16 +204,13 @@
         <div class="form-actions">
             {% if not task_locked %}
             <button type="submit" name="submit_action" value="save" class="btn btn-primary">
-                Save Changes
+                Save
             </button>
 
             <button type="submit" name="submit_action" value="complete_and_follow" class="btn btn-primary">
-                Complete and Create Follow-on
+                Complete and Create Follow-Up
             </button>
 
-            <button type="submit" name="submit_action" value="complete_only" class="btn btn-secondary">
-                Complete Only
-            </button>
             {% endif %}
 
             <a href="{{ url_for('outreach') }}" class="btn btn-secondary">

@@ -96,7 +96,7 @@
                 <details class="checkbox-dropdown compact-checkbox-dropdown status-filter-dropdown">
                     <summary>{{ selected_statuses | join(", ") }}</summary>
                     <div class="checkbox-dropdown-panel">
-                        {% for status_filter in ["All Open", "All Closed", "All"] %}
+                        {% for status_filter in ["All Open", "All Completed", "All"] %}
                             <label class="checkbox-row">
                                 <input type="checkbox" name="task_status" value="{{ status_filter }}" {% if status_filter in selected_statuses %}checked{% endif %}>
                                 <span>{{ status_filter }}</span>
@@ -216,7 +216,7 @@
                                 <span class="muted">{{ item.subject or "No subject" }}</span>
                             </td>
                             <td>
-                                {% set task_locked = item.task_status in ['Closed', 'Completed', 'Cancelled'] %}
+                                {% set task_locked = item.task_status in ['Completed', 'Cancelled'] %}
                                 <form method="POST" action="{{ url_for('reassign_team_outreach') }}" class="inline-form compact-assignment-form">
                                     <input type="hidden" name="return_to" value="{{ url_for('outreach') }}">
                                     <input type="hidden" name="workspace_schema" value="{{ item.workspace_schema }}">

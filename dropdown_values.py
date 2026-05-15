@@ -151,7 +151,6 @@ DROPDOWN_VALUES = {
         "Not Started",
         "In Progress",
         "Pending",
-        "Closed",
         "Completed",
         "Cancelled",
     ],

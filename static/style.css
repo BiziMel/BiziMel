@@ -4552,6 +4552,23 @@ body {
     align-items: start;
 }
 
+.sub-release-list {
+    display: grid;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.sub-release-card {
+    padding: 12px;
+    border: 1px solid #dbe3ef;
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.compact-release-summary {
+    margin-bottom: 10px;
+}
+
 .orgchart-palette,
 .orgchart-main {
     min-width: 0;
