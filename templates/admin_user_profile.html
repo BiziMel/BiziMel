@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}User Profile | PipeFlow PG Manager{% endblock %}
+
+{% block content %}
+<section class="page-header admin-hero">
+    <div>
+        <p class="eyebrow">Admin Console</p>
+        <h2>User Profile</h2>
+        <p class="muted-text">Review and maintain this PipeFlow user profile. These controls are visible to admins only.</p>
+    </div>
+    <a href="{{ url_for('admin_permissions') }}" class="btn btn-secondary">Back to Admin</a>
+</section>
+
+{% if message %}
+    <div class="alert-success">{{ message }}</div>
+{% endif %}
+
+{% if error %}
+    <div class="alert-error">{{ error }}</div>
+{% endif %}
+
+<section class="form-card admin-user-profile-card">
+    <div class="section-header">
+        <div>
+            <h3>{{ user["full_name"] }}</h3>
+            <p class="muted-text">{{ user["email"] }}</p>
+        </div>
+        <div class="admin-user-badges">
+            <span class="permission-badge">{{ user["role"]|capitalize }}</span>
+            <span class="user-status-pill {{ 'user-status-active' if user['is_active'] else 'user-status-inactive' }}">
+                {{ "Active" if user["is_active"] else "Inactive" }}
+            </span>
+        </div>
+    </div>
+
+    <div class="admin-user-profile-summary">
+        <div>
+            <span>Team</span>
+            <strong>{{ user["team"] or "Not set" }}</strong>
+        </div>
+        <div>
+            <span>Workspace</span>
+            <strong>{{ user["workspace_schema"] or "Not created" }}</strong>
+        </div>
+        <div>
+            <span>Created</span>
+            <strong>{{ user["date_created"] }}</strong>
+        </div>
+        <div>
+            <span>Last Updated</span>
+            <strong>{{ user["last_updated"] }}</strong>
+        </div>
+    </div>
+
+    <div class="admin-user-profile-grid">
+        <section class="admin-user-panel">
+            <h4>Profile Details</h4>
+            <form method="POST" action="{{ url_for('admin_update_user_identity', user_id=user['id']) }}" class="pipeflow-form compact-admin-form">
+                <label for="full_name">Full Name</label>
+                <input type="text" id="full_name" name="full_name" value="{{ user['full_name'] }}" required>
+
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email" value="{{ user['email'] }}" required>
+
+                <label for="team">Team</label>
+                <input type="text" id="team" name="team" value="{{ user['team'] or '' }}">
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Save Profile</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="admin-user-panel">
+            <h4>Role & Access</h4>
+            <form method="POST" action="{{ url_for('admin_update_user_role', user_id=user['id']) }}" class="pipeflow-form compact-admin-form">
+                <label for="role">Role</label>
+                <select id="role" name="role" {% if user['id'] == session.get('user_id') %}disabled{% endif %}>
+                    <option value="user" {% if user["role"] == "user" %}selected{% endif %}>User</option>
+                    <option value="manager" {% if user["role"] == "manager" %}selected{% endif %}>Manager</option>
+                    <option value="admin" {% if user["role"] == "admin" %}selected{% endif %}>Admin</option>
+                </select>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-secondary" {% if user['id'] == session.get('user_id') %}disabled{% endif %}>Update Role</button>
+                </div>
+            </form>
+
+            <div class="admin-access-action">
+                {% if user["is_active"] %}
+                    <form method="POST" action="{{ url_for('admin_deactivate_user', user_id=user['id']) }}">
+                        <button type="submit" class="btn btn-danger" {% if user['id'] == session.get('user_id') %}disabled{% endif %}>Deactivate Profile</button>
+                    </form>
+                {% else %}
+                    <form method="POST" action="{{ url_for('admin_reactivate_user', user_id=user['id']) }}">
+                        <button type="submit" class="btn btn-secondary">Reactivate Profile</button>
+                    </form>
+                {% endif %}
+            </div>
+        </section>
+
+        <section class="admin-user-panel">
+            <h4>Password Reset</h4>
+            <form method="POST" action="{{ url_for('admin_reset_user_password', user_id=user['id']) }}" class="pipeflow-form compact-admin-form">
+                <label for="password">New Password</label>
+                <input type="password" id="password" name="password" minlength="8" required>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-secondary">Reset Password</button>
+                </div>
+            </form>
+        </section>
+    </div>
+</section>
+{% endblock %}

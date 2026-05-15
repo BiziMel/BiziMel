@@ -760,11 +760,61 @@ def cleanup_duplicate_broadcast_messages(connection):
         connection.commit()
 
 
+def insert_system_admin_audit(connection, action_type: str, target_type: str = "", target_label: str = "", detail: str = ""):
+    connection.execute(
+        """
+        INSERT INTO admin_audit_entries (
+            actor_user_id,
+            actor_name,
+            actor_email,
+            action_type,
+            target_type,
+            target_label,
+            detail
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (None, "System", "", action_type, target_type, target_label, detail),
+    )
+
+
 def cleanup_expired_broadcast_messages(connection=None):
     close_connection = connection is None
     if connection is None:
         connection = get_auth_connection()
+    now = datetime.now(broadcast_timezone())
+    today_key = now.strftime("%Y-%m-%d")
+    if now.hour < 1:
+        cleanup_duplicate_broadcast_messages(connection)
+        if close_connection:
+            connection.close()
+        return
+
+    last_cleanup = connection.execute(
+        """
+        SELECT setting_value
+        FROM admin_settings
+        WHERE setting_key = ?
+        """,
+        ("broadcast_expiry_cleanup_date",),
+    ).fetchone()
+    if last_cleanup and last_cleanup["setting_value"] == today_key:
+        cleanup_duplicate_broadcast_messages(connection)
+        if close_connection:
+            connection.close()
+        return
+
     now_key = current_broadcast_key()
+    expired_rows = connection.execute(
+        """
+        SELECT *
+        FROM broadcast_messages
+        WHERE stop_at IS NOT NULL
+          AND stop_at != ''
+          AND stop_at < ?
+        """,
+        (now_key,),
+    ).fetchall()
     connection.execute(
         """
         DELETE FROM broadcast_messages
@@ -774,6 +824,36 @@ def cleanup_expired_broadcast_messages(connection=None):
         """,
         (now_key,),
     )
+    for row in expired_rows:
+        insert_system_admin_audit(
+            connection,
+            "Broadcast auto-deleted",
+            "Broadcast",
+            row["title"],
+            f"Expired broadcast removed after stop time {row['stop_at']}.",
+        )
+    existing = connection.execute(
+        "SELECT setting_key FROM admin_settings WHERE setting_key = ?",
+        ("broadcast_expiry_cleanup_date",),
+    ).fetchone()
+    if existing:
+        connection.execute(
+            """
+            UPDATE admin_settings
+            SET setting_value = ?,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE setting_key = ?
+            """,
+            (today_key, "broadcast_expiry_cleanup_date"),
+        )
+    else:
+        connection.execute(
+            """
+            INSERT INTO admin_settings (setting_key, setting_value)
+            VALUES (?, ?)
+            """,
+            ("broadcast_expiry_cleanup_date", today_key),
+        )
     connection.commit()
     cleanup_duplicate_broadcast_messages(connection)
     if close_connection:
@@ -796,6 +876,16 @@ def list_broadcast_messages(active_only: bool = False):
               AND stop_at >= ?
         """
         params.extend([1, now_key, now_key])
+    else:
+        now_key = current_broadcast_key()
+        query += """
+            WHERE (
+                stop_at IS NULL
+                OR stop_at = ''
+                OR stop_at >= ?
+            )
+        """
+        params.append(now_key)
     query += """
         ORDER BY
             is_active DESC,

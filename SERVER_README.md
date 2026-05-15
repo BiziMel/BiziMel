@@ -38,8 +38,11 @@ Required environment variables:
 ```text
 PIPEFLOW_NO_BROWSER=1
 PIPEFLOW_SECRET_KEY=<long random secret>
+PIPEFLOW_COOKIE_SECURE=1
 DATABASE_URL=<Supabase session pooler connection string>
 ```
+
+`PIPEFLOW_SECRET_KEY` must stay the same between deploys. If it is missing or changes, Flask invalidates signed login cookies and users are logged out after refreshes, restarts or redeploys.
 
 Optional environment variables:
 

@@ -101,79 +101,45 @@
         </div>
     </div>
 
-    <div class="admin-user-card-grid">
-        {% for user in users %}
-            <article class="admin-user-card">
-                <div class="admin-user-card-header">
-                    <div>
-                        <h4>{{ user["full_name"] }}</h4>
-                        <p>{{ user["email"] }}</p>
-                    </div>
-                    <div class="admin-user-badges">
-                        <span class="permission-badge">{{ user["role"]|capitalize }}</span>
-                        <span class="user-status-pill {{ 'user-status-active' if user['is_active'] else 'user-status-inactive' }}">
-                            {{ "Active" if user["is_active"] else "Inactive" }}
-                        </span>
-                    </div>
-                </div>
-
-                <div class="admin-user-meta-grid">
-                    <div>
-                        <span>Team</span>
-                        <strong>{{ user["team"] or "Not set" }}</strong>
-                    </div>
-                    <div>
-                        <span>Created</span>
-                        <strong>{{ user["date_created"] }}</strong>
-                    </div>
-                </div>
-
-                <div class="admin-user-section">
-                    <h5>Profile Details</h5>
-                    <form method="POST" action="{{ url_for('admin_update_user_identity', user_id=user['id']) }}" class="admin-user-details-form">
-                        <input type="text" name="full_name" value="{{ user['full_name'] }}" placeholder="Name" required>
-                        <input type="email" name="email" value="{{ user['email'] }}" placeholder="Email" required>
-                        <input type="text" name="team" value="{{ user['team'] or '' }}" placeholder="Team">
-                        <button type="submit" class="btn btn-secondary">Save Details</button>
-                    </form>
-                </div>
-
-                <div class="admin-user-section admin-user-actions-grid">
-                    <div>
-                        <h5>Role</h5>
-                        <form method="POST" action="{{ url_for('admin_update_user_role', user_id=user['id']) }}" class="admin-user-role-form">
-                            <select name="role" {% if user['id'] == session.get('user_id') %}disabled{% endif %}>
-                                <option value="user" {% if user["role"] == "user" %}selected{% endif %}>User</option>
-                                <option value="manager" {% if user["role"] == "manager" %}selected{% endif %}>Manager</option>
-                                <option value="admin" {% if user["role"] == "admin" %}selected{% endif %}>Admin</option>
-                            </select>
-                            <button type="submit" class="btn btn-secondary" {% if user['id'] == session.get('user_id') %}disabled{% endif %}>Update Role</button>
-                        </form>
-                    </div>
-
-                    <div>
-                        <h5>Access</h5>
-                        {% if user["is_active"] %}
-                            <form method="POST" action="{{ url_for('admin_deactivate_user', user_id=user['id']) }}">
-                                <button type="submit" class="btn btn-danger">Deactivate Profile</button>
-                            </form>
-                        {% else %}
-                            <form method="POST" action="{{ url_for('admin_reactivate_user', user_id=user['id']) }}">
-                                <button type="submit" class="btn btn-secondary">Reactivate Profile</button>
-                            </form>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div class="admin-user-section">
-                    <h5>Password Reset</h5>
-                    <form method="POST" action="{{ url_for('admin_reset_user_password', user_id=user['id']) }}" class="admin-user-password-form">
-                        <input type="password" name="password" minlength="8" placeholder="New password" required>
-                        <button type="submit" class="btn btn-secondary">Reset Password</button>
-                    </form>
-                </div>
-            </article>
-        {% endfor %}
+    <div class="table-container admin-users-table-container">
+        <table class="report-table admin-users-table">
+            <thead>
+                <tr>
+                    <th>Full Name</th>
+                    <th>Email</th>
+                    <th>Team</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Last Updated</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                    <tr>
+                        <td>
+                            <a href="{{ url_for('admin_user_profile', user_id=user['id']) }}" class="table-primary-link">
+                                {{ user["full_name"] }}
+                            </a>
+                        </td>
+                        <td>{{ user["email"] }}</td>
+                        <td>{{ user["team"] or "Not set" }}</td>
+                        <td><span class="permission-badge">{{ user["role"]|capitalize }}</span></td>
+                        <td>
+                            <span class="user-status-pill {{ 'user-status-active' if user['is_active'] else 'user-status-inactive' }}">
+                                {{ "Active" if user["is_active"] else "Inactive" }}
+                            </span>
+                        </td>
+                        <td>{{ user["date_created"] }}</td>
+                        <td>{{ user["last_updated"] }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="7">No user profiles found.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 
@@ -247,10 +213,7 @@
         {% if broadcast_messages %}
             <form method="POST" action="{{ url_for('admin_bulk_broadcasts') }}" class="broadcast-table-form">
                 <div class="broadcast-table-actions">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="select_all_broadcasts">
-                        Select all
-                    </label>
+                    <p class="muted-text">Select rows in the table, then save or delete the selected broadcasts in bulk.</p>
                     <div>
                         <button type="submit" name="bulk_action" value="save" class="btn btn-primary btn-small">Save Selected</button>
                         <button type="submit" name="bulk_action" value="delete" class="btn btn-danger btn-small" id="delete_selected_broadcasts">Delete Selected</button>
@@ -261,7 +224,11 @@
                     <table class="report-table broadcast-management-table no-sort">
                         <thead>
                             <tr>
-                                <th>Select</th>
+                                <th>
+                                    <input type="checkbox"
+                                           id="select_all_broadcasts"
+                                           aria-label="Select all broadcasts">
+                                </th>
                                 <th>Status</th>
                                 <th>Type</th>
                                 <th>Title</th>

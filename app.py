@@ -28,11 +28,29 @@ from orgchart_service import (
 )
 
 
-APP_VERSION = "1.4.1"
+APP_VERSION = "1.5.0"
 APP_RELEASE_DATE = "2026-05-15"
-APP_BUILD = "2026-05-15-v1.4.1-outreach-orgchart-fixes"
+APP_BUILD = "2026-05-15-v1.5.0-admin-broadcast-outreach"
 
 RELEASE_NOTES = [
+    {
+        "version": "1.5.0",
+        "release_date": "2026-05-15",
+        "title": "Admin broadcast, user management and outreach resilience",
+        "new": [],
+        "enhanced": [
+            "Enhanced Admin user management by replacing user tiles with a condensed table and opening detailed profile controls from the user's full name.",
+            "Enhanced broadcast management with a table-level select all checkbox for bulk save and delete actions.",
+            "Enhanced broadcast expiry handling so expired broadcasts disappear from admin tables immediately and are auto-deleted after 01:00 daily.",
+            "Enhanced broadcast governance by recording broadcast create, update, activation, manual delete and auto-delete activity in the audit log.",
+            "Enhanced deployment configuration with persistent session cookie settings so users are not logged out after refreshes or redeploys when PIPEFLOW_SECRET_KEY is configured.",
+            "Enhanced login broadcasts by removing schedule timestamps from the sign-in page.",
+            "Enhanced the Insights Dashboard ticker so one full, left-aligned broadcast message is displayed at a time.",
+            "Enhanced Outreach Tasks resilience so the page opens in compatibility mode if older hosted schemas are still refreshing partner outreach columns.",
+        ],
+        "fixed": [],
+        "sub_releases": [],
+    },
     {
         "version": "1.4",
         "release_date": "2026-05-15",
@@ -1110,57 +1128,118 @@ def admin_permissions():
     return render_admin_permissions()
 
 
+@app.route("/admin/users/<int:user_id>")
+@admin_required
+def admin_user_profile(user_id):
+    user = get_user_for_admin(user_id)
+    if not user:
+        return redirect(url_for("admin_users", error="Profile was not found."))
+    return render_template(
+        "admin_user_profile.html",
+        user=user,
+        message=request.args.get("message", ""),
+        error=request.args.get("error", ""),
+    )
+
+
 @app.route("/admin/broadcasts/add", methods=("POST",))
 @admin_required
 def admin_add_broadcast():
+    title = request.form.get("title", "")
+    severity = request.form.get("severity", "info")
+    start_at = request.form.get("start_at", "")
+    stop_at = request.form.get("stop_at", "")
     error = create_broadcast_message(
-        request.form.get("title", ""),
+        title,
         request.form.get("message", ""),
-        request.form.get("severity", "info"),
-        request.form.get("start_at", ""),
-        request.form.get("stop_at", ""),
+        severity,
+        start_at,
+        stop_at,
         bool(request.form.get("is_active"))
     )
     if error:
         return redirect(url_for("admin_users", error=error))
+    log_admin_audit(
+        current_user(),
+        "Broadcast created",
+        "Broadcast",
+        title.strip(),
+        f"Severity {severity}; visible from {start_at} to {stop_at}."
+    )
     return redirect(url_for("admin_users", message="Broadcast message added."))
 
 
 @app.route("/admin/broadcasts/<int:message_id>/update", methods=("POST",))
 @admin_required
 def admin_update_broadcast(message_id):
+    before = get_broadcast_message(message_id)
+    title = request.form.get("title", "")
+    severity = request.form.get("severity", "info")
+    start_at = request.form.get("start_at", "")
+    stop_at = request.form.get("stop_at", "")
     error = update_broadcast_message(
         message_id,
-        request.form.get("title", ""),
+        title,
         request.form.get("message", ""),
-        request.form.get("severity", "info"),
-        request.form.get("start_at", ""),
-        request.form.get("stop_at", ""),
+        severity,
+        start_at,
+        stop_at,
         bool(request.form.get("is_active"))
     )
     if error:
         return redirect(url_for("admin_users", error=error))
+    log_admin_audit(
+        current_user(),
+        "Broadcast updated",
+        "Broadcast",
+        title.strip(),
+        f"Updated from {before['title'] if before else 'unknown'} to {title.strip()}; severity {severity}; visible from {start_at} to {stop_at}."
+    )
     return redirect(url_for("admin_users", message="Broadcast message updated."))
 
 
 @app.route("/admin/broadcasts/<int:message_id>/deactivate", methods=("POST",))
 @admin_required
 def admin_deactivate_broadcast(message_id):
+    before = get_broadcast_message(message_id)
     set_broadcast_message_active(message_id, False)
+    log_admin_audit(
+        current_user(),
+        "Broadcast deactivated",
+        "Broadcast",
+        before["title"] if before else f"Broadcast {message_id}",
+        "Broadcast was hidden from users."
+    )
     return redirect(url_for("admin_users", message="Broadcast message hidden."))
 
 
 @app.route("/admin/broadcasts/<int:message_id>/reactivate", methods=("POST",))
 @admin_required
 def admin_reactivate_broadcast(message_id):
+    before = get_broadcast_message(message_id)
     set_broadcast_message_active(message_id, True)
+    log_admin_audit(
+        current_user(),
+        "Broadcast reactivated",
+        "Broadcast",
+        before["title"] if before else f"Broadcast {message_id}",
+        "Broadcast was restored for its configured time window."
+    )
     return redirect(url_for("admin_users", message="Broadcast message restored."))
 
 
 @app.route("/admin/broadcasts/<int:message_id>/delete", methods=("POST",))
 @admin_required
 def admin_delete_broadcast(message_id):
+    before = get_broadcast_message(message_id)
     delete_broadcast_message(message_id)
+    log_admin_audit(
+        current_user(),
+        "Broadcast deleted",
+        "Broadcast",
+        before["title"] if before else f"Broadcast {message_id}",
+        "Broadcast was manually deleted by an admin."
+    )
     return redirect(url_for("admin_users", message="Broadcast message deleted."))
 
 
@@ -1178,26 +1257,46 @@ def admin_bulk_broadcasts():
 
     if action == "delete":
         for message_id in selected_ids:
+            before = get_broadcast_message(message_id)
             delete_broadcast_message(message_id)
+            log_admin_audit(
+                current_user(),
+                "Broadcast deleted",
+                "Broadcast",
+                before["title"] if before else f"Broadcast {message_id}",
+                "Broadcast was manually deleted by an admin bulk action."
+            )
         return redirect(url_for("admin_users", message=f"Deleted {len(selected_ids)} broadcast message(s)."))
 
     errors = []
     saved_count = 0
     for message_id in selected_ids:
         prefix = f"broadcast_{message_id}_"
+        before = get_broadcast_message(message_id)
+        title = request.form.get(f"{prefix}title", "")
+        severity = request.form.get(f"{prefix}severity", "info")
+        start_at = request.form.get(f"{prefix}start_at", "")
+        stop_at = request.form.get(f"{prefix}stop_at", "")
         error = update_broadcast_message(
             message_id,
-            request.form.get(f"{prefix}title", ""),
+            title,
             request.form.get(f"{prefix}message", ""),
-            request.form.get(f"{prefix}severity", "info"),
-            request.form.get(f"{prefix}start_at", ""),
-            request.form.get(f"{prefix}stop_at", ""),
+            severity,
+            start_at,
+            stop_at,
             bool(request.form.get(f"{prefix}is_active")),
         )
         if error:
             errors.append(f"Broadcast {message_id}: {error}")
         else:
             saved_count += 1
+            log_admin_audit(
+                current_user(),
+                "Broadcast updated",
+                "Broadcast",
+                title.strip(),
+                f"Bulk update from {before['title'] if before else 'unknown'} to {title.strip()}; severity {severity}; visible from {start_at} to {stop_at}."
+            )
 
     if errors:
         return redirect(url_for("admin_users", error=" ".join(errors[:3])))
@@ -1300,7 +1399,7 @@ def admin_reactivate_account_field(field_id):
 def admin_update_user_identity(user_id):
     user = get_user_for_admin(user_id)
     if not user:
-        return redirect(url_for("admin_users", error="Profile was not found."))
+        return redirect(url_for("admin_user_profile", user_id=user_id, error="Profile was not found."))
     old_email = user["email"]
     old_name = user["full_name"]
     old_team = user["team"] if "team" in user.keys() and user["team"] else ""
@@ -1309,7 +1408,7 @@ def admin_update_user_identity(user_id):
     new_team = request.form.get("team", "")
     error = update_user_identity(user_id, new_email, new_name, new_team)
     if error:
-        return redirect(url_for("admin_users", error=error))
+        return redirect(url_for("admin_user_profile", user_id=user_id, error=error))
 
     changes = []
     if old_name != new_name.strip():
@@ -1325,14 +1424,14 @@ def admin_update_user_identity(user_id):
         new_email.strip().lower(),
         "; ".join(changes) if changes else "Profile details saved with no visible changes."
     )
-    return redirect(url_for("admin_users", message="Profile details updated."))
+    return redirect(url_for("admin_user_profile", user_id=user_id, message="Profile details updated."))
 
 
 @app.route("/admin/users/<int:user_id>/deactivate", methods=("POST",))
 @admin_required
 def admin_deactivate_user(user_id):
     if user_id == session.get("user_id"):
-        return redirect(url_for("admin_users", error="You cannot deactivate your own admin profile."))
+        return redirect(url_for("admin_user_profile", user_id=user_id, error="You cannot deactivate your own admin profile."))
     user = get_user_for_admin(user_id)
     set_user_active(user_id, False)
     log_admin_audit(
@@ -1342,7 +1441,7 @@ def admin_deactivate_user(user_id):
         user["email"] if user else f"User {user_id}",
         "User sign-in access was paused."
     )
-    return redirect(url_for("admin_users", message="Profile deactivated."))
+    return redirect(url_for("admin_user_profile", user_id=user_id, message="Profile deactivated."))
 
 
 @app.route("/admin/users/<int:user_id>/reactivate", methods=("POST",))
@@ -1357,20 +1456,20 @@ def admin_reactivate_user(user_id):
         user["email"] if user else f"User {user_id}",
         "User sign-in access was restored."
     )
-    return redirect(url_for("admin_users", message="Profile reactivated."))
+    return redirect(url_for("admin_user_profile", user_id=user_id, message="Profile reactivated."))
 
 
 @app.route("/admin/users/<int:user_id>/role", methods=("POST",))
 @admin_required
 def admin_update_user_role(user_id):
     if user_id == session.get("user_id"):
-        return redirect(url_for("admin_users", error="You cannot change your own admin role."))
+        return redirect(url_for("admin_user_profile", user_id=user_id, error="You cannot change your own admin role."))
     user = get_user_for_admin(user_id)
     old_role = user["role"] if user else "unknown"
     new_role = request.form.get("role", "")
     error = set_user_role(user_id, new_role)
     if error:
-        return redirect(url_for("admin_users", error=error))
+        return redirect(url_for("admin_user_profile", user_id=user_id, error=error))
     log_admin_audit(
         current_user(),
         "Role updated",
@@ -1378,7 +1477,7 @@ def admin_update_user_role(user_id):
         user["email"] if user else f"User {user_id}",
         f"Role changed from {old_role} to {new_role}."
     )
-    return redirect(url_for("admin_users", message="Role updated."))
+    return redirect(url_for("admin_user_profile", user_id=user_id, message="Role updated."))
 
 
 @app.route("/admin/users/<int:user_id>/reset-password", methods=("POST",))
@@ -1387,7 +1486,7 @@ def admin_reset_user_password(user_id):
     user = get_user_for_admin(user_id)
     error = reset_user_password(user_id, request.form.get("password", ""))
     if error:
-        return redirect(url_for("admin_users", error=error))
+        return redirect(url_for("admin_user_profile", user_id=user_id, error=error))
     log_admin_audit(
         current_user(),
         "Password reset",
@@ -1395,7 +1494,7 @@ def admin_reset_user_password(user_id):
         user["email"] if user else f"User {user_id}",
         "Admin reset this user's password."
     )
-    return redirect(url_for("admin_users", message="Password reset."))
+    return redirect(url_for("admin_user_profile", user_id=user_id, message="Password reset."))
 
 
 def add_timeline_entry(connection, related_type, related_id, entry_type, entry_text, created_by="Melissa"):
@@ -6006,6 +6105,7 @@ def admin_bulk_delete_contacts():
 @app.route("/outreach")
 def outreach():
     user = current_user()
+    initialise_database(force=True)
     fy_filter = request.args.get("fy")
     quarter_filter = request.args.get("quarter")
     sales_play_filter = request.args.get("sales_play")
@@ -6089,7 +6189,72 @@ def outreach():
 
     workspace_schema = current_user_schema() if using_postgres() else ""
     outreach_records = []
-    for row in connection.execute(query, params).fetchall():
+    outreach_error = request.args.get("error", "")
+    try:
+        outreach_rows = connection.execute(query, params).fetchall()
+    except Exception as exc:
+        fallback_query = """
+            SELECT
+                outreach.*,
+                accounts.account_name,
+                accounts.account_tier,
+                contacts.name AS contact_name,
+                contacts.job_title AS contact_job_title,
+                contacts.email AS contact_email,
+                contacts.phone AS contact_phone,
+                contacts.linkedin AS contact_linkedin,
+                'Customer' AS contact_source,
+                '' AS partner_name
+            FROM outreach
+            LEFT JOIN accounts ON outreach.account_id = accounts.id
+            LEFT JOIN contacts ON outreach.contact_id = contacts.id
+            WHERE 1 = 1
+        """
+        fallback_params = []
+        if fy_filter:
+            fallback_query += " AND outreach.fy = ?"
+            fallback_params.append(fy_filter)
+        if quarter_filter:
+            fallback_query += " AND outreach.quarter = ?"
+            fallback_params.append(quarter_filter)
+        if sales_play_filter:
+            fallback_query += " AND outreach.sales_play = ?"
+            fallback_params.append(sales_play_filter)
+        if account_filter:
+            fallback_query += " AND outreach.account_id = ?"
+            fallback_params.append(account_filter)
+        if outcome_filter:
+            fallback_query += " AND outreach.outcome = ?"
+            fallback_params.append(outcome_filter)
+        if "All" in selected_statuses:
+            pass
+        elif "All Completed" in selected_statuses:
+            placeholders = ",".join("?" for _ in closed_statuses)
+            fallback_query += f" AND COALESCE(outreach.task_status, 'Not Started') IN ({placeholders})"
+            fallback_params.extend(closed_statuses)
+        elif "All Open" in selected_statuses:
+            placeholders = ",".join("?" for _ in closed_statuses)
+            fallback_query += f" AND COALESCE(outreach.task_status, '') NOT IN ({placeholders})"
+            fallback_params.extend(closed_statuses)
+        elif selected_statuses:
+            placeholders = ",".join("?" for _ in selected_statuses)
+            fallback_query += f" AND COALESCE(outreach.task_status, 'Not Started') IN ({placeholders})"
+            fallback_params.extend(selected_statuses)
+        fallback_query += """
+            ORDER BY
+                CASE
+                    WHEN outreach.next_action_date IS NULL OR outreach.next_action_date = ''
+                    THEN 1 ELSE 0
+                END,
+                outreach.next_action_date ASC,
+                outreach.next_action_time ASC,
+                outreach.activity_date DESC,
+                outreach.id DESC
+        """
+        outreach_rows = connection.execute(fallback_query, fallback_params).fetchall()
+        outreach_error = outreach_error or "Outreach loaded in compatibility mode. Partner contact columns are being refreshed."
+
+    for row in outreach_rows:
         row_dict = dict(row)
         row_dict["workspace_schema"] = workspace_schema
         row_dict["due_rag_class"] = due_rag_class(
@@ -6113,6 +6278,11 @@ def outreach():
 
     connection.close()
 
+    try:
+        assignable_users = list_assignable_users()
+    except Exception:
+        assignable_users = [user] if user else []
+
     return render_template(
         "outreach.html",
         outreach_records=outreach_records,
@@ -6124,9 +6294,9 @@ def outreach():
         account_filter=account_filter,
         outcome_filter=outcome_filter,
         selected_statuses=selected_statuses,
-        assignable_users=list_assignable_users(),
+        assignable_users=assignable_users,
         message=request.args.get("message", ""),
-        error=request.args.get("error", ""),
+        error=outreach_error,
     )
 
 

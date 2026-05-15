@@ -9,6 +9,8 @@ services:
         value: "1"
       - key: PIPEFLOW_SECRET_KEY
         generateValue: true
+      - key: PIPEFLOW_COOKIE_SECURE
+        value: "1"
       - key: PIPEFLOW_DATA_DIR
         value: /tmp/pipeflow-server-data
       - key: DATABASE_URL
