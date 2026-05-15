@@ -83,6 +83,9 @@ RELEASE_NOTES = [
                     "Enhanced PG Bible PG Plan and PG Actions mapping to include account business unit or organisation values in the required output cells.",
                     "Enhanced account navigation so selecting an account opens View Account first, with Edit available from the account view.",
                     "Enhanced Outreach activity types by replacing Meeting with Discovery Meeting and NBM Booked.",
+                    "Enhanced broadcast management so admins can edit broadcasts in a table and bulk save or delete selected rows.",
+                    "Enhanced the Insights Dashboard broadcast ticker so messages roll upward, display for five seconds and continue in a loop.",
+                    "Enhanced PG Progress so NBM booked meetings remain visible in next seven day scheduled actions until completed or cancelled.",
                 ],
             },
         ],
@@ -1156,6 +1159,46 @@ def admin_reactivate_broadcast(message_id):
 def admin_delete_broadcast(message_id):
     delete_broadcast_message(message_id)
     return redirect(url_for("admin_users", message="Broadcast message deleted."))
+
+
+@app.route("/admin/broadcasts/bulk", methods=("POST",))
+@admin_required
+def admin_bulk_broadcasts():
+    selected_ids = [
+        int(value)
+        for value in request.form.getlist("selected_broadcast_ids")
+        if str(value).isdigit()
+    ]
+    action = request.form.get("bulk_action", "save")
+    if not selected_ids:
+        return redirect(url_for("admin_users", error="Select at least one broadcast message."))
+
+    if action == "delete":
+        for message_id in selected_ids:
+            delete_broadcast_message(message_id)
+        return redirect(url_for("admin_users", message=f"Deleted {len(selected_ids)} broadcast message(s)."))
+
+    errors = []
+    saved_count = 0
+    for message_id in selected_ids:
+        prefix = f"broadcast_{message_id}_"
+        error = update_broadcast_message(
+            message_id,
+            request.form.get(f"{prefix}title", ""),
+            request.form.get(f"{prefix}message", ""),
+            request.form.get(f"{prefix}severity", "info"),
+            request.form.get(f"{prefix}start_at", ""),
+            request.form.get(f"{prefix}stop_at", ""),
+            bool(request.form.get(f"{prefix}is_active")),
+        )
+        if error:
+            errors.append(f"Broadcast {message_id}: {error}")
+        else:
+            saved_count += 1
+
+    if errors:
+        return redirect(url_for("admin_users", error=" ".join(errors[:3])))
+    return redirect(url_for("admin_users", message=f"Saved {saved_count} broadcast message(s)."))
 
 
 @app.route("/admin/audit-retention", methods=("POST",))
@@ -3270,19 +3313,54 @@ def pg_dashboard_context(connection):
                 WHERE account_id = ?
                   AND contact_id = ?
             """, (account_id, contact_id)).fetchone()["latest_activity"]
-            if latest_contact_activity and str(latest_contact_activity)[:10] < (datetime.now() - timedelta(days=14)).date().isoformat():
-                continue
             scheduled_action_rows = connection.execute("""
-                SELECT subject, next_action, next_action_date, next_action_time
+                SELECT
+                    subject,
+                    next_action,
+                    next_action_date,
+                    next_action_time,
+                    activity_date,
+                    activity_type,
+                    outcome,
+                    COALESCE(
+                        NULLIF(next_action_date, ''),
+                        CASE
+                            WHEN activity_type = 'NBM Booked'
+                              OR outcome = 'Meeting Booked'
+                            THEN NULLIF(activity_date, '')
+                            ELSE NULL
+                        END
+                    ) AS action_due_date
                 FROM outreach
                 WHERE account_id = ?
                   AND contact_id = ?
-                  AND next_action_date IS NOT NULL
-                  AND next_action_date != ''
-                  AND next_action_date <= ?
+                  AND COALESCE(
+                        NULLIF(next_action_date, ''),
+                        CASE
+                            WHEN activity_type = 'NBM Booked'
+                              OR outcome = 'Meeting Booked'
+                            THEN NULLIF(activity_date, '')
+                            ELSE NULL
+                        END
+                      ) IS NOT NULL
+                  AND COALESCE(
+                        NULLIF(next_action_date, ''),
+                        CASE
+                            WHEN activity_type = 'NBM Booked'
+                              OR outcome = 'Meeting Booked'
+                            THEN NULLIF(activity_date, '')
+                            ELSE NULL
+                        END
+                      ) <= ?
                   AND COALESCE(task_status, '') NOT IN ('Completed', 'Cancelled')
-                ORDER BY next_action_date ASC, next_action_time ASC, id DESC
+                ORDER BY action_due_date ASC, next_action_time ASC, id DESC
             """, (account_id, contact_id, seven_days_forward)).fetchall()
+            if (
+                not scheduled_action_rows
+                and latest_contact_activity
+                and str(latest_contact_activity)[:10] < (datetime.now() - timedelta(days=14)).date().isoformat()
+            ):
+                continue
             recent_activity_rows = connection.execute("""
                 SELECT activity_date, activity_type, subject, next_action, last_updated
                 FROM outreach
@@ -3302,10 +3380,13 @@ def pg_dashboard_context(connection):
 
             next_7_days_actions = []
             for action_row in scheduled_action_rows:
-                subject_parts = [action_row["subject"] or "Scheduled action"]
+                if action_row["activity_type"] == "NBM Booked" or action_row["outcome"] == "Meeting Booked":
+                    subject_parts = [f"NBM Meeting booked: {action_row['subject'] or 'Scheduled meeting'}"]
+                else:
+                    subject_parts = [action_row["subject"] or "Scheduled action"]
                 if action_row["next_action"]:
                     subject_parts.append(action_row["next_action"])
-                due_parts = [action_row["next_action_date"] or "", action_row["next_action_time"] or ""]
+                due_parts = [action_row["action_due_date"] or "", action_row["next_action_time"] or ""]
                 next_7_days_actions.append({
                     "subject": " - ".join(subject_parts),
                     "due": " ".join(part for part in due_parts if part),
