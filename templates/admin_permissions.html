@@ -245,77 +245,90 @@
         </div>
 
         {% if broadcast_messages %}
-            <div class="broadcast-card-grid">
-                {% for broadcast in broadcast_messages %}
-                    <article class="broadcast-management-card broadcast-{{ broadcast['severity'] }}">
-                        <div class="broadcast-management-header">
-                            <div>
-                                <span class="broadcast-status-pill {{ 'broadcast-status-active' if broadcast['is_active'] else 'broadcast-status-hidden' }}">
-                                    {{ "Active" if broadcast["is_active"] else "Paused" }}
-                                </span>
-                                <span class="broadcast-type-pill">{{ broadcast['severity']|capitalize }}</span>
-                            </div>
-                            <small>{{ broadcast['start_at'] or 'Not scheduled' }} to {{ broadcast['stop_at'] or 'Not scheduled' }}</small>
-                        </div>
+            <form method="POST" action="{{ url_for('admin_bulk_broadcasts') }}" class="broadcast-table-form">
+                <div class="broadcast-table-actions">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="select_all_broadcasts">
+                        Select all
+                    </label>
+                    <div>
+                        <button type="submit" name="bulk_action" value="save" class="btn btn-primary btn-small">Save Selected</button>
+                        <button type="submit" name="bulk_action" value="delete" class="btn btn-danger btn-small" id="delete_selected_broadcasts">Delete Selected</button>
+                    </div>
+                </div>
 
-                        <form method="POST" action="{{ url_for('admin_update_broadcast', message_id=broadcast['id']) }}" class="broadcast-edit-form js-single-submit">
-                            <div class="form-group">
-                                <label>Title</label>
-                                <input type="text" name="title" value="{{ broadcast['title'] }}" required>
-                            </div>
-
-                            <div class="form-group full-width">
-                                <label>Message</label>
-                                <textarea name="message" rows="3" required>{{ broadcast['message'] }}</textarea>
-                            </div>
-
-                            <div class="form-group">
-                                <label>Type</label>
-                                <select name="severity">
-                                    <option value="info" {% if broadcast['severity'] == 'info' %}selected{% endif %}>Info</option>
-                                    <option value="success" {% if broadcast['severity'] == 'success' %}selected{% endif %}>Success</option>
-                                    <option value="warning" {% if broadcast['severity'] == 'warning' %}selected{% endif %}>Warning</option>
-                                    <option value="urgent" {% if broadcast['severity'] == 'urgent' %}selected{% endif %}>Urgent</option>
-                                </select>
-                            </div>
-
-                            <div class="form-group">
-                                <label>Start Date & Time</label>
-                                <input type="datetime-local" name="start_at" value="{{ broadcast['start_at'] or '' }}" required>
-                            </div>
-
-                            <div class="form-group">
-                                <label>Stop Date & Time</label>
-                                <input type="datetime-local" name="stop_at" value="{{ broadcast['stop_at'] or '' }}" required>
-                            </div>
-
-                            <label class="checkbox-label broadcast-active-control">
-                                <input type="checkbox" name="is_active" value="1" {% if broadcast['is_active'] %}checked{% endif %}>
-                                Active
-                            </label>
-
-                            <div class="broadcast-form-actions full-width">
-                                <button type="submit" class="btn btn-secondary">Save Changes</button>
-                            </div>
-                        </form>
-
-                        <div class="broadcast-secondary-actions">
-                            {% if broadcast["is_active"] %}
-                                <form method="POST" action="{{ url_for('admin_deactivate_broadcast', message_id=broadcast['id']) }}" class="inline-form">
-                                    <button type="submit" class="btn btn-secondary">Pause Broadcast</button>
-                                </form>
-                            {% else %}
-                                <form method="POST" action="{{ url_for('admin_reactivate_broadcast', message_id=broadcast['id']) }}" class="inline-form">
-                                    <button type="submit" class="btn btn-secondary">Reactivate Broadcast</button>
-                                </form>
-                            {% endif %}
-                            <form method="POST" action="{{ url_for('admin_delete_broadcast', message_id=broadcast['id']) }}" class="inline-form broadcast-delete-form">
-                                <button type="submit" class="btn btn-danger">Delete Broadcast</button>
-                            </form>
-                        </div>
-                    </article>
-                {% endfor %}
-            </div>
+                <div class="table-container broadcast-table-container">
+                    <table class="report-table broadcast-management-table no-sort">
+                        <thead>
+                            <tr>
+                                <th>Select</th>
+                                <th>Status</th>
+                                <th>Type</th>
+                                <th>Title</th>
+                                <th>Message</th>
+                                <th>Start</th>
+                                <th>Stop</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for broadcast in broadcast_messages %}
+                                <tr class="broadcast-{{ broadcast['severity'] }}">
+                                    <td>
+                                        <input type="checkbox"
+                                               class="broadcast-row-checkbox"
+                                               name="selected_broadcast_ids"
+                                               value="{{ broadcast['id'] }}">
+                                    </td>
+                                    <td>
+                                        <label class="checkbox-label compact-checkbox">
+                                            <input type="checkbox"
+                                                   name="broadcast_{{ broadcast['id'] }}_is_active"
+                                                   value="1"
+                                                   {% if broadcast['is_active'] %}checked{% endif %}>
+                                            Active
+                                        </label>
+                                    </td>
+                                    <td>
+                                        <select name="broadcast_{{ broadcast['id'] }}_severity" aria-label="Broadcast type">
+                                            <option value="info" {% if broadcast['severity'] == 'info' %}selected{% endif %}>Info</option>
+                                            <option value="success" {% if broadcast['severity'] == 'success' %}selected{% endif %}>Success</option>
+                                            <option value="warning" {% if broadcast['severity'] == 'warning' %}selected{% endif %}>Warning</option>
+                                            <option value="urgent" {% if broadcast['severity'] == 'urgent' %}selected{% endif %}>Urgent</option>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <input type="text"
+                                               name="broadcast_{{ broadcast['id'] }}_title"
+                                               value="{{ broadcast['title'] }}"
+                                               aria-label="Broadcast title"
+                                               required>
+                                    </td>
+                                    <td>
+                                        <textarea name="broadcast_{{ broadcast['id'] }}_message"
+                                                  rows="2"
+                                                  aria-label="Broadcast message"
+                                                  required>{{ broadcast['message'] }}</textarea>
+                                    </td>
+                                    <td>
+                                        <input type="datetime-local"
+                                               name="broadcast_{{ broadcast['id'] }}_start_at"
+                                               value="{{ broadcast['start_at'] or '' }}"
+                                               aria-label="Broadcast start"
+                                               required>
+                                    </td>
+                                    <td>
+                                        <input type="datetime-local"
+                                               name="broadcast_{{ broadcast['id'] }}_stop_at"
+                                               value="{{ broadcast['stop_at'] or '' }}"
+                                               aria-label="Broadcast stop"
+                                               required>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </form>
         {% else %}
             <div class="empty-state broadcast-empty-state">
                 <h3>No broadcast messages yet</h3>
@@ -359,12 +372,30 @@
         });
     });
 
-    document.querySelectorAll(".broadcast-delete-form").forEach((form) => {
-        form.addEventListener("submit", (event) => {
-            if (!window.confirm("Delete this broadcast message?")) {
+    const selectAllBroadcasts = document.getElementById("select_all_broadcasts");
+    const broadcastCheckboxes = Array.from(document.querySelectorAll(".broadcast-row-checkbox"));
+    if (selectAllBroadcasts) {
+        selectAllBroadcasts.addEventListener("change", () => {
+            broadcastCheckboxes.forEach((checkbox) => {
+                checkbox.checked = selectAllBroadcasts.checked;
+            });
+        });
+    }
+
+    const broadcastBulkForm = document.querySelector(".broadcast-table-form");
+    if (broadcastBulkForm) {
+        broadcastBulkForm.addEventListener("submit", (event) => {
+            const selectedCount = broadcastCheckboxes.filter((checkbox) => checkbox.checked).length;
+            const submitter = event.submitter;
+            if (!selectedCount) {
+                event.preventDefault();
+                window.alert("Select at least one broadcast message.");
+                return;
+            }
+            if (submitter && submitter.value === "delete" && !window.confirm(`Delete ${selectedCount} selected broadcast message(s)?`)) {
                 event.preventDefault();
             }
         });
-    });
+    }
 </script>
 {% endblock %}
