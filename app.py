@@ -47,8 +47,17 @@ RELEASE_NOTES = [
             "Enhanced login broadcasts by removing schedule timestamps from the sign-in page.",
             "Enhanced the Insights Dashboard ticker so one full, left-aligned broadcast message is displayed at a time.",
             "Enhanced Outreach Tasks resilience so the page opens in compatibility mode if older hosted schemas are still refreshing partner outreach columns.",
+            "Enhanced PG Progress Last 7 Days so it shows date only, activity type and activity update notes.",
+            "Enhanced PG Progress Next 7 Days so it includes open work already started, starting within seven days or due within seven days.",
+            "Enhanced PG Bible next action notes so they follow the same scheduled activity window as PG Progress.",
+            "Enhanced PG Bible large text fields so they are left aligned, wrapped and expanded to show the full text.",
+            "Enhanced Insights Dashboard account counting so the PG planning count is based on unique PG Bible numbers.",
         ],
-        "fixed": [],
+        "fixed": [
+            "Fixed partner outreach activity types so partner activity uses Partner Touchpoint instead of partner-account-specific values.",
+            "Fixed the Insights Dashboard untouched account tile so it opens a filtered untouched accounts table.",
+            "Fixed untouched account measurement so it counts accounts with no active outreach tasks.",
+        ],
         "sub_releases": [],
     },
     {
@@ -2672,7 +2681,11 @@ def render_dashboard_fallback():
 
 def build_dashboard_response(connection):
 
-    total_accounts = connection.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
+    total_accounts = connection.execute("""
+        SELECT COUNT(DISTINCT pg_bible_order)
+        FROM accounts
+        WHERE pg_bible_order IS NOT NULL
+    """).fetchone()[0]
     total_contacts = connection.execute("SELECT COUNT(*) FROM contacts").fetchone()[0]
     total_outreach = connection.execute("SELECT COUNT(*) FROM outreach").fetchone()[0]
     total_pg_target = connection.execute("""
@@ -2741,10 +2754,6 @@ def build_dashboard_response(connection):
             FROM outreach
             WHERE outreach.account_id = accounts.id
               AND COALESCE(outreach.task_status, '') NOT IN ('Completed', 'Cancelled')
-              AND (
-                    (outreach.sales_play IS NOT NULL AND outreach.sales_play != '')
-                 OR (outreach.next_action IS NOT NULL AND outreach.next_action != '')
-              )
         )
     """).fetchone()[0]
 
@@ -3342,6 +3351,18 @@ def fy_quarter_are_valid(fy, quarter):
     return bool((fy or "").strip() and (quarter or "").strip())
 
 
+def activity_display_note(row):
+    return (
+        row["next_action"]
+        if "next_action" in row.keys() and row["next_action"]
+        else (row["subject"] if "subject" in row.keys() and row["subject"] else "")
+    )
+
+
+def activity_display_type(row, fallback="Activity"):
+    return row["activity_type"] if "activity_type" in row.keys() and row["activity_type"] else fallback
+
+
 def pg_dashboard_context(connection):
     accounts = connection.execute("""
         SELECT *
@@ -3424,39 +3445,49 @@ def pg_dashboard_context(connection):
                     activity_date,
                     activity_type,
                     outcome,
-                    COALESCE(
-                        NULLIF(next_action_date, ''),
-                        CASE
-                            WHEN activity_type = 'NBM Booked'
-                              OR outcome = 'Meeting Booked'
-                            THEN NULLIF(activity_date, '')
-                            ELSE NULL
-                        END
-                    ) AS action_due_date
+                    COALESCE(NULLIF(activity_date, ''), NULLIF(next_action_date, '')) AS action_start_date,
+                    NULLIF(next_action_date, '') AS action_due_date
                 FROM outreach
                 WHERE account_id = ?
                   AND contact_id = ?
-                  AND COALESCE(
-                        NULLIF(next_action_date, ''),
-                        CASE
-                            WHEN activity_type = 'NBM Booked'
-                              OR outcome = 'Meeting Booked'
-                            THEN NULLIF(activity_date, '')
-                            ELSE NULL
-                        END
-                      ) IS NOT NULL
-                  AND COALESCE(
-                        NULLIF(next_action_date, ''),
-                        CASE
-                            WHEN activity_type = 'NBM Booked'
-                              OR outcome = 'Meeting Booked'
-                            THEN NULLIF(activity_date, '')
-                            ELSE NULL
-                        END
-                      ) <= ?
+                  AND (
+                        (
+                            NULLIF(activity_date, '') IS NOT NULL
+                            AND NULLIF(activity_date, '') <= ?
+                            AND (
+                                NULLIF(next_action_date, '') IS NULL
+                                OR NULLIF(next_action_date, '') >= ?
+                            )
+                        )
+                        OR (
+                            NULLIF(activity_date, '') IS NULL
+                            AND NULLIF(next_action_date, '') IS NOT NULL
+                            AND NULLIF(next_action_date, '') <= ?
+                            AND NULLIF(next_action_date, '') >= ?
+                        )
+                        OR (
+                            NULLIF(next_action_date, '') IS NOT NULL
+                            AND NULLIF(next_action_date, '') <= ?
+                            AND NULLIF(next_action_date, '') >= ?
+                            AND (
+                                NULLIF(activity_date, '') IS NULL
+                                OR NULLIF(activity_date, '') <= ?
+                            )
+                        )
+                      )
                   AND COALESCE(task_status, '') NOT IN ('Completed', 'Cancelled')
-                ORDER BY action_due_date ASC, next_action_time ASC, id DESC
-            """, (account_id, contact_id, seven_days_forward)).fetchall()
+                ORDER BY COALESCE(NULLIF(next_action_date, ''), NULLIF(activity_date, '')) ASC, next_action_time ASC, id DESC
+            """, (
+                account_id,
+                contact_id,
+                seven_days_forward,
+                today_key,
+                seven_days_forward,
+                today_key,
+                seven_days_forward,
+                today_key,
+                seven_days_forward,
+            )).fetchall()
             if (
                 not scheduled_action_rows
                 and latest_contact_activity
@@ -3482,24 +3513,18 @@ def pg_dashboard_context(connection):
 
             next_7_days_actions = []
             for action_row in scheduled_action_rows:
-                if action_row["activity_type"] == "NBM Booked" or action_row["outcome"] == "Meeting Booked":
-                    subject_parts = [f"NBM Meeting booked: {action_row['subject'] or 'Scheduled meeting'}"]
-                else:
-                    subject_parts = [action_row["subject"] or "Scheduled action"]
-                if action_row["next_action"]:
-                    subject_parts.append(action_row["next_action"])
-                due_parts = [action_row["action_due_date"] or "", action_row["next_action_time"] or ""]
                 next_7_days_actions.append({
-                    "subject": " - ".join(subject_parts),
-                    "due": " ".join(part for part in due_parts if part),
+                    "date": action_row["action_due_date"] or action_row["action_start_date"] or "",
+                    "activity": activity_display_type(action_row, "Scheduled action"),
+                    "activity_update": activity_display_note(action_row),
                 })
             last_7_days_activity_entries = []
             for row in recent_activity_rows:
                 submitted_date = str(row["last_updated"] or row["activity_date"] or "No date")[:10]
                 last_7_days_activity_entries.append({
                     "date": submitted_date,
-                    "activity": row["activity_type"] or row["subject"] or "Activity",
-                    "activity_update": row["next_action"],
+                    "activity": activity_display_type(row, "Activity"),
+                    "activity_update": activity_display_note(row),
                 })
 
             pg_action_rows.append({
@@ -3546,10 +3571,7 @@ def pg_dashboard_context(connection):
              AND partner_contacts.account_id = account_partners.account_id
             LEFT JOIN outreach
               ON outreach.account_id = account_partners.account_id
-             AND (
-                    outreach.activity_type = ('Partner: ' || account_partners.partner_name)
-                 OR outreach.partner_contact_id = partner_contacts.id
-             )
+             AND outreach.partner_contact_id = partner_contacts.id
             WHERE account_partners.account_id = ?
             ORDER BY account_partners.partner_name, partner_contacts.name, outreach.last_updated DESC
         """, (account_id,)).fetchall()
@@ -3583,17 +3605,33 @@ def pg_dashboard_context(connection):
                         "activity": f"Partner activity - {partner_name}",
                         "activity_update": f"{partner_contact_name}: {row['partner_notes']}",
                     })
-            if row["next_action_date"] and row["next_action_date"] <= seven_days_forward and not is_closed_task_status(row["task_status"]):
-                key = ("scheduled", row["next_action_date"], row["next_action_time"], row["subject"])
+            partner_start_date = row["activity_date"] or ""
+            partner_due_date = row["next_action_date"] or ""
+            partner_in_window = (
+                (
+                    partner_start_date
+                    and partner_start_date <= seven_days_forward
+                    and (not partner_due_date or partner_due_date >= today_key)
+                )
+                or (
+                    not partner_start_date
+                    and partner_due_date
+                    and today_key <= partner_due_date <= seven_days_forward
+                )
+                or (
+                    partner_due_date
+                    and today_key <= partner_due_date <= seven_days_forward
+                    and (not partner_start_date or partner_start_date <= seven_days_forward)
+                )
+            )
+            if partner_in_window and not is_closed_task_status(row["task_status"]):
+                key = ("scheduled", partner_start_date, partner_due_date, row["next_action_time"], row["subject"])
                 if key not in seen_partner_entries:
                     seen_partner_entries.add(key)
-                    due_parts = [row["next_action_date"] or "", row["next_action_time"] or ""]
-                    subject_parts = [row["subject"] or f"Partner activity - {partner_name}"]
-                    if row["next_action"]:
-                        subject_parts.append(row["next_action"])
                     partner_scheduled_actions.append({
-                        "subject": " - ".join(subject_parts),
-                        "due": " ".join(part for part in due_parts if part),
+                        "date": partner_due_date or partner_start_date,
+                        "activity": activity_display_type(row, f"Partner activity - {partner_name}"),
+                        "activity_update": activity_display_note(row) or f"Partner activity - {partner_name}",
                     })
         if partner_activity_entries or partner_scheduled_actions:
             pg_action_rows.append({
@@ -3695,8 +3733,19 @@ def pg_progress():
 def accounts():
     user = current_user()
     connection = get_db_connection()
+    account_filter = request.args.get("filter", "")
+    account_where = ""
+    if account_filter == "untouched":
+        account_where = """
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM outreach
+            WHERE outreach.account_id = accounts.id
+              AND COALESCE(outreach.task_status, '') NOT IN ('Completed', 'Cancelled')
+        )
+        """
 
-    account_rows = connection.execute("""
+    account_rows = connection.execute(f"""
         SELECT 
             accounts.*,
 
@@ -3742,6 +3791,7 @@ def accounts():
             ) AS latest_outreach_date
 
         FROM accounts
+        {account_where}
         ORDER BY accounts.account_name
     """).fetchall()
 
@@ -3794,6 +3844,7 @@ def accounts():
     return render_template(
         "accounts.html",
         accounts=accounts,
+        active_account_filter=account_filter,
         shareable_accounts=shareable_accounts,
         account_shares=account_shares,
         assignable_users=list_assignable_users(),
@@ -8488,9 +8539,17 @@ def build_pg_bible_report_from_db(connection):
 
         scheduled_actions = []
         for action in row.get("next_7_days_actions") or []:
-            action_text = action.get("subject") or "Scheduled action"
-            if action.get("due"):
-                action_text = f"{action_text} ({action['due']})"
+            action_text = " | ".join(
+                part
+                for part in [
+                    action.get("date"),
+                    action.get("activity"),
+                    action.get("activity_update"),
+                ]
+                if part
+            )
+            if not action_text:
+                action_text = action.get("subject") or "Scheduled action"
             scheduled_actions.append(action_text)
 
         discovery_completed = row.get("completed_discovery_meeting") or ("N/A" if row.get("is_partner_row") else "No")

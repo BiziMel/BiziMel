@@ -169,7 +169,8 @@ class PGBibleExporter:
         print(f"profile name used: {report.profile.profile_name}")
         print(f"sheet name final: {final_sheet_name}")
 
-        if self._is_may_2026_template(ws):
+        is_may_2026_template = self._is_may_2026_template(ws)
+        if is_may_2026_template:
             self._validate_sections(ws, MAY_2026_SECTION_LABELS)
             self._configure_may_2026_mapping()
             self._prepare_may_2026_capacity(ws, report)
@@ -201,6 +202,8 @@ class PGBibleExporter:
 
         output_path = self.output_dir / f"PGBible_{sanitize_filename(report.profile.username)}.xlsx"
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        if is_may_2026_template:
+            baseline = self._structural_snapshot(ws)
         self._self_check(ws, baseline)
         wb.save(output_path)
         saved_wb = load_workbook(output_path, data_only=False)
@@ -310,8 +313,11 @@ class PGBibleExporter:
             self._write_value(ws.cell(row, 2), nbm_value)
             self._apply_nbm_fill(ws.cell(row, 2), nbm_value)
             self._write_value(ws.cell(row, 4), item.sales_play)
+            self._format_large_text_cell(ws.cell(row, 4), item.sales_play, 80)
             self._write_value(ws.cell(row, 12), self._join_parts([item.customer, item.customer_business_unit], ", "))
+            self._format_large_text_cell(ws.cell(row, 12), self._join_parts([item.customer, item.customer_business_unit], ", "), 35)
             self._write_value(ws.cell(row, 13), item.estimated_value)
+            self._expand_row_for_text(ws, row, [4, 12])
         return len(rows)
 
     def _write_may_2026_actions(self, ws, report: OwnerReport) -> int:
@@ -322,14 +328,13 @@ class PGBibleExporter:
             self._write_value(ws.cell(row, 2), nbm_value)
             self._apply_nbm_fill(ws.cell(row, 2), nbm_value)
             self._write_value(ws.cell(row, 3), item.discovery_target_name_title)
-            ws.cell(row, 3).alignment = copy.copy(ws.cell(row, 3).alignment)
-            ws.cell(row, 3).alignment = ws.cell(row, 3).alignment.copy(wrap_text=True, vertical="top")
+            self._format_large_text_cell(ws.cell(row, 3), item.discovery_target_name_title, 45)
             self._write_value(ws.cell(row, 6), self._yes_no(item.discovery_completed))
             self._write_value(ws.cell(row, 7), item.discovery_next_action)
-            ws.cell(row, 7).alignment = copy.copy(ws.cell(row, 7).alignment)
-            ws.cell(row, 7).alignment = ws.cell(row, 7).alignment.copy(wrap_text=True, vertical="top")
+            self._format_large_text_cell(ws.cell(row, 7), item.discovery_next_action, 55)
             self._write_value(ws.cell(row, 16), self._yes_no_or_na(item.nbm_completed or item.nbm_booked or item.nbm_booked_date))
             self._write_value(ws.cell(row, 14), self._yes_no(item.exec_first))
+            self._expand_row_for_text(ws, row, [3, 7])
         return len(report.action_items)
 
     def _sync_following_region_after_insert(self, following_region_name: str, preceding_region: TableRegion) -> None:
@@ -661,6 +666,29 @@ class PGBibleExporter:
             cell.value = float(value)
         else:
             cell.value = value
+
+    def _format_large_text_cell(self, cell, value: Any, chars_per_line: int = 60) -> None:
+        cell.alignment = copy.copy(cell.alignment)
+        cell.alignment = cell.alignment.copy(
+            horizontal="left",
+            vertical="top",
+            wrap_text=True,
+        )
+
+    def _estimated_text_lines(self, value: Any, chars_per_line: int = 60) -> int:
+        text = str(value or "")
+        if not text:
+            return 1
+        lines = 0
+        for part in text.splitlines() or [""]:
+            length = len(part)
+            lines += max(1, (length + chars_per_line - 1) // chars_per_line)
+        return lines
+
+    def _expand_row_for_text(self, ws, row: int, columns: list[int]) -> None:
+        existing_height = ws.row_dimensions[row].height or 18
+        estimated_lines = max(self._estimated_text_lines(ws.cell(row, col).value) for col in columns)
+        ws.row_dimensions[row].height = max(existing_height, min(180, 16 * estimated_lines + 8))
 
     def _yes_no(self, value: Any) -> str:
         if value in (None, ""):

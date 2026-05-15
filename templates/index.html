@@ -72,7 +72,7 @@
                         <p class="metric-number">{{ this_week_overdue }}</p>
                     </div>
                 </a>
-                <a href="{{ url_for('accounts') }}" class="metric-card-link">
+                <a href="{{ url_for('accounts', filter='untouched') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
                         <h3>Untouched Accounts</h3>
                         <p class="metric-number">{{ this_week_untouched_accounts }}</p>
@@ -94,8 +94,9 @@
                 </a>
                 <a href="{{ url_for('accounts') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
-                        <h3>Total Accounts</h3>
+                        <h3>PG Bible Numbers</h3>
                         <p class="metric-number">{{ total_accounts }}</p>
+                        <p class="metric-subtext">Unique PG plan numbers</p>
                     </div>
                 </a>
                 <a href="{{ url_for('contacts') }}" class="metric-card-link">

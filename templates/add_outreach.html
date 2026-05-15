@@ -132,14 +132,6 @@
                     {% for activity in dropdown_values.outreach_activity_types %}
                         <option value="{{ activity }}" {% if prefill.activity_type == activity %}selected{% endif %}>{{ activity }}</option>
                     {% endfor %}
-                    {% for partner in partner_activity_options %}
-                        <option value="Partner: {{ partner.partner_name }}"
-                                data-account-id="{{ partner.account_id }}"
-                                class="partner-activity-option"
-                                {% if prefill.activity_type == 'Partner: ' ~ partner.partner_name %}selected{% endif %}>
-                            Partner: {{ partner.partner_name }}{% if partner.partner_type %} ({{ partner.partner_type }}){% endif %}
-                        </option>
-                    {% endfor %}
                 </select>
             </div>
 
@@ -239,7 +231,6 @@
     function constrainContactsByAccount() {
         const accountSelect = document.getElementById("account_id");
         const contactSelect = document.getElementById("contact_id");
-        const activityTypeSelect = document.getElementById("activity_type");
         const salesPlayDatalist = document.getElementById("sales_play_options");
         const allSalesPlayOptions = salesPlayDatalist ? Array.from(salesPlayDatalist.options).map((option) => ({
             value: option.value,
@@ -273,15 +264,6 @@
             }
 
             contactSelect.disabled = !selectedAccountId;
-            if (activityTypeSelect) {
-                Array.from(activityTypeSelect.options).forEach((option) => {
-                    if (!option.classList.contains("partner-activity-option")) return;
-                    const showPartner = selectedAccountId && option.dataset.accountId === selectedAccountId;
-                    option.hidden = !showPartner;
-                    option.disabled = !showPartner;
-                    if (option.selected && !showPartner) activityTypeSelect.value = "";
-                });
-            }
             if (salesPlayDatalist) {
                 salesPlayDatalist.innerHTML = "";
                 allSalesPlayOptions

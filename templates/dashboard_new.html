@@ -163,6 +163,7 @@
                                             <div class="activity-update-entry">
                                                 <strong>{{ entry.date }}</strong>
                                                 <span class="activity-update-arrow" aria-hidden="true">&rarr;</span>
+                                                <strong>{{ entry.activity }}</strong>
                                                 <span>{{ entry.activity_update }}</span>
                                             </div>
                                         {% endfor %}
@@ -174,10 +175,10 @@
                                     <div class="scheduled-action-list">
                                         {% for action in row.next_7_days_actions %}
                                             <div class="scheduled-action-entry">
-                                                <span>{{ action.subject }}</span>
-                                                {% if action.due %}
-                                                    <strong>{{ action.due }}</strong>
-                                                {% endif %}
+                                                <strong>{{ action.date }}</strong>
+                                                <span class="activity-update-arrow" aria-hidden="true">&rarr;</span>
+                                                <strong>{{ action.activity }}</strong>
+                                                <span>{{ action.activity_update }}</span>
                                             </div>
                                         {% endfor %}
                                     </div>

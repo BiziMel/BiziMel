@@ -2870,7 +2870,7 @@ a:hover {
 
 .activity-update-entry {
     display: grid;
-    grid-template-columns: auto 18px minmax(0, 1fr);
+    grid-template-columns: auto 18px auto minmax(0, 1fr);
     gap: 6px;
     align-items: start;
 }
@@ -2889,6 +2889,7 @@ a:hover {
 
 .scheduled-action-entry {
     display: grid;
+    grid-template-columns: auto 18px auto minmax(0, 1fr);
     gap: 4px;
     padding: 9px 0;
     border-bottom: 1px solid #cfe0cb;
@@ -4875,4 +4876,26 @@ body {
     padding: 5px 10px;
     font-size: 12px;
     line-height: 1.2;
+}
+
+.alert-info {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #1e3a8a;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+}
+
+.compact-alert {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.compact-alert a {
+    color: #1d4ed8;
+    font-weight: 800;
 }
