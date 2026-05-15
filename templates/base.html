@@ -23,7 +23,10 @@
             </div>
         </div>
 
-        <a href="{{ url_for('user_guide') }}" class="btn btn-secondary user-guide-link">User Guide</a>
+        <div class="header-help-actions">
+            <a href="{{ url_for('user_guide') }}" class="btn btn-secondary user-guide-link">User Guide</a>
+            <a href="{{ url_for('release_notes') }}" class="btn btn-secondary user-guide-link">Release Notes</a>
+        </div>
         </div>
 
     <nav class="button-group nav-stack">
@@ -35,7 +38,6 @@
     <a href="/partners" class="btn btn-primary">Partners</a>
     <a href="/reports" class="btn btn-primary">Reports</a>
     <a href="/profile" class="btn btn-secondary">Profile</a>
-    <a href="/release-notes" class="btn btn-secondary">Release Notes</a>
     {% if current_user and current_user["role"] == "admin" %}
     <a href="/admin/permissions" class="btn btn-secondary">Admin</a>
     {% endif %}

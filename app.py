@@ -73,6 +73,8 @@ RELEASE_NOTES = [
                     "Removed Closed as a selectable Outreach task status and migrated old Closed values to Completed.",
                     "Hardened workspace security so cross-workspace task reassignment requires explicit account access and storage health no longer displays user email or workspace schema.",
                     "Fixed PG Bible PG Actions mapping so Discovery meeting completed, Exec First and next seven day action notes populate in the May 2026 template.",
+                    "Fixed the Insights Dashboard broadcast ticker so longer messages display the full title and message before moving to the next item.",
+                    "Fixed the Insights Dashboard broadcast ticker so only one complete broadcast message is visible at a time before moving to the next message.",
                 ],
                 "enhanced": [
                     "Simplified Outreach edit actions to Save, Complete and Create Follow-Up, and Cancel.",
@@ -86,6 +88,7 @@ RELEASE_NOTES = [
                     "Enhanced broadcast management so admins can edit broadcasts in a table and bulk save or delete selected rows.",
                     "Enhanced the Insights Dashboard broadcast ticker so messages roll upward, display for five seconds and continue in a loop.",
                     "Enhanced PG Progress so NBM booked meetings remain visible in next seven day scheduled actions until completed or cancelled.",
+                    "Enhanced navigation by moving Release Notes from the main tab row into the header action area beneath User Guide.",
                 ],
             },
         ],

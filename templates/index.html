@@ -15,22 +15,33 @@
     <section class="dashboard-broadcast-ticker" aria-label="Broadcast messages">
         <div class="dashboard-broadcast-label">Broadcast</div>
         <div class="dashboard-broadcast-window">
-            <div class="dashboard-broadcast-track" style="--broadcast-count: {{ broadcast_messages|length }}; --broadcast-duration: {{ (broadcast_messages|length * 5) if broadcast_messages|length else 5 }}s;">
+            <div class="dashboard-broadcast-track" data-broadcast-carousel>
                 {% for broadcast in broadcast_messages %}
-                    <span class="dashboard-broadcast-item broadcast-{{ broadcast['severity'] }}">
+                    <div class="dashboard-broadcast-item broadcast-{{ broadcast['severity'] }} {% if loop.first %}is-active{% endif %}">
                         <strong>{{ broadcast['title'] }}</strong>
-                        {{ broadcast['message'] }}
-                    </span>
-                {% endfor %}
-                {% for broadcast in broadcast_messages %}
-                    <span class="dashboard-broadcast-item broadcast-{{ broadcast['severity'] }}" aria-hidden="true">
-                        <strong>{{ broadcast['title'] }}</strong>
-                        {{ broadcast['message'] }}
-                    </span>
+                        <span>{{ broadcast['message'] }}</span>
+                    </div>
                 {% endfor %}
             </div>
         </div>
     </section>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            document.querySelectorAll("[data-broadcast-carousel]").forEach((carousel) => {
+                const items = Array.from(carousel.querySelectorAll(".dashboard-broadcast-item"));
+                if (items.length <= 1) {
+                    return;
+                }
+                let activeIndex = 0;
+                window.setInterval(() => {
+                    items[activeIndex].classList.remove("is-active");
+                    activeIndex = (activeIndex + 1) % items.length;
+                    items[activeIndex].classList.add("is-active");
+                }, 5000);
+            });
+        });
+    </script>
 {% endif %}
 
 <div class="dashboard-page-layout">
