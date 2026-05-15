@@ -119,17 +119,17 @@
                             </td>
                             <td>
                                 {% if row.company_name %}
-                                    <div class="pg-person-line"><span>Company</span><strong>{{ row.company_name }}</strong></div>
+                                    <div class="pg-person-line"><span>{% if row.is_partner_row %}Account{% else %}Company{% endif %}</span><strong>{{ row.company_name }}</strong></div>
                                 {% endif %}
                                 {% if row.business_org %}
-                                    <div class="pg-person-line"><span>Business / Org</span><strong>{{ row.business_org }}</strong></div>
+                                    <div class="pg-person-line"><span>{% if row.is_partner_row %}Activity Type{% else %}Business / Org{% endif %}</span><em>{{ row.business_org }}</em></div>
                                 {% endif %}
                                 {% if row.department %}
-                                    <div class="pg-person-line"><span>Department</span><strong>{{ row.department }}</strong></div>
+                                    <div class="pg-person-line"><span>{% if row.is_partner_row %}Partner Company{% else %}Department{% endif %}</span><em>{{ row.department }}</em></div>
                                 {% endif %}
-                                <div class="pg-person-line"><span>Contact</span><strong>{{ row.targeted_discovery or "No account contacts entered" }}</strong></div>
+                                <div class="pg-person-line"><span>{% if row.is_partner_row %}Partner Contact{% else %}Contact{% endif %}</span><em>{{ row.targeted_discovery or "No account contacts entered" }}</em></div>
                                 {% if row.contact_job_title %}
-                                    <div class="pg-person-line"><span>Job Title</span><strong>{{ row.contact_job_title }}</strong></div>
+                                    <div class="pg-person-line"><span>Job Title</span><em>{{ row.contact_job_title }}</em></div>
                                 {% endif %}
                             </td>
                             <td>

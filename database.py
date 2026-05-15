@@ -296,6 +296,33 @@ def initialise_database(force=False):
     """)
 
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS org_charts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            layout_prefs TEXT,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(account_id) REFERENCES accounts(id)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS org_chart_nodes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            org_chart_id INTEGER NOT NULL,
+            contact_id INTEGER NOT NULL,
+            parent_contact_id INTEGER,
+            sort_index INTEGER DEFAULT 0,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(org_chart_id, contact_id),
+            FOREIGN KEY(org_chart_id) REFERENCES org_charts(id),
+            FOREIGN KEY(contact_id) REFERENCES contacts(id),
+            FOREIGN KEY(parent_contact_id) REFERENCES contacts(id)
+        )
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS timeline_entries (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             related_type TEXT NOT NULL,
@@ -379,6 +406,18 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "account_org_chart_people", "sort_order", "INTEGER DEFAULT 0")
     add_column_if_missing(cursor, "account_org_chart_people", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "account_org_chart_people", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "org_charts", "team_id", "INTEGER DEFAULT 1")
+    add_column_if_missing(cursor, "org_charts", "account_id", "INTEGER")
+    add_column_if_missing(cursor, "org_charts", "layout_prefs", "TEXT")
+    add_column_if_missing(cursor, "org_charts", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "org_charts", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "org_chart_nodes", "team_id", "INTEGER DEFAULT 1")
+    add_column_if_missing(cursor, "org_chart_nodes", "org_chart_id", "INTEGER")
+    add_column_if_missing(cursor, "org_chart_nodes", "contact_id", "INTEGER")
+    add_column_if_missing(cursor, "org_chart_nodes", "parent_contact_id", "INTEGER")
+    add_column_if_missing(cursor, "org_chart_nodes", "sort_index", "INTEGER DEFAULT 0")
+    add_column_if_missing(cursor, "org_chart_nodes", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "org_chart_nodes", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
 
     # Safe migrations for accounts
     add_column_if_missing(cursor, "accounts", "team_id", "INTEGER DEFAULT 1")
@@ -595,6 +634,9 @@ def initialise_database(force=False):
         ("idx_account_org_charts_account", "account_org_charts", ["account_id"]),
         ("idx_account_org_chart_people_chart", "account_org_chart_people", ["chart_id"]),
         ("idx_account_org_chart_people_account", "account_org_chart_people", ["account_id"]),
+        ("idx_org_charts_account", "org_charts", ["account_id"]),
+        ("idx_org_chart_nodes_chart", "org_chart_nodes", ["org_chart_id"]),
+        ("idx_org_chart_nodes_contact", "org_chart_nodes", ["contact_id"]),
         ("idx_audit_entity", "audit_entries", ["entity_type", "entity_id"]),
         ("idx_non_working_blocks_dates", "non_working_blocks", ["start_date", "end_date"]),
     ]

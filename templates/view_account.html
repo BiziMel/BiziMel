@@ -68,8 +68,8 @@
             <h2>Contact Org Chart</h2>
             <p>Build and manage customer and partner organisation charts for this account. Use it to map who works under or works with another person.</p>
         </div>
-        <a href="{{ url_for('account_org_chart', account_id=account.id) }}" class="btn btn-primary">
-            Build / Manage Org Chart
+        <a href="{{ url_for('account_orgchart', account_id=account.id) }}" class="btn btn-primary">
+            Org Chart
         </a>
     </div>
     <p class="field-help">Add contacts or partner contacts first, then open the org chart to place them into the account structure.</p>

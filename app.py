@@ -11,26 +11,37 @@ import json
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
-from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session
+from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session, jsonify
 from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection
+from orgchart_service import (
+    delete_node as delete_orgchart_node,
+    get_or_create_org_chart,
+    get_org_nodes,
+    ordered_insert_index,
+    renumber_siblings,
+    sibling_nodes,
+    upsert_node,
+    validate_no_cycles,
+)
 
 
 APP_VERSION = "1.4"
-APP_RELEASE_DATE = "2026-05-14"
-APP_BUILD = "2026-05-14-v1.4-pg-progress-partner-org-chart"
+APP_RELEASE_DATE = "2026-05-15"
+APP_BUILD = "2026-05-15-v1.4-pg-progress-orgchart-rag"
 
 RELEASE_NOTES = [
     {
         "version": "1.4",
-        "release_date": "2026-05-14",
+        "release_date": "2026-05-15",
         "title": "Partner activity, contact org charts and outreach scheduling refinement",
         "new": [
             "Added partner activity into PG Progress as a separate partner row when activity has occurred against an account.",
             "Added admin contact archiving for inactive contacts by date range from Admin with CSV export support from reports.",
             "Added editable account contact org charts so customer and partner contacts can be mapped by business organisation, department and reporting relationship.",
+            "Added a replacement account Org Chart workspace with draggable contact tiles, relationship drop zones, API persistence and hierarchy connector lines.",
         ],
         "enhanced": [
             "Enhanced Outreach so account partners are clearly identified in the activity selection and only appear when linked to the selected account.",
@@ -41,11 +52,16 @@ RELEASE_NOTES = [
             "Enhanced PG Progress so partner activity is labelled clearly against the associated account.",
             "Enhanced PG Progress so the discovery contact cell is limited to company, business/org, department, contact name and job title.",
             "Enhanced account org charts with a single drag-and-drop canvas and connector lines so reporting relationships are visible between managers and direct reports.",
+            "Enhanced Outreach task RAG colouring so amber starts on the due day from 00:01 and red starts immediately after the due date and due time expire.",
+            "Enhanced PG Progress formatting so only company names and detail labels are bold while row detail values remain regular weight.",
+            "Enhanced PG Progress partner rows to show the account, partner company and partner contact names clearly.",
             "Enhanced manual Outreach scheduling so non-working dates and times warn on save and allow the user to confirm or return to the field.",
         ],
         "fixed": [
             "Restored a single PipeFlow logo in the header.",
             "Cleaned PG Progress so the discovery contact cell shows only the person name and job title without extra contact detail clutter.",
+            "Cleaned Outreach forms so contact job title appears without email, phone or LinkedIn details.",
+            "Renamed the account table action from Build Org Chart to Org Chart.",
         ],
     },
     {
@@ -2956,20 +2972,23 @@ def status_requires_activity_update(status):
     return is_closed_task_status(status)
 
 
-def due_rag_class(next_action_date, next_action_time, task_status):
+def due_rag_class(next_action_date, next_action_time, task_status, now=None):
     if is_closed_task_status(task_status):
         return "rag-closed"
     if not next_action_date:
         return "rag-green"
     try:
-        due_text = f"{next_action_date} {next_action_time or '23:59'}"
-        due_at = datetime.strptime(due_text, "%Y-%m-%d %H:%M")
+        due_day = datetime.strptime(str(next_action_date), "%Y-%m-%d").date()
+        due_time = datetime.strptime(str(next_action_time or "23:59"), "%H:%M").time()
     except (TypeError, ValueError):
         return "rag-green"
-    now = datetime.now()
-    if due_at < now:
+    now = now or datetime.now()
+    due_at = datetime.combine(due_day, due_time)
+    amber_start = datetime.combine(due_day, datetime.strptime("00:01", "%H:%M").time())
+    red_start = due_at + timedelta(seconds=1)
+    if now >= red_start:
         return "rag-red"
-    if due_at <= now + timedelta(days=1):
+    if amber_start <= now <= due_at:
         return "rag-amber"
     return "rag-green"
 
@@ -3305,9 +3324,15 @@ def pg_dashboard_context(connection):
         partner_activity_entries = []
         partner_scheduled_actions = []
         seen_partner_entries = set()
+        partner_names = []
+        partner_contact_names = []
         for row in partner_activity_rows:
             partner_name = row["partner_name"] or "Partner"
             partner_contact_name = row["partner_contact_name"] or "Partner contact"
+            if partner_name and partner_name not in partner_names:
+                partner_names.append(partner_name)
+            if partner_contact_name and partner_contact_name not in partner_contact_names:
+                partner_contact_names.append(partner_contact_name)
             if row["next_action"] and row["last_updated"] and str(row["last_updated"])[:10] >= seven_days_ago and is_closed_task_status(row["task_status"]):
                 key = ("outreach", row["last_updated"], row["next_action"])
                 if key not in seen_partner_entries:
@@ -3343,11 +3368,11 @@ def pg_dashboard_context(connection):
                 "target_number": pg_target_number,
                 "colour_index": nbm_colour_index(pg_target_number),
                 "account_name": account["account_name"],
-                "targeted_discovery": "Partner activity",
-                "contact_job_title": "",
+                "targeted_discovery": ", ".join(partner_contact_names) or "Partner contact",
+                "contact_job_title": "Partner activity",
                 "company_name": account["account_name"],
-                "business_org": "",
-                "department": "",
+                "business_org": "Partner activity",
+                "department": ", ".join(partner_names) or "Partner",
                 "completed_discovery_meeting": "N/A",
                 "exec_first": "N/A",
                 "nbm_completed": "N/A",
@@ -4604,6 +4629,185 @@ def add_account_timeline(account_id):
     connection.close()
 
     return redirect(url_for("view_account", account_id=account_id))
+
+
+def orgchart_contacts_for_account(connection, account_id):
+    return connection.execute("""
+        SELECT
+            id,
+            name,
+            job_title,
+            COALESCE(NULLIF(org_dept, ''), '') AS org_dept
+        FROM contacts
+        WHERE account_id = ?
+          AND COALESCE(status, 'Active') != 'Archived'
+        ORDER BY COALESCE(NULLIF(org_dept, ''), 'Unmapped'), name
+    """, (account_id,)).fetchall()
+
+
+def orgchart_contact_ids(connection, account_id):
+    return {row["id"] for row in orgchart_contacts_for_account(connection, account_id)}
+
+
+def orgchart_json_payload(connection, account_id):
+    account = connection.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    if not account:
+        return None
+    chart = get_or_create_org_chart(connection, account_id)
+    contacts = orgchart_contacts_for_account(connection, account_id)
+    nodes = get_org_nodes(connection, chart["id"])
+    return {
+        "account": {
+            "id": account["id"],
+            "account_name": account["account_name"],
+        },
+        "contacts": [
+            {
+                "id": contact["id"],
+                "name": contact["name"] or "Unknown contact",
+                "job_title": contact["job_title"] or "Job title not set",
+                "org_dept": contact["org_dept"] or "",
+            }
+            for contact in contacts
+        ],
+        "nodes": [
+            {
+                "contact_id": node["contact_id"],
+                "parent_contact_id": node["parent_contact_id"],
+                "sort_index": node["sort_index"] or 0,
+            }
+            for node in nodes
+        ],
+        "layout_prefs": chart["layout_prefs"] or "{}",
+    }
+
+
+def orgchart_target_parent(connection, org_chart_id, target_contact_id, placement):
+    if not target_contact_id:
+        return None, 0
+    target_node = connection.execute("""
+        SELECT *
+        FROM org_chart_nodes
+        WHERE org_chart_id = ?
+          AND contact_id = ?
+    """, (org_chart_id, target_contact_id)).fetchone()
+    if not target_node:
+        return None, 0
+    if placement == "employee":
+        siblings = sibling_nodes(connection, org_chart_id, target_contact_id)
+        return target_contact_id, len(siblings)
+    if placement in ("peerLeft", "peerRight"):
+        parent_contact_id = target_node["parent_contact_id"]
+        siblings = sibling_nodes(connection, org_chart_id, parent_contact_id)
+        return parent_contact_id, ordered_insert_index(siblings, target_contact_id, placement)
+    if placement == "manager":
+        parent_contact_id = target_node["parent_contact_id"]
+        siblings = sibling_nodes(connection, org_chart_id, parent_contact_id)
+        return parent_contact_id, ordered_insert_index(siblings, target_contact_id, "peerLeft")
+    return None, 0
+
+
+def orgchart_move_contact(connection, account_id, org_chart_id, contact_id, target_contact_id, placement):
+    valid_contact_ids = orgchart_contact_ids(connection, account_id)
+    if contact_id not in valid_contact_ids:
+        raise ValueError("That contact does not belong to this account.")
+    if target_contact_id and target_contact_id not in valid_contact_ids:
+        raise ValueError("The target contact does not belong to this account.")
+
+    existing_nodes = get_org_nodes(connection, org_chart_id)
+    if placement == "manager" and target_contact_id:
+        validate_no_cycles(existing_nodes, target_contact_id, contact_id)
+        parent_contact_id, sort_index = orgchart_target_parent(connection, org_chart_id, target_contact_id, placement)
+        upsert_node(connection, org_chart_id, contact_id, parent_contact_id, sort_index)
+        upsert_node(connection, org_chart_id, target_contact_id, contact_id, 0)
+        renumber_siblings(connection, org_chart_id, parent_contact_id, contact_id, sort_index)
+        return
+
+    parent_contact_id, sort_index = orgchart_target_parent(connection, org_chart_id, target_contact_id, placement)
+    validate_no_cycles(existing_nodes, contact_id, parent_contact_id)
+    upsert_node(connection, org_chart_id, contact_id, parent_contact_id, sort_index)
+
+
+@app.route("/accounts/<int:account_id>/orgchart")
+def account_orgchart(account_id):
+    connection = get_db_connection()
+    account = connection.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    if not account:
+        connection.close()
+        return redirect(url_for("accounts"))
+    payload = orgchart_json_payload(connection, account_id)
+    connection.close()
+    return render_template(
+        "org_chart.html",
+        account=account,
+        initial_orgchart=payload,
+        message=request.args.get("message", ""),
+        error=request.args.get("error", ""),
+    )
+
+
+@app.route("/api/accounts/<int:account_id>/orgchart")
+def api_account_orgchart(account_id):
+    connection = get_db_connection()
+    payload = orgchart_json_payload(connection, account_id)
+    connection.commit()
+    connection.close()
+    if payload is None:
+        return jsonify({"error": "Account not found"}), 404
+    return jsonify(payload)
+
+
+@app.route("/api/accounts/<int:account_id>/orgchart/nodes", methods=("POST",))
+def api_account_orgchart_nodes(account_id):
+    connection = get_db_connection()
+    account = connection.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    if not account:
+        connection.close()
+        return jsonify({"error": "Account not found"}), 404
+    chart = get_or_create_org_chart(connection, account_id)
+    payload = request.get_json(silent=True) or {}
+    operation = payload.get("operation", "")
+    try:
+        if operation in ("add", "move"):
+            raw_contact_id = payload.get("contact_id") or payload.get("dragged_contact_id")
+            contact_id = int(raw_contact_id)
+            target_contact_id = payload.get("target_contact_id")
+            target_contact_id = int(target_contact_id) if target_contact_id else None
+            placement = payload.get("placement") or "employee"
+            orgchart_move_contact(connection, account_id, chart["id"], contact_id, target_contact_id, placement)
+            add_timeline_entry(
+                connection,
+                "account",
+                account_id,
+                "Org Chart",
+                "Org chart hierarchy updated.",
+                audit_actor()["name"],
+            )
+        elif operation == "delete":
+            contact_id = int(payload.get("contact_id"))
+            mode = payload.get("mode") or "promote_children"
+            if mode not in ("delete_subtree", "promote_children"):
+                mode = "promote_children"
+            delete_orgchart_node(connection, chart["id"], contact_id, mode)
+            add_timeline_entry(
+                connection,
+                "account",
+                account_id,
+                "Org Chart",
+                "Org chart contact removed.",
+                audit_actor()["name"],
+            )
+        else:
+            raise ValueError("Unsupported org chart operation.")
+        connection.commit()
+        response_payload = orgchart_json_payload(connection, account_id)
+    except (TypeError, ValueError) as exc:
+        if hasattr(connection, "rollback"):
+            connection.rollback()
+        connection.close()
+        return jsonify({"error": str(exc)}), 400
+    connection.close()
+    return jsonify(response_payload)
 
 
 def org_chart_person_options(connection, account):

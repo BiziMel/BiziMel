@@ -206,13 +206,6 @@
                                         <span>{{ item.contact_job_title }}</span>
                                     </div>
                                 {% endif %}
-                                {% if item.contact_email or item.contact_phone or item.contact_linkedin %}
-                                    <div class="outreach-contact-system-fields">
-                                        {% if item.contact_email %}<span>Email: {{ item.contact_email }}</span>{% endif %}
-                                        {% if item.contact_phone %}<span>Phone: {{ item.contact_phone }}</span>{% endif %}
-                                        {% if item.contact_linkedin %}<span>LinkedIn: {{ item.contact_linkedin }}</span>{% endif %}
-                                    </div>
-                                {% endif %}
                             </td>
                             <td>
                                 <strong>{{ item.sales_play or "No sales play" }}</strong>

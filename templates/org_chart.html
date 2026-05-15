@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Org Chart | PipeFlow{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <div>
+        <h1>{{ account.account_name }} Org Chart</h1>
+        <p>Drag contacts into the chart, then drop onto the top, bottom, left or right of another person to set the hierarchy.</p>
+    </div>
+    <div class="button-group">
+        <a href="{{ url_for('view_account', account_id=account.id) }}" class="btn btn-secondary">Back to Account</a>
+    </div>
+</div>
+
+{% if message %}
+    <div class="alert-success">{{ message }}</div>
+{% endif %}
+{% if error %}
+    <div class="alert-error">{{ error }}</div>
+{% endif %}
+
+<section class="form-card orgchart-workspace"
+         data-account-id="{{ account.id }}"
+         data-initial='{{ initial_orgchart|tojson }}'>
+    <aside class="orgchart-palette">
+        <div class="section-header compact-section-header">
+            <div>
+                <h2>Contacts</h2>
+                <p>Only contacts linked to this account are shown.</p>
+            </div>
+        </div>
+        <input type="search" id="orgchartContactSearch" placeholder="Search contacts" autocomplete="off">
+        <div id="orgchartContactList" class="orgchart-contact-list"></div>
+    </aside>
+
+    <div class="orgchart-main">
+        <div class="orgchart-toolbar">
+            <div>
+                <h2>Chart Canvas</h2>
+                <p>Drop into the empty canvas to add a top-level person. Drop onto a node zone to position someone around that person.</p>
+            </div>
+            <div class="button-row">
+                <button type="button" class="btn btn-secondary btn-small" id="orgchartFit">Fit View</button>
+                <button type="button" class="btn btn-secondary btn-small" id="orgchartReset">Reset</button>
+                <span id="orgchartSaveState" class="status-pill">Saved</span>
+            </div>
+        </div>
+
+        <div id="orgchartError" class="alert-error" hidden></div>
+        <div id="orgchartCanvas" class="orgchart-canvas" aria-label="Organisation chart canvas"></div>
+    </div>
+</section>
+
+<script src="{{ url_for('static', filename='org_chart.js') }}"></script>
+
+{% endblock %}

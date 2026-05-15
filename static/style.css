@@ -2869,6 +2869,12 @@ a:hover {
     text-transform: uppercase;
 }
 
+.pg-person-line em {
+    color: #0f172a;
+    font-style: normal;
+    font-weight: 400;
+}
+
 .activity-notes-cell {
     color: #263a2b;
     line-height: 1.35;
@@ -4101,29 +4107,29 @@ body {
     background: #f8fbff;
 }
 
-.org-level-row {
+.org-single-chart-board {
+    min-height: 560px;
+}
+
+.org-root-drop-zone {
+    min-height: 500px;
+    align-content: flex-start;
+}
+
+.org-root-drop-zone:empty::after {
+    content: "Drag people here to start the org chart";
     display: grid;
-    gap: 10px;
-    padding: 12px 0;
-    border-top: 1px solid #e2e8f0;
-}
-
-.org-level-row:first-of-type {
-    border-top: 0;
-}
-
-.org-level-label {
-    justify-self: start;
-    padding: 4px 8px;
-    border-radius: 999px;
-    background: #e2e8f0;
-    color: #334155;
-    font-size: 12px;
-    font-weight: 800;
+    place-items: center;
+    width: 100%;
+    min-height: 450px;
+    color: #64748b;
+    font-size: 14px;
+    font-weight: 700;
 }
 
 .org-tree-node {
     display: grid;
+    position: relative;
     justify-items: center;
     align-content: start;
     gap: 12px;
@@ -4139,8 +4145,51 @@ body {
     width: 100%;
     min-height: 34px;
     margin-top: 10px;
-    padding-top: 14px;
-    border-top: 1px solid #dbe3ef;
+    padding-top: 34px;
+    border-top: 0;
+    position: relative;
+}
+
+.org-tree-node.has-children > .org-tree-children::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    height: 22px;
+    border-left: 2px solid #94a3b8;
+    transform: translateX(-50%);
+}
+
+.org-tree-node.has-children > .org-tree-children::after {
+    content: "";
+    position: absolute;
+    top: 22px;
+    left: 76px;
+    right: 76px;
+    border-top: 2px solid #94a3b8;
+}
+
+.org-tree-node.single-child-parent > .org-tree-children::after {
+    display: none;
+}
+
+.org-tree-node.has-children > .org-tree-children > .org-tree-node::before {
+    content: "";
+    position: absolute;
+    top: -12px;
+    left: 50%;
+    height: 12px;
+    border-left: 2px solid #94a3b8;
+    transform: translateX(-50%);
+}
+
+.org-tree-node.has-children > .org-tree-children > .org-tree-node:only-child::before {
+    top: -34px;
+    height: 34px;
+}
+
+.org-tree-node.has-children > .org-tree-children > .org-tree-node:only-child {
+    margin-top: 0;
 }
 
 .org-tree-unmapped {
@@ -4390,18 +4439,8 @@ body {
     background: #f0fdf4;
 }
 
-.org-manager-drop-zone:empty::after {
-    content: "Drop a tile onto this person to show who works for them";
-    display: block;
-    width: 150px;
-    padding: 6px 8px;
-    border: 1px dashed #bbf7d0;
-    border-radius: 8px;
-    color: #166534;
-    background: #f0fdf4;
-    font-size: 11px;
-    font-weight: 700;
-    text-align: center;
+.org-manager-drop-zone:empty {
+    min-height: 12px;
 }
 
 .org-dragging {
@@ -4504,6 +4543,247 @@ body {
 .org-person-card strong,
 .org-person-card span {
     overflow-wrap: anywhere;
+}
+
+.orgchart-workspace {
+    display: grid;
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+}
+
+.orgchart-palette,
+.orgchart-main {
+    min-width: 0;
+}
+
+.orgchart-palette {
+    display: grid;
+    gap: 12px;
+}
+
+.orgchart-contact-list {
+    display: grid;
+    gap: 10px;
+    max-height: 680px;
+    overflow: auto;
+}
+
+.orgchart-contact-tile {
+    display: grid;
+    gap: 4px;
+    padding: 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #ffffff;
+    cursor: grab;
+}
+
+.orgchart-contact-tile strong,
+.orgchart-contact-tile span {
+    overflow-wrap: anywhere;
+}
+
+.orgchart-contact-tile span {
+    color: #64748b;
+    font-size: 12px;
+}
+
+.orgchart-main {
+    display: grid;
+    gap: 12px;
+}
+
+.orgchart-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid #dbe3ef;
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.orgchart-toolbar h2,
+.orgchart-toolbar p {
+    margin: 0;
+}
+
+.orgchart-toolbar p {
+    color: #64748b;
+    font-size: 13px;
+}
+
+.orgchart-canvas {
+    min-height: 620px;
+    padding: 18px;
+    overflow: auto;
+    border: 1px dashed #93c5fd;
+    border-radius: 8px;
+    background: #f8fbff;
+}
+
+.orgchart-canvas.active {
+    border-style: solid;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+}
+
+.orgchart-empty-canvas {
+    display: grid;
+    min-height: 560px;
+    place-items: center;
+    color: #64748b;
+    font-weight: 800;
+}
+
+.orgchart-tree,
+.orgchart-children {
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 22px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.orgchart-tree {
+    min-width: max-content;
+}
+
+.orgchart-node {
+    display: grid;
+    position: relative;
+    justify-items: center;
+    gap: 28px;
+    min-width: 168px;
+}
+
+.orgchart-card {
+    position: relative;
+    display: grid;
+    gap: 8px;
+    width: 158px;
+    min-height: 158px;
+    padding: 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #ffffff;
+    text-align: center;
+    cursor: grab;
+}
+
+.orgchart-card-body {
+    display: grid;
+    justify-items: center;
+    gap: 6px;
+}
+
+.orgchart-card-body strong,
+.orgchart-card-body span {
+    overflow-wrap: anywhere;
+}
+
+.orgchart-card-body span:last-child {
+    color: #475569;
+    font-size: 12px;
+}
+
+.orgchart-photo {
+    width: 48px;
+    height: 48px;
+    border-radius: 6px;
+    background: #e2e8f0;
+}
+
+.orgchart-delete-node {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    display: grid;
+    width: 22px;
+    height: 22px;
+    place-items: center;
+    border: 0;
+    border-radius: 999px;
+    background: #fee2e2;
+    color: #991b1b;
+    cursor: pointer;
+    font-weight: 800;
+}
+
+.orgchart-node-zones {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+}
+
+.orgchart-drop-zone {
+    min-height: 24px;
+    padding: 3px 4px;
+    border: 1px dashed #bfdbfe;
+    border-radius: 6px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 10px;
+    font-weight: 800;
+    cursor: copy;
+}
+
+.orgchart-drop-zone.active {
+    border-style: solid;
+    background: #dcfce7;
+    color: #166534;
+}
+
+.orgchart-node.has-children > .orgchart-children {
+    position: relative;
+    padding-top: 34px;
+}
+
+.orgchart-node.has-children > .orgchart-children::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    height: 22px;
+    border-left: 2px solid #94a3b8;
+}
+
+.orgchart-node.has-children > .orgchart-children::after {
+    content: "";
+    position: absolute;
+    top: 22px;
+    left: 84px;
+    right: 84px;
+    border-top: 2px solid #94a3b8;
+}
+
+.orgchart-node.has-children > .orgchart-children > .orgchart-node::before {
+    content: "";
+    position: absolute;
+    top: -12px;
+    left: 50%;
+    height: 12px;
+    border-left: 2px solid #94a3b8;
+}
+
+.orgchart-node.has-children > .orgchart-children > .orgchart-node:only-child::before {
+    top: -34px;
+    height: 34px;
+}
+
+.orgchart-node.has-children > .orgchart-children:has(> .orgchart-node:only-child)::after {
+    display: none;
+}
+
+@media (max-width: 900px) {
+    .orgchart-workspace {
+        grid-template-columns: 1fr;
+    }
 }
 
 .org-person-edit {

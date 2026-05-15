@@ -178,8 +178,8 @@
             </div>
 
             <div class="form-group full-width">
-                <label>Contact System Fields</label>
-                <div id="contact_system_fields" class="system-inline-fields">Select a contact to show phone, email and LinkedIn.</div>
+                <label>Contact Job Title</label>
+                <div id="contact_system_fields" class="system-inline-fields">Select a contact to show their job title.</div>
             </div>
 
             <div class="form-group">
@@ -327,14 +327,11 @@
             }
             if (contactSystemFields) {
                 const selectedContact = contactSelect.options[contactSelect.selectedIndex];
-                const email = selectedContact ? selectedContact.dataset.email || "" : "";
-                const phone = selectedContact ? selectedContact.dataset.phone || "" : "";
-                const linkedin = selectedContact ? selectedContact.dataset.linkedin || "" : "";
                 const jobTitle = selectedContact ? selectedContact.dataset.jobTitle || "" : "";
                 const partnerName = selectedContact ? selectedContact.dataset.partnerName || "" : "";
                 contactSystemFields.innerHTML = contactSelect.value
-                    ? `<span>${partnerName ? "Partner contact" : "Customer contact"}${partnerName ? `: ${partnerName}` : ""}</span><span>Job title: ${jobTitle || "Not set"}</span><span>Email: ${email || "Not set"}</span><span>Phone: ${phone || "Not set"}</span><span>LinkedIn: ${linkedin || "Not set"}</span>`
-                    : "Select a contact to show phone, email and LinkedIn.";
+                    ? `<span>${partnerName ? "Partner contact" : "Customer contact"}${partnerName ? `: ${partnerName}` : ""}</span><span>Job title: ${jobTitle || "Not set"}</span>`
+                    : "Select a contact to show their job title.";
             }
         }
 
