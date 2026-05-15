@@ -8,6 +8,7 @@ import io
 import re
 import json
 import secrets
+import hashlib
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
@@ -57,6 +58,7 @@ RELEASE_NOTES = [
             "Fixed partner outreach activity types so partner activity uses Partner Touchpoint instead of partner-account-specific values.",
             "Fixed the Insights Dashboard untouched account tile so it opens a filtered untouched accounts table.",
             "Fixed untouched account measurement so it counts accounts with no active outreach tasks.",
+            "Fixed hosted session stability by deriving a consistent session key from the configured database connection if PIPEFLOW_SECRET_KEY is missing.",
         ],
         "sub_releases": [],
     },
@@ -600,7 +602,17 @@ app = Flask(
     template_folder=resource_path("templates"),
     static_folder=resource_path("static")
 )
-app.config["SECRET_KEY"] = os.environ.get("PIPEFLOW_SECRET_KEY") or secrets.token_hex(32)
+def pipeflow_secret_key():
+    configured_secret = os.environ.get("PIPEFLOW_SECRET_KEY")
+    if configured_secret:
+        return configured_secret
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url:
+        return hashlib.sha256(f"pipeflow-session:{database_url}".encode("utf-8")).hexdigest()
+    return secrets.token_hex(32)
+
+
+app.config["SECRET_KEY"] = pipeflow_secret_key()
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.environ.get("PIPEFLOW_COOKIE_SECURE", "1" if os.environ.get("RENDER") else "0") == "1"
