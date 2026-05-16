@@ -2800,7 +2800,14 @@ a:hover {
 
 .pg-actions-table th:nth-child(2),
 .pg-actions-table td:nth-child(2) {
-    width: 19%;
+    width: 18%;
+}
+
+.pg-actions-table th:nth-child(6),
+.pg-actions-table td:nth-child(6),
+.pg-actions-table th:nth-child(7),
+.pg-actions-table td:nth-child(7) {
+    width: 24%;
 }
 
 .nbm-col {
@@ -2858,54 +2865,90 @@ a:hover {
 }
 
 .activity-notes-cell {
-    color: #263a2b;
-    line-height: 1.35;
+    color: #23352a;
     white-space: normal;
 }
 
-.activity-update-list {
-    display: grid;
-    gap: 6px;
+.activity-notes-cell,
+.scheduled-actions-cell {
+    line-height: 1.35;
+    word-break: normal;
+    overflow-wrap: break-word;
 }
 
-.activity-update-entry {
-    display: grid;
-    grid-template-columns: auto 18px auto minmax(0, 1fr);
-    gap: 6px;
-    align-items: start;
-}
-
-.activity-update-arrow {
-    color: #138a43;
-    font-size: 12px;
-    font-weight: 900;
-    line-height: 1.5;
-}
-
+.activity-update-list,
 .scheduled-action-list {
     display: grid;
-    gap: 0;
+    gap: 8px;
+    min-width: 0;
+}
+
+.activity-update-entry,
+.scheduled-action-entry {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    padding: 8px 9px;
+    border: 1px solid #d9ead7;
+    border-radius: 8px;
+    background: #f8fcf7;
+    box-shadow: inset 3px 0 0 #16a34a;
 }
 
 .scheduled-action-entry {
-    display: grid;
-    grid-template-columns: auto 18px auto minmax(0, 1fr);
-    gap: 4px;
-    padding: 9px 0;
-    border-bottom: 1px solid #cfe0cb;
+    border-color: #d8e5f4;
+    background: #f8fbff;
+    box-shadow: inset 3px 0 0 #2563eb;
 }
 
-.scheduled-action-entry:first-child {
-    padding-top: 0;
+.pg-activity-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
 }
 
-.scheduled-action-entry:last-child {
-    border-bottom: 0;
-    padding-bottom: 0;
+.pg-activity-date,
+.pg-activity-type {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    max-width: 100%;
+    border-radius: 999px;
+    padding: 3px 7px;
+    font-size: 10px;
+    font-weight: 900;
+    line-height: 1.15;
+    white-space: normal;
+    overflow-wrap: break-word;
 }
 
-.scheduled-action-entry strong {
-    color: #164f2b;
+.pg-activity-date {
+    background: #dcfce7;
+    color: #14532d;
+}
+
+.scheduled-action-entry .pg-activity-date {
+    background: #dbeafe;
+    color: #1e3a8a;
+}
+
+.pg-activity-type {
+    background: #eef2f7;
+    color: #334155;
+}
+
+.activity-update-entry p,
+.scheduled-action-entry p {
+    min-width: 0;
+    margin: 0;
+    color: #1f2937;
+    font-size: 12px;
+    line-height: 1.35;
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: break-word;
 }
 
 .system-metadata-panel {

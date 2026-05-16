@@ -161,24 +161,26 @@
                                     <div class="activity-update-list">
                                         {% for entry in row.last_7_days_activity_entries %}
                                             <div class="activity-update-entry">
-                                                <strong>{{ entry.date }}</strong>
-                                                <span class="activity-update-arrow" aria-hidden="true">&rarr;</span>
-                                                <strong>{{ entry.activity }}</strong>
-                                                <span>{{ entry.activity_update }}</span>
+                                                <div class="pg-activity-meta">
+                                                    <span class="pg-activity-date">{{ entry.date }}</span>
+                                                    <span class="pg-activity-type">{{ entry.activity }}</span>
+                                                </div>
+                                                <p>{{ entry.activity_update }}</p>
                                             </div>
                                         {% endfor %}
                                     </div>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td class="scheduled-actions-cell">
                                 {% if row.next_7_days_actions %}
                                     <div class="scheduled-action-list">
                                         {% for action in row.next_7_days_actions %}
                                             <div class="scheduled-action-entry">
-                                                <strong>{{ action.date }}</strong>
-                                                <span class="activity-update-arrow" aria-hidden="true">&rarr;</span>
-                                                <strong>{{ action.activity }}</strong>
-                                                <span>{{ action.activity_update }}</span>
+                                                <div class="pg-activity-meta">
+                                                    <span class="pg-activity-date">{{ action.date }}</span>
+                                                    <span class="pg-activity-type">{{ action.activity }}</span>
+                                                </div>
+                                                <p>{{ action.activity_update }}</p>
                                             </div>
                                         {% endfor %}
                                     </div>
