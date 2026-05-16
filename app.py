@@ -57,10 +57,11 @@ RELEASE_NOTES = [
         "fixed": [
             "Fixed partner outreach activity types so partner activity uses Partner Touchpoint instead of partner-account-specific values.",
             "Fixed the Insights Dashboard untouched account tile so it opens a filtered untouched accounts table.",
-            "Fixed untouched account measurement so it counts accounts with no active outreach tasks.",
+            "Fixed untouched account measurement so it counts accounts with no contacts or no outreach history.",
             "Fixed hosted session stability by deriving a consistent session key from the configured database connection if PIPEFLOW_SECRET_KEY is missing.",
             "Fixed hosted database connection pressure by disabling prepared statement session caching and pinning Render to one web worker.",
             "Fixed hosted login by safely parameterising the partner activity cleanup migration for PostgreSQL.",
+            "Fixed the Insights Dashboard untouched account rule so the metric and filtered account list match accounts missing contacts or outreach.",
         ],
         "sub_releases": [],
     },
@@ -333,7 +334,7 @@ USER_GUIDE_SECTIONS = [
             "Update task status and due dates as work progresses so the dashboard stays accurate.",
         ],
         "tips": [
-            "Untouched accounts are accounts with no active campaign or outreach tasks.",
+            "Untouched accounts are accounts with no contacts or no outreach history.",
             "Completed and cancelled work is removed from active execution views by default.",
             "Pipeline generated value should be treated as a source-system metric when it belongs in SFDC rather than PipeFlow.",
         ],
@@ -2765,9 +2766,13 @@ def build_dashboard_response(connection):
         FROM accounts
         WHERE NOT EXISTS (
             SELECT 1
+            FROM contacts
+            WHERE contacts.account_id = accounts.id
+        )
+           OR NOT EXISTS (
+            SELECT 1
             FROM outreach
             WHERE outreach.account_id = accounts.id
-              AND COALESCE(outreach.task_status, '') NOT IN ('Completed', 'Cancelled')
         )
     """).fetchone()[0]
 
@@ -3753,9 +3758,13 @@ def accounts():
         account_where = """
         WHERE NOT EXISTS (
             SELECT 1
+            FROM contacts
+            WHERE contacts.account_id = accounts.id
+        )
+           OR NOT EXISTS (
+            SELECT 1
             FROM outreach
             WHERE outreach.account_id = accounts.id
-              AND COALESCE(outreach.task_status, '') NOT IN ('Completed', 'Cancelled')
         )
         """
 
