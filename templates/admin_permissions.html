@@ -306,6 +306,31 @@
 </div>
 
 
+<div class="card admin-system-card">
+    <div class="section-header">
+        <div>
+            <h3>System Week Settings</h3>
+            <p class="muted-text">Choose the day that PipeFlow treats as the start of each new reporting week. This affects weekly dashboard metrics and weekly PG Bible result grouping.</p>
+        </div>
+        <span class="status-pill">Starts {{ new_week_start_label }}</span>
+    </div>
+
+    <form method="POST" action="{{ url_for('admin_update_new_week_start') }}" class="retention-toggle-form">
+        <div class="form-group retention-select-group">
+            <label for="new_week_start">New week start</label>
+            <select id="new_week_start" name="new_week_start">
+                {% for option in week_start_options %}
+                    <option value="{{ option.value }}" {% if new_week_start == option.value %}selected{% endif %}>
+                        {{ option.label }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Save New Week Start</button>
+    </form>
+</div>
+
+
 <div class="card admin-retention-card">
     <div class="section-header">
         <div>

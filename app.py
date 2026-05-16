@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session, jsonify
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, get_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection
@@ -622,6 +622,37 @@ app.config["SESSION_COOKIE_SECURE"] = os.environ.get("PIPEFLOW_COOKIE_SECURE", "
 
 initialise_auth_database()
 
+WEEKDAY_OPTIONS = [
+    {"value": "0", "label": "Monday"},
+    {"value": "1", "label": "Tuesday"},
+    {"value": "2", "label": "Wednesday"},
+    {"value": "3", "label": "Thursday"},
+    {"value": "4", "label": "Friday"},
+    {"value": "5", "label": "Saturday"},
+    {"value": "6", "label": "Sunday"},
+]
+
+
+def configured_week_start_day():
+    raw_value = get_admin_setting("new_week_start", "0")
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return 0
+    return value if 0 <= value <= 6 else 0
+
+
+def configured_week_start_label():
+    day = configured_week_start_day()
+    return next((option["label"] for option in WEEKDAY_OPTIONS if int(option["value"]) == day), "Monday")
+
+
+def system_week_start(value):
+    base_date = value.date() if isinstance(value, datetime) else value
+    start_day = configured_week_start_day()
+    days_since_start = (base_date.weekday() - start_day) % 7
+    return base_date - timedelta(days=days_since_start)
+
 
 @app.after_request
 def apply_security_headers(response):
@@ -1131,6 +1162,9 @@ def render_admin_permissions():
         users=list_users(),
         broadcast_messages=list_broadcast_messages(active_only=False),
         audit_retention_enabled=audit_retention_enabled(),
+        week_start_options=WEEKDAY_OPTIONS,
+        new_week_start=str(configured_week_start_day()),
+        new_week_start_label=configured_week_start_label(),
         message=request.args.get("message", ""),
         error=request.args.get("error", "")
     )
@@ -1342,6 +1376,26 @@ def admin_update_audit_retention():
     if enabled:
         cleanup_audit_retention()
     return redirect(url_for("admin_users", message=f"Audit auto-delete is now {'Auto-delete On' if enabled else 'Auto-delete Off'}."))
+
+
+@app.route("/admin/new-week-start", methods=("POST",))
+@admin_required
+def admin_update_new_week_start():
+    selected_value = request.form.get("new_week_start", "0")
+    valid_values = {option["value"] for option in WEEKDAY_OPTIONS}
+    if selected_value not in valid_values:
+        return redirect(url_for("admin_users", error="Select a valid new week start day."))
+    selected_label = next(option["label"] for option in WEEKDAY_OPTIONS if option["value"] == selected_value)
+    previous_label = configured_week_start_label()
+    set_admin_setting("new_week_start", selected_value)
+    log_admin_audit(
+        current_user(),
+        "New week start updated",
+        "Admin setting",
+        "New week start",
+        f"New week start changed from {previous_label} to {selected_label}."
+    )
+    return redirect(url_for("admin_users", message=f"New week start is now {selected_label}."))
 
 
 @app.route("/admin/account-fields/add", methods=("POST",))
@@ -2708,7 +2762,7 @@ def build_dashboard_response(connection):
         FROM accounts
     """).fetchone()[0]
     today = datetime.now().date()
-    week_start = today - timedelta(days=today.weekday())
+    week_start = system_week_start(today)
     week_end = week_start + timedelta(days=6)
     week_start_key = week_start.isoformat()
     week_end_key = week_end.isoformat()
@@ -8477,7 +8531,7 @@ def build_pg_bible_report_from_db(connection):
             activity_date = datetime.strptime(str(row["activity_date"]), "%Y-%m-%d").date()
         except ValueError:
             continue
-        week_start = activity_date - timedelta(days=activity_date.weekday())
+        week_start = system_week_start(activity_date)
         week_key = week_start.isoformat()
         if week_key not in weekly_totals:
             weekly_totals[week_key] = {
