@@ -60,6 +60,7 @@ RELEASE_NOTES = [
             "Fixed untouched account measurement so it counts accounts with no active outreach tasks.",
             "Fixed hosted session stability by deriving a consistent session key from the configured database connection if PIPEFLOW_SECRET_KEY is missing.",
             "Fixed hosted database connection pressure by disabling prepared statement session caching and pinning Render to one web worker.",
+            "Fixed hosted login by safely parameterising the partner activity cleanup migration for PostgreSQL.",
         ],
         "sub_releases": [],
     },
