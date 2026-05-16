@@ -2902,8 +2902,8 @@ a:hover {
 }
 
 .pg-activity-meta {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
     gap: 5px;
     min-width: 0;
@@ -2942,6 +2942,7 @@ a:hover {
 .activity-update-entry p,
 .scheduled-action-entry p {
     min-width: 0;
+    width: 100%;
     margin: 0;
     color: #1f2937;
     font-size: 12px;
