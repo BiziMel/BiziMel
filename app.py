@@ -53,6 +53,7 @@ RELEASE_NOTES = [
             "Enhanced PG Bible next action notes so they follow the same scheduled activity window as PG Progress.",
             "Enhanced PG Bible large text fields so they are left aligned, wrapped and expanded to show the full text.",
             "Enhanced Insights Dashboard account counting so the PG planning count is based on unique PG Bible numbers.",
+            "Enhanced PG Progress activity columns with cleaner card-style wrapping and consistent table fonts.",
         ],
         "fixed": [
             "Fixed partner outreach activity types so partner activity uses Partner Touchpoint instead of partner-account-specific values.",
@@ -62,6 +63,7 @@ RELEASE_NOTES = [
             "Fixed hosted database connection pressure by disabling prepared statement session caching and pinning Render to one web worker.",
             "Fixed hosted login by safely parameterising the partner activity cleanup migration for PostgreSQL.",
             "Fixed the Insights Dashboard untouched account rule so the metric and filtered account list match accounts missing contacts or outreach.",
+            "Fixed Insights Dashboard totals so active outreach excludes completed and cancelled activity.",
         ],
         "sub_releases": [],
     },
@@ -2756,7 +2758,11 @@ def build_dashboard_response(connection):
         WHERE pg_bible_order IS NOT NULL
     """).fetchone()[0]
     total_contacts = connection.execute("SELECT COUNT(*) FROM contacts").fetchone()[0]
-    total_outreach = connection.execute("SELECT COUNT(*) FROM outreach").fetchone()[0]
+    total_outreach = connection.execute("""
+        SELECT COUNT(*)
+        FROM outreach
+        WHERE COALESCE(task_status, '') NOT IN ('Completed', 'Cancelled')
+    """).fetchone()[0]
     total_pg_target = connection.execute("""
         SELECT COALESCE(SUM(pipeline_target), 0)
         FROM accounts

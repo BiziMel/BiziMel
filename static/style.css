@@ -2756,11 +2756,13 @@ a:hover {
     width: 100%;
     border-collapse: collapse;
     background: #ffffff;
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    font-size: 12px;
+    line-height: 1.35;
 }
 
 .pg-actions-table {
     table-layout: fixed;
-    font-size: 12px;
 }
 
 .pg-plan-table th,
@@ -2771,6 +2773,9 @@ a:hover {
     padding: 8px;
     text-align: center;
     font-weight: 900;
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 1.25;
 }
 
 .pg-plan-table td,
@@ -2778,6 +2783,9 @@ a:hover {
     border: 1px solid #f0b184;
     padding: 6px 7px;
     vertical-align: top;
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 1.35;
 }
 
 .pg-plan-table td:nth-child(2) {
@@ -2839,7 +2847,9 @@ a:hover {
 .pg-actions-table select {
     width: 100%;
     min-width: 0;
+    font-family: inherit;
     font-size: 12px;
+    line-height: 1.25;
     padding: 6px;
 }
 
@@ -2853,13 +2863,25 @@ a:hover {
 
 .pg-person-line span {
     color: #64748b;
+    font-family: inherit;
     font-size: 10px;
     font-weight: 800;
     text-transform: uppercase;
 }
 
+.pg-person-line strong,
 .pg-person-line em {
     color: #0f172a;
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 1.25;
+}
+
+.pg-person-line strong {
+    font-weight: 800;
+}
+
+.pg-person-line em {
     font-style: normal;
     font-weight: 400;
 }
@@ -2917,6 +2939,7 @@ a:hover {
     max-width: 100%;
     border-radius: 999px;
     padding: 3px 7px;
+    font-family: inherit;
     font-size: 10px;
     font-weight: 900;
     line-height: 1.15;
@@ -2945,6 +2968,7 @@ a:hover {
     width: 100%;
     margin: 0;
     color: #1f2937;
+    font-family: inherit;
     font-size: 12px;
     line-height: 1.35;
     white-space: normal;
@@ -3007,18 +3031,22 @@ a:hover {
 
 .broadcast-info {
     border-left: 4px solid #2563eb;
+    background: #eff6ff;
 }
 
 .broadcast-success {
     border-left: 4px solid #16a34a;
+    background: #f0fdf4;
 }
 
 .broadcast-warning {
     border-left: 4px solid #d97706;
+    background: #fffbeb;
 }
 
 .broadcast-urgent {
     border-left: 4px solid #dc2626;
+    background: #fef2f2;
 }
 
 .broadcast-info .broadcast-message-topline span,
@@ -3329,6 +3357,22 @@ a:hover {
     pointer-events: none;
     transform: translateY(8px);
     transition: opacity 220ms ease, transform 220ms ease;
+}
+
+.dashboard-broadcast-item.broadcast-info {
+    background: #eff6ff;
+}
+
+.dashboard-broadcast-item.broadcast-success {
+    background: #f0fdf4;
+}
+
+.dashboard-broadcast-item.broadcast-warning {
+    background: #fffbeb;
+}
+
+.dashboard-broadcast-item.broadcast-urgent {
+    background: #fef2f2;
 }
 
 .dashboard-broadcast-item:not(.is-active) {
