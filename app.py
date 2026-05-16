@@ -59,6 +59,7 @@ RELEASE_NOTES = [
             "Fixed the Insights Dashboard untouched account tile so it opens a filtered untouched accounts table.",
             "Fixed untouched account measurement so it counts accounts with no active outreach tasks.",
             "Fixed hosted session stability by deriving a consistent session key from the configured database connection if PIPEFLOW_SECRET_KEY is missing.",
+            "Fixed hosted database connection pressure by disabling prepared statement session caching and pinning Render to one web worker.",
         ],
         "sub_releases": [],
     },
