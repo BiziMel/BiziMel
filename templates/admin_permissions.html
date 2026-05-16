@@ -110,8 +110,6 @@
                     <th>Team</th>
                     <th>Role</th>
                     <th>Status</th>
-                    <th>Created</th>
-                    <th>Last Updated</th>
                 </tr>
             </thead>
             <tbody>
@@ -130,12 +128,10 @@
                                 {{ "Active" if user["is_active"] else "Inactive" }}
                             </span>
                         </td>
-                        <td>{{ user["date_created"] }}</td>
-                        <td>{{ user["last_updated"] }}</td>
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="7">No user profiles found.</td>
+                        <td colspan="5">No user profiles found.</td>
                     </tr>
                 {% endfor %}
             </tbody>
