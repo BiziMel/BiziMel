@@ -104,8 +104,8 @@
 <div class="report-table-section">
     <div class="section-header">
         <div>
-            <h2>Outcome Breakdown by Date</h2>
-            <p>Daily outcome totals for the selected filters so you can analyse when outcomes were recorded.</p>
+            <h2>Outcome Breakdown</h2>
+            <p>Outcome totals grouped by account and activity date for the selected filters.</p>
         </div>
     </div>
 
@@ -113,6 +113,7 @@
         <table class="report-table">
             <thead>
                 <tr>
+                    <th>Account</th>
                     <th>Activity Date</th>
                     <th>Outcome</th>
                     <th>Count</th>
@@ -120,48 +121,16 @@
             </thead>
 
             <tbody>
-                {% for item in outcome_breakdown_by_date %}
+                {% for item in outcome_breakdown_by_account_date %}
                     <tr>
+                        <td>{{ item["account_name"] or "Unknown" }}</td>
                         <td>{{ item["activity_date"] }}</td>
                         <td>{{ item["outcome"] or "Unknown" }}</td>
                         <td>{{ item["count"] }}</td>
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="3">No dated outcome data found.</td>
-                    </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-
-<div class="report-table-section">
-    <div class="section-header">
-        <div>
-            <h2>Outcome Breakdown</h2>
-            <p>Summary of outreach outcomes for the selected filters.</p>
-        </div>
-    </div>
-
-    <div class="table-container">
-        <table class="report-table">
-            <thead>
-                <tr>
-                    <th>Outcome</th>
-                    <th>Count</th>
-                </tr>
-            </thead>
-
-            <tbody>
-                {% for item in outcome_breakdown %}
-                    <tr>
-                        <td>{{ item["outcome"] or "Unknown" }}</td>
-                        <td>{{ item["count"] }}</td>
-                    </tr>
-                {% else %}
-                    <tr>
-                        <td colspan="2">No outcome data found.</td>
+                        <td colspan="4">No outcome data found.</td>
                     </tr>
                 {% endfor %}
             </tbody>

@@ -45,12 +45,19 @@ RELEASE_NOTES = [
             "Enhanced Admin with Fiscal Year date configuration so PipeFlow can calculate quarterly reporting windows from the configured year.",
             "Enhanced Outreach Reports with outcome breakdown by activity date for deeper analysis.",
             "Enhanced dashboard terminology by renaming Active Outreach to All Active Outreach.",
+            "Enhanced campaign scheduling so generated task variation uses historic success signals and weaker activity coverage to alter the activity mix.",
+            "Enhanced campaign scheduling so executive contacts receive a more executive engagement style.",
+            "Enhanced Weekly Wrap Up guidance so the following-week recommendation is more specific to overdue work, meeting conversion and channel mix.",
+            "Enhanced new record creation so Quarter defaults to the configured current fiscal quarter.",
+            "Enhanced Outreach Reports by combining outcome breakdown and dated outcome analysis into one account-grouped report.",
         ],
         "fixed": [
             "Fixed overdue task logic so dashboard metrics and execution insights use the same rule for expired due dates and due times.",
             "Fixed overdue measurement so open outreach is overdue only after the due date and time has expired, or after the due date has passed when no time is set.",
             "Fixed Execution Insights table typography and wrapping so the table uses consistent fonts and stays within the page margins.",
             "Fixed and expanded the User Guide so current workflows, Org Charts, dashboard metrics, admin settings and reports are explained for nontechnical users.",
+            "Fixed campaign scheduling so generated task times are never earlier than the campaign submit time when tasks are created for the submit date.",
+            "Fixed Execution Insights so Recommended Move is separate from What It Means and guides a different activity, channel or stakeholder route.",
         ],
         "sub_releases": [],
     },
@@ -459,6 +466,9 @@ USER_GUIDE_SECTIONS = [
         ],
         "tips": [
             "Generated campaigns avoid weekends and your configured non-working dates.",
+            "Generated tasks created for today will never be scheduled earlier than the time you submit the campaign.",
+            "If a selected contact is an executive, PipeFlow shapes the generated sequence around concise senior-stakeholder engagement.",
+            "PipeFlow uses previous outcomes and underused activity types to vary the sequence rather than always repeating the same route.",
             "Tasks are placed inside your working hours and avoid duplicate time slots where possible.",
             "If no account appears, add at least one contact to the account first.",
         ],
@@ -547,7 +557,7 @@ USER_GUIDE_SECTIONS = [
             "Open Reports from the top navigation.",
             "Use Account Reports to review account coverage and target values.",
             "Use Contact Reports to review stakeholder coverage.",
-            "Use Outreach Reports to review activity volume, outcome breakdown, outcome breakdown by date and monthly meeting conversion.",
+            "Use Outreach Reports to review activity volume, account-grouped outcome breakdown by date and monthly meeting conversion.",
             "Use Task Reports to review due dates, overdue activity and ownership.",
             "Export PG Bible when you need the formatted workbook output.",
             "Use filters before exporting when the report supports narrowing by date, account, status or assignee.",
@@ -794,6 +804,15 @@ def fiscal_quarter_for_date(value=None):
     return quarter_ranges[0] if value < start else quarter_ranges[-1]
 
 
+def current_quarter_label():
+    return fiscal_quarter_for_date(datetime.now().date())["label"]
+
+
+def current_fy_label():
+    _, fiscal_end = configured_fiscal_year()
+    return f"{fiscal_end.year % 100:02d}"
+
+
 @app.after_request
 def apply_security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -963,6 +982,8 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "Campaigns use one sales play only and can be generated for multiple contacts on the selected account.",
             "Campaign start date cannot be earlier than today and generated tasks stay on or after the configured start date.",
+            "Campaign tasks generated for today are scheduled at or after the time you press Generate Campaign Outreach.",
+            "Executive contacts receive a more executive-style sequence based on concise value, business outcomes and senior-stakeholder routes.",
             "Auto-scheduling avoids weekends, configured non-working dates and duplicate time slots where possible.",
         ],
     },
@@ -996,7 +1017,7 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "Review outreach volume, outcomes, campaigns, sales plays and due dates.",
             "Use filters to narrow reporting by account, date range, outcome or activity type.",
-            "Use Outcome Breakdown by Date to see when each outcome was recorded.",
+            "Use Outcome Breakdown to see outcomes grouped by account and activity date.",
             "Compare outcomes to improve future campaign recommendations.",
         ],
     },
@@ -2175,7 +2196,16 @@ def build_campaign_success_context(connection, account_id, contact_ids, sales_pl
     sales_play_text = normalise_match_text(sales_play)
     contact_values = set()
     contact_text = []
+    executive_contact = False
     for contact in selected_contacts:
+        job_title = normalise_match_text(contact["job_title"])
+        if (
+            normalise_match_text(contact["category"]) == "executive"
+            or "executive" in normalise_match_text(contact["bmc_relationship"])
+            or job_title in {"ceo", "cio", "cto", "cfo", "coo"}
+            or any(title in job_title for title in ("chief", "director", "vice president"))
+        ):
+            executive_contact = True
         for field in (
             "category",
             "bmc_relationship",
@@ -2303,6 +2333,47 @@ def build_campaign_success_context(connection, account_id, contact_ids, sales_pl
         template for template in ranked_templates
         if scores.get(template["activity_type"], 0) > 0
     ] or campaign_step_templates()
+    used_types = {
+        row["activity_type"]
+        for row in historical_rows
+        if row["activity_type"]
+    }
+    underused_templates = [
+        template for template in campaign_step_templates()
+        if template["activity_type"] not in used_types
+    ]
+    if underused_templates:
+        top_templates = top_templates + underused_templates
+    if executive_contact:
+        executive_order = [
+            "VITO",
+            "LinkedIn",
+            "White Paper / Webinar / Consensus",
+            "NBM Booked",
+            "Phone",
+            "Events",
+            "Follow-up",
+        ]
+        template_lookup = {template["activity_type"]: dict(template) for template in top_templates + campaign_step_templates()}
+        executive_templates = []
+        for activity_type in executive_order:
+            if activity_type not in template_lookup:
+                continue
+            template = dict(template_lookup[activity_type])
+            if activity_type == "VITO":
+                template["subject_prefix"] = "Executive value message"
+                template["next_action"] = "Send a concise executive value message with a clear business outcome"
+            elif activity_type == "LinkedIn":
+                template["subject_prefix"] = "Executive LinkedIn route"
+                template["next_action"] = "Use LinkedIn to connect the business issue to the executive agenda"
+            elif activity_type == "White Paper / Webinar / Consensus":
+                template["subject_prefix"] = "Executive proof point"
+                template["next_action"] = "Share concise proof that supports a business-level decision"
+            elif activity_type == "Phone":
+                template["subject_prefix"] = "Executive call"
+                template["next_action"] = "Call with a short business-led reason for meeting"
+            executive_templates.append(template)
+        top_templates = executive_templates or top_templates
 
     strongest = top_templates[0]["activity_type"] if top_templates else "standard sequence"
     matched_rows = sum(item["matched"] for item in evidence.values())
@@ -2317,12 +2388,17 @@ def build_campaign_success_context(connection, account_id, contact_ids, sales_pl
             "Historic learning used: no matching prior outcomes yet. "
             "Using the standard PipeFlow activity sequence and this campaign will train future recommendations."
         )
+    if executive_contact:
+        summary += " Executive contact style applied: concise value, business outcome and senior-stakeholder route."
+    if underused_templates:
+        summary += " Underused activity types were included to test a different route."
 
     return {
         "account": account,
         "templates": top_templates,
         "summary": summary,
         "scores": scores,
+        "executive_contact": executive_contact,
     }
 
 
@@ -2406,12 +2482,17 @@ def next_working_date(action_date, campaign_start, campaign_end, profile=None, n
     return action_date
 
 
-def available_campaign_time(action_date, preferred_time, profile=None, reserved_slots=None):
+def available_campaign_time(action_date, preferred_time, profile=None, reserved_slots=None, not_before=None):
     reserved_slots = reserved_slots or set()
     start_time = parse_time_value(profile["work_day_start"] if profile and profile["work_day_start"] else "", "09:00")
     end_time = parse_time_value(profile["work_day_end"] if profile and profile["work_day_end"] else "", "17:00")
     preferred = parse_time_value(preferred_time, "09:00")
     current_dt = datetime.combine(action_date, max(start_time, min(preferred, end_time)))
+    if not_before and action_date == not_before.date() and current_dt < not_before:
+        current_dt = not_before.replace(second=0, microsecond=0)
+        minute_remainder = current_dt.minute % 15
+        if minute_remainder:
+            current_dt += timedelta(minutes=15 - minute_remainder)
     end_dt = datetime.combine(action_date, end_time)
     while current_dt <= end_dt:
         slot = (action_date.isoformat(), current_dt.strftime("%H:%M"))
@@ -2425,7 +2506,7 @@ def available_campaign_time(action_date, preferred_time, profile=None, reserved_
     return fallback.strftime("%H:%M")
 
 
-def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per_week, templates=None, profile=None, reserved_slots=None, non_working_blocks=None):
+def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per_week, templates=None, profile=None, reserved_slots=None, non_working_blocks=None, submitted_at=None):
     templates = templates or campaign_step_templates()
     total_tasks = max(1, int(total_tasks or 1))
     times_per_week = max(1, min(int(times_per_week or 1), 7))
@@ -2447,6 +2528,10 @@ def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per
         if action_date > campaign_end:
             action_date = campaign_end
         action_date = next_working_date(action_date, campaign_start, campaign_end, profile, non_working_blocks)
+        if submitted_at and action_date == submitted_at.date():
+            end_time = parse_time_value(profile["work_day_end"] if profile and profile["work_day_end"] else "", "17:00")
+            if submitted_at.time() > end_time and action_date < campaign_end:
+                action_date = next_working_date(action_date + timedelta(days=1), campaign_start, campaign_end, profile, non_working_blocks)
         if index == 0:
             template = dict(initial_vito_template)
         else:
@@ -2458,7 +2543,7 @@ def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per
                 template["next_action"] = "Send follow-up email"
                 template["time"] = template.get("time") or "09:00"
         template["action_date"] = action_date
-        template["time"] = available_campaign_time(action_date, template.get("time", "09:00"), profile, reserved_slots)
+        template["time"] = available_campaign_time(action_date, template.get("time", "09:00"), profile, reserved_slots, not_before=submitted_at)
         template["times_per_week"] = times_per_week
         schedule.append(template)
 
@@ -2543,12 +2628,15 @@ def add_learning_score(rows):
 def build_execution_insights(ai_insights, learning_insights):
     combined = []
     for insight in ai_insights:
+        category = insight.get("type", "Insight")
+        title = insight.get("title", "")
+        message = insight.get("message", "")
         combined.append({
             "source": "AI Insight",
-            "category": insight.get("type", "Insight"),
-            "title": insight.get("title", ""),
-            "message": insight.get("message", ""),
-            "action": insight.get("message", ""),
+            "category": category,
+            "title": title,
+            "message": message,
+            "action": recommended_move_for_ai_insight(category, title, message),
             "link": insight.get("link", url_for("home")),
             "priority": insight.get("severity", "medium"),
         })
@@ -2572,6 +2660,25 @@ def build_execution_insights(ai_insights, learning_insights):
     }
     combined.sort(key=lambda item: priority_order.get(item["priority"], 5))
     return combined[:10]
+
+
+def recommended_move_for_ai_insight(category, title, message):
+    text = f"{category} {title} {message}".lower()
+    if "overdue" in text or "action risk" in text:
+        return "Use a fast recovery step: call first if a phone number exists, then send a short follow-up that confirms the specific next action and deadline."
+    if "relationship gap" in text or "low relationship" in text:
+        return "Add at least one new stakeholder route before repeating outreach. Try LinkedIn or a partner touchpoint to find a warmer path into the account."
+    if "conversion" in text or "no meetings" in text:
+        return "Change the activity mix before sending more of the same. Try a VITO message for senior value, then follow with phone or LinkedIn to ask for discovery."
+    if "partner" in text:
+        return "Activate a partner route with a named owner, ask for a warm introduction, and create a Partner Touchpoint task so the route is tracked."
+    if "cold" in text:
+        return "Restart with a different trigger: use a recent business issue, content proof point or event angle rather than chasing the old message."
+    if "engagement route" in text:
+        return "Create one tailored outreach task for the named contact and use their role, responsibility or personal win as the opening reason to meet."
+    if "momentum" in text:
+        return "Protect momentum by setting the next dated action now and moving from general outreach into a meeting or executive follow-up."
+    return "Try a different route, channel or stakeholder before repeating the same activity. Record the outcome so the next recommendation becomes sharper."
 
 
 def build_attention_insights(needs_attention_accounts):
@@ -3486,15 +3593,17 @@ def build_weekly_wrap_up(connection, today=None):
     if overdue_rows:
         focus_target = ", ".join(focus_accounts[:3]) if focus_accounts else "the overdue accounts"
         paragraph_two = (
-            f"Next week, start with {focus_target}. Clear overdue actions first, then use the latest activity notes to choose a sharper contact route and confirm the next meeting ask."
+            f"Next week, start with {focus_target}. Clear overdue actions first using a call or LinkedIn route where possible, then send one concise follow-up that asks for a specific discovery or NBM slot."
         )
     elif not meeting_rows and active_rows:
+        underused = sorted(set(DROPDOWN_VALUES["outreach_activity_types"]) - set(activity_types))
+        channel_hint = f" Test {underused[0]} as the next channel." if underused else " Change the channel before repeating the same activity."
         paragraph_two = (
-            "Next week, focus on converting active outreach into booked discovery or NBM activity. Prioritise the contacts with the clearest role fit and use recent notes to make each message more specific."
+            f"Next week, focus on converting active outreach into booked discovery or NBM activity. Prioritise the contacts with the clearest role fit, use recent notes to personalise the ask, and set a dated meeting objective for each account.{channel_hint}"
         )
     elif note_rows:
         paragraph_two = (
-            "Next week, build on the behaviour captured in activity updates. Repeat the messages and routes that created responses, then schedule the next specific action before each account loses momentum."
+            "Next week, build on the behaviour captured in activity updates. Repeat the route that created a response, stop repeating routes with no response, and schedule the next action against the named stakeholder before the account loses momentum."
         )
     else:
         paragraph_two = (
@@ -6703,7 +6812,10 @@ def outreach():
 @app.route("/outreach/add", methods=("GET", "POST"))
 def add_outreach():
     connection = get_db_connection()
-    prefill = {}
+    prefill = {
+        "fy": current_fy_label(),
+        "quarter": current_quarter_label(),
+    }
     error = ""
     prefill_from_id = request.args.get("prefill_from")
     if prefill_from_id:
@@ -6713,6 +6825,8 @@ def add_outreach():
         ).fetchone()
         if source:
             prefill = {
+                "fy": source["fy"] or current_fy_label(),
+                "quarter": source["quarter"] or current_quarter_label(),
                 "account_id": source["account_id"],
                 "contact_id": f"partner_contact:{source['partner_contact_id']}" if source["partner_contact_id"] else source["contact_id"],
                 "sales_play": source["sales_play"] or source["campaign"] or "",
@@ -6837,8 +6951,8 @@ def campaign_builder():
     selected_total_tasks = request.form.get("total_outreach_tasks", "8")
     selected_times_per_week = request.form.get("times_per_week", "2")
     selected_sales_play = request.form.get("sales_play") or request.form.get("sales_plays", "")
-    selected_fy = request.form.get("fy", "")
-    selected_quarter = request.form.get("quarter", "")
+    selected_fy = request.form.get("fy", current_fy_label())
+    selected_quarter = request.form.get("quarter", current_quarter_label())
     success_context_summary = ""
     profile = connection.execute("""
         SELECT *
@@ -6853,6 +6967,7 @@ def campaign_builder():
     non_working_blocks = parse_non_working_blocks(non_working_block_rows)
 
     if request.method == "POST":
+        campaign_submitted_at = datetime.now()
         account_id = request.form.get("account_id")
         pg_week_start_raw = request.form.get("pg_week_start", "")
         campaign_start_raw = request.form.get("campaign_start_date", "")
@@ -6952,7 +7067,8 @@ def campaign_builder():
                         schedule_templates,
                         profile=profile,
                         reserved_slots=reserved_slots,
-                        non_working_blocks=non_working_blocks
+                        non_working_blocks=non_working_blocks,
+                        submitted_at=campaign_submitted_at
                     ):
                         action_date = step["action_date"]
                         subject = f"{step['subject_prefix']}: {sales_play}"
@@ -9436,7 +9552,7 @@ def outreach_reports():
     meeting_conversion_total = meetings_booked
 
     outcome_totals = {}
-    outcome_by_date_totals = {}
+    outcome_by_account_date_totals = {}
     type_totals = {}
     monthly_totals = {}
     for item in filtered_outreach:
@@ -9447,7 +9563,9 @@ def outreach_reports():
         activity_date = parse_report_date(item["activity_date"])
         if activity_date:
             date_key = activity_date.isoformat()
-            outcome_by_date_totals[(date_key, outcome)] = outcome_by_date_totals.get((date_key, outcome), 0) + 1
+            account_name = item["account_name"] or "Unknown"
+            key = (account_name, date_key, outcome)
+            outcome_by_account_date_totals[key] = outcome_by_account_date_totals.get(key, 0) + 1
             month = activity_date.strftime("%Y-%m")
             if month not in monthly_totals:
                 monthly_totals[month] = {"total_outreach": 0, "meetings_booked": 0}
@@ -9459,9 +9577,12 @@ def outreach_reports():
         {"outcome": outcome, "count": count}
         for outcome, count in sorted(outcome_totals.items(), key=lambda item: (-item[1], item[0]))
     ]
-    outcome_breakdown_by_date = [
-        {"activity_date": date_key, "outcome": outcome, "count": count}
-        for (date_key, outcome), count in sorted(outcome_by_date_totals.items(), key=lambda item: (item[0][0], item[0][1]), reverse=True)
+    outcome_breakdown_by_account_date = [
+        {"account_name": account_name, "activity_date": date_key, "outcome": outcome, "count": count}
+        for (account_name, date_key, outcome), count in sorted(
+            outcome_by_account_date_totals.items(),
+            key=lambda item: (item[0][0].lower(), item[0][1], item[0][2]),
+        )
     ]
     outreach_by_type = [
         {"activity_type": activity_type, "count": count}
@@ -9486,7 +9607,7 @@ def outreach_reports():
         meetings_booked=meetings_booked,
         conversion_rate=meeting_conversion_total,
         outcome_breakdown=outcome_breakdown,
-        outcome_breakdown_by_date=outcome_breakdown_by_date,
+        outcome_breakdown_by_account_date=outcome_breakdown_by_account_date,
         outreach_by_type=outreach_by_type,
         latest_outreach=latest_outreach,
         monthly_trends=monthly_trends,
