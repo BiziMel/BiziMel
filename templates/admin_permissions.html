@@ -326,6 +326,28 @@
     </form>
 </div>
 
+<div class="card admin-system-card">
+    <div class="section-header">
+        <div>
+            <h3>Fiscal Year Settings</h3>
+            <p class="muted-text">Set the fiscal year date range that PipeFlow uses to calculate current-quarter dashboard outcome metrics and quarterly reporting windows.</p>
+        </div>
+        <span class="status-pill">{{ fiscal_year_start }} to {{ fiscal_year_end }}</span>
+    </div>
+
+    <form method="POST" action="{{ url_for('admin_update_fiscal_year') }}" class="retention-toggle-form">
+        <div class="form-group retention-select-group">
+            <label for="fiscal_year_start">Fiscal year start</label>
+            <input id="fiscal_year_start" type="date" name="fiscal_year_start" value="{{ fiscal_year_start }}" required>
+        </div>
+        <div class="form-group retention-select-group">
+            <label for="fiscal_year_end">Fiscal year end</label>
+            <input id="fiscal_year_end" type="date" name="fiscal_year_end" value="{{ fiscal_year_end }}" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Save Fiscal Year</button>
+    </form>
+</div>
+
 
 <div class="card admin-retention-card">
     <div class="section-header">

@@ -29,11 +29,31 @@ from orgchart_service import (
 )
 
 
-APP_VERSION = "1.5.0"
-APP_RELEASE_DATE = "2026-05-15"
-APP_BUILD = "2026-05-15-v1.5.0-admin-broadcast-outreach"
+APP_VERSION = "1.5.1"
+APP_RELEASE_DATE = "2026-05-18"
+APP_BUILD = "2026-05-18-v1.5.1-dashboard-fiscal-guidance"
 
 RELEASE_NOTES = [
+    {
+        "version": "1.5.1",
+        "release_date": "2026-05-18",
+        "title": "Dashboard accuracy, fiscal quarters and weekly guidance",
+        "new": [],
+        "enhanced": [
+            "Enhanced the Insights Dashboard with an expandable Weekly Wrap Up that summarises recent execution and suggests where to focus next.",
+            "Enhanced Outcome Breakdown so dashboard metrics are based on the configured current fiscal quarter.",
+            "Enhanced Admin with Fiscal Year date configuration so PipeFlow can calculate quarterly reporting windows from the configured year.",
+            "Enhanced Outreach Reports with outcome breakdown by activity date for deeper analysis.",
+            "Enhanced dashboard terminology by renaming Active Outreach to All Active Outreach.",
+        ],
+        "fixed": [
+            "Fixed overdue task logic so dashboard metrics and execution insights use the same rule for expired due dates and due times.",
+            "Fixed overdue measurement so open outreach is overdue only after the due date and time has expired, or after the due date has passed when no time is set.",
+            "Fixed Execution Insights table typography and wrapping so the table uses consistent fonts and stays within the page margins.",
+            "Fixed and expanded the User Guide so current workflows, Org Charts, dashboard metrics, admin settings and reports are explained for nontechnical users.",
+        ],
+        "sub_releases": [],
+    },
     {
         "version": "1.5.0",
         "release_date": "2026-05-15",
@@ -331,14 +351,16 @@ USER_GUIDE_SECTIONS = [
         "steps": [
             "Review the command centre metrics for this week.",
             "Use the pipeline target card to see total PG target ACV across your accounts.",
-            "Work active outreach tasks directly from the dashboard task table.",
+            "Open Weekly Wrap Up to read the two short paragraphs about what happened in the last seven days and where to focus next.",
+            "Use the current-quarter outcome breakdown to see which outcomes are being recorded in the active fiscal quarter.",
             "Use Execution Insights to decide which account, campaign or sales play needs attention next.",
-            "Update task status and due dates as work progresses so the dashboard stays accurate.",
+            "Click metric cards such as Overdue Actions, Untouched Accounts or All Active Outreach to move into the related work list.",
         ],
         "tips": [
             "Untouched accounts are accounts with no contacts or no outreach history.",
+            "Overdue actions are only overdue after the due date and time has expired. If no due time is set, the task becomes overdue after the due date has passed.",
             "Completed and cancelled work is removed from active execution views by default.",
-            "Pipeline generated value should be treated as a source-system metric when it belongs in SFDC rather than PipeFlow.",
+            "Outcome breakdown uses the fiscal-year dates configured by an admin.",
         ],
     },
     {
@@ -358,6 +380,7 @@ USER_GUIDE_SECTIONS = [
             "Enter Pipeline Target USD ACV so the Dashboard can calculate total PG target value.",
             "Review or reassign the Account Owner on the edit account form when ownership changes.",
             "Open an account record to review contacts, partner involvement, outreach history and timeline entries.",
+            "Use Org Chart from the account record to map who works for whom inside the customer or partner organisation.",
             "Use Account Sharing on the account record to review and revoke access if you own the account.",
         ],
         "tips": [
@@ -410,6 +433,7 @@ USER_GUIDE_SECTIONS = [
         ],
         "tips": [
             "The due date is the Activity Due Date, based on the next action date.",
+            "A task is overdue only after its due date and due time has passed. Without a due time, it is overdue after the due date has passed.",
             "Tasks can only be assigned to users who have access to the related account.",
             "Completed and cancelled outreach is hidden unless you explicitly filter for it.",
             "If a user is missing from the assignment dropdown, check that the account has been shared with them first.",
@@ -487,6 +511,30 @@ USER_GUIDE_SECTIONS = [
         ],
     },
     {
+        "slug": "org-charts",
+        "title": "Org Charts",
+        "summary": "Build a visual relationship map for an account so users can see reporting lines and stakeholder groups.",
+        "navigation": [
+            "Open Accounts, select the account name, then click Org Chart from the account view.",
+            "Use the contact list on the Org Chart page to add people from the account into the chart.",
+            "Return to the account record when you need to update contact details before continuing the chart.",
+        ],
+        "steps": [
+            "Open the account that owns the contacts you want to map.",
+            "Click Org Chart.",
+            "Add the first person to the chart from the available contact list.",
+            "Add more people and place them above, below or beside existing people to represent the real organisation.",
+            "Use the chart controls to move people when the structure changes.",
+            "Remove a person from the chart if they should no longer appear. The contact record itself is not deleted unless you delete it from Contacts.",
+            "Use the chart as a planning aid before selecting contacts for outreach or campaign generation.",
+        ],
+        "tips": [
+            "Only contacts linked to the selected account appear in that account's org chart.",
+            "If a person is missing, add or update the contact first.",
+            "The tile shows the person image area, name and job title so the chart stays clean.",
+        ],
+    },
+    {
         "slug": "reports",
         "title": "Reports and PG Bible",
         "summary": "Review execution data and export account, contact, outreach, task and PG Bible outputs.",
@@ -499,7 +547,8 @@ USER_GUIDE_SECTIONS = [
             "Open Reports from the top navigation.",
             "Use Account Reports to review account coverage and target values.",
             "Use Contact Reports to review stakeholder coverage.",
-            "Use Outreach and Task Reports to review activity volume, outcomes, due dates and ownership.",
+            "Use Outreach Reports to review activity volume, outcome breakdown, outcome breakdown by date and monthly meeting conversion.",
+            "Use Task Reports to review due dates, overdue activity and ownership.",
             "Export PG Bible when you need the formatted workbook output.",
             "Use filters before exporting when the report supports narrowing by date, account, status or assignee.",
         ],
@@ -547,6 +596,8 @@ USER_GUIDE_SECTIONS = [
             "Review user profiles and update role, team or email when required.",
             "Deactivate users who should no longer access PipeFlow.",
             "Create broadcast messages with start and stop times for login and dashboard announcements.",
+            "Set New Week Start so weekly dashboard calculations begin on the correct day for your operating rhythm.",
+            "Set Fiscal Year Settings so dashboard outcome breakdowns and quarterly reports use the correct fiscal dates.",
             "Use admin password reset only after confirming the request with the user.",
         ],
         "tips": [
@@ -656,6 +707,93 @@ def system_week_start(value):
     return base_date - timedelta(days=days_since_start)
 
 
+def parse_iso_date(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_iso_time(value):
+    if not value:
+        return None
+    for pattern in ("%H:%M", "%H:%M:%S"):
+        try:
+            return datetime.strptime(str(value).strip(), pattern).time()
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def outreach_due_has_expired(next_action_date, next_action_time=None, task_status=None, now=None):
+    if is_closed_task_status(task_status):
+        return False
+    due_day = parse_iso_date(next_action_date)
+    if not due_day:
+        return False
+    now = now or datetime.now()
+    due_time = parse_iso_time(next_action_time)
+    if due_time:
+        return now >= datetime.combine(due_day, due_time) + timedelta(seconds=1)
+    return now.date() > due_day
+
+
+def outreach_overdue_count_for_account(connection, account_id, now=None):
+    rows = connection.execute("""
+        SELECT next_action_date, next_action_time, task_status
+        FROM outreach
+        WHERE account_id = ?
+          AND next_action_date IS NOT NULL
+          AND next_action_date != ''
+    """, (account_id,)).fetchall()
+    return sum(
+        1 for row in rows
+        if outreach_due_has_expired(row["next_action_date"], row["next_action_time"], row["task_status"], now=now)
+    )
+
+
+def add_months(value, months):
+    year = value.year + ((value.month - 1 + months) // 12)
+    month = ((value.month - 1 + months) % 12) + 1
+    month_lengths = [31, 29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    day = min(value.day, month_lengths[month - 1])
+    return value.replace(year=year, month=month, day=day)
+
+
+def configured_fiscal_year(today=None):
+    today = today or datetime.now().date()
+    start = parse_iso_date(get_admin_setting("fiscal_year_start", ""))
+    end = parse_iso_date(get_admin_setting("fiscal_year_end", ""))
+    if not start or not end or end <= start:
+        start = today.replace(month=1, day=1)
+        end = today.replace(month=12, day=31)
+    return start, end
+
+
+def fiscal_quarter_for_date(value=None):
+    value = value or datetime.now().date()
+    start, end = configured_fiscal_year(value)
+    quarter_ranges = []
+    quarter_start = start
+    for index in range(4):
+        if index == 3:
+            quarter_end = end
+        else:
+            quarter_end = min(add_months(start, (index + 1) * 3) - timedelta(days=1), end)
+        quarter_ranges.append({
+            "label": f"Q{index + 1}",
+            "start": quarter_start,
+            "end": quarter_end,
+        })
+        quarter_start = quarter_end + timedelta(days=1)
+    for quarter in quarter_ranges:
+        if quarter["start"] <= value <= quarter["end"]:
+            return quarter
+    return quarter_ranges[0] if value < start else quarter_ranges[-1]
+
+
 @app.after_request
 def apply_security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -684,9 +822,10 @@ PAGE_INSTRUCTIONS = {
         "title": "How to Use This Page",
         "items": [
             "Start with the command centre metrics to see what needs attention this week.",
-            "Use the task table to update due dates, activity updates and task status without leaving the dashboard.",
+            "Open Weekly Wrap Up for a short summary of recent execution and recommended focus for the next week.",
+            "Outcome Breakdown is calculated for the current fiscal quarter configured by an admin.",
             "Review execution insights for suggested next actions across accounts, campaigns and sales plays.",
-            "Use the top navigation to move into Outreach Tasks, Accounts, Contacts, Partners, Reports, Profile or Release Notes.",
+            "Use the top navigation to move into Outreach Tasks, Accounts, Contacts, Partners, Reports or Profile.",
         ],
     },
     "outreach": {
@@ -726,8 +865,25 @@ PAGE_INSTRUCTIONS = {
         "title": "Account Review Guidance",
         "items": [
             "Use this page to confirm account detail, coverage, partner involvement and audit history before planning outreach.",
+            "Use Org Chart to build or review the stakeholder hierarchy for this account.",
             "If you are the owner, the Account Sharing panel shows who has access and lets you revoke access.",
             "Revoking access returns any tasks assigned to that user back to the account owner.",
+        ],
+    },
+    "account_orgchart": {
+        "title": "Org Chart Guidance",
+        "items": [
+            "Use this page to place account contacts into a visible stakeholder hierarchy.",
+            "Add people from the contact list, then arrange them to show who works above, beside or below others.",
+            "Use the chart to plan which contact should receive outreach next.",
+        ],
+    },
+    "account_org_chart": {
+        "title": "Org Chart Guidance",
+        "items": [
+            "Use this page to build or manage a saved org chart for the account.",
+            "Add contacts or partner contacts to the chart and position them according to the real organisation.",
+            "Delete a person from the chart only when they should disappear from the visual map.",
         ],
     },
     "contacts": {
@@ -815,6 +971,7 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "Use reports to review account coverage, contacts, outreach execution, task ownership and PG Bible export readiness.",
             "Exports reflect the current fields used across the application.",
+            "Outreach Reports include outcome breakdown by date for deeper analysis.",
             "PG Bible export requires the template to be available on the server.",
         ],
     },
@@ -839,6 +996,7 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "Review outreach volume, outcomes, campaigns, sales plays and due dates.",
             "Use filters to narrow reporting by account, date range, outcome or activity type.",
+            "Use Outcome Breakdown by Date to see when each outcome was recorded.",
             "Compare outcomes to improve future campaign recommendations.",
         ],
     },
@@ -864,6 +1022,7 @@ PAGE_INSTRUCTIONS = {
             "This page is only visible to admin users. Non-admin users do not see Admin in the navigation.",
             "Use user permissions to manage admin access, active users and profile details.",
             "Use broadcasts to publish timed messages on login and the dashboard.",
+            "Use New Week Start and Fiscal Year Settings to control weekly and quarterly reporting dates.",
             "Admin actions are recorded in the admin audit trail.",
         ],
     },
@@ -1159,6 +1318,7 @@ def logout():
 
 
 def render_admin_permissions():
+    fiscal_start, fiscal_end = configured_fiscal_year()
     return render_template(
         "admin_permissions.html",
         users=list_users(),
@@ -1167,6 +1327,8 @@ def render_admin_permissions():
         week_start_options=WEEKDAY_OPTIONS,
         new_week_start=str(configured_week_start_day()),
         new_week_start_label=configured_week_start_label(),
+        fiscal_year_start=fiscal_start.isoformat(),
+        fiscal_year_end=fiscal_end.isoformat(),
         message=request.args.get("message", ""),
         error=request.args.get("error", "")
     )
@@ -1398,6 +1560,28 @@ def admin_update_new_week_start():
         f"New week start changed from {previous_label} to {selected_label}."
     )
     return redirect(url_for("admin_users", message=f"New week start is now {selected_label}."))
+
+
+@app.route("/admin/fiscal-year", methods=("POST",))
+@admin_required
+def admin_update_fiscal_year():
+    start_value = request.form.get("fiscal_year_start", "")
+    end_value = request.form.get("fiscal_year_end", "")
+    fiscal_start = parse_iso_date(start_value)
+    fiscal_end = parse_iso_date(end_value)
+    if not fiscal_start or not fiscal_end or fiscal_end <= fiscal_start:
+        return redirect(url_for("admin_users", error="Enter a valid fiscal year start date and end date."))
+    previous_start, previous_end = configured_fiscal_year()
+    set_admin_setting("fiscal_year_start", fiscal_start.isoformat())
+    set_admin_setting("fiscal_year_end", fiscal_end.isoformat())
+    log_admin_audit(
+        current_user(),
+        "Fiscal year updated",
+        "Admin setting",
+        "Fiscal year dates",
+        f"Fiscal year changed from {previous_start.isoformat()} to {previous_end.isoformat()} into {fiscal_start.isoformat()} to {fiscal_end.isoformat()}."
+    )
+    return redirect(url_for("admin_users", message=f"Fiscal year is now {fiscal_start.isoformat()} to {fiscal_end.isoformat()}."))
 
 
 @app.route("/admin/account-fields/add", methods=("POST",))
@@ -2479,16 +2663,7 @@ def build_learning_insights(connection):
             WHEN COALESCE(outreach.task_status, '') IN ('Completed', 'Cancelled')
             THEN 1 ELSE 0
         END) AS completed_total,
-        SUM(CASE
-            WHEN outreach.next_action_date IS NOT NULL
-              AND outreach.next_action_date != ''
-              AND datetime(
-                    outreach.next_action_date || ' ' ||
-                    IFNULL(outreach.next_action_time, '00:00')
-                  ) < datetime('now', '-1 hour')
-              AND COALESCE(outreach.task_status, '') NOT IN ('Completed', 'Cancelled')
-            THEN 1 ELSE 0
-        END) AS overdue_total
+        0 AS overdue_total
     """
     learning_params = (*POSITIVE_OUTCOMES, *NEGATIVE_OUTCOMES)
     insights = []
@@ -2767,11 +2942,13 @@ def build_dashboard_response(connection):
         SELECT COALESCE(SUM(pipeline_target), 0)
         FROM accounts
     """).fetchone()[0]
-    today = datetime.now().date()
+    dashboard_now = datetime.now()
+    today = dashboard_now.date()
     week_start = system_week_start(today)
     week_end = week_start + timedelta(days=6)
     week_start_key = week_start.isoformat()
     week_end_key = week_end.isoformat()
+    current_quarter = fiscal_quarter_for_date(today)
 
     all_accounts = connection.execute("""
         SELECT id, account_name, pipeline_target
@@ -2786,14 +2963,6 @@ def build_dashboard_response(connection):
         LEFT JOIN accounts ON outreach.account_id = accounts.id
     """).fetchall()
 
-    def parse_dashboard_date(value):
-        if not value:
-            return None
-        try:
-            return datetime.strptime(str(value), "%Y-%m-%d").date()
-        except ValueError:
-            return None
-
     def task_closed(row):
         return is_closed_task_status(row["task_status"])
 
@@ -2803,17 +2972,17 @@ def build_dashboard_response(connection):
     this_week_meetings_booked = 0
 
     for row in weekly_outreach_rows:
-        next_action_date = parse_dashboard_date(row["next_action_date"])
-        activity_date = parse_dashboard_date(row["activity_date"])
+        next_action_date = parse_iso_date(row["next_action_date"])
+        activity_date = parse_iso_date(row["activity_date"])
 
         if next_action_date and week_start <= next_action_date <= week_end and not task_closed(row):
             this_week_due += 1
 
-        if next_action_date and next_action_date < today and not task_closed(row):
+        if outreach_due_has_expired(row["next_action_date"], row["next_action_time"], row["task_status"], now=dashboard_now):
             this_week_overdue += 1
 
         if task_closed(row):
-            last_updated_date = parse_dashboard_date(str(row["last_updated"] or "")[:10])
+            last_updated_date = parse_iso_date(row["last_updated"])
             if last_updated_date and week_start <= last_updated_date <= week_end:
                 this_week_completed += 1
 
@@ -2861,14 +3030,19 @@ def build_dashboard_response(connection):
         ORDER BY accounts.account_name
     """).fetchall()
 
-    outcome_breakdown = connection.execute("""
-        SELECT outcome, COUNT(*) AS total
-        FROM outreach
-        WHERE outcome IS NOT NULL
-          AND outcome != ''
-        GROUP BY outcome
-        ORDER BY total DESC
-    """).fetchall()
+    outcome_totals = {}
+    for row in weekly_outreach_rows:
+        activity_date = parse_iso_date(row["activity_date"])
+        if not activity_date or not (current_quarter["start"] <= activity_date <= current_quarter["end"]):
+            continue
+        outcome = row["outcome"]
+        if not outcome:
+            continue
+        outcome_totals[outcome] = outcome_totals.get(outcome, 0) + 1
+    outcome_breakdown = [
+        {"outcome": outcome, "total": total}
+        for outcome, total in sorted(outcome_totals.items(), key=lambda item: (-item[1], item[0]))
+    ]
 
     top_accounts = connection.execute("""
         SELECT accounts.account_name, COUNT(outreach.id) AS total
@@ -2941,16 +3115,7 @@ def build_dashboard_response(connection):
             ) AS meeting_count,
 
             (
-                SELECT COUNT(*)
-                FROM outreach
-                WHERE outreach.account_id = accounts.id
-                  AND outreach.next_action_date IS NOT NULL
-                  AND outreach.next_action_date != ''
-                  AND datetime(
-                        outreach.next_action_date || ' ' ||
-                        IFNULL(outreach.next_action_time, '00:00')
-                      ) < datetime('now', '-1 hour')
-                  AND COALESCE(outreach.task_status, '') NOT IN ('Completed', 'Cancelled')
+                0
             ) AS overdue_followups,
 
             (
@@ -2992,6 +3157,7 @@ def build_dashboard_response(connection):
 
     for row in account_health_rows:
         account = dict(row)
+        account["overdue_followups"] = outreach_overdue_count_for_account(connection, account["id"], now=dashboard_now)
 
         health = calculate_account_health(
             contact_count=account["contact_count"] or 0,
@@ -3189,6 +3355,10 @@ def build_dashboard_response(connection):
         latest_outreach=latest_outreach,
         outreach_by_account=outreach_by_account,
         outcome_breakdown=outcome_breakdown,
+        outcome_quarter_label=current_quarter["label"],
+        outcome_quarter_start=current_quarter["start"].isoformat(),
+        outcome_quarter_end=current_quarter["end"].isoformat(),
+        weekly_wrap_up=build_weekly_wrap_up(connection, today=today),
         top_accounts=top_accounts,
         needs_attention_accounts=needs_attention_accounts,
         ai_insights=ai_insights,
@@ -3226,6 +3396,117 @@ def save_dashboard_setting(connection, key, value):
             "INSERT INTO dashboard_settings (setting_key, setting_value) VALUES (?, ?)",
             (key, value),
         )
+
+
+def build_weekly_wrap_up(connection, today=None):
+    today = today or datetime.now().date()
+    period_start = today - timedelta(days=6)
+    rows = connection.execute("""
+        SELECT
+            outreach.*,
+            accounts.account_name,
+            contacts.name AS contact_name
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
+    """).fetchall()
+
+    completed_rows = []
+    cancelled_rows = []
+    active_rows = []
+    overdue_rows = []
+    meeting_rows = []
+    note_rows = []
+
+    for row in rows:
+        last_updated = parse_iso_date(row["last_updated"])
+        activity_date = parse_iso_date(row["activity_date"])
+        row_date = last_updated or activity_date
+        is_recent = row_date and period_start <= row_date <= today
+        closed = is_closed_task_status(row["task_status"])
+        overdue = outreach_due_has_expired(row["next_action_date"], row["next_action_time"], row["task_status"])
+        if closed and is_recent:
+            if row["task_status"] == "Cancelled":
+                cancelled_rows.append(row)
+            else:
+                completed_rows.append(row)
+        elif not closed:
+            active_rows.append(row)
+        if overdue:
+            overdue_rows.append(row)
+        if is_recent and (row["outcome"] == "Meeting Booked" or is_meeting_activity_type(row["activity_type"])):
+            meeting_rows.append(row)
+        if is_recent and (row["notes"] or row["next_action"]):
+            note_rows.append(row)
+
+    account_updates = connection.execute("""
+        SELECT COUNT(DISTINCT id) AS total
+        FROM accounts
+        WHERE last_updated IS NOT NULL
+          AND last_updated >= ?
+    """, (period_start.isoformat(),)).fetchone()["total"] or 0
+    contact_updates = connection.execute("""
+        SELECT COUNT(DISTINCT id) AS total
+        FROM contacts
+        WHERE last_updated IS NOT NULL
+          AND last_updated >= ?
+    """, (period_start.isoformat(),)).fetchone()["total"] or 0
+
+    account_names = sorted({
+        row["account_name"]
+        for row in completed_rows + meeting_rows + note_rows
+        if row["account_name"]
+    })
+    activity_types = sorted({
+        row["activity_type"]
+        for row in completed_rows + note_rows
+        if row["activity_type"]
+    })
+    focus_accounts = sorted({
+        row["account_name"]
+        for row in overdue_rows
+        if row["account_name"]
+    })
+
+    paragraph_one_parts = [
+        f"In the last seven days you completed {len(completed_rows)} outreach task(s)",
+        f"booked or progressed {len(meeting_rows)} meeting-related activity item(s)",
+        f"and updated {account_updates} account(s) plus {contact_updates} contact(s).",
+    ]
+    if activity_types:
+        paragraph_one_parts.append(f"The main activity mix was {', '.join(activity_types[:4])}.")
+    if account_names:
+        paragraph_one_parts.append(f"Recent movement was strongest around {', '.join(account_names[:4])}.")
+    if cancelled_rows:
+        paragraph_one_parts.append(f"{len(cancelled_rows)} item(s) were cancelled, so check whether a different route is needed.")
+    if overdue_rows:
+        paragraph_one_parts.append(f"{len(overdue_rows)} open item(s) are overdue and need recovery attention.")
+    paragraph_one = " ".join(paragraph_one_parts)
+
+    if overdue_rows:
+        focus_target = ", ".join(focus_accounts[:3]) if focus_accounts else "the overdue accounts"
+        paragraph_two = (
+            f"Next week, start with {focus_target}. Clear overdue actions first, then use the latest activity notes to choose a sharper contact route and confirm the next meeting ask."
+        )
+    elif not meeting_rows and active_rows:
+        paragraph_two = (
+            "Next week, focus on converting active outreach into booked discovery or NBM activity. Prioritise the contacts with the clearest role fit and use recent notes to make each message more specific."
+        )
+    elif note_rows:
+        paragraph_two = (
+            "Next week, build on the behaviour captured in activity updates. Repeat the messages and routes that created responses, then schedule the next specific action before each account loses momentum."
+        )
+    else:
+        paragraph_two = (
+            "Next week, create fresh outreach with clear due dates and activity updates so PipeFlow has enough evidence to recommend stronger account moves."
+        )
+
+    return {
+        "title": "Weekly Wrap Up",
+        "period": f"{period_start.isoformat()} to {today.isoformat()}",
+        "paragraph_one": paragraph_one,
+        "paragraph_two": paragraph_two,
+    }
 
 
 def money_value(value):
@@ -3855,16 +4136,7 @@ def accounts():
             ) AS meeting_count,
 
             (
-                SELECT COUNT(*)
-                FROM outreach
-                WHERE outreach.account_id = accounts.id
-                  AND outreach.next_action_date IS NOT NULL
-                  AND outreach.next_action_date != ''
-                  AND datetime(
-                        outreach.next_action_date || ' ' ||
-                        IFNULL(outreach.next_action_time, '00:00')
-                      ) < datetime('now', '-1 hour')
-                  AND COALESCE(outreach.task_status, '') NOT IN ('Completed', 'Cancelled')
+                0
             ) AS overdue_followups,
 
             (
@@ -3882,6 +4154,7 @@ def accounts():
 
     for row in account_rows:
         account = dict(row)
+        account["overdue_followups"] = outreach_overdue_count_for_account(connection, account["id"])
 
         health = calculate_account_health(
             contact_count=account["contact_count"] or 0,
@@ -4510,16 +4783,7 @@ def view_account(account_id):
             ) AS meeting_count,
 
             (
-                SELECT COUNT(*)
-                FROM outreach
-                WHERE outreach.account_id = accounts.id
-                  AND outreach.next_action_date IS NOT NULL
-                  AND outreach.next_action_date != ''
-                  AND datetime(
-                        outreach.next_action_date || ' ' ||
-                        IFNULL(outreach.next_action_time, '00:00')
-                      ) < datetime('now', '-1 hour')
-                  AND COALESCE(outreach.task_status, '') NOT IN ('Completed', 'Cancelled')
+                0
             ) AS overdue_followups,
 
             (
@@ -4531,6 +4795,8 @@ def view_account(account_id):
         FROM accounts
         WHERE accounts.id = ?
     """, (account_id,)).fetchone()
+    account_stats = dict(account_stats)
+    account_stats["overdue_followups"] = outreach_overdue_count_for_account(connection, account_id)
 
     account_outreach = connection.execute("""
         SELECT outreach.*, contacts.name AS contact_name
@@ -8909,10 +9175,11 @@ def task_reports():
 
     tasks = [task for task in all_tasks if include_task(task)]
     today = datetime.now().date()
+    report_now = datetime.now()
     active_tasks = [task for task in tasks if not is_closed_task_status(normalised_status(task))]
     overdue_tasks = sum(
         1 for task in active_tasks
-        if parse_report_date(task["next_action_date"]) and parse_report_date(task["next_action_date"]) < today
+        if outreach_due_has_expired(task["next_action_date"], task["next_action_time"], task["task_status"], now=report_now)
     )
     due_today = sum(
         1 for task in active_tasks
@@ -8953,7 +9220,7 @@ def task_reports():
             assignee_totals[assignee]["closed_tasks"] += 1
         else:
             assignee_totals[assignee]["active_tasks"] += 1
-            if task_date and task_date < today:
+            if outreach_due_has_expired(task["next_action_date"], task["next_action_time"], task["task_status"], now=report_now):
                 assignee_totals[assignee]["overdue_active_tasks"] += 1
 
     tasks_by_status = [
@@ -9169,6 +9436,7 @@ def outreach_reports():
     meeting_conversion_total = meetings_booked
 
     outcome_totals = {}
+    outcome_by_date_totals = {}
     type_totals = {}
     monthly_totals = {}
     for item in filtered_outreach:
@@ -9178,6 +9446,8 @@ def outreach_reports():
         type_totals[activity_type] = type_totals.get(activity_type, 0) + 1
         activity_date = parse_report_date(item["activity_date"])
         if activity_date:
+            date_key = activity_date.isoformat()
+            outcome_by_date_totals[(date_key, outcome)] = outcome_by_date_totals.get((date_key, outcome), 0) + 1
             month = activity_date.strftime("%Y-%m")
             if month not in monthly_totals:
                 monthly_totals[month] = {"total_outreach": 0, "meetings_booked": 0}
@@ -9188,6 +9458,10 @@ def outreach_reports():
     outcome_breakdown = [
         {"outcome": outcome, "count": count}
         for outcome, count in sorted(outcome_totals.items(), key=lambda item: (-item[1], item[0]))
+    ]
+    outcome_breakdown_by_date = [
+        {"activity_date": date_key, "outcome": outcome, "count": count}
+        for (date_key, outcome), count in sorted(outcome_by_date_totals.items(), key=lambda item: (item[0][0], item[0][1]), reverse=True)
     ]
     outreach_by_type = [
         {"activity_type": activity_type, "count": count}
@@ -9212,6 +9486,7 @@ def outreach_reports():
         meetings_booked=meetings_booked,
         conversion_rate=meeting_conversion_total,
         outcome_breakdown=outcome_breakdown,
+        outcome_breakdown_by_date=outcome_breakdown_by_date,
         outreach_by_type=outreach_by_type,
         latest_outreach=latest_outreach,
         monthly_trends=monthly_trends,

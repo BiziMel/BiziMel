@@ -101,7 +101,7 @@
                 </a>
                 <a href="{{ url_for('outreach') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
-                        <h3>Active Outreach</h3>
+                        <h3>All Active Outreach</h3>
                         <p class="metric-number">{{ total_outreach }}</p>
                     </div>
                 </a>
@@ -113,10 +113,22 @@
                     </div>
                 </a>
             </div>
+            {% if weekly_wrap_up %}
+                <details class="weekly-wrap-up-card">
+                    <summary>
+                        <span>{{ weekly_wrap_up.title }}</span>
+                        <small>{{ weekly_wrap_up.period }}</small>
+                    </summary>
+                    <div class="weekly-wrap-up-content">
+                        <p>{{ weekly_wrap_up.paragraph_one }}</p>
+                        <p>{{ weekly_wrap_up.paragraph_two }}</p>
+                    </div>
+                </details>
+            {% endif %}
             <div class="outcome-breakdown-strip">
                 <div class="outcome-strip-header">
-                    <h2>Outcome Breakdown</h2>
-                    <p>Current outreach outcomes across your workspace.</p>
+                    <h2>Outcome Breakdown - Current Quarter {{ outcome_quarter_label }}</h2>
+                    <p>{{ outcome_quarter_start }} to {{ outcome_quarter_end }}</p>
                 </div>
                 {% if outcome_breakdown %}
                     <div class="outcome-strip-items">

@@ -104,6 +104,41 @@
 <div class="report-table-section">
     <div class="section-header">
         <div>
+            <h2>Outcome Breakdown by Date</h2>
+            <p>Daily outcome totals for the selected filters so you can analyse when outcomes were recorded.</p>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th>Activity Date</th>
+                    <th>Outcome</th>
+                    <th>Count</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for item in outcome_breakdown_by_date %}
+                    <tr>
+                        <td>{{ item["activity_date"] }}</td>
+                        <td>{{ item["outcome"] or "Unknown" }}</td>
+                        <td>{{ item["count"] }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="3">No dated outcome data found.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="report-table-section">
+    <div class="section-header">
+        <div>
             <h2>Outcome Breakdown</h2>
             <p>Summary of outreach outcomes for the selected filters.</p>
         </div>
