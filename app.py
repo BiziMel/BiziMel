@@ -50,6 +50,7 @@ RELEASE_NOTES = [
             "Enhanced Weekly Wrap Up guidance so the following-week recommendation is more specific to overdue work, meeting conversion and channel mix.",
             "Enhanced new record creation so Quarter defaults to the configured current fiscal quarter.",
             "Enhanced Outreach Reports by combining outcome breakdown and dated outcome analysis into one account-grouped report.",
+            "Enhanced account Org Charts with PDF export in portrait or landscape format.",
         ],
         "fixed": [
             "Fixed overdue task logic so dashboard metrics and execution insights use the same rule for expired due dates and due times.",
@@ -5426,6 +5427,162 @@ def orgchart_json_payload(connection, account_id):
     }
 
 
+def orgchart_export_rows(payload):
+    contacts = {int(contact["id"]): contact for contact in payload.get("contacts", [])}
+    children_by_parent = {}
+    for node in payload.get("nodes", []):
+        parent = node.get("parent_contact_id")
+        parent_key = int(parent) if parent is not None else None
+        children_by_parent.setdefault(parent_key, []).append(node)
+    for parent, children in children_by_parent.items():
+        children.sort(key=lambda node: (int(node.get("sort_index") or 0), int(node["contact_id"])))
+
+    rows = []
+
+    def walk(node, depth):
+        contact = contacts.get(int(node["contact_id"]))
+        if not contact:
+            return
+        while len(rows) <= depth:
+            rows.append([])
+        rows[depth].append({
+            "contact_id": int(node["contact_id"]),
+            "parent_contact_id": node.get("parent_contact_id"),
+            "name": contact.get("name") or "Unknown contact",
+            "job_title": contact.get("job_title") or "Job title not set",
+            "org_dept": contact.get("org_dept") or "",
+        })
+        for child in children_by_parent.get(int(node["contact_id"]), []):
+            walk(child, depth + 1)
+
+    for root in children_by_parent.get(None, []):
+        walk(root, 0)
+    return rows
+
+
+def export_orgchart_pdf(account, payload, orientation):
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_CENTER
+        from reportlab.lib.pagesizes import A4, landscape, portrait
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.units import mm
+        from reportlab.pdfgen import canvas as pdf_canvas
+        from reportlab.platypus import Paragraph
+    except ImportError as exc:
+        raise RuntimeError("PDF export is not available because the reportlab package is not installed.") from exc
+
+    orientation = "landscape" if orientation == "landscape" else "portrait"
+    page_size = landscape(A4) if orientation == "landscape" else portrait(A4)
+    page_width, page_height = page_size
+    buffer = io.BytesIO()
+    pdf = pdf_canvas.Canvas(buffer, pagesize=page_size)
+
+    margin = 14 * mm
+    title_height = 18 * mm
+    footer_height = 8 * mm
+    chart_top = page_height - margin - title_height
+    chart_bottom = margin + footer_height
+    chart_height = chart_top - chart_bottom
+    rows = orgchart_export_rows(payload)
+
+    pdf.setTitle(f"{account['account_name']} Org Chart")
+    pdf.setFont("Helvetica-Bold", 15)
+    pdf.setFillColor(colors.HexColor("#18381f"))
+    pdf.drawString(margin, page_height - margin - 8, f"{account['account_name']} Org Chart")
+    pdf.setFont("Helvetica", 8)
+    pdf.setFillColor(colors.HexColor("#536353"))
+    pdf.drawString(margin, page_height - margin - 20, f"Exported {datetime.now().strftime('%Y-%m-%d %H:%M')} | {orientation.title()}")
+
+    if not rows:
+        pdf.setFont("Helvetica", 12)
+        pdf.setFillColor(colors.HexColor("#536353"))
+        pdf.drawString(margin, chart_top - 20, "No people have been added to this org chart yet.")
+        pdf.showPage()
+        pdf.save()
+        buffer.seek(0)
+        return buffer
+
+    max_columns = max(len(row) for row in rows)
+    available_width = page_width - (margin * 2)
+    node_width = min(52 * mm, max(30 * mm, (available_width / max_columns) - (4 * mm)))
+    node_height = 22 * mm
+    row_gap = max(8 * mm, (chart_height - (len(rows) * node_height)) / max(1, len(rows) - 1)) if len(rows) > 1 else 0
+    style_name = ParagraphStyle(
+        "OrgChartName",
+        fontName="Helvetica-Bold",
+        fontSize=7.5,
+        leading=8.5,
+        alignment=TA_CENTER,
+        textColor=colors.HexColor("#18381f"),
+    )
+    style_title = ParagraphStyle(
+        "OrgChartTitle",
+        fontName="Helvetica",
+        fontSize=6.5,
+        leading=7.5,
+        alignment=TA_CENTER,
+        textColor=colors.HexColor("#536353"),
+    )
+
+    positions = {}
+    for depth, row in enumerate(rows):
+        y = chart_top - node_height - (depth * (node_height + row_gap))
+        gap = (available_width - (len(row) * node_width)) / max(1, len(row) + 1)
+        for index, person in enumerate(row):
+            x = margin + gap + (index * (node_width + gap))
+            positions[person["contact_id"]] = (x, y, node_width, node_height)
+
+    pdf.setStrokeColor(colors.HexColor("#93a996"))
+    pdf.setLineWidth(0.8)
+    for row in rows:
+        for person in row:
+            parent_id = person.get("parent_contact_id")
+            if parent_id is None:
+                continue
+            child_pos = positions.get(person["contact_id"])
+            parent_pos = positions.get(int(parent_id))
+            if not child_pos or not parent_pos:
+                continue
+            child_x, child_y, child_w, child_h = child_pos
+            parent_x, parent_y, parent_w, _ = parent_pos
+            parent_mid_x = parent_x + (parent_w / 2)
+            parent_bottom_y = parent_y
+            child_mid_x = child_x + (child_w / 2)
+            child_top_y = child_y + child_h
+            mid_y = child_top_y + ((parent_bottom_y - child_top_y) / 2)
+            pdf.line(parent_mid_x, parent_bottom_y, parent_mid_x, mid_y)
+            pdf.line(parent_mid_x, mid_y, child_mid_x, mid_y)
+            pdf.line(child_mid_x, mid_y, child_mid_x, child_top_y)
+
+    for row in rows:
+        for person in row:
+            x, y, width, height = positions[person["contact_id"]]
+            pdf.setFillColor(colors.HexColor("#f8fbf6"))
+            pdf.setStrokeColor(colors.HexColor("#b8c9b8"))
+            pdf.roundRect(x, y, width, height, 4, fill=1, stroke=1)
+            photo_size = 8 * mm
+            photo_x = x + (width / 2) - (photo_size / 2)
+            photo_y = y + height - photo_size - 3
+            pdf.setFillColor(colors.white)
+            pdf.setStrokeColor(colors.HexColor("#d6e2d2"))
+            pdf.rect(photo_x, photo_y, photo_size, photo_size, fill=1, stroke=1)
+            name = Paragraph(str(person["name"]), style_name)
+            title = Paragraph(str(person["job_title"]), style_title)
+            name.wrapOn(pdf, width - 5, 10 * mm)
+            title.wrapOn(pdf, width - 5, 8 * mm)
+            name.drawOn(pdf, x + 2.5, y + 8.5 * mm)
+            title.drawOn(pdf, x + 2.5, y + 3.5 * mm)
+
+    pdf.setFont("Helvetica", 7)
+    pdf.setFillColor(colors.HexColor("#778577"))
+    pdf.drawRightString(page_width - margin, margin - 2, "PipeFlow PG Manager")
+    pdf.showPage()
+    pdf.save()
+    buffer.seek(0)
+    return buffer
+
+
 def orgchart_target_parent(connection, org_chart_id, target_contact_id, placement):
     if not target_contact_id:
         return None, 0
@@ -5488,6 +5645,29 @@ def account_orgchart(account_id):
         initial_orgchart=payload,
         message=request.args.get("message", ""),
         error=request.args.get("error", ""),
+    )
+
+
+@app.route("/accounts/<int:account_id>/orgchart/export.pdf")
+def export_account_orgchart_pdf(account_id):
+    orientation = request.args.get("orientation", "landscape")
+    connection = get_db_connection()
+    account = connection.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    payload = orgchart_json_payload(connection, account_id)
+    connection.close()
+    if not account or not payload:
+        return redirect(url_for("accounts"))
+    try:
+        pdf_buffer = export_orgchart_pdf(account, payload, orientation)
+    except RuntimeError as exc:
+        return redirect(url_for("account_orgchart", account_id=account_id, error=str(exc)))
+    orientation_name = "portrait" if orientation == "portrait" else "landscape"
+    safe_account_name = re.sub(r"[^A-Za-z0-9_-]+", "_", account["account_name"] or "account").strip("_") or "account"
+    return send_file(
+        pdf_buffer,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"OrgChart_{safe_account_name}_{orientation_name}.pdf",
     )
 
 

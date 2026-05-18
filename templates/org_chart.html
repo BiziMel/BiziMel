@@ -10,6 +10,17 @@
         <p>Drag contacts into the chart, then drop onto the top, bottom, left or right of another person to set the hierarchy.</p>
     </div>
     <div class="button-group">
+        <form method="get"
+              action="{{ url_for('export_account_orgchart_pdf', account_id=account.id) }}"
+              class="orgchart-export-form"
+              target="_blank">
+            <label for="orgchart_pdf_orientation">PDF</label>
+            <select id="orgchart_pdf_orientation" name="orientation">
+                <option value="landscape">Landscape</option>
+                <option value="portrait">Portrait</option>
+            </select>
+            <button type="submit" class="btn btn-primary">Export PDF</button>
+        </form>
         <a href="{{ url_for('view_account', account_id=account.id) }}" class="btn btn-secondary">Back to Account</a>
     </div>
 </div>

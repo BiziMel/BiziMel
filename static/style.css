@@ -181,6 +181,27 @@ input[type="submit"]:hover {
     align-items: center;
 }
 
+.orgchart-export-form {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border: 1px solid #dbe6d8;
+    border-radius: 8px;
+    background: #f8fbf6;
+}
+
+.orgchart-export-form label {
+    margin: 0;
+    font-weight: 700;
+    color: #2f4a33;
+}
+
+.orgchart-export-form select {
+    min-width: 120px;
+    padding: 8px 10px;
+}
+
 /* Forms */
 .pipeflow-form {
     display: flex;
