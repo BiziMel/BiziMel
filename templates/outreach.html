@@ -92,6 +92,16 @@
             </div>
 
             <div class="form-group">
+                <label for="due_start_date">Due From</label>
+                <input type="date" id="due_start_date" name="due_start_date" value="{{ due_start_filter or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="due_end_date">Due To</label>
+                <input type="date" id="due_end_date" name="due_end_date" value="{{ due_end_filter or '' }}">
+            </div>
+
+            <div class="form-group">
                 <label>Status</label>
                 <details class="checkbox-dropdown compact-checkbox-dropdown status-filter-dropdown">
                     <summary>{{ selected_statuses | join(", ") }}</summary>

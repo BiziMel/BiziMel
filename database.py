@@ -193,6 +193,30 @@ def initialise_database(force=False):
     """)
 
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS outreach_contact_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            outreach_id INTEGER NOT NULL,
+            contact_id INTEGER NOT NULL,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(outreach_id, contact_id),
+            FOREIGN KEY(outreach_id) REFERENCES outreach(id),
+            FOREIGN KEY(contact_id) REFERENCES contacts(id)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS outreach_partner_contact_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            outreach_id INTEGER NOT NULL,
+            partner_contact_id INTEGER NOT NULL,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(outreach_id, partner_contact_id),
+            FOREIGN KEY(outreach_id) REFERENCES outreach(id),
+            FOREIGN KEY(partner_contact_id) REFERENCES partner_contacts(id)
+        )
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS account_partners (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             account_id INTEGER NOT NULL,
@@ -478,6 +502,12 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "outreach", "next_action_time", "TEXT")
     add_column_if_missing(cursor, "outreach", "task_status", "TEXT DEFAULT 'Not Started'")
     add_column_if_missing(cursor, "outreach", "assigned_to", "TEXT")
+    add_column_if_missing(cursor, "outreach_contact_links", "outreach_id", "INTEGER")
+    add_column_if_missing(cursor, "outreach_contact_links", "contact_id", "INTEGER")
+    add_column_if_missing(cursor, "outreach_contact_links", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "outreach_partner_contact_links", "outreach_id", "INTEGER")
+    add_column_if_missing(cursor, "outreach_partner_contact_links", "partner_contact_id", "INTEGER")
+    add_column_if_missing(cursor, "outreach_partner_contact_links", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     cursor.execute("UPDATE outreach SET task_status = 'Completed' WHERE task_status = 'Closed'")
     cursor.execute(
         "UPDATE outreach SET activity_type = 'Partner Touchpoint' WHERE activity_type LIKE ?",
@@ -631,6 +661,10 @@ def initialise_database(force=False):
         ("idx_outreach_task_status", "outreach", ["task_status"]),
         ("idx_outreach_campaign", "outreach", ["campaign"]),
         ("idx_outreach_sales_play", "outreach", ["sales_play"]),
+        ("idx_outreach_contact_links_outreach", "outreach_contact_links", ["outreach_id"]),
+        ("idx_outreach_contact_links_contact", "outreach_contact_links", ["contact_id"]),
+        ("idx_outreach_partner_contact_links_outreach", "outreach_partner_contact_links", ["outreach_id"]),
+        ("idx_outreach_partner_contact_links_contact", "outreach_partner_contact_links", ["partner_contact_id"]),
         ("idx_account_partners_account", "account_partners", ["account_id"]),
         ("idx_account_partners_partner", "account_partners", ["partner_id"]),
         ("idx_partner_contacts_partner", "partner_contacts", ["partner_id"]),

@@ -7,6 +7,10 @@
 <div class="button-group">
     <a href="/reports" class="btn btn-secondary">Back to Reports</a>
     <a href="{{ url_for('export_outreach_reports') }}" class="btn btn-primary">Export CSV</a>
+    <a href="{{ url_for('export_outreach_outcome_breakdown_csv', start_date=selected_start_date, end_date=selected_end_date, account_id=selected_account, activity_type=selected_activity_type, outcome=selected_outcome) }}" class="btn btn-secondary">Outcome CSV</a>
+    <a href="{{ url_for('export_outreach_outcome_breakdown_pdf', start_date=selected_start_date, end_date=selected_end_date, account_id=selected_account, activity_type=selected_activity_type, outcome=selected_outcome) }}" class="btn btn-secondary">Outcome PDF</a>
+    <a href="{{ url_for('export_outreach_latest_csv', start_date=selected_start_date, end_date=selected_end_date, account_id=selected_account, activity_type=selected_activity_type, outcome=selected_outcome) }}" class="btn btn-secondary">Latest CSV</a>
+    <a href="{{ url_for('export_outreach_latest_pdf', start_date=selected_start_date, end_date=selected_end_date, account_id=selected_account, activity_type=selected_activity_type, outcome=selected_outcome) }}" class="btn btn-secondary">Latest PDF</a>
 </div>
 
 <div class="report-card">

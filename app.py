@@ -29,11 +29,32 @@ from orgchart_service import (
 )
 
 
-APP_VERSION = "1.5.1"
-APP_RELEASE_DATE = "2026-05-18"
-APP_BUILD = "2026-05-18-v1.5.1-dashboard-fiscal-guidance"
+APP_VERSION = "1.5.2"
+APP_RELEASE_DATE = "2026-05-20"
+APP_BUILD = "2026-05-20-v1.5.2-outreach-campaign-reports"
 
 RELEASE_NOTES = [
+    {
+        "version": "1.5.2",
+        "release_date": "2026-05-20",
+        "title": "Outreach scheduling, multi-contact activity and reporting exports",
+        "new": [],
+        "enhanced": [
+            "Enhanced campaign generation so historic success and underused activity types shape task variation and reduce repetitive sequences.",
+            "Enhanced campaign generation so VITO remains the first email per contact and later email-style steps are Follow-up or Email activity.",
+            "Enhanced Weekly Wrap Up with a Saturday to Friday window and more focused guidance for the following week.",
+            "Enhanced Outreach Tasks so users can select multiple customer and partner contacts on one outreach task.",
+            "Enhanced Outreach Tasks filters with Activity Due Date from and to fields.",
+            "Enhanced Outcome Reports so the account-grouped outcome breakdown and latest outreach can be exported as CSV or PDF.",
+        ],
+        "fixed": [
+            "Fixed Execution Insights so Recommended Move is distinct from What It Means and suggests a different activity, channel or stakeholder route.",
+            "Fixed campaign scheduling so tasks created for the submit date never start earlier than the campaign submit time.",
+            "Fixed meeting booked metrics so one multi-contact outreach task counts as one meeting activity metric.",
+            "Fixed intermittent Outreach navigation errors by normalising missing partner contact fields and multi-contact summaries before rendering.",
+        ],
+        "sub_releases": [],
+    },
     {
         "version": "1.5.1",
         "release_date": "2026-05-18",
@@ -1956,6 +1977,7 @@ def delete_contact_records(connection, contact_ids):
         contact = connection.execute("SELECT name FROM contacts WHERE id = ?", (contact_id,)).fetchone()
         audit_record_delete(connection, "contact", contact_id, contact["name"] if contact else "")
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'contact' AND related_id = ?", (contact_id,))
+        connection.execute("DELETE FROM outreach_contact_links WHERE contact_id = ?", (contact_id,))
         connection.execute("DELETE FROM outreach WHERE contact_id = ?", (contact_id,))
         connection.execute("DELETE FROM contacts WHERE id = ?", (contact_id,))
 
@@ -1965,6 +1987,8 @@ def delete_outreach_records(connection, outreach_ids):
         outreach = connection.execute("SELECT subject FROM outreach WHERE id = ?", (outreach_id,)).fetchone()
         audit_record_delete(connection, "outreach", outreach_id, outreach["subject"] if outreach else "")
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'outreach' AND related_id = ?", (outreach_id,))
+        connection.execute("DELETE FROM outreach_contact_links WHERE outreach_id = ?", (outreach_id,))
+        connection.execute("DELETE FROM outreach_partner_contact_links WHERE outreach_id = ?", (outreach_id,))
         connection.execute("DELETE FROM outreach WHERE id = ?", (outreach_id,))
 
 
@@ -2149,6 +2173,13 @@ def campaign_step_templates():
             "subject_prefix": "Content share",
             "next_action": "Share relevant content or thought leadership",
             "time": "11:00"
+        },
+        {
+            "campaign": "Email",
+            "activity_type": "Email",
+            "subject_prefix": "Email outreach",
+            "next_action": "Send a focused email with one clear meeting ask",
+            "time": "13:00"
         },
         {
             "campaign": "Phone",
@@ -2537,7 +2568,7 @@ def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per
             template = dict(initial_vito_template)
         else:
             template = dict(templates[index % len(templates)])
-            if template.get("activity_type") in ("VITO", "Email"):
+            if template.get("activity_type") == "VITO":
                 template["campaign"] = "Follow-up"
                 template["activity_type"] = "Follow-up"
                 template["subject_prefix"] = "Follow-up email"
@@ -2659,6 +2690,9 @@ def build_execution_insights(ai_insights, learning_insights):
         "learning": 3,
         "positive": 4,
     }
+    for item in combined:
+        if str(item.get("action", "")).strip() == str(item.get("message", "")).strip():
+            item["action"] = recommended_move_for_ai_insight(item.get("category", ""), item.get("title", ""), item.get("message", ""))
     combined.sort(key=lambda item: priority_order.get(item["priority"], 5))
     return combined[:10]
 
@@ -3508,7 +3542,9 @@ def save_dashboard_setting(connection, key, value):
 
 def build_weekly_wrap_up(connection, today=None):
     today = today or datetime.now().date()
-    period_start = today - timedelta(days=6)
+    days_since_saturday = (today.weekday() - 5) % 7
+    period_start = today - timedelta(days=days_since_saturday)
+    period_end = period_start + timedelta(days=6)
     rows = connection.execute("""
         SELECT
             outreach.*,
@@ -3530,7 +3566,7 @@ def build_weekly_wrap_up(connection, today=None):
         last_updated = parse_iso_date(row["last_updated"])
         activity_date = parse_iso_date(row["activity_date"])
         row_date = last_updated or activity_date
-        is_recent = row_date and period_start <= row_date <= today
+        is_recent = row_date and period_start <= row_date <= min(today, period_end)
         closed = is_closed_task_status(row["task_status"])
         overdue = outreach_due_has_expired(row["next_action_date"], row["next_action_time"], row["task_status"])
         if closed and is_recent:
@@ -3613,7 +3649,7 @@ def build_weekly_wrap_up(connection, today=None):
 
     return {
         "title": "Weekly Wrap Up",
-        "period": f"{period_start.isoformat()} to {today.isoformat()}",
+        "period": f"{period_start.isoformat()} to {period_end.isoformat()}",
         "paragraph_one": paragraph_one,
         "paragraph_two": paragraph_two,
     }
@@ -3688,6 +3724,18 @@ def parse_outreach_contact_selection(value):
     return value or None, None
 
 
+def parse_outreach_contact_selections(values):
+    contact_ids = []
+    partner_contact_ids = []
+    for value in values or []:
+        contact_id, partner_contact_id = parse_outreach_contact_selection(value)
+        if contact_id and str(contact_id) not in contact_ids:
+            contact_ids.append(str(contact_id))
+        if partner_contact_id and str(partner_contact_id) not in partner_contact_ids:
+            partner_contact_ids.append(str(partner_contact_id))
+    return contact_ids, partner_contact_ids
+
+
 def partner_contact_matches_account(connection, account_id, partner_contact_id):
     if not partner_contact_id:
         return True
@@ -3707,6 +3755,79 @@ def outreach_recipient_matches_account(connection, account_id, contact_id, partn
         contact_matches_account(connection, account_id, contact_id)
         and partner_contact_matches_account(connection, account_id, partner_contact_id)
     )
+
+
+def outreach_recipients_match_account(connection, account_id, contact_ids, partner_contact_ids):
+    if not contact_ids and not partner_contact_ids:
+        return True
+    return all(contact_matches_account(connection, account_id, contact_id) for contact_id in contact_ids) and all(
+        partner_contact_matches_account(connection, account_id, partner_contact_id)
+        for partner_contact_id in partner_contact_ids
+    )
+
+
+def outreach_selected_contact_values(connection, outreach_id, fallback_contact_id=None, fallback_partner_contact_id=None):
+    values = []
+    rows = connection.execute("""
+        SELECT contact_id
+        FROM outreach_contact_links
+        WHERE outreach_id = ?
+        ORDER BY id
+    """, (outreach_id,)).fetchall()
+    values.extend(str(row["contact_id"]) for row in rows if row["contact_id"])
+    partner_rows = connection.execute("""
+        SELECT partner_contact_id
+        FROM outreach_partner_contact_links
+        WHERE outreach_id = ?
+        ORDER BY id
+    """, (outreach_id,)).fetchall()
+    values.extend(f"partner_contact:{row['partner_contact_id']}" for row in partner_rows if row["partner_contact_id"])
+    if not values and fallback_contact_id:
+        values.append(str(fallback_contact_id))
+    if not values and fallback_partner_contact_id:
+        values.append(f"partner_contact:{fallback_partner_contact_id}")
+    return values
+
+
+def save_outreach_contact_links(connection, outreach_id, contact_ids, partner_contact_ids):
+    connection.execute("DELETE FROM outreach_contact_links WHERE outreach_id = ?", (outreach_id,))
+    connection.execute("DELETE FROM outreach_partner_contact_links WHERE outreach_id = ?", (outreach_id,))
+    for contact_id in contact_ids:
+        connection.execute(
+            "INSERT INTO outreach_contact_links (outreach_id, contact_id) VALUES (?, ?)",
+            (outreach_id, contact_id),
+        )
+    for partner_contact_id in partner_contact_ids:
+        connection.execute(
+            "INSERT INTO outreach_partner_contact_links (outreach_id, partner_contact_id) VALUES (?, ?)",
+            (outreach_id, partner_contact_id),
+        )
+
+
+def outreach_contact_summary(connection, outreach_id, fallback_name="", fallback_partner_name=""):
+    names = []
+    rows = connection.execute("""
+        SELECT contacts.name
+        FROM outreach_contact_links
+        JOIN contacts ON contacts.id = outreach_contact_links.contact_id
+        WHERE outreach_contact_links.outreach_id = ?
+        ORDER BY contacts.name
+    """, (outreach_id,)).fetchall()
+    names.extend(row["name"] for row in rows if row["name"])
+    partner_rows = connection.execute("""
+        SELECT partner_contacts.name, partners.partner_name
+        FROM outreach_partner_contact_links
+        JOIN partner_contacts ON partner_contacts.id = outreach_partner_contact_links.partner_contact_id
+        LEFT JOIN partners ON partners.id = partner_contacts.partner_id
+        WHERE outreach_partner_contact_links.outreach_id = ?
+        ORDER BY partners.partner_name, partner_contacts.name
+    """, (outreach_id,)).fetchall()
+    for row in partner_rows:
+        if row["name"]:
+            names.append(f"{row['name']} (Partner: {row['partner_name'] or 'Partner'})")
+    if names:
+        return ", ".join(names)
+    return fallback_partner_name or fallback_name or ""
 
 
 def partner_contacts_for_outreach(connection):
@@ -4637,6 +4758,7 @@ def delete_partner_contact(partner_id, contact_id):
     """, (contact_id, partner_id)).fetchone()
     if contact:
         audit_record_delete(connection, "partner_contact", contact_id, contact["name"])
+        connection.execute("DELETE FROM outreach_partner_contact_links WHERE partner_contact_id = ?", (contact_id,))
     connection.execute("""
         DELETE FROM partner_contacts
         WHERE id = ?
@@ -6800,6 +6922,8 @@ def outreach():
     sales_play_filter = request.args.get("sales_play")
     account_filter = request.args.get("account_id")
     outcome_filter = request.args.get("outcome")
+    due_start_filter = request.args.get("due_start_date", "")
+    due_end_filter = request.args.get("due_end_date", "")
     selected_statuses = request.args.getlist("task_status")
     if not selected_statuses:
         selected_statuses = ["All Open"]
@@ -6848,6 +6972,12 @@ def outreach():
     if outcome_filter:
         query += " AND outreach.outcome = ?"
         params.append(outcome_filter)
+    if due_start_filter:
+        query += " AND NULLIF(outreach.next_action_date, '') >= ?"
+        params.append(due_start_filter)
+    if due_end_filter:
+        query += " AND NULLIF(outreach.next_action_date, '') <= ?"
+        params.append(due_end_filter)
 
     if "All" in selected_statuses:
         pass
@@ -6915,6 +7045,12 @@ def outreach():
         if outcome_filter:
             fallback_query += " AND outreach.outcome = ?"
             fallback_params.append(outcome_filter)
+        if due_start_filter:
+            fallback_query += " AND NULLIF(outreach.next_action_date, '') >= ?"
+            fallback_params.append(due_start_filter)
+        if due_end_filter:
+            fallback_query += " AND NULLIF(outreach.next_action_date, '') <= ?"
+            fallback_params.append(due_end_filter)
         if "All" in selected_statuses:
             pass
         elif "All Completed" in selected_statuses:
@@ -6946,6 +7082,12 @@ def outreach():
     for row in outreach_rows:
         row_dict = dict(row)
         row_dict["workspace_schema"] = workspace_schema
+        row_dict["contact_name"] = outreach_contact_summary(
+            connection,
+            row_dict["id"],
+            row_dict.get("contact_name") or "",
+            row_dict.get("contact_name") or "",
+        )
         row_dict["due_rag_class"] = due_rag_class(
             row_dict.get("next_action_date"),
             row_dict.get("next_action_time"),
@@ -6982,6 +7124,8 @@ def outreach():
         sales_play_filter=sales_play_filter,
         account_filter=account_filter,
         outcome_filter=outcome_filter,
+        due_start_filter=due_start_filter,
+        due_end_filter=due_end_filter,
         selected_statuses=selected_statuses,
         assignable_users=assignable_users,
         message=request.args.get("message", ""),
@@ -7009,6 +7153,7 @@ def add_outreach():
                 "quarter": source["quarter"] or current_quarter_label(),
                 "account_id": source["account_id"],
                 "contact_id": f"partner_contact:{source['partner_contact_id']}" if source["partner_contact_id"] else source["contact_id"],
+                "contact_values": outreach_selected_contact_values(connection, source["id"], source["contact_id"], source["partner_contact_id"]),
                 "sales_play": source["sales_play"] or source["campaign"] or "",
                 "notes": f"Follow-up task from completed outreach #{source['id']}.",
             }
@@ -7016,10 +7161,14 @@ def add_outreach():
     if request.method == "POST":
         prefill = dict(request.form)
         requested_status = request.form.get("task_status", "Not Started")
-        contact_id, partner_contact_id = parse_outreach_contact_selection(request.form.get("contact_id"))
+        selected_contact_values = request.form.getlist("contact_ids") or request.form.getlist("contact_id")
+        contact_ids, partner_contact_ids = parse_outreach_contact_selections(selected_contact_values)
+        contact_id = contact_ids[0] if contact_ids else None
+        partner_contact_id = partner_contact_ids[0] if partner_contact_ids else None
+        prefill["contact_values"] = selected_contact_values
         if not fy_quarter_are_valid(request.form.get("fy"), request.form.get("quarter")):
             error = fy_quarter_required_message()
-        elif not outreach_recipient_matches_account(connection, request.form.get("account_id"), contact_id, partner_contact_id):
+        elif not outreach_recipients_match_account(connection, request.form.get("account_id"), contact_ids, partner_contact_ids):
             error = "Select a contact or partner contact that belongs to the selected account."
         elif status_requires_activity_update(requested_status) and not activity_update_is_valid(request.form.get("next_action")):
             error = activity_update_required_message()
@@ -7054,6 +7203,7 @@ def add_outreach():
                 request.form.get("assigned_to", "")
             ))
             outreach_id = cursor.lastrowid
+            save_outreach_contact_links(connection, outreach_id, contact_ids, partner_contact_ids)
             audit_record_create(connection, "outreach", outreach_id, {
                 "fy": request.form.get("fy"),
                 "quarter": request.form.get("quarter"),
@@ -7483,13 +7633,22 @@ def edit_outreach(outreach_id):
         FROM non_working_blocks
         ORDER BY start_date, end_date, id
     """).fetchall()
+    selected_contact_values = outreach_selected_contact_values(
+        connection,
+        outreach_id,
+        outreach_item["contact_id"],
+        outreach_item["partner_contact_id"],
+    )
     if request.method == "POST":
         if is_closed_task_status(outreach_item["task_status"]):
             connection.close()
             return redirect(url_for("outreach", error="Completed and cancelled tasks cannot be modified."))
         submit_action = request.form.get("submit_action", "save")
         sales_play_value = request.form.get("sales_play")
-        contact_id, partner_contact_id = parse_outreach_contact_selection(request.form.get("contact_id"))
+        selected_contact_values = request.form.getlist("contact_ids") or request.form.getlist("contact_id")
+        contact_ids, partner_contact_ids = parse_outreach_contact_selections(selected_contact_values)
+        contact_id = contact_ids[0] if contact_ids else None
+        partner_contact_id = partner_contact_ids[0] if partner_contact_ids else None
         new_values = {
             "fy": request.form.get("fy"),
             "quarter": request.form.get("quarter"),
@@ -7530,10 +7689,11 @@ def edit_outreach(outreach_id):
                 sales_play_options=sales_play_rows,
                 partner_activity_options=partner_activity_options,
                 partner_contacts=partner_contacts,
-                error=error
+                error=error,
+                selected_contact_values=selected_contact_values
             )
 
-        if not outreach_recipient_matches_account(connection, new_values["account_id"], new_values["contact_id"], new_values["partner_contact_id"]):
+        if not outreach_recipients_match_account(connection, new_values["account_id"], contact_ids, partner_contact_ids):
             error = "Select a contact or partner contact that belongs to the selected account."
             connection.close()
             return render_template(
@@ -7546,7 +7706,8 @@ def edit_outreach(outreach_id):
                 sales_play_options=sales_play_rows,
                 partner_activity_options=partner_activity_options,
                 partner_contacts=partner_contacts,
-                error=error
+                error=error,
+                selected_contact_values=selected_contact_values
             )
 
         if status_requires_activity_update(new_values["task_status"]) and not activity_update_is_valid(new_values["next_action"]):
@@ -7562,7 +7723,8 @@ def edit_outreach(outreach_id):
                 sales_play_options=sales_play_rows,
                 partner_activity_options=partner_activity_options,
                 partner_contacts=partner_contacts,
-                error=error
+                error=error,
+                selected_contact_values=selected_contact_values
             )
 
         labels = {
@@ -7631,6 +7793,7 @@ def edit_outreach(outreach_id):
             new_values["assigned_to"],
             outreach_id
         ))
+        save_outreach_contact_links(connection, outreach_id, contact_ids, partner_contact_ids)
 
         if changes:
             audit_record_update(connection, "outreach", outreach_id, outreach_item, new_values, labels)
@@ -7662,7 +7825,8 @@ def edit_outreach(outreach_id):
         sales_play_options=sales_play_rows,
         partner_activity_options=partner_activity_options,
         partner_contacts=partner_contacts,
-        error=error
+        error=error,
+        selected_contact_values=selected_contact_values
     )
 
 
@@ -9808,6 +9972,167 @@ def outreach_reports():
         monthly_meetings_data=[item["meetings_booked"] for item in monthly_trends],
         monthly_conversion_data=[item["meeting_conversion"] for item in monthly_trends],
     )
+
+
+def filtered_outreach_report_items(connection):
+    selected_start_date = request.args.get("start_date", "")
+    selected_end_date = request.args.get("end_date", "")
+    selected_account = request.args.get("account_id", "")
+    selected_activity_type = request.args.get("activity_type", "")
+    selected_outcome = request.args.get("outcome", "")
+
+    rows = connection.execute("""
+        SELECT
+            outreach.id,
+            outreach.account_id,
+            outreach.activity_date,
+            outreach.activity_time,
+            outreach.next_action_date,
+            outreach.next_action_time,
+            outreach.activity_type,
+            outreach.outcome,
+            outreach.task_status,
+            outreach.sales_play,
+            outreach.fy,
+            outreach.quarter,
+            accounts.account_name,
+            accounts.account_tier,
+            contacts.name AS contact_name
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
+        ORDER BY outreach.activity_date DESC, outreach.activity_time DESC, outreach.id DESC
+    """).fetchall()
+
+    def parse_report_date(value):
+        return parse_iso_date(value)
+
+    start_date = parse_report_date(selected_start_date)
+    end_date = parse_report_date(selected_end_date)
+
+    def include_item(item):
+        activity_date = parse_report_date(item["activity_date"])
+        if start_date and (not activity_date or activity_date < start_date):
+            return False
+        if end_date and (not activity_date or activity_date > end_date):
+            return False
+        if selected_account and str(item["account_id"] or "") != selected_account:
+            return False
+        if selected_activity_type and (item["activity_type"] or "") != selected_activity_type:
+            return False
+        if selected_outcome and (item["outcome"] or "") != selected_outcome:
+            return False
+        return True
+
+    return [dict(item) for item in rows if include_item(item)]
+
+
+def outcome_breakdown_account_rows(items):
+    totals = {}
+    for item in items:
+        activity_date = parse_iso_date(item.get("activity_date"))
+        if not activity_date:
+            continue
+        key = (item.get("account_name") or "Unknown", activity_date.isoformat(), item.get("outcome") or "Unknown")
+        totals[key] = totals.get(key, 0) + 1
+    return [
+        {"account_name": account_name, "activity_date": activity_date, "outcome": outcome, "count": count}
+        for (account_name, activity_date, outcome), count in sorted(
+            totals.items(),
+            key=lambda item: (item[0][0].lower(), item[0][1], item[0][2]),
+        )
+    ]
+
+
+def send_simple_pdf(title, headers, rows, filename):
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import landscape, A4
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    except ImportError as exc:
+        raise RuntimeError("PDF export is not available because the reportlab package is not installed.") from exc
+    buffer = io.BytesIO()
+    document = SimpleDocTemplate(buffer, pagesize=landscape(A4), leftMargin=24, rightMargin=24, topMargin=24, bottomMargin=24)
+    styles = getSampleStyleSheet()
+    table_data = [headers] + rows
+    table = Table(table_data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#dfeedd")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#18381f")),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cbd8cb")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    document.build([Paragraph(title, styles["Title"]), Spacer(1, 12), table])
+    buffer.seek(0)
+    return send_file(buffer, mimetype="application/pdf", as_attachment=True, download_name=filename)
+
+
+@app.route("/reports/outreach/outcome-breakdown/export.csv")
+def export_outreach_outcome_breakdown_csv():
+    connection = get_db_connection()
+    rows = outcome_breakdown_account_rows(filtered_outreach_report_items(connection))
+    connection.close()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Account", "Activity Date", "Outcome", "Count"])
+    for row in rows:
+        writer.writerow([row["account_name"], row["activity_date"], row["outcome"], row["count"]])
+    response = Response(output.getvalue(), mimetype="text/csv")
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    response.headers["Content-Disposition"] = f"attachment; filename=outcome_breakdown_{timestamp}.csv"
+    return response
+
+
+@app.route("/reports/outreach/latest/export.csv")
+def export_outreach_latest_csv():
+    connection = get_db_connection()
+    rows = filtered_outreach_report_items(connection)[:10]
+    connection.close()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Date", "Due Date", "Status", "Account", "Contact", "Sales Play", "Activity Type", "Outcome"])
+    for row in rows:
+        writer.writerow([row["activity_date"], row["next_action_date"], row["task_status"], row["account_name"], row["contact_name"], row["sales_play"], row["activity_type"], row["outcome"]])
+    response = Response(output.getvalue(), mimetype="text/csv")
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    response.headers["Content-Disposition"] = f"attachment; filename=latest_outreach_{timestamp}.csv"
+    return response
+
+
+@app.route("/reports/outreach/outcome-breakdown/export.pdf")
+def export_outreach_outcome_breakdown_pdf():
+    connection = get_db_connection()
+    rows = outcome_breakdown_account_rows(filtered_outreach_report_items(connection))
+    connection.close()
+    try:
+        return send_simple_pdf(
+            "Outcome Breakdown",
+            ["Account", "Activity Date", "Outcome", "Count"],
+            [[row["account_name"], row["activity_date"], row["outcome"], row["count"]] for row in rows],
+            f"outcome_breakdown_{datetime.now().strftime('%Y-%m-%d_%H-%M')}.pdf",
+        )
+    except RuntimeError as exc:
+        return redirect(url_for("outreach_reports", error=str(exc)))
+
+
+@app.route("/reports/outreach/latest/export.pdf")
+def export_outreach_latest_pdf():
+    connection = get_db_connection()
+    rows = filtered_outreach_report_items(connection)[:10]
+    connection.close()
+    try:
+        return send_simple_pdf(
+            "Latest Outreach",
+            ["Date", "Due Date", "Status", "Account", "Contact", "Sales Play", "Type", "Outcome"],
+            [[row["activity_date"], row["next_action_date"], row["task_status"], row["account_name"], row["contact_name"], row["sales_play"], row["activity_type"], row["outcome"]] for row in rows],
+            f"latest_outreach_{datetime.now().strftime('%Y-%m-%d_%H-%M')}.pdf",
+        )
+    except RuntimeError as exc:
+        return redirect(url_for("outreach_reports", error=str(exc)))
 
 
 @app.route("/reports/outreach/export")

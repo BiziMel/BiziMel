@@ -74,9 +74,8 @@
             </div>
 
             <div class="form-group">
-                <label for="contact_id">Contact</label>
-                <select id="contact_id" name="contact_id">
-                    <option value="">Select contact</option>
+                <label for="contact_id">Contacts</label>
+                <select id="contact_id" name="contact_ids" multiple size="6">
                     {% for contact in contacts %}
                         <option value="{{ contact.id }}"
                                 data-account-id="{{ contact.account_id or '' }}"
@@ -85,7 +84,7 @@
                                 data-phone="{{ contact.phone or '' }}"
                                 data-linkedin="{{ contact.linkedin or '' }}"
                                 data-job-title="{{ contact.job_title or '' }}"
-                                {% if outreach_item.contact_id == contact.id %}selected{% endif %}>
+                                {% if contact.id|string in (selected_contact_values or []) or outreach_item.contact_id == contact.id %}selected{% endif %}>
                             {{ contact.name }}{% if contact.account_name %} - {{ contact.account_name }}{% endif %}
                         </option>
                     {% endfor %}
@@ -98,11 +97,12 @@
                                 data-linkedin="{{ partner_contact.linkedin or '' }}"
                                 data-job-title="{{ partner_contact.job_title or '' }}"
                                 data-partner-name="{{ partner_contact.partner_name or '' }}"
-                                {% if outreach_item.partner_contact_id == partner_contact.id %}selected{% endif %}>
+                                {% if 'partner_contact:' ~ partner_contact.id|string in (selected_contact_values or []) or outreach_item.partner_contact_id == partner_contact.id %}selected{% endif %}>
                             {{ partner_contact.name }} - Partner: {{ partner_contact.partner_name }}{% if partner_contact.account_name %} - {{ partner_contact.account_name }}{% endif %}
                         </option>
                     {% endfor %}
                 </select>
+                <p class="field-help">Hold Command on Mac or Ctrl on Windows to select more than one customer or partner contact.</p>
                 <a href="#" id="open_contact_record" target="_blank" class="btn btn-secondary btn-small contact-open-button" hidden>Open</a>
                 <div id="contact_system_fields" class="system-inline-fields contact-job-title-inline">Select a contact to show their job title.</div>
             </div>
