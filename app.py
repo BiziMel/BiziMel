@@ -45,7 +45,9 @@ RELEASE_NOTES = [
             "Enhanced Weekly Wrap Up with a Saturday to Friday window and more focused guidance for the following week.",
             "Enhanced Outreach Tasks so users can select multiple customer and partner contacts on one outreach task.",
             "Enhanced Outreach Tasks filters with Activity Due Date from and to fields.",
-            "Enhanced Outcome Reports so the account-grouped outcome breakdown and latest outreach can be exported as CSV or PDF.",
+            "Enhanced Outreach Reports so the compact filter uses Due Date instead of End Date.",
+            "Enhanced Insights Dashboard learning so account, contact and campaign signals are consolidated without duplicated AI wording.",
+            "Enhanced the User Guide with clearer step-by-step instructions and a full-guide PDF export button.",
         ],
         "fixed": [
             "Fixed Execution Insights so Recommended Move is distinct from What It Means and suggests a different activity, channel or stakeholder route.",
@@ -382,7 +384,8 @@ USER_GUIDE_SECTIONS = [
             "Use the pipeline target card to see total PG target ACV across your accounts.",
             "Open Weekly Wrap Up to read the two short paragraphs about what happened in the last seven days and where to focus next.",
             "Use the current-quarter outcome breakdown to see which outcomes are being recorded in the active fiscal quarter.",
-            "Use Execution Insights to decide which account, campaign or sales play needs attention next.",
+            "Use Execution Learning to decide which account, contact, campaign or sales play needs attention next.",
+            "Open the relevant record from the table and record a clear outcome after completing the recommended next move.",
             "Click metric cards such as Overdue Actions, Untouched Accounts or All Active Outreach to move into the related work list.",
         ],
         "tips": [
@@ -579,13 +582,15 @@ USER_GUIDE_SECTIONS = [
             "Open Reports from the top navigation.",
             "Use Account Reports to review account coverage and target values.",
             "Use Contact Reports to review stakeholder coverage.",
-            "Use Outreach Reports to review activity volume, account-grouped outcome breakdown by date and monthly meeting conversion.",
+            "Use Outreach Reports to review activity volume, account-grouped outcome breakdown by date, due-date filters and monthly meeting conversion.",
             "Use Task Reports to review due dates, overdue activity and ownership.",
             "Export PG Bible when you need the formatted workbook output.",
             "Use filters before exporting when the report supports narrowing by date, account, status or assignee.",
+            "Use the Export CSV button when you need the report data outside PipeFlow.",
         ],
         "tips": [
             "Reports reflect the same fields used across account, contact, outreach and task views.",
+            "Outreach Reports use Due Date to focus on when work must be completed, rather than campaign end date.",
             "PG Bible uses account target and ordering fields configured in the account form.",
             "Task Reports include SLA by assignee so timeliness is measured against the person currently assigned.",
         ],
@@ -865,7 +870,7 @@ PAGE_INSTRUCTIONS = {
             "Start with the command centre metrics to see what needs attention this week.",
             "Open Weekly Wrap Up for a short summary of recent execution and recommended focus for the next week.",
             "Outcome Breakdown is calculated for the current fiscal quarter configured by an admin.",
-            "Review execution insights for suggested next actions across accounts, campaigns and sales plays.",
+            "Review execution learning for suggested next actions across accounts, contacts, campaigns and sales plays.",
             "Use the top navigation to move into Outreach Tasks, Accounts, Contacts, Partners, Reports or Profile.",
         ],
     },
@@ -1188,7 +1193,7 @@ def page_instructions_for_endpoint(endpoint):
 
 @app.before_request
 def require_login_and_prepare_database():
-    public_endpoints = {"login", "register", "forgot_password", "reset_password", "release_notes", "user_guide", "user_guide_section", "storage_health", "static"}
+    public_endpoints = {"login", "register", "forgot_password", "reset_password", "release_notes", "user_guide", "user_guide_section", "export_user_guide_pdf", "storage_health", "static"}
     if request.endpoint in public_endpoints:
         return None
 
@@ -1251,6 +1256,102 @@ def user_guide():
         "user_guide.html",
         guide_sections=USER_GUIDE_SECTIONS,
         selected_section=None,
+    )
+
+
+@app.route("/user-guide/export.pdf")
+def export_user_guide_pdf():
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import mm
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+    except ImportError as exc:
+        return Response(
+            "PDF export is not available because the reportlab package is not installed.",
+            status=503,
+            mimetype="text/plain",
+        )
+
+    buffer = io.BytesIO()
+    document = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=16 * mm,
+        rightMargin=16 * mm,
+        topMargin=16 * mm,
+        bottomMargin=16 * mm,
+        title="PipeFlow User Guide",
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "PipeFlowGuideTitle",
+        parent=styles["Title"],
+        textColor=colors.HexColor("#12381f"),
+        spaceAfter=12,
+    )
+    section_style = ParagraphStyle(
+        "PipeFlowGuideSection",
+        parent=styles["Heading1"],
+        textColor=colors.HexColor("#0d5a2a"),
+        spaceBefore=8,
+        spaceAfter=8,
+    )
+    heading_style = ParagraphStyle(
+        "PipeFlowGuideHeading",
+        parent=styles["Heading2"],
+        textColor=colors.HexColor("#1f4c2d"),
+        spaceBefore=8,
+        spaceAfter=4,
+    )
+    body_style = ParagraphStyle(
+        "PipeFlowGuideBody",
+        parent=styles["BodyText"],
+        fontSize=9,
+        leading=12,
+        spaceAfter=5,
+    )
+
+    def clean_text(value):
+        return str(value or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    story = [
+        Paragraph("PipeFlow PG Manager User Guide", title_style),
+        Paragraph(
+            "A step-by-step guide for using PipeFlow to manage accounts, contacts, outreach, partners, reports, org charts and administration.",
+            body_style,
+        ),
+        Spacer(1, 8),
+    ]
+
+    for section_index, section in enumerate(USER_GUIDE_SECTIONS):
+        if section_index:
+            story.append(PageBreak())
+        story.append(Paragraph(clean_text(section["title"]), section_style))
+        story.append(Paragraph(clean_text(section.get("summary", "")), body_style))
+        if section.get("access"):
+            story.append(Paragraph("Access", heading_style))
+            story.append(Paragraph(clean_text(section["access"]), body_style))
+        if section.get("navigation"):
+            story.append(Paragraph("Navigation", heading_style))
+            for item in section["navigation"]:
+                story.append(Paragraph(f"- {clean_text(item)}", body_style))
+        story.append(Paragraph("How To Use This", heading_style))
+        for index, step in enumerate(section.get("steps", []), start=1):
+            story.append(Paragraph(f"{index}. {clean_text(step)}", body_style))
+        if section.get("tips"):
+            story.append(Paragraph("Good To Know", heading_style))
+            for tip in section["tips"]:
+                story.append(Paragraph(f"- {clean_text(tip)}", body_style))
+
+    document.build(story)
+    buffer.seek(0)
+    return send_file(
+        buffer,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"PipeFlow_User_Guide_{APP_VERSION}.pdf",
     )
 
 
@@ -2347,7 +2448,7 @@ def build_campaign_success_context(connection, account_id, contact_ids, sales_pl
         if row["outcome"] in POSITIVE_OUTCOMES:
             row_score += 8
             evidence[activity_type]["positive"] += 1
-        if row["outcome"] == "Meeting Booked" or is_meeting_activity_type(activity_type):
+        if is_meeting_outcome(row["outcome"]) or is_meeting_activity_type(activity_type):
             row_score += 5
             evidence[activity_type]["meeting"] += 1
         if row["outcome"] in NEGATIVE_OUTCOMES:
@@ -2589,6 +2690,10 @@ def build_pg_campaign_steps(pg_week_start):
 POSITIVE_OUTCOMES = (
     "Positive Response",
     "Meeting Booked",
+    "Discovery Meeting Booked",
+    "Follow-on Meeting Booked",
+    "Executive Meeting Booked",
+    "Partner Meeting Booked",
     "NBM Booked",
     "Referral Made",
     "Follow-up Required",
@@ -2613,8 +2718,25 @@ MEETING_ACTIVITY_TYPES = {
 }
 
 
+MEETING_OUTCOMES = {
+    "Meeting Booked",
+    "Discovery Meeting Booked",
+    "Follow-on Meeting Booked",
+    "Executive Meeting Booked",
+    "Partner Meeting Booked",
+}
+
+
 def is_meeting_activity_type(value):
     return (value or "").strip() in MEETING_ACTIVITY_TYPES
+
+
+def is_meeting_outcome(value):
+    return (value or "").strip() in MEETING_OUTCOMES
+
+
+def is_meeting_signal(row):
+    return is_meeting_outcome(row["outcome"]) or is_meeting_activity_type(row["activity_type"])
 
 
 def is_closed_task_status(status):
@@ -2663,8 +2785,12 @@ def build_execution_insights(ai_insights, learning_insights):
         category = insight.get("type", "Insight")
         title = insight.get("title", "")
         message = insight.get("message", "")
+        source = "Account Learning"
+        category_text = f"{category} {title} {message}".lower()
+        if any(term in category_text for term in ("contact", "relationship", "stakeholder", "engagement route")):
+            source = "Contact Learning"
         combined.append({
-            "source": "AI Insight",
+            "source": source,
             "category": category,
             "title": title,
             "message": message,
@@ -2785,16 +2911,18 @@ def deduplicate_execution_insights(insights):
 def build_learning_insights(connection):
     positive_placeholders = ",".join("?" for _ in POSITIVE_OUTCOMES)
     negative_placeholders = ",".join("?" for _ in NEGATIVE_OUTCOMES)
+    meeting_outcome_placeholders = ",".join("?" for _ in MEETING_OUTCOMES)
+    meeting_activity_placeholders = ",".join("?" for _ in MEETING_ACTIVITY_TYPES)
     learning_select = f"""
         COUNT(outreach.id) AS total,
         SUM(CASE
             WHEN outreach.outcome IN ({positive_placeholders})
-              OR outreach.activity_type IN ('Meeting', 'Meeting Booked', 'Discovery Meeting', 'NBM Booked')
+              OR outreach.activity_type IN ({meeting_activity_placeholders})
             THEN 1 ELSE 0
         END) AS positive_total,
         SUM(CASE
-            WHEN outreach.outcome = 'Meeting Booked'
-              OR outreach.activity_type IN ('Meeting', 'Meeting Booked', 'Discovery Meeting', 'NBM Booked')
+            WHEN outreach.outcome IN ({meeting_outcome_placeholders})
+              OR outreach.activity_type IN ({meeting_activity_placeholders})
             THEN 1 ELSE 0
         END) AS meeting_total,
         SUM(CASE
@@ -2807,7 +2935,7 @@ def build_learning_insights(connection):
         END) AS completed_total,
         0 AS overdue_total
     """
-    learning_params = (*POSITIVE_OUTCOMES, *NEGATIVE_OUTCOMES)
+    learning_params = (*POSITIVE_OUTCOMES, *MEETING_ACTIVITY_TYPES, *MEETING_OUTCOMES, *MEETING_ACTIVITY_TYPES, *NEGATIVE_OUTCOMES)
     insights = []
 
     sales_play_rows = add_learning_score(connection.execute(f"""
@@ -3129,7 +3257,7 @@ def build_dashboard_response(connection):
                 this_week_completed += 1
 
         if activity_date and week_start <= activity_date <= week_end:
-            if row["outcome"] == "Meeting Booked" or is_meeting_activity_type(row["activity_type"]):
+            if is_meeting_signal(row):
                 this_week_meetings_booked += 1
 
     this_week_untouched_accounts = connection.execute("""
@@ -3147,11 +3275,13 @@ def build_dashboard_response(connection):
         )
     """).fetchone()[0]
 
-    meetings_booked = connection.execute("""
+    meeting_outcome_placeholders = ",".join("?" for _ in MEETING_OUTCOMES)
+    meeting_activity_placeholders = ",".join("?" for _ in MEETING_ACTIVITY_TYPES)
+    meetings_booked = connection.execute(f"""
         SELECT COUNT(*) FROM outreach
-        WHERE outcome = 'Meeting Booked'
-           OR activity_type IN ('Meeting', 'Meeting Booked', 'Discovery Meeting', 'NBM Booked')
-    """).fetchone()[0]
+        WHERE outcome IN ({meeting_outcome_placeholders})
+           OR activity_type IN ({meeting_activity_placeholders})
+    """, (*MEETING_OUTCOMES, *MEETING_ACTIVITY_TYPES)).fetchone()[0]
 
     follow_ups_due = connection.execute("""
         SELECT COUNT(*) FROM outreach
@@ -3251,7 +3381,7 @@ def build_dashboard_response(connection):
                 FROM outreach
                 WHERE outreach.account_id = accounts.id
                   AND (
-                        outreach.outcome = 'Meeting Booked'
+                        outreach.outcome IN ('Meeting Booked', 'Discovery Meeting Booked', 'Follow-on Meeting Booked', 'Executive Meeting Booked', 'Partner Meeting Booked')
                      OR outreach.activity_type IN ('Meeting', 'Meeting Booked', 'Discovery Meeting', 'NBM Booked')
                   )
             ) AS meeting_count,
@@ -4361,7 +4491,7 @@ def accounts():
                 FROM outreach
                 WHERE outreach.account_id = accounts.id
                   AND (
-                        outreach.outcome = 'Meeting Booked'
+                        outreach.outcome IN ('Meeting Booked', 'Discovery Meeting Booked', 'Follow-on Meeting Booked', 'Executive Meeting Booked', 'Partner Meeting Booked')
                      OR outreach.activity_type IN ('Meeting', 'Meeting Booked', 'Discovery Meeting', 'NBM Booked')
                   )
             ) AS meeting_count,
@@ -5009,7 +5139,7 @@ def view_account(account_id):
                 FROM outreach
                 WHERE outreach.account_id = accounts.id
                   AND (
-                        outreach.outcome = 'Meeting Booked'
+                        outreach.outcome IN ('Meeting Booked', 'Discovery Meeting Booked', 'Follow-on Meeting Booked', 'Executive Meeting Booked', 'Partner Meeting Booked')
                      OR outreach.activity_type IN ('Meeting', 'Meeting Booked', 'Discovery Meeting', 'NBM Booked')
                   )
             ) AS meeting_count,
@@ -9216,7 +9346,7 @@ def build_pg_bible_report_from_db(connection):
             FROM outreach
             WHERE contact_id = ?
               AND (
-                    outcome = 'Meeting Booked'
+                    outcome IN ('Meeting Booked', 'Discovery Meeting Booked', 'Follow-on Meeting Booked', 'Executive Meeting Booked', 'Partner Meeting Booked')
                  OR activity_type IN ('Meeting', 'Meeting Booked', 'Discovery Meeting', 'NBM Booked')
               )
         """, (contact["id"],)).fetchone()[0]
@@ -9278,8 +9408,8 @@ def build_pg_bible_report_from_db(connection):
                 "pipeline_generated_value": 0,
             }
         totals = weekly_totals[week_key]
-        is_meeting_booked = row["outcome"] == "Meeting Booked"
-        is_pipeline_outcome = row["outcome"] in ("Meeting Booked", "Positive Response", "Referral Made")
+        is_meeting_booked = is_meeting_outcome(row["outcome"])
+        is_pipeline_outcome = is_meeting_booked or row["outcome"] in ("Positive Response", "Referral Made")
         if row["activity_type"] == "VITO":
             totals["vitos_sent"] += 1
             if row["outcome"] != "No Response Yet":
@@ -9810,7 +9940,7 @@ def outreach_reports():
     connection = get_db_connection()
 
     selected_start_date = request.args.get("start_date", "")
-    selected_end_date = request.args.get("end_date", "")
+    selected_due_date = request.args.get("due_date", "")
     selected_account = request.args.get("account_id", "")
     selected_activity_type = request.args.get("activity_type", "")
     selected_outcome = request.args.get("outcome", "")
@@ -9871,13 +10001,14 @@ def outreach_reports():
             return None
 
     start_date = parse_report_date(selected_start_date)
-    end_date = parse_report_date(selected_end_date)
+    due_date = parse_report_date(selected_due_date)
 
     def include_item(item):
         activity_date = parse_report_date(item["activity_date"])
+        item_due_date = parse_report_date(item["next_action_date"])
         if start_date and (not activity_date or activity_date < start_date):
             return False
-        if end_date and (not activity_date or activity_date > end_date):
+        if due_date and item_due_date != due_date:
             return False
         if selected_account and str(item["account_id"] or "") != selected_account:
             return False
@@ -9891,7 +10022,7 @@ def outreach_reports():
     total_outreach = len(filtered_outreach)
     meetings_booked = sum(
         1 for item in filtered_outreach
-        if item["outcome"] == "Meeting Booked" or is_meeting_activity_type(item["activity_type"])
+        if is_meeting_signal(item)
     )
     meeting_conversion_total = meetings_booked
 
@@ -9914,7 +10045,7 @@ def outreach_reports():
             if month not in monthly_totals:
                 monthly_totals[month] = {"total_outreach": 0, "meetings_booked": 0}
             monthly_totals[month]["total_outreach"] += 1
-            if item["outcome"] == "Meeting Booked" or is_meeting_activity_type(item["activity_type"]):
+            if is_meeting_signal(item):
                 monthly_totals[month]["meetings_booked"] += 1
 
     outcome_breakdown = [
@@ -9959,7 +10090,7 @@ def outreach_reports():
         activity_types=activity_types,
         outcomes=outcomes,
         selected_start_date=selected_start_date,
-        selected_end_date=selected_end_date,
+        selected_due_date=selected_due_date,
         selected_account=selected_account,
         selected_activity_type=selected_activity_type,
         selected_outcome=selected_outcome,
@@ -9971,168 +10102,7 @@ def outreach_reports():
         monthly_outreach_data=[item["total_outreach"] for item in monthly_trends],
         monthly_meetings_data=[item["meetings_booked"] for item in monthly_trends],
         monthly_conversion_data=[item["meeting_conversion"] for item in monthly_trends],
-    )
-
-
-def filtered_outreach_report_items(connection):
-    selected_start_date = request.args.get("start_date", "")
-    selected_end_date = request.args.get("end_date", "")
-    selected_account = request.args.get("account_id", "")
-    selected_activity_type = request.args.get("activity_type", "")
-    selected_outcome = request.args.get("outcome", "")
-
-    rows = connection.execute("""
-        SELECT
-            outreach.id,
-            outreach.account_id,
-            outreach.activity_date,
-            outreach.activity_time,
-            outreach.next_action_date,
-            outreach.next_action_time,
-            outreach.activity_type,
-            outreach.outcome,
-            outreach.task_status,
-            outreach.sales_play,
-            outreach.fy,
-            outreach.quarter,
-            accounts.account_name,
-            accounts.account_tier,
-            contacts.name AS contact_name
-        FROM outreach
-        LEFT JOIN accounts ON outreach.account_id = accounts.id
-        LEFT JOIN contacts ON outreach.contact_id = contacts.id
-        ORDER BY outreach.activity_date DESC, outreach.activity_time DESC, outreach.id DESC
-    """).fetchall()
-
-    def parse_report_date(value):
-        return parse_iso_date(value)
-
-    start_date = parse_report_date(selected_start_date)
-    end_date = parse_report_date(selected_end_date)
-
-    def include_item(item):
-        activity_date = parse_report_date(item["activity_date"])
-        if start_date and (not activity_date or activity_date < start_date):
-            return False
-        if end_date and (not activity_date or activity_date > end_date):
-            return False
-        if selected_account and str(item["account_id"] or "") != selected_account:
-            return False
-        if selected_activity_type and (item["activity_type"] or "") != selected_activity_type:
-            return False
-        if selected_outcome and (item["outcome"] or "") != selected_outcome:
-            return False
-        return True
-
-    return [dict(item) for item in rows if include_item(item)]
-
-
-def outcome_breakdown_account_rows(items):
-    totals = {}
-    for item in items:
-        activity_date = parse_iso_date(item.get("activity_date"))
-        if not activity_date:
-            continue
-        key = (item.get("account_name") or "Unknown", activity_date.isoformat(), item.get("outcome") or "Unknown")
-        totals[key] = totals.get(key, 0) + 1
-    return [
-        {"account_name": account_name, "activity_date": activity_date, "outcome": outcome, "count": count}
-        for (account_name, activity_date, outcome), count in sorted(
-            totals.items(),
-            key=lambda item: (item[0][0].lower(), item[0][1], item[0][2]),
-        )
-    ]
-
-
-def send_simple_pdf(title, headers, rows, filename):
-    try:
-        from reportlab.lib import colors
-        from reportlab.lib.pagesizes import landscape, A4
-        from reportlab.lib.styles import getSampleStyleSheet
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-    except ImportError as exc:
-        raise RuntimeError("PDF export is not available because the reportlab package is not installed.") from exc
-    buffer = io.BytesIO()
-    document = SimpleDocTemplate(buffer, pagesize=landscape(A4), leftMargin=24, rightMargin=24, topMargin=24, bottomMargin=24)
-    styles = getSampleStyleSheet()
-    table_data = [headers] + rows
-    table = Table(table_data, repeatRows=1)
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#dfeedd")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#18381f")),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cbd8cb")),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-    ]))
-    document.build([Paragraph(title, styles["Title"]), Spacer(1, 12), table])
-    buffer.seek(0)
-    return send_file(buffer, mimetype="application/pdf", as_attachment=True, download_name=filename)
-
-
-@app.route("/reports/outreach/outcome-breakdown/export.csv")
-def export_outreach_outcome_breakdown_csv():
-    connection = get_db_connection()
-    rows = outcome_breakdown_account_rows(filtered_outreach_report_items(connection))
-    connection.close()
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["Account", "Activity Date", "Outcome", "Count"])
-    for row in rows:
-        writer.writerow([row["account_name"], row["activity_date"], row["outcome"], row["count"]])
-    response = Response(output.getvalue(), mimetype="text/csv")
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    response.headers["Content-Disposition"] = f"attachment; filename=outcome_breakdown_{timestamp}.csv"
-    return response
-
-
-@app.route("/reports/outreach/latest/export.csv")
-def export_outreach_latest_csv():
-    connection = get_db_connection()
-    rows = filtered_outreach_report_items(connection)[:10]
-    connection.close()
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["Date", "Due Date", "Status", "Account", "Contact", "Sales Play", "Activity Type", "Outcome"])
-    for row in rows:
-        writer.writerow([row["activity_date"], row["next_action_date"], row["task_status"], row["account_name"], row["contact_name"], row["sales_play"], row["activity_type"], row["outcome"]])
-    response = Response(output.getvalue(), mimetype="text/csv")
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    response.headers["Content-Disposition"] = f"attachment; filename=latest_outreach_{timestamp}.csv"
-    return response
-
-
-@app.route("/reports/outreach/outcome-breakdown/export.pdf")
-def export_outreach_outcome_breakdown_pdf():
-    connection = get_db_connection()
-    rows = outcome_breakdown_account_rows(filtered_outreach_report_items(connection))
-    connection.close()
-    try:
-        return send_simple_pdf(
-            "Outcome Breakdown",
-            ["Account", "Activity Date", "Outcome", "Count"],
-            [[row["account_name"], row["activity_date"], row["outcome"], row["count"]] for row in rows],
-            f"outcome_breakdown_{datetime.now().strftime('%Y-%m-%d_%H-%M')}.pdf",
-        )
-    except RuntimeError as exc:
-        return redirect(url_for("outreach_reports", error=str(exc)))
-
-
-@app.route("/reports/outreach/latest/export.pdf")
-def export_outreach_latest_pdf():
-    connection = get_db_connection()
-    rows = filtered_outreach_report_items(connection)[:10]
-    connection.close()
-    try:
-        return send_simple_pdf(
-            "Latest Outreach",
-            ["Date", "Due Date", "Status", "Account", "Contact", "Sales Play", "Type", "Outcome"],
-            [[row["activity_date"], row["next_action_date"], row["task_status"], row["account_name"], row["contact_name"], row["sales_play"], row["activity_type"], row["outcome"]] for row in rows],
-            f"latest_outreach_{datetime.now().strftime('%Y-%m-%d_%H-%M')}.pdf",
-        )
-    except RuntimeError as exc:
-        return redirect(url_for("outreach_reports", error=str(exc)))
+)
 
 
 @app.route("/reports/outreach/export")

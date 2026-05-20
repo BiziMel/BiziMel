@@ -306,6 +306,37 @@ input[type="submit"]:hover {
     font-size: 13px;
 }
 
+.compact-report-filter {
+    padding: 16px;
+}
+
+.compact-report-filter h3 {
+    margin-bottom: 4px;
+}
+
+.compact-report-filter .filter-form {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.compact-report-filter .filter-field label {
+    font-size: 12px;
+    margin-bottom: 4px;
+}
+
+.compact-report-filter select,
+.compact-report-filter input {
+    min-height: 36px;
+    padding: 8px 10px;
+    font-size: 13px;
+    border-radius: 8px;
+}
+
+.compact-report-filter .button-group {
+    gap: 8px;
+}
+
 .checkbox-dropdown {
     position: relative;
     width: 100%;
@@ -2097,6 +2128,11 @@ a:hover {
 .guide-topic-card .btn {
     width: fit-content;
     margin-top: auto;
+}
+
+.guide-header-actions {
+    align-items: center;
+    justify-content: flex-end;
 }
 
 .guide-article h2 {

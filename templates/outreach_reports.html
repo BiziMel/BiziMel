@@ -7,52 +7,58 @@
 <div class="button-group">
     <a href="/reports" class="btn btn-secondary">Back to Reports</a>
     <a href="{{ url_for('export_outreach_reports') }}" class="btn btn-primary">Export CSV</a>
-    <a href="{{ url_for('export_outreach_outcome_breakdown_csv', start_date=selected_start_date, end_date=selected_end_date, account_id=selected_account, activity_type=selected_activity_type, outcome=selected_outcome) }}" class="btn btn-secondary">Outcome CSV</a>
-    <a href="{{ url_for('export_outreach_outcome_breakdown_pdf', start_date=selected_start_date, end_date=selected_end_date, account_id=selected_account, activity_type=selected_activity_type, outcome=selected_outcome) }}" class="btn btn-secondary">Outcome PDF</a>
-    <a href="{{ url_for('export_outreach_latest_csv', start_date=selected_start_date, end_date=selected_end_date, account_id=selected_account, activity_type=selected_activity_type, outcome=selected_outcome) }}" class="btn btn-secondary">Latest CSV</a>
-    <a href="{{ url_for('export_outreach_latest_pdf', start_date=selected_start_date, end_date=selected_end_date, account_id=selected_account, activity_type=selected_activity_type, outcome=selected_outcome) }}" class="btn btn-secondary">Latest PDF</a>
 </div>
 
-<div class="report-card">
+<div class="report-card compact-report-filter">
     <h3>Filters</h3>
 
-    <form method="get" action="/reports/outreach" class="filter-form">
+    <form method="get" action="/reports/outreach" class="filter-form compact-filter-form">
 
-        <label>Start Date</label>
-        <input type="date" name="start_date" value="{{ selected_start_date }}">
+        <div class="filter-field">
+            <label>Start Date</label>
+            <input type="date" name="start_date" value="{{ selected_start_date }}">
+        </div>
 
-        <label>End Date</label>
-        <input type="date" name="end_date" value="{{ selected_end_date }}">
+        <div class="filter-field">
+            <label>Due Date</label>
+            <input type="date" name="due_date" value="{{ selected_due_date }}">
+        </div>
 
-        <label>Account</label>
-        <select name="account_id">
-            <option value="">All Accounts</option>
-            {% for account in accounts %}
-                <option value="{{ account['id'] }}" {% if selected_account == account['id']|string %}selected{% endif %}>
-                    {{ account['account_name'] }}
-                </option>
-            {% endfor %}
-        </select>
+        <div class="filter-field">
+            <label>Account</label>
+            <select name="account_id">
+                <option value="">All Accounts</option>
+                {% for account in accounts %}
+                    <option value="{{ account['id'] }}" {% if selected_account == account['id']|string %}selected{% endif %}>
+                        {{ account['account_name'] }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
 
-        <label>Activity Type</label>
-        <select name="activity_type">
-            <option value="">All Activity Types</option>
-            {% for item in activity_types %}
-                <option value="{{ item['activity_type'] }}" {% if selected_activity_type == item['activity_type'] %}selected{% endif %}>
-                    {{ item['activity_type'] }}
-                </option>
-            {% endfor %}
-        </select>
+        <div class="filter-field">
+            <label>Activity Type</label>
+            <select name="activity_type">
+                <option value="">All Activity Types</option>
+                {% for item in activity_types %}
+                    <option value="{{ item['activity_type'] }}" {% if selected_activity_type == item['activity_type'] %}selected{% endif %}>
+                        {{ item['activity_type'] }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
 
-        <label>Outcome</label>
-        <select name="outcome">
-            <option value="">All Outcomes</option>
-            {% for item in outcomes %}
-                <option value="{{ item['outcome'] }}" {% if selected_outcome == item['outcome'] %}selected{% endif %}>
-                    {{ item['outcome'] }}
-                </option>
-            {% endfor %}
-        </select>
+        <div class="filter-field">
+            <label>Outcome</label>
+            <select name="outcome">
+                <option value="">All Outcomes</option>
+                {% for item in outcomes %}
+                    <option value="{{ item['outcome'] }}" {% if selected_outcome == item['outcome'] %}selected{% endif %}>
+                        {{ item['outcome'] }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
 
         <div class="button-group">
             <button type="submit" class="btn btn-primary">Apply Filters</button>
