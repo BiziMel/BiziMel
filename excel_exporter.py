@@ -343,6 +343,8 @@ class PGBibleExporter:
             return
         expected_start = 33
         shift = preceding_region.end_row - 29
+        if following_region_name in self.sections:
+            self.sections[following_region_name].row = 31 + shift
         following.header_rows = {row + shift for row in {31, 32}}
         following.start_row = expected_start + shift
         following.end_row = 79 + shift
@@ -741,9 +743,16 @@ class PGBibleExporter:
         return {
             "merges": sorted(str(rng) for rng in ws.merged_cells.ranges),
             "column_widths": {col: ws.column_dimensions[get_column_letter(col)].width for col in range(1, ws.max_column + 1)},
-            "row_heights": {row: ws.row_dimensions[row].height for row in range(1, ws.max_row + 1)},
+            "row_heights": {
+                row: self._normal_dimension(ws.row_dimensions[row].height)
+                for row in range(1, ws.max_row + 1)
+                if ws.row_dimensions[row].height is not None
+            },
             "header_strings": self._header_strings(ws),
         }
+
+    def _normal_dimension(self, value: Any) -> str:
+        return "" if value is None else f"{float(value):.3f}"
 
     def _header_strings(self, ws) -> dict[str, str]:
         protected_rows = set()
@@ -754,10 +763,18 @@ class PGBibleExporter:
         values = {}
         for row in protected_rows:
             for col in range(1, ws.max_column + 1):
+                if not self._is_merge_anchor_or_unmerged(ws, row, col):
+                    continue
                 value = ws.cell(row, col).value
                 if isinstance(value, str) and value.strip():
                     values[f"{row}:{col}"] = value
         return values
+
+    def _is_merge_anchor_or_unmerged(self, ws, row: int, col: int) -> bool:
+        for merged in ws.merged_cells.ranges:
+            if merged.min_row <= row <= merged.max_row and merged.min_col <= col <= merged.max_col:
+                return row == merged.min_row and col == merged.min_col
+        return True
 
     def _copy_row_style(self, ws, source_row: int, target_row: int) -> None:
         source_merges = [

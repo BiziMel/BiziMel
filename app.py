@@ -9,6 +9,7 @@ import re
 import json
 import secrets
 import hashlib
+import traceback
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
@@ -9588,6 +9589,13 @@ def export_pg_bible():
         return Response(
             f"{exc.error_code}: {exc.human_message}\n" + "\n".join(exc.details),
             status=400,
+            mimetype="text/plain",
+        )
+    except Exception as exc:
+        traceback.print_exc()
+        return Response(
+            f"PG Bible export failed: {type(exc).__name__}: {exc}",
+            status=500,
             mimetype="text/plain",
         )
 
