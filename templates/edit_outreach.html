@@ -255,11 +255,73 @@
         })) : [];
         const openContactButton = document.getElementById("open_contact_record");
         const contactSystemFields = document.getElementById("contact_system_fields");
+        let refreshContactPicker = () => {};
         if (!accountSelect || !contactSelect) return;
+
+        function selectedContactOptions() {
+            return Array.from(contactSelect.options).filter((option) => option.selected && option.value && !option.disabled && !option.hidden);
+        }
+
+        function buildContactPicker() {
+            const picker = document.createElement("div");
+            picker.className = "contact-checkbox-picker";
+            const trigger = document.createElement("button");
+            trigger.type = "button";
+            trigger.className = "contact-picker-trigger";
+            const panel = document.createElement("div");
+            panel.className = "contact-picker-panel";
+            panel.hidden = true;
+            picker.appendChild(trigger);
+            picker.appendChild(panel);
+            contactSelect.classList.add("native-multi-select-hidden");
+            contactSelect.insertAdjacentElement("afterend", picker);
+
+            refreshContactPicker = function () {
+                const selected = selectedContactOptions();
+                trigger.textContent = selected.length
+                    ? selected.map((option) => option.textContent.trim()).join(", ")
+                    : "Select contacts";
+                trigger.style.minHeight = selected.length > 1 ? "auto" : "";
+                panel.innerHTML = "";
+                Array.from(contactSelect.options)
+                    .filter((option) => option.value && !option.hidden && !option.disabled)
+                    .forEach((option) => {
+                        const label = document.createElement("label");
+                        label.className = "contact-picker-option";
+                        const checkbox = document.createElement("input");
+                        checkbox.type = "checkbox";
+                        checkbox.checked = option.selected;
+                        checkbox.addEventListener("change", () => {
+                            option.selected = checkbox.checked;
+                            contactSelect.dispatchEvent(new Event("change", { bubbles: true }));
+                        });
+                        const span = document.createElement("span");
+                        span.textContent = option.textContent.trim();
+                        label.appendChild(checkbox);
+                        label.appendChild(span);
+                        panel.appendChild(label);
+                    });
+                if (!panel.children.length) {
+                    const empty = document.createElement("p");
+                    empty.className = "field-help";
+                    empty.textContent = accountSelect.value ? "No contacts are available for this account." : "Select an account first.";
+                    panel.appendChild(empty);
+                }
+            };
+
+            trigger.addEventListener("click", () => {
+                panel.hidden = !panel.hidden;
+            });
+            document.addEventListener("click", (event) => {
+                if (!picker.contains(event.target)) {
+                    panel.hidden = true;
+                }
+            });
+        }
 
         function applyContactFilter() {
             const selectedAccountId = accountSelect.value;
-            let selectedContactStillValid = !contactSelect.value;
+            let selectedContactStillValid = selectedContactOptions().length === 0;
 
             Array.from(contactSelect.options).forEach((option) => {
                 if (!option.value) {
@@ -273,11 +335,15 @@
                 option.disabled = !belongsToSelectedAccount;
                 if (option.selected && belongsToSelectedAccount) {
                     selectedContactStillValid = true;
+                } else if (option.selected && !belongsToSelectedAccount) {
+                    option.selected = false;
                 }
             });
 
             if (!selectedContactStillValid) {
-                contactSelect.value = "";
+                Array.from(contactSelect.options).forEach((option) => {
+                    option.selected = false;
+                });
             }
 
             contactSelect.disabled = !selectedAccountId;
@@ -292,8 +358,8 @@
                     });
             }
             if (openContactButton) {
-                if (contactSelect.value) {
-                    const selectedContact = contactSelect.options[contactSelect.selectedIndex];
+                const selectedContact = selectedContactOptions()[0];
+                if (selectedContact) {
                     openContactButton.href = selectedContact ? selectedContact.dataset.contactUrl || "#" : "#";
                     openContactButton.hidden = false;
                 } else {
@@ -301,15 +367,19 @@
                 }
             }
             if (contactSystemFields) {
-                const selectedContact = contactSelect.options[contactSelect.selectedIndex];
-                const jobTitle = selectedContact ? selectedContact.dataset.jobTitle || "" : "";
-                const partnerName = selectedContact ? selectedContact.dataset.partnerName || "" : "";
-                contactSystemFields.innerHTML = contactSelect.value
-                    ? `<span>${partnerName ? "Partner contact" : "Customer contact"}${partnerName ? `: ${partnerName}` : ""}</span><span>Job title: ${jobTitle || "Not set"}</span>`
+                const selected = selectedContactOptions();
+                contactSystemFields.innerHTML = selected.length
+                    ? selected.map((selectedContact) => {
+                        const jobTitle = selectedContact.dataset.jobTitle || "";
+                        const partnerName = selectedContact.dataset.partnerName || "";
+                        return `<span>${partnerName ? "Partner contact" : "Customer contact"}${partnerName ? `: ${partnerName}` : ""}</span><span>Job title: ${jobTitle || "Not set"}</span>`;
+                    }).join("")
                     : "Select a contact to show their job title.";
             }
+            refreshContactPicker();
         }
 
+        buildContactPicker();
         accountSelect.addEventListener("change", applyContactFilter);
         contactSelect.addEventListener("change", applyContactFilter);
         applyContactFilter();

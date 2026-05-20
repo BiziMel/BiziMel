@@ -119,6 +119,30 @@
         </div>
     </div>
 
+    <form method="get" action="{{ url_for('export_outreach_outcome_breakdown_csv') }}" class="mini-report-filter-form">
+        <input type="date" name="start_date" value="{{ selected_start_date }}" aria-label="Start date">
+        <input type="date" name="due_date" value="{{ selected_due_date }}" aria-label="Due date">
+        <select name="account_id" aria-label="Account">
+            <option value="">All Accounts</option>
+            {% for account in accounts %}
+                <option value="{{ account['id'] }}" {% if selected_account == account['id']|string %}selected{% endif %}>{{ account['account_name'] }}</option>
+            {% endfor %}
+        </select>
+        <select name="activity_type" aria-label="Activity type">
+            <option value="">All Activity Types</option>
+            {% for item in activity_types %}
+                <option value="{{ item['activity_type'] }}" {% if selected_activity_type == item['activity_type'] %}selected{% endif %}>{{ item['activity_type'] }}</option>
+            {% endfor %}
+        </select>
+        <select name="outcome" aria-label="Outcome">
+            <option value="">All Outcomes</option>
+            {% for item in outcomes %}
+                <option value="{{ item['outcome'] }}" {% if selected_outcome == item['outcome'] %}selected{% endif %}>{{ item['outcome'] }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-primary btn-small">Export Outcome CSV</button>
+    </form>
+
     <div class="table-container">
         <table class="report-table">
             <thead>
@@ -155,6 +179,30 @@
             <p>Most recent outreach activity for the selected filters.</p>
         </div>
     </div>
+
+    <form method="get" action="{{ url_for('export_outreach_latest_csv') }}" class="mini-report-filter-form">
+        <input type="date" name="start_date" value="{{ selected_start_date }}" aria-label="Start date">
+        <input type="date" name="due_date" value="{{ selected_due_date }}" aria-label="Due date">
+        <select name="account_id" aria-label="Account">
+            <option value="">All Accounts</option>
+            {% for account in accounts %}
+                <option value="{{ account['id'] }}" {% if selected_account == account['id']|string %}selected{% endif %}>{{ account['account_name'] }}</option>
+            {% endfor %}
+        </select>
+        <select name="activity_type" aria-label="Activity type">
+            <option value="">All Activity Types</option>
+            {% for item in activity_types %}
+                <option value="{{ item['activity_type'] }}" {% if selected_activity_type == item['activity_type'] %}selected{% endif %}>{{ item['activity_type'] }}</option>
+            {% endfor %}
+        </select>
+        <select name="outcome" aria-label="Outcome">
+            <option value="">All Outcomes</option>
+            {% for item in outcomes %}
+                <option value="{{ item['outcome'] }}" {% if selected_outcome == item['outcome'] %}selected{% endif %}>{{ item['outcome'] }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-primary btn-small">Export Latest CSV</button>
+    </form>
 
     <div class="table-container">
         <table class="report-table">

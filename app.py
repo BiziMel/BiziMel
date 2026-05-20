@@ -46,6 +46,8 @@ RELEASE_NOTES = [
             "Enhanced Outreach Tasks so users can select multiple customer and partner contacts on one outreach task.",
             "Enhanced Outreach Tasks filters with Activity Due Date from and to fields.",
             "Enhanced Outreach Reports so the compact filter uses Due Date instead of End Date.",
+            "Enhanced Outreach and campaign forms so multi-contact selection uses a closed checkbox picker that expands only when selected.",
+            "Enhanced Org Charts with contact-type colour coding so relationship types are easier to scan.",
             "Enhanced Insights Dashboard learning so account, contact and campaign signals are consolidated without duplicated AI wording.",
             "Enhanced the User Guide with clearer step-by-step instructions and a full-guide PDF export button.",
         ],
@@ -53,6 +55,7 @@ RELEASE_NOTES = [
             "Fixed Execution Insights so Recommended Move is distinct from What It Means and suggests a different activity, channel or stakeholder route.",
             "Fixed campaign scheduling so tasks created for the submit date never start earlier than the campaign submit time.",
             "Fixed meeting booked metrics so one multi-contact outreach task counts as one meeting activity metric.",
+            "Fixed Outcome Reports by restoring Outcome Breakdown CSV and Latest Outreach CSV exports with compact filters above each report.",
             "Fixed intermittent Outreach navigation errors by normalising missing partner contact fields and multi-contact summaries before rendering.",
         ],
         "sub_releases": [],
@@ -5634,6 +5637,8 @@ def orgchart_contacts_for_account(connection, account_id):
             id,
             name,
             job_title,
+            category,
+            bmc_relationship,
             COALESCE(NULLIF(org_dept, ''), '') AS org_dept
         FROM contacts
         WHERE account_id = ?
@@ -5664,6 +5669,7 @@ def orgchart_json_payload(connection, account_id):
                 "name": contact["name"] or "Unknown contact",
                 "job_title": contact["job_title"] or "Job title not set",
                 "org_dept": contact["org_dept"] or "",
+                "contact_type": contact["bmc_relationship"] or contact["category"] or "Unclassified",
             }
             for contact in contacts
         ],
@@ -10102,7 +10108,125 @@ def outreach_reports():
         monthly_outreach_data=[item["total_outreach"] for item in monthly_trends],
         monthly_meetings_data=[item["meetings_booked"] for item in monthly_trends],
         monthly_conversion_data=[item["meeting_conversion"] for item in monthly_trends],
-)
+    )
+
+
+def filtered_outreach_report_items(connection):
+    selected_start_date = request.args.get("start_date", "")
+    selected_due_date = request.args.get("due_date", "")
+    selected_account = request.args.get("account_id", "")
+    selected_activity_type = request.args.get("activity_type", "")
+    selected_outcome = request.args.get("outcome", "")
+
+    rows = connection.execute("""
+        SELECT
+            outreach.id,
+            outreach.account_id,
+            outreach.activity_date,
+            outreach.activity_time,
+            outreach.next_action_date,
+            outreach.next_action_time,
+            outreach.activity_type,
+            outreach.outcome,
+            outreach.task_status,
+            outreach.sales_play,
+            outreach.fy,
+            outreach.quarter,
+            accounts.account_name,
+            accounts.account_tier,
+            contacts.name AS contact_name
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
+        ORDER BY outreach.activity_date DESC, outreach.activity_time DESC, outreach.id DESC
+    """).fetchall()
+
+    start_date = parse_iso_date(selected_start_date)
+    due_date = parse_iso_date(selected_due_date)
+
+    def include_item(item):
+        activity_date = parse_iso_date(item["activity_date"])
+        item_due_date = parse_iso_date(item["next_action_date"])
+        if start_date and (not activity_date or activity_date < start_date):
+            return False
+        if due_date and item_due_date != due_date:
+            return False
+        if selected_account and str(item["account_id"] or "") != selected_account:
+            return False
+        if selected_activity_type and (item["activity_type"] or "") != selected_activity_type:
+            return False
+        if selected_outcome and (item["outcome"] or "") != selected_outcome:
+            return False
+        return True
+
+    return [dict(item) for item in rows if include_item(item)]
+
+
+def outcome_breakdown_account_rows(items):
+    totals = {}
+    for item in items:
+        activity_date = parse_iso_date(item.get("activity_date"))
+        if not activity_date:
+            continue
+        key = (
+            item.get("account_name") or "Unknown",
+            activity_date.isoformat(),
+            item.get("outcome") or "Unknown",
+        )
+        totals[key] = totals.get(key, 0) + 1
+    return [
+        {"account_name": account_name, "activity_date": activity_date, "outcome": outcome, "count": count}
+        for (account_name, activity_date, outcome), count in sorted(
+            totals.items(),
+            key=lambda item: (item[0][0].lower(), item[0][1], item[0][2]),
+        )
+    ]
+
+
+@app.route("/reports/outreach/outcome-breakdown/export.csv")
+def export_outreach_outcome_breakdown_csv():
+    connection = get_db_connection()
+    rows = outcome_breakdown_account_rows(filtered_outreach_report_items(connection))
+    connection.close()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Account", "Activity Date", "Outcome", "Count"])
+    for row in rows:
+        writer.writerow([row["account_name"], row["activity_date"], row["outcome"], row["count"]])
+
+    response = Response(output.getvalue(), mimetype="text/csv")
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    response.headers["Content-Disposition"] = f"attachment; filename=outcome_breakdown_{timestamp}.csv"
+    return response
+
+
+@app.route("/reports/outreach/latest/export.csv")
+def export_outreach_latest_csv():
+    connection = get_db_connection()
+    rows = filtered_outreach_report_items(connection)[:10]
+    connection.close()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Date", "Due Date", "Due Time", "Status", "Account", "Contact", "Sales Play", "Activity Type", "Outcome"])
+    for row in rows:
+        writer.writerow([
+            row["activity_date"],
+            row["next_action_date"],
+            row["next_action_time"],
+            row["task_status"],
+            row["account_name"],
+            row["contact_name"],
+            row["sales_play"],
+            row["activity_type"],
+            row["outcome"],
+        ])
+
+    response = Response(output.getvalue(), mimetype="text/csv")
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    response.headers["Content-Disposition"] = f"attachment; filename=latest_outreach_{timestamp}.csv"
+    return response
 
 
 @app.route("/reports/outreach/export")

@@ -25,6 +25,32 @@
         return (state.contacts || []).find((contact) => Number(contact.id) === Number(contactId));
     }
 
+    function colourForContactType(type) {
+        const palette = {
+            "Champion": "#1f9d55",
+            "Coach": "#2f80ed",
+            "Influencer": "#9b51e0",
+            "Executive Buyer": "#f2994a",
+            "Executive Assistant": "#00a8a8",
+            "Detractor": "#d64545",
+            "Executive": "#f2994a",
+            "Business": "#7cb342",
+            "Technical": "#2d9cdb",
+            "Procurement": "#8e6f3e",
+            "Security": "#6d5dfc",
+            "Project/Programme Management": "#607d8b",
+            "Unclassified": "#9ca3af"
+        };
+        return palette[type || "Unclassified"] || "#9ca3af";
+    }
+
+    function applyContactTypeStyle(element, contact) {
+        const contactType = contact.contact_type || "Unclassified";
+        element.style.setProperty("--orgchart-contact-type-colour", colourForContactType(contactType));
+        element.dataset.contactType = contactType;
+        element.title = `${contact.name || "Unknown contact"} - ${contactType}`;
+    }
+
     function nodeByContact(contactId) {
         return (state.nodes || []).find((node) => Number(node.contact_id) === Number(contactId));
     }
@@ -80,9 +106,10 @@
             const tile = document.createElement("div");
             tile.className = "orgchart-contact-tile";
             tile.dataset.contactId = contact.id;
+            applyContactTypeStyle(tile, contact);
             tile.innerHTML = `<strong></strong><span></span>`;
             tile.querySelector("strong").textContent = contact.name || "Unknown contact";
-            tile.querySelector("span").textContent = contact.job_title || "Job title not set";
+            tile.querySelector("span").textContent = `${contact.job_title || "Job title not set"} | ${contact.contact_type || "Unclassified"}`;
             attachDrag(tile, contact.id);
             contactList.appendChild(tile);
         });
@@ -138,6 +165,7 @@
 
         const card = document.createElement("div");
         card.className = "orgchart-card";
+        applyContactTypeStyle(card, contact);
         attachDrag(card, contact.id);
 
         const zones = document.createElement("div");
@@ -151,7 +179,7 @@
         body.className = "orgchart-card-body";
         body.innerHTML = `<span class="orgchart-photo"></span><strong></strong><span></span>`;
         body.querySelector("strong").textContent = contact.name || "Unknown contact";
-        body.querySelector("span:last-child").textContent = contact.job_title || "Job title not set";
+        body.querySelector("span:last-child").textContent = `${contact.job_title || "Job title not set"} | ${contact.contact_type || "Unclassified"}`;
 
         card.appendChild(deleteButton(contact.id));
         card.appendChild(body);
