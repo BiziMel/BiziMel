@@ -48,6 +48,10 @@ RELEASE_NOTES = [
             "Enhanced Outreach Reports so the compact filter uses Due Date instead of End Date.",
             "Enhanced Outreach and campaign forms so multi-contact selection uses a closed checkbox picker that expands only when selected.",
             "Enhanced Org Charts with contact-type colour coding so relationship types are easier to scan.",
+            "Enhanced Org Charts with a colour legend below contact search so users can see what each contact-type colour means.",
+            "Enhanced Latest Outreach reporting so it defaults to the last 7 days while still allowing date-filtered historical review.",
+            "Enhanced the User Guide with more detailed steps and moved Org Chart guidance into the Account guide.",
+            "Enhanced Release Notes so changes are grouped under major and minor version families with the newest patch release shown first.",
             "Enhanced Insights Dashboard learning so account, contact and campaign signals are consolidated without duplicated AI wording.",
             "Enhanced the User Guide with clearer step-by-step instructions and a full-guide PDF export button.",
         ],
@@ -56,6 +60,7 @@ RELEASE_NOTES = [
             "Fixed campaign scheduling so tasks created for the submit date never start earlier than the campaign submit time.",
             "Fixed meeting booked metrics so one multi-contact outreach task counts as one meeting activity metric.",
             "Fixed Outcome Reports by restoring Outcome Breakdown CSV and Latest Outreach CSV exports with compact filters above each report.",
+            "Fixed Outreach Outcome Breakdown so contact context is shown and included in the grouped report calculation.",
             "Fixed intermittent Outreach navigation errors by normalising missing partner contact fields and multi-contact summaries before rendering.",
         ],
         "sub_releases": [],
@@ -366,6 +371,8 @@ USER_GUIDE_SECTIONS = [
             "Add any non-working date blocks so generated campaigns avoid those days.",
             "Create accounts first, add contacts to those accounts, then create outreach tasks or generate campaigns.",
             "Review Dashboard and Reports regularly to check execution progress and accountability.",
+            "Use Release Notes after a deployment to understand what has changed before you continue testing.",
+            "When you are unsure where to work next, start with Dashboard metrics, then open the matching account or outreach record.",
         ],
         "tips": [
             "Your workspace data is private unless you explicitly share an account through Outreach Tasks.",
@@ -390,6 +397,8 @@ USER_GUIDE_SECTIONS = [
             "Use Execution Learning to decide which account, contact, campaign or sales play needs attention next.",
             "Open the relevant record from the table and record a clear outcome after completing the recommended next move.",
             "Click metric cards such as Overdue Actions, Untouched Accounts or All Active Outreach to move into the related work list.",
+            "Review Meetings Booked This Week to confirm that successful meeting outcomes are being captured correctly.",
+            "Use the broadcast ticker at the top of the dashboard for admin messages and timing updates.",
         ],
         "tips": [
             "Untouched accounts are accounts with no contacts or no outreach history.",
@@ -416,12 +425,19 @@ USER_GUIDE_SECTIONS = [
             "Review or reassign the Account Owner on the edit account form when ownership changes.",
             "Open an account record to review contacts, partner involvement, outreach history and timeline entries.",
             "Use Org Chart from the account record to map who works for whom inside the customer or partner organisation.",
+            "On the Org Chart page, search for a contact, then drag the contact tile into the chart canvas.",
+            "Drop a contact onto the top, bottom, left or right zone of another person to place them as manager, direct report or peer.",
+            "Use the colour legend below the Org Chart search box to understand how relationship types such as Champion, Coach or Executive are represented.",
+            "Use Export PDF from the Org Chart page when you need an offline landscape or portrait view of the account structure.",
             "Use Account Sharing on the account record to review and revoke access if you own the account.",
         ],
         "tips": [
             "Use business organisation to distinguish large accounts with multiple internal groups.",
             "Keep PG Bible order numeric and unique for your most important accounts.",
             "Changing ownership is stronger than sharing because ownership rights move to the new owner.",
+            "Only contacts linked to the selected account appear in that account's org chart.",
+            "If a person is missing from the org chart search, add or update the contact first.",
+            "Removing someone from the org chart removes them from the visual map only. It does not delete the contact record.",
         ],
     },
     {
@@ -439,6 +455,8 @@ USER_GUIDE_SECTIONS = [
             "Capture job title, organisation, relationship, responsibilities and personal context where known.",
             "Use contact data to make campaign recommendations more accurate over time.",
             "Keep contact records current when a stakeholder changes role, leaves or becomes more important to the sales play.",
+            "Use the Active or Inactive status so reports and admin archive actions can identify contacts that no longer need regular attention.",
+            "Use BMC Relationship to describe how useful the stakeholder is to the sales motion, such as Champion, Coach or Influencer.",
         ],
         "tips": [
             "Accounts must have at least one contact before Campaign Builder can generate a campaign.",
@@ -465,6 +483,9 @@ USER_GUIDE_SECTIONS = [
             "Use the compact status filter to show All Open, All Completed, All or specific statuses.",
             "Add an Activity Update before closing or completing an outreach task.",
             "Use Complete and Create Follow-Up when the current task is done but another task is needed.",
+            "Select multiple contacts when one outreach activity applies to more than one customer or partner stakeholder.",
+            "Use the contact checkbox picker by clicking the field, selecting contacts, then clicking outside the picker to close it.",
+            "Use the outcome field consistently because dashboard and report metrics are calculated from these values.",
         ],
         "tips": [
             "The due date is the Activity Due Date, based on the next action date.",
@@ -491,6 +512,8 @@ USER_GUIDE_SECTIONS = [
             "Set the total outreach task quantity and how many times per week activities should occur.",
             "Generate the campaign to create outreach tasks across the selected contacts.",
             "Review the generated dates and assignee before beginning execution.",
+            "Check the generated activity mix so VITO is first and later email-style steps are not repeating the initial VITO.",
+            "If the campaign starts today, confirm the generated times are later than the current submit time.",
         ],
         "tips": [
             "Generated campaigns avoid weekends and your configured non-working dates.",
@@ -518,6 +541,8 @@ USER_GUIDE_SECTIONS = [
             "Use the Assigned To dropdown and Save Assignment button in the task table to reassign work.",
             "Review active follow-up tasks grouped by customer and campaign.",
             "If access is revoked, tasks assigned to that user return to the account owner.",
+            "Confirm the recipient has a genuine need for the account before sharing because they receive the full account package.",
+            "After sharing, use assignment fields to make clear who owns the next outreach update.",
         ],
         "tips": [
             "Other users' full names are only displayed in Outreach Tasks assignment and share dropdowns.",
@@ -541,35 +566,13 @@ USER_GUIDE_SECTIONS = [
             "Map partner contacts and partner involvement to accounts where they help progress opportunities.",
             "Review partner metrics and account links from the partner record.",
             "Keep partner manager and BMC partner manager fields current so ownership is clear.",
+            "Link partner contacts to customer accounts where they are actively helping progress the account.",
+            "Create outreach against linked partner contacts when the work is being carried out with a partner rather than directly with the customer.",
         ],
         "tips": [
             "Partner contacts are separate from account contacts and use partner-specific role fields.",
             "Use partner notes to capture channel context and next actions.",
             "Partner account mappings help explain who is helping sell into a customer account.",
-        ],
-    },
-    {
-        "slug": "org-charts",
-        "title": "Org Charts",
-        "summary": "Build a visual relationship map for an account so users can see reporting lines and stakeholder groups.",
-        "navigation": [
-            "Open Accounts, select the account name, then click Org Chart from the account view.",
-            "Use the contact list on the Org Chart page to add people from the account into the chart.",
-            "Return to the account record when you need to update contact details before continuing the chart.",
-        ],
-        "steps": [
-            "Open the account that owns the contacts you want to map.",
-            "Click Org Chart.",
-            "Add the first person to the chart from the available contact list.",
-            "Add more people and place them above, below or beside existing people to represent the real organisation.",
-            "Use the chart controls to move people when the structure changes.",
-            "Remove a person from the chart if they should no longer appear. The contact record itself is not deleted unless you delete it from Contacts.",
-            "Use the chart as a planning aid before selecting contacts for outreach or campaign generation.",
-        ],
-        "tips": [
-            "Only contacts linked to the selected account appear in that account's org chart.",
-            "If a person is missing, add or update the contact first.",
-            "The tile shows the person image area, name and job title so the chart stays clean.",
         ],
     },
     {
@@ -590,6 +593,8 @@ USER_GUIDE_SECTIONS = [
             "Export PG Bible when you need the formatted workbook output.",
             "Use filters before exporting when the report supports narrowing by date, account, status or assignee.",
             "Use the Export CSV button when you need the report data outside PipeFlow.",
+            "In Outreach Reports, review Outcome Breakdown by account, contact, activity date and outcome.",
+            "Use Latest Outreach for recent activity. It defaults to the last 7 days unless you apply date filters.",
         ],
         "tips": [
             "Reports reflect the same fields used across account, contact, outreach and task views.",
@@ -613,6 +618,8 @@ USER_GUIDE_SECTIONS = [
             "Add multiple non-working date blocks for holidays, travel or unavailable periods.",
             "Delete outdated non-working blocks when they no longer apply.",
             "Review these settings before using Campaign Builder because auto-scheduling uses them.",
+            "Use non-working blocks for full-day or multi-day absence so Campaign Builder avoids scheduling work during those dates.",
+            "Update your profile name if it is wrong because that name appears in assignment dropdowns and audit history.",
         ],
         "tips": [
             "Saturday and Sunday are non-working by default for auto-scheduling.",
@@ -639,6 +646,8 @@ USER_GUIDE_SECTIONS = [
             "Set New Week Start so weekly dashboard calculations begin on the correct day for your operating rhythm.",
             "Set Fiscal Year Settings so dashboard outcome breakdowns and quarterly reports use the correct fiscal dates.",
             "Use admin password reset only after confirming the request with the user.",
+            "Use the Broadcast Messages sub tab to create dated messages that appear on login and dashboard ticker areas.",
+            "Use retention and audit settings deliberately because they affect how long administration history is kept.",
         ],
         "tips": [
             "Admin actions are recorded in the admin audit trail.",
@@ -662,6 +671,8 @@ USER_GUIDE_SECTIONS = [
             "Open Release Notes to see changes grouped by version.",
             "Use the accordion layout to keep older releases collapsed while the latest release stays open.",
             "Use release categories to understand whether a change is New, Enhanced or Fixed.",
+            "Review releases by grouped version family, such as 1.5, with the newest patch release expanded first.",
+            "Use audit filters when investigating a specific date range or user action.",
         ],
         "tips": [
             "Release Notes always display latest to earliest.",
@@ -1245,9 +1256,23 @@ def release_notes():
         ),
         reverse=True
     )
+    grouped_release_notes = []
+    grouped_lookup = {}
+    for release in sorted_release_notes:
+        parts = str(release.get("version", "")).split(".")
+        family = ".".join(parts[:2]) if len(parts) >= 2 else release.get("version", "")
+        if family not in grouped_lookup:
+            grouped_lookup[family] = {
+                "family": family,
+                "latest_release_date": release.get("release_date", ""),
+                "releases": [],
+            }
+            grouped_release_notes.append(grouped_lookup[family])
+        grouped_lookup[family]["releases"].append(release)
     return render_template(
         "release_notes.html",
         release_notes=sorted_release_notes,
+        grouped_release_notes=grouped_release_notes,
         current_version=APP_VERSION,
         current_release_date=APP_RELEASE_DATE,
     )
@@ -9739,8 +9764,6 @@ def task_reports():
         ORDER BY outreach.next_action_date ASC, outreach.next_action_time ASC
     """).fetchall()
 
-    connection.close()
-
     def parse_report_date(value):
         if not value:
             return None
@@ -9989,10 +10012,14 @@ def outreach_reports():
             outreach.quarter,
             accounts.account_name,
             accounts.account_tier,
-            contacts.name AS contact_name
+            contacts.name AS contact_name,
+            partner_contacts.name AS partner_contact_name,
+            partners.partner_name
         FROM outreach
         LEFT JOIN accounts ON outreach.account_id = accounts.id
         LEFT JOIN contacts ON outreach.contact_id = contacts.id
+        LEFT JOIN partner_contacts ON outreach.partner_contact_id = partner_contacts.id
+        LEFT JOIN partners ON partner_contacts.partner_id = partners.id
         ORDER BY outreach.activity_date DESC, outreach.activity_time DESC, outreach.id DESC
     """).fetchall()
 
@@ -10024,7 +10051,18 @@ def outreach_reports():
             return False
         return True
 
-    filtered_outreach = [item for item in all_outreach if include_item(item)]
+    filtered_outreach = []
+    for item in all_outreach:
+        if include_item(item):
+            row = dict(item)
+            row["contact_name"] = outreach_contact_summary(
+                connection,
+                row["id"],
+                row.get("contact_name") or "",
+                f"{row.get('partner_contact_name') or ''} (Partner: {row.get('partner_name') or 'Partner'})" if row.get("partner_contact_name") else "",
+            )
+            filtered_outreach.append(row)
+    connection.close()
     total_outreach = len(filtered_outreach)
     meetings_booked = sum(
         1 for item in filtered_outreach
@@ -10045,7 +10083,8 @@ def outreach_reports():
         if activity_date:
             date_key = activity_date.isoformat()
             account_name = item["account_name"] or "Unknown"
-            key = (account_name, date_key, outcome)
+            contact_name = item["contact_name"] or "No contact"
+            key = (account_name, contact_name, date_key, outcome)
             outcome_by_account_date_totals[key] = outcome_by_account_date_totals.get(key, 0) + 1
             month = activity_date.strftime("%Y-%m")
             if month not in monthly_totals:
@@ -10059,17 +10098,24 @@ def outreach_reports():
         for outcome, count in sorted(outcome_totals.items(), key=lambda item: (-item[1], item[0]))
     ]
     outcome_breakdown_by_account_date = [
-        {"account_name": account_name, "activity_date": date_key, "outcome": outcome, "count": count}
-        for (account_name, date_key, outcome), count in sorted(
+        {"account_name": account_name, "contact_name": contact_name, "activity_date": date_key, "outcome": outcome, "count": count}
+        for (account_name, contact_name, date_key, outcome), count in sorted(
             outcome_by_account_date_totals.items(),
-            key=lambda item: (item[0][0].lower(), item[0][1], item[0][2]),
+            key=lambda item: (item[0][0].lower(), item[0][1].lower(), item[0][2], item[0][3]),
         )
     ]
     outreach_by_type = [
         {"activity_type": activity_type, "count": count}
         for activity_type, count in sorted(type_totals.items(), key=lambda item: (-item[1], item[0]))
     ]
-    latest_outreach = filtered_outreach[:10]
+    latest_cutoff = datetime.now().date() - timedelta(days=7)
+    if selected_start_date or selected_due_date:
+        latest_outreach = filtered_outreach[:10]
+    else:
+        latest_outreach = [
+            item for item in filtered_outreach
+            if parse_report_date(item["activity_date"]) and parse_report_date(item["activity_date"]) >= latest_cutoff
+        ][:10]
 
     monthly_trends = []
     for month, totals in sorted(monthly_totals.items()):
@@ -10134,10 +10180,14 @@ def filtered_outreach_report_items(connection):
             outreach.quarter,
             accounts.account_name,
             accounts.account_tier,
-            contacts.name AS contact_name
+            contacts.name AS contact_name,
+            partner_contacts.name AS partner_contact_name,
+            partners.partner_name
         FROM outreach
         LEFT JOIN accounts ON outreach.account_id = accounts.id
         LEFT JOIN contacts ON outreach.contact_id = contacts.id
+        LEFT JOIN partner_contacts ON outreach.partner_contact_id = partner_contacts.id
+        LEFT JOIN partners ON partner_contacts.partner_id = partners.id
         ORDER BY outreach.activity_date DESC, outreach.activity_time DESC, outreach.id DESC
     """).fetchall()
 
@@ -10159,7 +10209,19 @@ def filtered_outreach_report_items(connection):
             return False
         return True
 
-    return [dict(item) for item in rows if include_item(item)]
+    filtered = []
+    for item in rows:
+        if not include_item(item):
+            continue
+        row = dict(item)
+        row["contact_name"] = outreach_contact_summary(
+            connection,
+            row["id"],
+            row.get("contact_name") or "",
+            f"{row.get('partner_contact_name') or ''} (Partner: {row.get('partner_name') or 'Partner'})" if row.get("partner_contact_name") else "",
+        )
+        filtered.append(row)
+    return filtered
 
 
 def outcome_breakdown_account_rows(items):
@@ -10170,15 +10232,16 @@ def outcome_breakdown_account_rows(items):
             continue
         key = (
             item.get("account_name") or "Unknown",
+            item.get("contact_name") or "No contact",
             activity_date.isoformat(),
             item.get("outcome") or "Unknown",
         )
         totals[key] = totals.get(key, 0) + 1
     return [
-        {"account_name": account_name, "activity_date": activity_date, "outcome": outcome, "count": count}
-        for (account_name, activity_date, outcome), count in sorted(
+        {"account_name": account_name, "contact_name": contact_name, "activity_date": activity_date, "outcome": outcome, "count": count}
+        for (account_name, contact_name, activity_date, outcome), count in sorted(
             totals.items(),
-            key=lambda item: (item[0][0].lower(), item[0][1], item[0][2]),
+            key=lambda item: (item[0][0].lower(), item[0][1].lower(), item[0][2], item[0][3]),
         )
     ]
 
@@ -10191,9 +10254,9 @@ def export_outreach_outcome_breakdown_csv():
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Account", "Activity Date", "Outcome", "Count"])
+    writer.writerow(["Account", "Contact", "Activity Date", "Outcome", "Count"])
     for row in rows:
-        writer.writerow([row["account_name"], row["activity_date"], row["outcome"], row["count"]])
+        writer.writerow([row["account_name"], row["contact_name"], row["activity_date"], row["outcome"], row["count"]])
 
     response = Response(output.getvalue(), mimetype="text/csv")
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
