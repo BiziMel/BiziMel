@@ -6,6 +6,7 @@
     const canvas = document.getElementById("orgchartCanvas");
     const contactList = document.getElementById("orgchartContactList");
     const searchInput = document.getElementById("orgchartContactSearch");
+    const legend = document.getElementById("orgchartLegend");
     const saveState = document.getElementById("orgchartSaveState");
     const errorBox = document.getElementById("orgchartError");
     let state = JSON.parse(workspace.dataset.initial || "{}");
@@ -112,6 +113,27 @@
             tile.querySelector("span").textContent = `${contact.job_title || "Job title not set"} | ${contact.contact_type || "Unclassified"}`;
             attachDrag(tile, contact.id);
             contactList.appendChild(tile);
+        });
+    }
+
+    function renderLegend() {
+        if (!legend) return;
+        legend.innerHTML = "";
+        const contactTypes = Array.from(new Set(
+            (state.contacts || []).map((contact) => contact.contact_type || "Unclassified")
+        )).sort((left, right) => left.localeCompare(right));
+        if (!contactTypes.length) {
+            legend.hidden = true;
+            return;
+        }
+        legend.hidden = false;
+        contactTypes.forEach((contactType) => {
+            const item = document.createElement("span");
+            item.className = "orgchart-legend-item";
+            item.innerHTML = `<span class="orgchart-legend-swatch"></span><span></span>`;
+            item.querySelector(".orgchart-legend-swatch").style.backgroundColor = colourForContactType(contactType);
+            item.querySelector("span:last-child").textContent = contactType;
+            legend.appendChild(item);
         });
     }
 
@@ -254,6 +276,7 @@
     }
 
     function render() {
+        renderLegend();
         renderPalette();
         renderChart();
     }

@@ -4871,6 +4871,28 @@ body {
     background: #f8fafc;
 }
 
+.release-family-card {
+    border-color: #c8dcc5;
+}
+
+.release-family-summary {
+    padding-bottom: 12px;
+    border-bottom: 1px solid #dbe8d8;
+}
+
+.release-family-list {
+    display: grid;
+    gap: 14px;
+    margin-top: 16px;
+}
+
+.nested-release-card {
+    padding: 14px;
+    border: 1px solid #dbe3ef;
+    border-radius: 10px;
+    background: #ffffff;
+}
+
 .compact-release-summary {
     margin-bottom: 10px;
 }
@@ -4890,6 +4912,34 @@ body {
     gap: 10px;
     max-height: 680px;
     overflow: auto;
+}
+
+.orgchart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px;
+    border: 1px solid #dbe3ef;
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.orgchart-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 6px;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #334155;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.orgchart-legend-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
 }
 
 .orgchart-contact-tile {

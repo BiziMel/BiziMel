@@ -115,7 +115,7 @@
     <div class="section-header">
         <div>
             <h2>Outcome Breakdown</h2>
-            <p>Outcome totals grouped by account and activity date for the selected filters.</p>
+            <p>Outcome totals grouped by account, contact and activity date for the selected filters.</p>
         </div>
     </div>
 
@@ -148,6 +148,7 @@
             <thead>
                 <tr>
                     <th>Account</th>
+                    <th>Contact</th>
                     <th>Activity Date</th>
                     <th>Outcome</th>
                     <th>Count</th>
@@ -158,13 +159,14 @@
                 {% for item in outcome_breakdown_by_account_date %}
                     <tr>
                         <td>{{ item["account_name"] or "Unknown" }}</td>
+                        <td>{{ item["contact_name"] or "No contact" }}</td>
                         <td>{{ item["activity_date"] }}</td>
                         <td>{{ item["outcome"] or "Unknown" }}</td>
                         <td>{{ item["count"] }}</td>
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="4">No outcome data found.</td>
+                        <td colspan="5">No outcome data found.</td>
                     </tr>
                 {% endfor %}
             </tbody>
@@ -176,7 +178,7 @@
     <div class="section-header">
         <div>
             <h2>Latest Outreach</h2>
-            <p>Most recent outreach activity for the selected filters.</p>
+            <p>Shows the last 7 days by default. Apply date filters to review activity outside the default view.</p>
         </div>
     </div>
 
