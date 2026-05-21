@@ -143,29 +143,42 @@
         });
     }
 
-    function dropZone(label, placement, targetContactId) {
-        const zone = document.createElement("button");
-        zone.type = "button";
-        zone.className = `orgchart-drop-zone orgchart-drop-${placement}`;
-        zone.textContent = label;
-        zone.addEventListener("dragover", (event) => {
+    function placementFromCardEdge(event, element) {
+        const rect = element.getBoundingClientRect();
+        const distances = [
+            { placement: "manager", value: Math.abs(event.clientY - rect.top) },
+            { placement: "employee", value: Math.abs(rect.bottom - event.clientY) },
+            { placement: "peerLeft", value: Math.abs(event.clientX - rect.left) },
+            { placement: "peerRight", value: Math.abs(rect.right - event.clientX) }
+        ];
+        distances.sort((left, right) => left.value - right.value);
+        return distances[0].placement;
+    }
+
+    function attachCardDrop(element, targetContactId) {
+        element.addEventListener("dragover", (event) => {
             event.preventDefault();
-            zone.classList.add("active");
+            element.classList.add("drop-target-active");
+            event.dataTransfer.dropEffect = "move";
         });
-        zone.addEventListener("dragleave", () => zone.classList.remove("active"));
-        zone.addEventListener("drop", (event) => {
+        element.addEventListener("dragleave", (event) => {
+            if (!element.contains(event.relatedTarget)) {
+                element.classList.remove("drop-target-active");
+            }
+        });
+        element.addEventListener("drop", (event) => {
             event.preventDefault();
-            zone.classList.remove("active");
+            event.stopPropagation();
+            element.classList.remove("drop-target-active");
             const payload = dragged || JSON.parse(event.dataTransfer.getData("application/json") || "{}");
             if (!payload.contactId || Number(payload.contactId) === Number(targetContactId)) return;
             saveOperation({
                 operation: nodeByContact(payload.contactId) ? "move" : "add",
                 contact_id: payload.contactId,
                 target_contact_id: targetContactId,
-                placement
+                placement: placementFromCardEdge(event, element)
             });
         });
-        return zone;
     }
 
     function deleteButton(contactId) {
@@ -195,13 +208,7 @@
         card.className = "orgchart-card";
         applyContactTypeStyle(card, contact);
         attachDrag(card, contact.id);
-
-        const zones = document.createElement("div");
-        zones.className = "orgchart-node-zones";
-        zones.appendChild(dropZone("Manager", "manager", contact.id));
-        zones.appendChild(dropZone("Peer L", "peerLeft", contact.id));
-        zones.appendChild(dropZone("Report", "employee", contact.id));
-        zones.appendChild(dropZone("Peer R", "peerRight", contact.id));
+        attachCardDrop(card, contact.id);
 
         const body = document.createElement("div");
         body.className = "orgchart-card-body";
@@ -217,7 +224,6 @@
 
         card.appendChild(deleteButton(contact.id));
         card.appendChild(body);
-        card.appendChild(zones);
         li.appendChild(card);
 
         const children = childrenFor(contact.id);
@@ -248,13 +254,13 @@
     }
 
     canvas.addEventListener("dragover", (event) => {
-        if (event.target.closest(".orgchart-drop-zone")) return;
+        if (event.target.closest(".orgchart-card")) return;
         event.preventDefault();
         canvas.classList.add("active");
     });
     canvas.addEventListener("dragleave", () => canvas.classList.remove("active"));
     canvas.addEventListener("drop", (event) => {
-        if (event.target.closest(".orgchart-drop-zone")) return;
+        if (event.target.closest(".orgchart-card")) return;
         event.preventDefault();
         canvas.classList.remove("active");
         const payload = dragged || JSON.parse(event.dataTransfer.getData("application/json") || "{}");

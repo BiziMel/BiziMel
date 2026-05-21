@@ -59,6 +59,7 @@ RELEASE_NOTES = [
             "Enhanced contact editing so users can add or change the contact photo after the contact has been created.",
             "Enhanced the Insights Dashboard with a Daily Wrap Up above the weekly review, generated after 17:00 using the user's configured working hours.",
             "Enhanced Org Charts so contact photos display in the contact palette and org chart person tiles.",
+            "Enhanced Org Chart drag and drop so users can drop directly on a tile edge to set manager, peer or report relationships without visible placement buttons.",
         ],
         "fixed": [
             "Fixed Execution Insights so Recommended Move is distinct from What It Means and suggests a different activity, channel or stakeholder route.",

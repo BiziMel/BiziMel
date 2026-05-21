@@ -5085,6 +5085,10 @@ body {
     cursor: grab;
 }
 
+.orgchart-card.drop-target-active {
+    box-shadow: 0 0 0 4px rgba(31, 157, 85, 0.16);
+}
+
 .orgchart-card-body {
     display: grid;
     justify-items: center;
