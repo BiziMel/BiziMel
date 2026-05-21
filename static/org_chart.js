@@ -108,7 +108,13 @@
             tile.className = "orgchart-contact-tile";
             tile.dataset.contactId = contact.id;
             applyContactTypeStyle(tile, contact);
-            tile.innerHTML = `<strong></strong><span></span>`;
+            tile.innerHTML = `<span class="orgchart-photo orgchart-palette-photo"></span><strong></strong><span></span>`;
+            if (contact.photo) {
+                const image = document.createElement("img");
+                image.src = contact.photo;
+                image.alt = contact.name || "Contact photo";
+                tile.querySelector(".orgchart-photo").appendChild(image);
+            }
             tile.querySelector("strong").textContent = contact.name || "Unknown contact";
             tile.querySelector("span").textContent = `${contact.job_title || "Job title not set"} | ${contact.contact_type || "Unclassified"}`;
             attachDrag(tile, contact.id);
@@ -200,6 +206,12 @@
         const body = document.createElement("div");
         body.className = "orgchart-card-body";
         body.innerHTML = `<span class="orgchart-photo"></span><strong></strong><span></span>`;
+        if (contact.photo) {
+            const image = document.createElement("img");
+            image.src = contact.photo;
+            image.alt = contact.name || "Contact photo";
+            body.querySelector(".orgchart-photo").appendChild(image);
+        }
         body.querySelector("strong").textContent = contact.name || "Unknown contact";
         body.querySelector("span:last-child").textContent = `${contact.job_title || "Job title not set"} | ${contact.contact_type || "Unclassified"}`;
 

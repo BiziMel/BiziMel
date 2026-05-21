@@ -58,6 +58,7 @@ RELEASE_NOTES = [
             "Enhanced the User Guide with clearer step-by-step instructions and a full-guide PDF export button.",
             "Enhanced contact editing so users can add or change the contact photo after the contact has been created.",
             "Enhanced the Insights Dashboard with a Daily Wrap Up above the weekly review, generated after 17:00 using the user's configured working hours.",
+            "Enhanced Org Charts so contact photos display in the contact palette and org chart person tiles.",
         ],
         "fixed": [
             "Fixed Execution Insights so Recommended Move is distinct from What It Means and suggests a different activity, channel or stakeholder route.",
@@ -5841,6 +5842,7 @@ def orgchart_contacts_for_account(connection, account_id):
             id,
             name,
             job_title,
+            photo,
             category,
             bmc_relationship,
             COALESCE(NULLIF(org_dept, ''), '') AS org_dept
@@ -5872,6 +5874,7 @@ def orgchart_json_payload(connection, account_id):
                 "id": contact["id"],
                 "name": contact["name"] or "Unknown contact",
                 "job_title": contact["job_title"] or "Job title not set",
+                "photo": contact["photo"] or "",
                 "org_dept": contact["org_dept"] or "",
                 "contact_type": contact["bmc_relationship"] or contact["category"] or "Unclassified",
             }
