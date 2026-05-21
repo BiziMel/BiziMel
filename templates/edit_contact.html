@@ -6,7 +6,11 @@
 
 <h2>Edit Contact</h2>
 
-<form method="POST" class="pipeflow-form">
+{% if error %}
+    <div class="alert-error">{{ error }}</div>
+{% endif %}
+
+<form method="POST" enctype="multipart/form-data" class="pipeflow-form">
 
     <label for="account_id">Company / Account</label>
     <select id="account_id" name="account_id" required>
@@ -39,6 +43,14 @@
         <option value="Active" {% if (contact.status or 'Active') == 'Active' %}selected{% endif %}>Active</option>
         <option value="Inactive" {% if contact.status == 'Inactive' %}selected{% endif %}>Inactive</option>
     </select>
+
+    <label for="photo">Photo</label>
+    {% if contact.photo %}
+        <div class="contact-photo-preview">
+            <img src="{{ contact.photo }}" alt="{{ contact.name }}">
+        </div>
+    {% endif %}
+    <input type="file" id="photo" name="photo" accept=".png,.jpg,.jpeg">
 
     <label for="name">Name</label>
     <input type="text" id="name" name="name" value="{{ contact.name }}" required>

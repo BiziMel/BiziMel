@@ -5,6 +5,7 @@ import threading
 import webbrowser
 import csv
 import io
+import base64
 import re
 import json
 import secrets
@@ -31,8 +32,8 @@ from orgchart_service import (
 
 
 APP_VERSION = "1.5.2"
-APP_RELEASE_DATE = "2026-05-20"
-APP_BUILD = "2026-05-20-v1.5.2-outreach-campaign-reports"
+APP_RELEASE_DATE = "2026-05-21"
+APP_BUILD = "2026-05-21-v1.5.2-wrapups-contact-photos"
 
 RELEASE_NOTES = [
     {
@@ -55,6 +56,8 @@ RELEASE_NOTES = [
             "Enhanced Release Notes so changes are grouped under major and minor version families with the newest patch release shown first.",
             "Enhanced Insights Dashboard learning so account, contact and campaign signals are consolidated without duplicated AI wording.",
             "Enhanced the User Guide with clearer step-by-step instructions and a full-guide PDF export button.",
+            "Enhanced contact editing so users can add or change the contact photo after the contact has been created.",
+            "Enhanced the Insights Dashboard with a Daily Wrap Up above the weekly review, generated after 17:00 using the user's configured working hours.",
         ],
         "fixed": [
             "Fixed Execution Insights so Recommended Move is distinct from What It Means and suggests a different activity, channel or stakeholder route.",
@@ -63,6 +66,7 @@ RELEASE_NOTES = [
             "Fixed Outcome Reports by restoring Outcome Breakdown CSV and Latest Outreach CSV exports with compact filters above each report.",
             "Fixed Outreach Outcome Breakdown so contact context is shown and included in the grouped report calculation.",
             "Fixed intermittent Outreach navigation errors by normalising missing partner contact fields and multi-contact summaries before rendering.",
+            "Fixed Weekly Wrap Up timing so it reflects the completed Monday to Friday working week and rolls forward after Sunday midday.",
         ],
         "sub_releases": [],
     },
@@ -393,7 +397,8 @@ USER_GUIDE_SECTIONS = [
         "steps": [
             "Review the command centre metrics for this week.",
             "Use the pipeline target card to see total PG target ACV across your accounts.",
-            "Open Weekly Wrap Up to read the two short paragraphs about what happened in the last seven days and where to focus next.",
+            "Open Daily Wrap Up after 17:00 to review the working day and tomorrow's focus.",
+            "Open Weekly Wrap Up after Sunday midday to review the completed Monday to Friday working week and where to focus next.",
             "Use the current-quarter outcome breakdown to see which outcomes are being recorded in the active fiscal quarter.",
             "Use Execution Learning to decide which account, contact, campaign or sales play needs attention next.",
             "Open the relevant record from the table and record a clear outcome after completing the recommended next move.",
@@ -2016,8 +2021,14 @@ def audit_record_create(connection, entity_type, entity_id, values, labels=None)
 def audit_record_update(connection, entity_type, entity_id, existing_record, new_values, labels=None):
     labels = labels or {}
     for field_name, new_value in new_values.items():
-        old_value = existing_record[field_name] if existing_record and existing_record[field_name] is not None else ""
-        new_value = new_value if new_value is not None else ""
+        raw_old_value = existing_record[field_name] if existing_record and existing_record[field_name] is not None else ""
+        raw_new_value = new_value if new_value is not None else ""
+        if field_name == "photo":
+            old_value = "Photo stored" if raw_old_value else ""
+            new_value = "Photo updated" if raw_new_value else ""
+        else:
+            old_value = raw_old_value
+            new_value = raw_new_value
         if str(old_value) != str(new_value):
             audit_entry(
                 connection,
@@ -2137,8 +2148,14 @@ def build_change_log(existing_record, new_values, labels):
     changes = []
 
     for field_name, new_value in new_values.items():
-        old_value = existing_record[field_name] if existing_record[field_name] is not None else ""
-        new_value = new_value if new_value is not None else ""
+        raw_old_value = existing_record[field_name] if existing_record[field_name] is not None else ""
+        raw_new_value = new_value if new_value is not None else ""
+        if field_name == "photo":
+            old_value = "Photo stored" if raw_old_value else ""
+            new_value = "Photo updated" if raw_new_value else ""
+        else:
+            old_value = raw_old_value
+            new_value = raw_new_value
 
         if str(old_value) != str(new_value):
             label = labels.get(field_name, field_name)
@@ -2772,6 +2789,27 @@ def is_closed_task_status(status):
     return (status or "").strip() in CLOSED_TASK_STATUSES
 
 
+def uploaded_photo_data_url(file_storage):
+    if not file_storage or not file_storage.filename:
+        return None
+    filename = file_storage.filename.lower()
+    extension = filename.rsplit(".", 1)[-1] if "." in filename else ""
+    mime_types = {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+    }
+    if extension not in mime_types:
+        raise ValueError("Upload a PNG or JPG contact photo.")
+    data = file_storage.read()
+    if not data:
+        return None
+    if len(data) > 2 * 1024 * 1024:
+        raise ValueError("Contact photos must be smaller than 2 MB.")
+    encoded = base64.b64encode(data).decode("ascii")
+    return f"data:{mime_types[extension]};base64,{encoded}"
+
+
 def score_learning_row(row):
     return (
         (row["meeting_total"] or 0) * 4
@@ -3220,6 +3258,8 @@ def render_dashboard_fallback():
         dashboard_tasks=[],
         task_statuses=DROPDOWN_VALUES["task_statuses"],
         outreach_outcomes=DROPDOWN_VALUES["outreach_outcomes"],
+        daily_wrap_up=None,
+        weekly_wrap_up=None,
         broadcast_messages=list_broadcast_messages(active_only=True)
     )
 
@@ -3659,7 +3699,8 @@ def build_dashboard_response(connection):
         outcome_quarter_label=current_quarter["label"],
         outcome_quarter_start=current_quarter["start"].isoformat(),
         outcome_quarter_end=current_quarter["end"].isoformat(),
-        weekly_wrap_up=build_weekly_wrap_up(connection, today=today),
+        daily_wrap_up=build_daily_wrap_up(connection, now=dashboard_now),
+        weekly_wrap_up=build_weekly_wrap_up(connection, now=dashboard_now),
         top_accounts=top_accounts,
         needs_attention_accounts=needs_attention_accounts,
         ai_insights=ai_insights,
@@ -3699,11 +3740,147 @@ def save_dashboard_setting(connection, key, value):
         )
 
 
-def build_weekly_wrap_up(connection, today=None):
-    today = today or datetime.now().date()
-    days_since_saturday = (today.weekday() - 5) % 7
-    period_start = today - timedelta(days=days_since_saturday)
-    period_end = period_start + timedelta(days=6)
+def formatted_date(value):
+    return value.strftime("%A %d %B %Y")
+
+
+def row_activity_reference_date(row):
+    return parse_iso_date(row["last_updated"]) or parse_iso_date(row["activity_date"]) or parse_iso_date(row["date_created"])
+
+
+def completed_work_week_period(now=None):
+    now = now or datetime.now()
+    today = now.date()
+    current_monday = today - timedelta(days=today.weekday())
+    if today.weekday() == 6 and now.time() >= datetime.strptime("12:00", "%H:%M").time():
+        period_start = current_monday
+    else:
+        period_start = current_monday - timedelta(days=7)
+    return period_start, period_start + timedelta(days=4)
+
+
+def previous_working_day(value, profile=None, non_working_blocks=None):
+    candidate = value - timedelta(days=1)
+    while is_non_working_date(candidate, profile, non_working_blocks):
+        candidate -= timedelta(days=1)
+    return candidate
+
+
+def daily_wrap_period(now=None, profile=None, non_working_blocks=None):
+    now = now or datetime.now()
+    publish_time = datetime.strptime("17:00", "%H:%M").time()
+    candidate = now.date() if now.time() >= publish_time else previous_working_day(now.date(), profile, non_working_blocks)
+    while is_non_working_date(candidate, profile, non_working_blocks):
+        candidate = previous_working_day(candidate, profile, non_working_blocks)
+    return candidate
+
+
+def profile_working_context(connection):
+    profile = connection.execute("""
+        SELECT *
+        FROM user_profile
+        WHERE id = 1
+    """).fetchone()
+    non_working_rows = connection.execute("""
+        SELECT *
+        FROM non_working_blocks
+        ORDER BY start_date
+    """).fetchall()
+    return profile, parse_non_working_blocks(non_working_rows)
+
+
+def build_daily_wrap_up(connection, now=None):
+    now = now or datetime.now()
+    profile, non_working_blocks = profile_working_context(connection)
+    wrap_date = daily_wrap_period(now, profile, non_working_blocks)
+    work_start = profile["work_day_start"] if profile and profile["work_day_start"] else "09:00"
+    work_end = profile["work_day_end"] if profile and profile["work_day_end"] else "17:00"
+    rows = connection.execute("""
+        SELECT
+            outreach.*,
+            accounts.account_name,
+            contacts.name AS contact_name
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
+    """).fetchall()
+
+    achieved_rows = []
+    meeting_rows = []
+    activity_update_rows = []
+    open_tomorrow_rows = []
+    overdue_rows = []
+    next_work_day = wrap_date + timedelta(days=1)
+    while is_non_working_date(next_work_day, profile, non_working_blocks):
+        next_work_day += timedelta(days=1)
+
+    for row in rows:
+        reference_date = row_activity_reference_date(row)
+        closed = is_closed_task_status(row["task_status"])
+        if reference_date == wrap_date and closed:
+            achieved_rows.append(row)
+        if reference_date == wrap_date and is_meeting_signal(row):
+            meeting_rows.append(row)
+        if reference_date == wrap_date and (row["next_action"] or row["notes"]):
+            activity_update_rows.append(row)
+        due_date = parse_iso_date(row["next_action_date"])
+        if due_date and due_date <= next_work_day and not closed:
+            open_tomorrow_rows.append(row)
+        if outreach_due_has_expired(row["next_action_date"], row["next_action_time"], row["task_status"], now=now):
+            overdue_rows.append(row)
+
+    active_accounts = sorted({
+        row["account_name"]
+        for row in achieved_rows + meeting_rows + activity_update_rows
+        if row["account_name"]
+    })
+    activity_types = sorted({
+        row["activity_type"]
+        for row in achieved_rows + activity_update_rows
+        if row["activity_type"]
+    })
+    focus_accounts = sorted({
+        row["account_name"]
+        for row in overdue_rows + open_tomorrow_rows
+        if row["account_name"]
+    })
+
+    paragraph_one = (
+        f"For {formatted_date(wrap_date)}, you completed {len(achieved_rows)} outreach task(s), "
+        f"logged {len(activity_update_rows)} activity update(s), and created or progressed {len(meeting_rows)} meeting-related signal(s)."
+    )
+    if active_accounts:
+        paragraph_one += f" The main account movement was around {', '.join(active_accounts[:4])}."
+    if activity_types:
+        paragraph_one += f" Your activity mix included {', '.join(activity_types[:4])}."
+
+    if overdue_rows:
+        paragraph_two = (
+            f"Tomorrow, start with overdue work for {', '.join(focus_accounts[:3]) if focus_accounts else 'your priority accounts'} before adding new activity. "
+            "Use the first working slot to recover anything that has passed its due date or time, then book the next specific meeting step."
+        )
+    elif open_tomorrow_rows:
+        paragraph_two = (
+            f"Tomorrow, focus on the {len(open_tomorrow_rows)} open item(s) due by the next working day. "
+            "Work the highest-value account first, then update the activity notes so the next recommendation is based on what actually happened."
+        )
+    else:
+        paragraph_two = (
+            "Tomorrow, create one clear next action for each priority account without a dated follow-up. "
+            "Keep the work inside your configured working day so the schedule stays realistic."
+        )
+
+    return {
+        "title": "Daily Wrap Up",
+        "period": f"{formatted_date(wrap_date)} | Working day {work_start} to {work_end}",
+        "paragraph_one": paragraph_one,
+        "paragraph_two": paragraph_two,
+    }
+
+
+def build_weekly_wrap_up(connection, today=None, now=None):
+    now = now or datetime.now()
+    period_start, period_end = completed_work_week_period(now)
     rows = connection.execute("""
         SELECT
             outreach.*,
@@ -3722,10 +3899,9 @@ def build_weekly_wrap_up(connection, today=None):
     note_rows = []
 
     for row in rows:
-        last_updated = parse_iso_date(row["last_updated"])
         activity_date = parse_iso_date(row["activity_date"])
-        row_date = last_updated or activity_date
-        is_recent = row_date and period_start <= row_date <= min(today, period_end)
+        row_date = row_activity_reference_date(row)
+        is_recent = row_date and period_start <= row_date <= period_end
         closed = is_closed_task_status(row["task_status"])
         overdue = outreach_due_has_expired(row["next_action_date"], row["next_action_time"], row["task_status"])
         if closed and is_recent:
@@ -3747,13 +3923,15 @@ def build_weekly_wrap_up(connection, today=None):
         FROM accounts
         WHERE last_updated IS NOT NULL
           AND last_updated >= ?
-    """, (period_start.isoformat(),)).fetchone()["total"] or 0
+          AND last_updated < ?
+    """, (period_start.isoformat(), (period_end + timedelta(days=1)).isoformat())).fetchone()["total"] or 0
     contact_updates = connection.execute("""
         SELECT COUNT(DISTINCT id) AS total
         FROM contacts
         WHERE last_updated IS NOT NULL
           AND last_updated >= ?
-    """, (period_start.isoformat(),)).fetchone()["total"] or 0
+          AND last_updated < ?
+    """, (period_start.isoformat(), (period_end + timedelta(days=1)).isoformat())).fetchone()["total"] or 0
 
     account_names = sorted({
         row["account_name"]
@@ -3772,7 +3950,7 @@ def build_weekly_wrap_up(connection, today=None):
     })
 
     paragraph_one_parts = [
-        f"In the last seven days you completed {len(completed_rows)} outreach task(s)",
+        f"In the completed working week you completed {len(completed_rows)} outreach task(s)",
         f"booked or progressed {len(meeting_rows)} meeting-related activity item(s)",
         f"and updated {account_updates} account(s) plus {contact_updates} contact(s).",
     ]
@@ -3808,7 +3986,7 @@ def build_weekly_wrap_up(connection, today=None):
 
     return {
         "title": "Weekly Wrap Up",
-        "period": f"{period_start.isoformat()} to {period_end.isoformat()}",
+        "period": f"{formatted_date(period_start)} to {formatted_date(period_end)}",
         "paragraph_one": paragraph_one,
         "paragraph_two": paragraph_two,
     }
@@ -6794,17 +6972,28 @@ def contacts():
 def add_contact():
     if request.method == "POST":
         connection = get_db_connection()
+        try:
+            photo_data = uploaded_photo_data_url(request.files.get("photo"))
+        except ValueError as exc:
+            accounts = connection.execute("""
+                SELECT *
+                FROM accounts
+                ORDER BY account_name, business_unit
+            """).fetchall()
+            connection.close()
+            return render_template("add_contact.html", accounts=accounts, error=str(exc))
         cursor = connection.execute("""
             INSERT INTO contacts (
-                account_id, category, name, job_title, org_dept, responsibilities,
+                account_id, category, photo, name, job_title, org_dept, responsibilities,
                 email, phone, location, linkedin, bmc_relationship, characteristics,
                 background, personal_interests, personal_win, education,
                 social_media, additional_notes, status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             request.form.get("account_id"),
             request.form.get("category"),
+            photo_data,
             request.form.get("name"),
             request.form.get("job_title"),
             request.form.get("org_dept"),
@@ -6827,6 +7016,7 @@ def add_contact():
         audit_record_create(connection, "contact", contact_id, {
             "account_id": request.form.get("account_id"),
             "category": request.form.get("category"),
+            "photo": "Added" if photo_data else "",
             "name": request.form.get("name"),
             "job_title": request.form.get("job_title"),
             "org_dept": request.form.get("org_dept"),
@@ -6937,6 +7127,7 @@ def edit_contact(contact_id):
         labels = {
             "account_id": "Account",
             "category": "Category",
+            "photo": "Photo",
             "name": "Name",
             "job_title": "Job title",
             "org_dept": "Org / Dept",
@@ -6953,15 +7144,31 @@ def edit_contact(contact_id):
             "personal_win": "Personal win",
             "education": "Education",
             "social_media": "Social media",
-            "additional_notes": "Additional notes"
+            "additional_notes": "Additional notes",
+            "photo": "Photo"
         }
+
+        try:
+            photo_data = uploaded_photo_data_url(request.files.get("photo"))
+        except ValueError as exc:
+            connection.close()
+            return render_template(
+                "edit_contact.html",
+                contact=contact,
+                accounts=accounts,
+                error=str(exc)
+            )
+        if photo_data:
+            new_values["photo"] = photo_data
+            labels["photo"] = "Photo"
 
         changes = build_change_log(contact, new_values, labels)
 
-        connection.execute("""
+        update_sql = """
             UPDATE contacts
             SET account_id = ?,
                 category = ?,
+                {photo_assignment}
                 name = ?,
                 job_title = ?,
                 org_dept = ?,
@@ -6981,9 +7188,14 @@ def edit_contact(contact_id):
                 additional_notes = ?,
                 last_updated = CURRENT_TIMESTAMP
             WHERE id = ?
-        """, (
+        """.format(photo_assignment="photo = ?,\n                " if photo_data else "")
+        update_params = [
             new_values["account_id"],
             new_values["category"],
+        ]
+        if photo_data:
+            update_params.append(new_values["photo"])
+        update_params.extend([
             new_values["name"],
             new_values["job_title"],
             new_values["org_dept"],
@@ -7002,7 +7214,8 @@ def edit_contact(contact_id):
             new_values["social_media"],
             new_values["additional_notes"],
             contact_id
-        ))
+        ])
+        connection.execute(update_sql, tuple(update_params))
 
         if changes:
             audit_record_update(connection, "contact", contact_id, contact, new_values, labels)

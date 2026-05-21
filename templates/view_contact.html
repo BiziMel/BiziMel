@@ -16,6 +16,12 @@
 <div class="detail-card">
     <h2>Contact Details</h2>
 
+    {% if contact.photo %}
+        <div class="contact-photo-preview">
+            <img src="{{ contact.photo }}" alt="{{ contact.name }}">
+        </div>
+    {% endif %}
+
     <p><strong>Account:</strong> {{ contact.account_name }}</p>
     <p>
         <strong>Account Tier:</strong>

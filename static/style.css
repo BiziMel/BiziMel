@@ -833,6 +833,28 @@ a:hover {
     word-break: normal;
 }
 
+.daily-wrap-up-card {
+    background: #f7fbff;
+    border-color: #d7e5f2;
+}
+
+.contact-photo-preview {
+    width: 88px;
+    height: 88px;
+    border: 1px solid #d7dfd4;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #f5f7f3;
+    margin-bottom: 8px;
+}
+
+.contact-photo-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
 .outcome-strip-header {
     display: flex;
     justify-content: space-between;

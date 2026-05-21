@@ -113,6 +113,18 @@
                     </div>
                 </a>
             </div>
+            {% if daily_wrap_up %}
+                <details class="weekly-wrap-up-card daily-wrap-up-card" open>
+                    <summary>
+                        <span>{{ daily_wrap_up.title }}</span>
+                        <small>{{ daily_wrap_up.period }}</small>
+                    </summary>
+                    <div class="weekly-wrap-up-content">
+                        <p>{{ daily_wrap_up.paragraph_one }}</p>
+                        <p>{{ daily_wrap_up.paragraph_two }}</p>
+                    </div>
+                </details>
+            {% endif %}
             {% if weekly_wrap_up %}
                 <details class="weekly-wrap-up-card">
                     <summary>
