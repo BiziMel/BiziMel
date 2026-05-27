@@ -31,11 +31,29 @@ from orgchart_service import (
 )
 
 
-APP_VERSION = "1.5.2"
-APP_RELEASE_DATE = "2026-05-21"
-APP_BUILD = "2026-05-21-v1.5.2-wrapups-contact-photos"
+APP_VERSION = "1.5.3"
+APP_RELEASE_DATE = "2026-05-27"
+APP_BUILD = "2026-05-27-v1.5.3-validation-pg-bible"
 
 RELEASE_NOTES = [
+    {
+        "version": "1.5.3",
+        "release_date": "2026-05-27",
+        "title": "Hosted validation, PG Bible activity history and navigation clarity",
+        "new": [],
+        "enhanced": [
+            "Enhanced PG Bible export so each contact activity cell includes all interaction history in most-recent-first order.",
+            "Enhanced PG Bible export ordering so PG Action contacts are presented by latest contact activity from most recent to least recent.",
+            "Enhanced navigation so the active tab is visually highlighted for easier orientation.",
+            "Enhanced Release Notes so minor releases are grouped inside their major release accordion from most recent to least recent.",
+            "Enhanced PG Bible export from Reports with an on-screen percentage progress indicator while the workbook is being prepared.",
+        ],
+        "fixed": [
+            "Fixed hosted Outreach navigation resilience by keeping contact-summary database access open until rendering data is fully prepared.",
+            "Fixed hosted Postgres row compatibility so dictionary-style row access works consistently across reporting and export paths.",
+        ],
+        "sub_releases": [],
+    },
     {
         "version": "1.5.2",
         "release_date": "2026-05-20",
@@ -1256,11 +1274,40 @@ def storage_health():
 
 @app.route("/release-notes")
 def release_notes():
+    def version_parts(version):
+        parts = []
+        for part in str(version or "").split("."):
+            try:
+                parts.append(int(part))
+            except ValueError:
+                parts.append(0)
+        return tuple(parts)
+
+    flattened_releases = []
+    for release in RELEASE_NOTES:
+        parent_version = str(release.get("version", ""))
+        normalised_release = dict(release)
+        normalised_release["display_version"] = parent_version[:-2] if parent_version.endswith(".0") else parent_version
+        normalised_release["sub_releases"] = []
+        flattened_releases.append(normalised_release)
+        for sub_release in release.get("sub_releases") or []:
+            sub_version = str(sub_release.get("version", ""))
+            flattened_releases.append({
+                "version": sub_version,
+                "display_version": sub_version,
+                "release_date": sub_release.get("release_date", release.get("release_date", "")),
+                "title": sub_release.get("title", f"Additional changes delivered within Release {parent_version}"),
+                "new": sub_release.get("new", []),
+                "enhanced": sub_release.get("enhanced", []),
+                "fixed": sub_release.get("fixed", []),
+                "sub_releases": [],
+            })
+
     sorted_release_notes = sorted(
-        RELEASE_NOTES,
+        flattened_releases,
         key=lambda release: (
+            version_parts(release.get("version", "")),
             release.get("release_date", ""),
-            release.get("version", ""),
         ),
         reverse=True
     )
@@ -4293,7 +4340,37 @@ def activity_display_type(row, fallback="Activity"):
     return row["activity_type"] if "activity_type" in row.keys() and row["activity_type"] else fallback
 
 
-def pg_dashboard_context(connection):
+def activity_sort_value(row):
+    for key in ("last_updated", "activity_date", "next_action_date", "date_created"):
+        if key in row.keys() and row[key]:
+            return str(row[key])
+    return ""
+
+
+def activity_display_date(row):
+    value = activity_sort_value(row)
+    return value[:10] if value else "No date"
+
+
+def contact_activity_display_note(row):
+    for key in ("next_action", "notes", "subject"):
+        if key in row.keys() and row[key]:
+            return str(row[key]).strip()
+    return ""
+
+
+def contact_activity_entry(row):
+    parts = [
+        activity_display_date(row),
+        activity_display_type(row, "Activity"),
+        row["outcome"] if "outcome" in row.keys() and row["outcome"] else "",
+        row["task_status"] if "task_status" in row.keys() and row["task_status"] else "",
+        contact_activity_display_note(row),
+    ]
+    return " | ".join(str(part).strip() for part in parts if str(part or "").strip())
+
+
+def pg_dashboard_context(connection, include_all_contacts=False):
     accounts = connection.execute("""
         SELECT *
         FROM accounts
@@ -4419,11 +4496,32 @@ def pg_dashboard_context(connection):
                 seven_days_forward,
             )).fetchall()
             if (
+                not include_all_contacts
+                and
                 not scheduled_action_rows
                 and latest_contact_activity
                 and str(latest_contact_activity)[:10] < (datetime.now() - timedelta(days=14)).date().isoformat()
             ):
                 continue
+            all_contact_activity_rows = connection.execute("""
+                SELECT
+                    activity_date,
+                    activity_time,
+                    activity_type,
+                    subject,
+                    notes,
+                    outcome,
+                    next_action,
+                    next_action_date,
+                    next_action_time,
+                    task_status,
+                    date_created,
+                    last_updated
+                FROM outreach
+                WHERE account_id = ?
+                  AND contact_id = ?
+                ORDER BY id DESC
+            """, (account_id, contact_id)).fetchall()
             recent_activity_rows = connection.execute("""
                 SELECT activity_date, activity_type, subject, next_action, last_updated
                 FROM outreach
@@ -4456,6 +4554,15 @@ def pg_dashboard_context(connection):
                     "activity": activity_display_type(row, "Activity"),
                     "activity_update": activity_display_note(row),
                 })
+            all_activity_entries = [
+                {
+                    "date": activity_display_date(row),
+                    "sort_value": activity_sort_value(row),
+                    "activity": activity_display_type(row, "Activity"),
+                    "activity_update": contact_activity_entry(row),
+                }
+                for row in sorted(all_contact_activity_rows, key=activity_sort_value, reverse=True)
+            ]
 
             pg_action_rows.append({
                 "is_partner_row": False,
@@ -4478,6 +4585,8 @@ def pg_dashboard_context(connection):
                 "nbm_completed": action_update["nbm_completed"] if action_update and "nbm_completed" in action_update.keys() else "",
                 "last_7_days_activity_entries": last_7_days_activity_entries,
                 "next_7_days_actions": next_7_days_actions,
+                "all_activity_entries": all_activity_entries,
+                "latest_activity_sort": all_activity_entries[0]["sort_value"] if all_activity_entries else "",
             })
 
         partner_activity_rows = connection.execute("""
@@ -9695,7 +9804,7 @@ def build_pg_bible_report_from_db(connection):
 
     total_account_target = sum(account["pipeline_target"] or 0 for account in accounts)
     total_pipeline_added = sum(row.pipeline_generated_value or 0 for row in weekly_results)
-    pg_context = pg_dashboard_context(connection)
+    pg_context = pg_dashboard_context(connection, include_all_contacts=True)
     plan_items = [
         PlanItem(
             pg_bible_order=int(row["target_number"]) if str(row["target_number"] or "").isdigit() else None,
@@ -9714,7 +9823,19 @@ def build_pg_bible_report_from_db(connection):
     ]
 
     action_items = []
-    for row in pg_context["pg_action_rows"]:
+    pg_action_rows = sorted(
+        pg_context["pg_action_rows"],
+        key=lambda row: (
+            int(row.get("target_number") or 999999) if str(row.get("target_number") or "").isdigit() else 999999,
+            str(row.get("targeted_discovery") or "").casefold(),
+        ),
+    )
+    pg_action_rows = sorted(
+        pg_action_rows,
+        key=lambda row: row.get("latest_activity_sort") or "",
+        reverse=True,
+    )
+    for row in pg_action_rows:
         account_contact_parts = []
         if row.get("company_name"):
             account_contact_parts.append(row["company_name"])
@@ -9725,8 +9846,9 @@ def build_pg_bible_report_from_db(connection):
         if row.get("targeted_discovery"):
             account_contact_parts.append(row["targeted_discovery"])
 
+        activity_entries = row.get("all_activity_entries") or []
         scheduled_actions = []
-        for action in row.get("next_7_days_actions") or []:
+        for action in activity_entries or row.get("next_7_days_actions") or []:
             action_text = " | ".join(
                 part
                 for part in [
@@ -9795,11 +9917,12 @@ def export_pg_bible():
             mimetype="text/plain",
         )
 
-    connection = get_db_connection()
-    report = build_pg_bible_report_from_db(connection)
-    connection.close()
-
     try:
+        connection = get_db_connection()
+        try:
+            report = build_pg_bible_report_from_db(connection)
+        finally:
+            connection.close()
         output_dir = Path(os.environ.get("PIPEFLOW_DATA_DIR", Path(__file__).resolve().parent / "server_data")) / "exports"
         output_path = PGBibleExporter(template_path, output_dir).export(report)
     except PGBibleExportError as exc:

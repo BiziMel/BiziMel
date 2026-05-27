@@ -31,6 +31,8 @@ from models import GoalsSummary, OwnerReport, PGBibleExportError
 SECTION_LABELS = ["PG GOALS", "PG PLAN", "PG ACTIONS", "PG RESULTS"]
 MAY_2026_SECTION_LABELS = ["PG GOALS", "PG PLAN", "PG ACTIONS"]
 INVALID_SHEET_CHARS = r"[]:*?/\\"
+ILLEGAL_EXCEL_TEXT_RE = re.compile(r"[\x00-\x08\x0b-\x0c\x0e-\x1f]")
+MAX_EXCEL_CELL_TEXT_LENGTH = 32767
 NBM_COLOURS = {
     0: ("D90000", "FFFFFF"),
     1: ("F00000", "FFFFFF"),
@@ -97,6 +99,13 @@ def sanitize_excel_name(name: str) -> str:
 def sanitize_filename(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", value or "PipeFlow").strip("_")
     return cleaned or "PipeFlow"
+
+
+def sanitize_excel_text(value: str) -> str:
+    cleaned = ILLEGAL_EXCEL_TEXT_RE.sub(" ", value)
+    if len(cleaned) > MAX_EXCEL_CELL_TEXT_LENGTH:
+        return cleaned[: MAX_EXCEL_CELL_TEXT_LENGTH - 24].rstrip() + "\n[Text truncated for Excel]"
+    return cleaned
 
 
 def decimal_value(value: Any) -> Decimal:
@@ -666,6 +675,8 @@ class PGBibleExporter:
             return
         if isinstance(value, Decimal):
             cell.value = float(value)
+        elif isinstance(value, str):
+            cell.value = sanitize_excel_text(value)
         else:
             cell.value = value
 

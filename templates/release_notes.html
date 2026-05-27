@@ -32,7 +32,7 @@
         <details class="release-card release-accordion nested-release-card" {% if loop.first %}open{% endif %}>
             <summary class="release-summary">
                 <div>
-                    <h2>Version {{ release.version }}</h2>
+                    <h2>Version {{ release.display_version or release.version }}</h2>
                     <p>{{ release.title }}</p>
                 </div>
                 <span class="status-pill">{{ release.release_date }}</span>
@@ -66,40 +66,6 @@
                     </ul>
                 </section>
             </div>
-
-            {% if release.sub_releases %}
-                <div class="sub-release-list">
-                    {% for sub_release in release.sub_releases %}
-                        <section class="sub-release-card">
-                            <div class="release-summary compact-release-summary">
-                                <div>
-                                    <h3>Sub Release {{ sub_release.version }}</h3>
-                                    <p>Additional changes delivered within Version {{ release.version }}.</p>
-                                </div>
-                                <span class="status-pill">{{ sub_release.release_date }}</span>
-                            </div>
-                            <div class="release-section-grid">
-                                <section class="release-section release-enhanced">
-                                    <h3>Enhanced</h3>
-                                    <ul>
-                                        {% for item in sub_release.enhanced %}
-                                            <li>{{ item }}</li>
-                                        {% endfor %}
-                                    </ul>
-                                </section>
-                                <section class="release-section release-fixed">
-                                    <h3>Fixed</h3>
-                                    <ul>
-                                        {% for item in sub_release.fixed %}
-                                            <li>{{ item }}</li>
-                                        {% endfor %}
-                                    </ul>
-                                </section>
-                            </div>
-                        </section>
-                    {% endfor %}
-                </div>
-            {% endif %}
         </details>
                 {% endfor %}
             </div>

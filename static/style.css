@@ -162,6 +162,17 @@ input[type="submit"]:hover {
     background-color: #b7dcb5;
 }
 
+.nav-tab.is-active {
+    background-color: #256b3f;
+    color: #ffffff !important;
+    box-shadow: inset 0 -3px 0 #f4d35e, 0 2px 8px rgba(37, 107, 63, 0.22);
+}
+
+.nav-tab.is-active:hover {
+    background-color: #1f5b36;
+    opacity: 1;
+}
+
 .btn-secondary {
     background-color: #dfeedd;
 }
@@ -2030,6 +2041,65 @@ a:hover {
     padding: 10px 12px;
     border-radius: 6px;
     margin: 14px 0;
+}
+
+.export-progress-panel {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 950;
+    width: min(420px, calc(100vw - 32px));
+}
+
+.export-progress-card {
+    padding: 16px;
+    border: 1px solid #bdd8c0;
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: 0 14px 34px rgba(15, 23, 42, 0.2);
+}
+
+.export-progress-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-start;
+    margin-bottom: 12px;
+}
+
+.export-progress-header div {
+    display: grid;
+    gap: 4px;
+}
+
+.export-progress-header strong {
+    font-size: 15px;
+}
+
+.export-progress-header span {
+    font-size: 13px;
+    color: #425343;
+}
+
+.export-progress-percent {
+    min-width: 48px;
+    text-align: right;
+    font-weight: 900;
+    color: #1f5b36 !important;
+}
+
+.export-progress-track {
+    height: 12px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e6efe4;
+}
+
+.export-progress-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: #256b3f;
+    transition: width 0.25s ease;
 }
 
 .danger-zone-card {
