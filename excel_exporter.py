@@ -33,6 +33,7 @@ MAY_2026_SECTION_LABELS = ["PG GOALS", "PG PLAN", "PG ACTIONS"]
 INVALID_SHEET_CHARS = r"[]:*?/\\"
 ILLEGAL_EXCEL_TEXT_RE = re.compile(r"[\x00-\x08\x0b-\x0c\x0e-\x1f]")
 MAX_EXCEL_CELL_TEXT_LENGTH = 32767
+EXCEL_TRUNCATION_SUFFIX = "\n[Text truncated for Excel]"
 NBM_COLOURS = {
     0: ("D90000", "FFFFFF"),
     1: ("F00000", "FFFFFF"),
@@ -104,7 +105,7 @@ def sanitize_filename(value: str) -> str:
 def sanitize_excel_text(value: str) -> str:
     cleaned = ILLEGAL_EXCEL_TEXT_RE.sub(" ", value)
     if len(cleaned) > MAX_EXCEL_CELL_TEXT_LENGTH:
-        return cleaned[: MAX_EXCEL_CELL_TEXT_LENGTH - 24].rstrip() + "\n[Text truncated for Excel]"
+        return cleaned[: MAX_EXCEL_CELL_TEXT_LENGTH - len(EXCEL_TRUNCATION_SUFFIX)].rstrip() + EXCEL_TRUNCATION_SUFFIX
     return cleaned
 
 
