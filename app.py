@@ -10248,8 +10248,6 @@ def outreach_reports():
         ORDER BY outreach.activity_date DESC, outreach.activity_time DESC, outreach.id DESC
     """).fetchall()
 
-    connection.close()
-
     def parse_report_date(value):
         if not value:
             return None

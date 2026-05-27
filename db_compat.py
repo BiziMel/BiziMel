@@ -121,6 +121,9 @@ class HybridRow:
     def keys(self):
         return self.data.keys()
 
+    def get(self, key, default=None):
+        return self.data.get(key, default)
+
     def items(self):
         return self.data.items()
 
