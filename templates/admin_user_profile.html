@@ -27,7 +27,7 @@
             <p class="muted-text">{{ user["email"] }}</p>
         </div>
         <div class="admin-user-badges">
-            <span class="permission-badge">{{ user["role"]|capitalize }}</span>
+            <span class="permission-badge">{{ user["role"]|replace("_", " ")|title }}</span>
             <span class="user-status-pill {{ 'user-status-active' if user['is_active'] else 'user-status-inactive' }}">
                 {{ "Active" if user["is_active"] else "Inactive" }}
             </span>
@@ -35,6 +35,10 @@
     </div>
 
     <div class="admin-user-profile-summary">
+        <div>
+            <span>Company</span>
+            <strong>{{ user["company"] or "Not set" }}</strong>
+        </div>
         <div>
             <span>Team</span>
             <strong>{{ user["team"] or "Not set" }}</strong>
@@ -63,6 +67,12 @@
                 <label for="email">Email</label>
                 <input type="email" id="email" name="email" value="{{ user['email'] }}" required>
 
+                <label for="company">Company</label>
+                <input type="text" id="company" name="company" value="{{ user['company'] or '' }}" {% if not is_app_admin %}readonly{% endif %}>
+                {% if not is_app_admin %}
+                    <p class="field-help">Only application administrators can move users between companies.</p>
+                {% endif %}
+
                 <label for="team">Team</label>
                 <input type="text" id="team" name="team" value="{{ user['team'] or '' }}">
 
@@ -79,7 +89,10 @@
                 <select id="role" name="role" {% if user['id'] == session.get('user_id') %}disabled{% endif %}>
                     <option value="user" {% if user["role"] == "user" %}selected{% endif %}>User</option>
                     <option value="manager" {% if user["role"] == "manager" %}selected{% endif %}>Manager</option>
-                    <option value="admin" {% if user["role"] == "admin" %}selected{% endif %}>Admin</option>
+                    <option value="company_admin" {% if user["role"] == "company_admin" %}selected{% endif %}>Company Admin</option>
+                    {% if is_app_admin %}
+                        <option value="admin" {% if user["role"] == "admin" %}selected{% endif %}>Application Admin</option>
+                    {% endif %}
                 </select>
 
                 <div class="form-actions">

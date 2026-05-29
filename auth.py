@@ -11,7 +11,7 @@ from db_compat import get_connection, postgres_identifier, using_postgres
 
 
 AUTH_DB_NAME = "pipeflow_server_auth.db"
-VALID_ROLES = {"admin", "manager", "user"}
+VALID_ROLES = {"admin", "company_admin", "manager", "user"}
 VALID_ACCOUNT_FIELD_TYPES = {"text", "number", "date", "textarea"}
 VALID_BROADCAST_SEVERITIES = {"info", "success", "warning", "urgent"}
 
@@ -64,6 +64,7 @@ def initialise_auth_database() -> None:
                 email TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
                 full_name TEXT NOT NULL,
+                company TEXT,
                 role TEXT DEFAULT 'user',
                 reset_phrase_hash TEXT,
                 is_active INTEGER DEFAULT 1,
@@ -78,6 +79,7 @@ def initialise_auth_database() -> None:
                 email TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
                 full_name TEXT NOT NULL,
+                company TEXT,
                 role TEXT DEFAULT 'user',
                 reset_phrase_hash TEXT,
                 is_active INTEGER DEFAULT 1,
@@ -164,6 +166,7 @@ def initialise_auth_database() -> None:
         )
     """)
     add_column_if_missing(connection, "users", "reset_phrase_hash", "TEXT")
+    add_column_if_missing(connection, "users", "company", "TEXT")
     add_column_if_missing(connection, "users", "team", "TEXT")
     add_column_if_missing(connection, "users", "workspace_schema", "TEXT")
     add_column_if_missing(connection, "users", "active_team_id", "INTEGER")
@@ -192,24 +195,25 @@ def create_user(email: str, password: str, full_name: str, reset_phrase: str = "
     try:
         existing_count = connection.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         role = "admin" if existing_count == 0 else "user"
+        company = "Application" if existing_count == 0 else ""
         if using_postgres():
             cursor = connection.execute(
                 """
-                INSERT INTO users (email, password_hash, full_name, role, reset_phrase_hash)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO users (email, password_hash, full_name, company, role, reset_phrase_hash)
+                VALUES (?, ?, ?, ?, ?, ?)
                 RETURNING id
                 """,
-                (email, generate_password_hash(password), full_name, role, generate_password_hash(reset_phrase)),
+                (email, generate_password_hash(password), full_name, company, role, generate_password_hash(reset_phrase)),
             )
             row = cursor.fetchone()
             user_id = row["id"]
         else:
             cursor = connection.execute(
                 """
-                INSERT INTO users (email, password_hash, full_name, role, reset_phrase_hash)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO users (email, password_hash, full_name, company, role, reset_phrase_hash)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (email, generate_password_hash(password), full_name, role, generate_password_hash(reset_phrase)),
+                (email, generate_password_hash(password), full_name, company, role, generate_password_hash(reset_phrase)),
             )
             user_id = cursor.lastrowid
         connection.commit()
@@ -293,7 +297,7 @@ def current_user():
     connection = get_auth_connection()
     user = connection.execute(
         """
-        SELECT id, email, full_name, team, role, workspace_schema, active_team_id
+        SELECT id, email, full_name, company, team, role, workspace_schema, active_team_id
         FROM users
         WHERE id = ?
           AND is_active = 1
@@ -336,7 +340,7 @@ def ensure_default_team_for_user(user):
             (team_name, user["id"]),
         )
         team_id = connection.execute("SELECT id FROM teams WHERE team_name = ?", (team_name,)).fetchone()["id"]
-    membership_role = "admin" if user["role"] == "admin" else "member"
+    membership_role = "admin" if user["role"] in ("admin", "company_admin") else "member"
     if using_postgres():
         connection.execute(
             """
@@ -375,16 +379,22 @@ def list_active_team_members(user):
     if not team_id:
         return []
     connection = get_auth_connection()
+    company_clause = ""
+    params = [team_id]
+    if user and user["role"] != "admin":
+        company_clause = "AND COALESCE(users.company, '') = ?"
+        params.append(user["company"] if "company" in user.keys() and user["company"] else "")
     members = connection.execute(
-        """
-        SELECT users.id, users.email, users.full_name, users.team, users.workspace_schema, team_memberships.role
+        f"""
+        SELECT users.id, users.email, users.full_name, users.company, users.team, users.workspace_schema, team_memberships.role
         FROM team_memberships
         JOIN users ON users.id = team_memberships.user_id
         WHERE team_memberships.team_id = ?
           AND users.is_active = 1
+          {company_clause}
         ORDER BY users.full_name, users.email
         """,
-        (team_id,),
+        tuple(params),
     ).fetchall()
     connection.close()
     return members
@@ -452,7 +462,7 @@ def admin_required(view):
         user = current_user()
         if not user:
             return redirect(url_for("login"))
-        if user["role"] != "admin":
+        if user["role"] not in ("admin", "company_admin"):
             return redirect(url_for("home"))
         return view(*args, **kwargs)
 
@@ -480,51 +490,93 @@ def ensure_user_workspace_schema(user):
     return schema
 
 
-def list_users():
+def is_application_admin(user) -> bool:
+    return bool(user and user["role"] == "admin")
+
+
+def is_company_admin(user) -> bool:
+    return bool(user and user["role"] == "company_admin")
+
+
+def same_company(left, right) -> bool:
+    return bool(left and right and (left["company"] if "company" in left.keys() else "") and (left["company"] if "company" in left.keys() else "") == (right["company"] if "company" in right.keys() else ""))
+
+
+def list_users(actor=None):
     connection = get_auth_connection()
-    users = connection.execute(
-        """
-        SELECT id, email, full_name, team, role, is_active, workspace_schema, date_created, last_updated
-        FROM users
-        ORDER BY full_name, email
-        """
-    ).fetchall()
+    if is_company_admin(actor):
+        users = connection.execute(
+            """
+            SELECT id, email, full_name, company, team, role, is_active, workspace_schema, date_created, last_updated
+            FROM users
+            WHERE COALESCE(company, '') = ?
+            ORDER BY full_name, email
+            """,
+            (actor["company"] or "",),
+        ).fetchall()
+    else:
+        users = connection.execute(
+            """
+            SELECT id, email, full_name, company, team, role, is_active, workspace_schema, date_created, last_updated
+            FROM users
+            ORDER BY full_name, email
+            """
+        ).fetchall()
     connection.close()
     for user in users:
         ensure_user_workspace_schema(user)
     connection = get_auth_connection()
     users = connection.execute(
         """
-        SELECT id, email, full_name, team, role, is_active, workspace_schema, date_created, last_updated
+        SELECT id, email, full_name, company, team, role, is_active, workspace_schema, date_created, last_updated
         FROM users
+        {where_clause}
         ORDER BY full_name, email
         """
+    .format(where_clause="WHERE COALESCE(company, '') = ?" if is_company_admin(actor) else ""),
+        (actor["company"] or "",) if is_company_admin(actor) else (),
     ).fetchall()
     connection.close()
     return users
 
 
-def list_assignable_users():
+def list_assignable_users(actor=None):
+    actor = actor or current_user()
     connection = get_auth_connection()
-    users = connection.execute(
-        """
-        SELECT id, email, full_name, team, role, is_active, workspace_schema, date_created, last_updated
-        FROM users
-        WHERE is_active = 1
-        ORDER BY full_name, email
-        """
-    ).fetchall()
+    if actor and actor["role"] != "admin":
+        users = connection.execute(
+            """
+            SELECT id, email, full_name, company, team, role, is_active, workspace_schema, date_created, last_updated
+            FROM users
+            WHERE is_active = 1
+              AND COALESCE(company, '') = ?
+            ORDER BY full_name, email
+            """,
+            (actor["company"] if "company" in actor.keys() and actor["company"] else "",),
+        ).fetchall()
+    else:
+        users = connection.execute(
+            """
+            SELECT id, email, full_name, company, team, role, is_active, workspace_schema, date_created, last_updated
+            FROM users
+            WHERE is_active = 1
+            ORDER BY full_name, email
+            """
+        ).fetchall()
     connection.close()
     for user in users:
         ensure_user_workspace_schema(user)
     connection = get_auth_connection()
     users = connection.execute(
         """
-        SELECT id, email, full_name, team, role, is_active, workspace_schema, date_created, last_updated
+        SELECT id, email, full_name, company, team, role, is_active, workspace_schema, date_created, last_updated
         FROM users
         WHERE is_active = 1
+        {company_clause}
         ORDER BY full_name, email
         """
+    .format(company_clause="AND COALESCE(company, '') = ?" if actor and actor["role"] != "admin" else ""),
+        ((actor["company"] if "company" in actor.keys() and actor["company"] else ""),) if actor and actor["role"] != "admin" else (),
     ).fetchall()
     connection.close()
     return users
@@ -1040,7 +1092,7 @@ def get_user_for_admin(user_id: int):
     connection = get_auth_connection()
     user = connection.execute(
         """
-        SELECT id, email, full_name, team, role, is_active, workspace_schema
+        SELECT id, email, full_name, company, team, role, is_active, workspace_schema, date_created, last_updated
         FROM users
         WHERE id = ?
         """,
@@ -1168,10 +1220,11 @@ def cleanup_admin_audit_entries_older_than(cutoff):
 
 
 
-def update_user_identity(user_id: int, email: str, full_name: str, team: str):
+def update_user_identity(user_id: int, email: str, full_name: str, team: str, company: str | None = None):
     email = normalise_email(email)
     full_name = (full_name or "").strip()
     team = (team or "").strip()
+    company = (company if company is not None else "").strip()
     if not email or not full_name:
         return "Name and email are required."
 
@@ -1187,12 +1240,13 @@ def update_user_identity(user_id: int, email: str, full_name: str, team: str):
             UPDATE users
             SET email = ?,
                 full_name = ?,
+                company = ?,
                 team = ?,
                 workspace_schema = ?,
                 last_updated = CURRENT_TIMESTAMP
             WHERE id = ?
             """,
-            (email, full_name, team, workspace_schema, user_id),
+            (email, full_name, company, team, workspace_schema, user_id),
         )
         connection.commit()
         return ""

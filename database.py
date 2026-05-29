@@ -140,7 +140,7 @@ def initialise_database(force=False):
             job_title TEXT,
             org_dept TEXT,
             responsibilities TEXT,
-            email TEXT,
+            email TEXT NOT NULL UNIQUE,
             phone TEXT,
             location TEXT,
             linkedin TEXT,
@@ -484,6 +484,17 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "contacts", "team_id", "INTEGER DEFAULT 1")
     add_column_if_missing(cursor, "contacts", "status", "TEXT DEFAULT 'Active'")
     add_column_if_missing(cursor, "contacts", "archived_at", "TEXT")
+    try:
+        cursor.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_email_unique
+            ON contacts (LOWER(email))
+            WHERE email IS NOT NULL
+              AND TRIM(email) != ''
+        """)
+    except Exception:
+        # Legacy workspaces with duplicate contact emails remain accessible. New saves
+        # are still blocked by form validation until duplicates are cleaned up.
+        pass
     add_column_if_missing(cursor, "pg_action_contact_updates", "exec_first", "TEXT")
     add_column_if_missing(cursor, "pg_action_contact_updates", "nbm_completed", "TEXT")
 
@@ -654,6 +665,7 @@ def initialise_database(force=False):
         ("idx_pg_action_contact_updates_contact", "pg_action_contact_updates", ["contact_id"]),
         ("idx_contacts_account", "contacts", ["account_id"]),
         ("idx_contacts_category", "contacts", ["category"]),
+        ("idx_contacts_email", "contacts", ["email"]),
         ("idx_outreach_account", "outreach", ["account_id"]),
         ("idx_outreach_contact", "outreach", ["contact_id"]),
         ("idx_outreach_activity_date", "outreach", ["activity_date"]),

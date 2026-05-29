@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session, jsonify
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, get_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, get_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection
@@ -31,11 +31,28 @@ from orgchart_service import (
 )
 
 
-APP_VERSION = "1.5.3"
-APP_RELEASE_DATE = "2026-05-27"
-APP_BUILD = "2026-05-27-v1.5.3-validation-pg-bible"
+APP_VERSION = "2.0"
+APP_RELEASE_DATE = "2026-05-29"
+APP_BUILD = "2026-05-29-v2.0-company-tenancy"
 
 RELEASE_NOTES = [
+    {
+        "version": "2.0",
+        "release_date": "2026-05-29",
+        "title": "Company tenancy and company-scoped administration",
+        "new": [
+            "Introduced company tenancy so user profiles can be assigned to a company.",
+            "Added Company Admin access for administrators who manage users, data and permissions only inside their associated company.",
+        ],
+        "enhanced": [
+            "Enhanced sharing and assignment lists so non-application-admin users only see active users inside their own company.",
+            "Enhanced Admin user management with company visibility and company-scoped user controls.",
+            "Enhanced navigation highlighting so Insights Dashboard behaves consistently with every other active tab.",
+            "Enhanced contact data integrity so email is required, normalised and enforced as the unique contact identifier.",
+        ],
+        "fixed": [],
+        "sub_releases": [],
+    },
     {
         "version": "1.5.3",
         "release_date": "2026-05-27",
@@ -1546,9 +1563,11 @@ def logout():
 
 def render_admin_permissions():
     fiscal_start, fiscal_end = configured_fiscal_year()
+    actor = current_user()
     return render_template(
         "admin_permissions.html",
-        users=list_users(),
+        users=list_users(actor),
+        is_app_admin=is_application_admin(actor),
         broadcast_messages=list_broadcast_messages(active_only=False),
         audit_retention_enabled=audit_retention_enabled(),
         week_start_options=WEEKDAY_OPTIONS,
@@ -1559,6 +1578,21 @@ def render_admin_permissions():
         message=request.args.get("message", ""),
         error=request.args.get("error", "")
     )
+
+
+def current_admin_can_manage_user(target_user):
+    actor = current_user()
+    if not actor or not target_user:
+        return False
+    if is_application_admin(actor):
+        return True
+    return is_company_admin(actor) and same_company(actor, target_user)
+
+
+def require_application_admin_redirect():
+    if is_application_admin(current_user()):
+        return None
+    return redirect(url_for("admin_users", error="Only application administrators can change application-level settings."))
 
 
 @app.route("/admin/users")
@@ -1583,9 +1617,12 @@ def admin_user_profile(user_id):
     user = get_user_for_admin(user_id)
     if not user:
         return redirect(url_for("admin_users", error="Profile was not found."))
+    if not current_admin_can_manage_user(user):
+        return redirect(url_for("admin_users", error="You can only manage users in your company."))
     return render_template(
         "admin_user_profile.html",
         user=user,
+        is_app_admin=is_application_admin(current_user()),
         message=request.args.get("message", ""),
         error=request.args.get("error", ""),
     )
@@ -1594,6 +1631,9 @@ def admin_user_profile(user_id):
 @app.route("/admin/broadcasts/add", methods=("POST",))
 @admin_required
 def admin_add_broadcast():
+    guard = require_application_admin_redirect()
+    if guard:
+        return guard
     title = request.form.get("title", "")
     severity = request.form.get("severity", "info")
     start_at = request.form.get("start_at", "")
@@ -1621,6 +1661,9 @@ def admin_add_broadcast():
 @app.route("/admin/broadcasts/<int:message_id>/update", methods=("POST",))
 @admin_required
 def admin_update_broadcast(message_id):
+    guard = require_application_admin_redirect()
+    if guard:
+        return guard
     before = get_broadcast_message(message_id)
     title = request.form.get("title", "")
     severity = request.form.get("severity", "info")
@@ -1650,6 +1693,9 @@ def admin_update_broadcast(message_id):
 @app.route("/admin/broadcasts/<int:message_id>/deactivate", methods=("POST",))
 @admin_required
 def admin_deactivate_broadcast(message_id):
+    guard = require_application_admin_redirect()
+    if guard:
+        return guard
     before = get_broadcast_message(message_id)
     set_broadcast_message_active(message_id, False)
     log_admin_audit(
@@ -1665,6 +1711,9 @@ def admin_deactivate_broadcast(message_id):
 @app.route("/admin/broadcasts/<int:message_id>/reactivate", methods=("POST",))
 @admin_required
 def admin_reactivate_broadcast(message_id):
+    guard = require_application_admin_redirect()
+    if guard:
+        return guard
     before = get_broadcast_message(message_id)
     set_broadcast_message_active(message_id, True)
     log_admin_audit(
@@ -1680,6 +1729,9 @@ def admin_reactivate_broadcast(message_id):
 @app.route("/admin/broadcasts/<int:message_id>/delete", methods=("POST",))
 @admin_required
 def admin_delete_broadcast(message_id):
+    guard = require_application_admin_redirect()
+    if guard:
+        return guard
     before = get_broadcast_message(message_id)
     delete_broadcast_message(message_id)
     log_admin_audit(
@@ -1695,6 +1747,9 @@ def admin_delete_broadcast(message_id):
 @app.route("/admin/broadcasts/bulk", methods=("POST",))
 @admin_required
 def admin_bulk_broadcasts():
+    guard = require_application_admin_redirect()
+    if guard:
+        return guard
     selected_ids = [
         int(value)
         for value in request.form.getlist("selected_broadcast_ids")
@@ -1755,6 +1810,9 @@ def admin_bulk_broadcasts():
 @app.route("/admin/audit-retention", methods=("POST",))
 @admin_required
 def admin_update_audit_retention():
+    guard = require_application_admin_redirect()
+    if guard:
+        return guard
     enabled = request.form.get("audit_retention_enabled") == "1"
     set_admin_setting("audit_retention_enabled", "1" if enabled else "0")
     log_admin_audit(
@@ -1772,6 +1830,9 @@ def admin_update_audit_retention():
 @app.route("/admin/new-week-start", methods=("POST",))
 @admin_required
 def admin_update_new_week_start():
+    guard = require_application_admin_redirect()
+    if guard:
+        return guard
     selected_value = request.form.get("new_week_start", "0")
     valid_values = {option["value"] for option in WEEKDAY_OPTIONS}
     if selected_value not in valid_values:
@@ -1792,6 +1853,9 @@ def admin_update_new_week_start():
 @app.route("/admin/fiscal-year", methods=("POST",))
 @admin_required
 def admin_update_fiscal_year():
+    guard = require_application_admin_redirect()
+    if guard:
+        return guard
     start_value = request.form.get("fiscal_year_start", "")
     end_value = request.form.get("fiscal_year_end", "")
     fiscal_start = parse_iso_date(start_value)
@@ -1814,6 +1878,9 @@ def admin_update_fiscal_year():
 @app.route("/admin/account-fields/add", methods=("POST",))
 @admin_required
 def admin_add_account_field():
+    guard = require_application_admin_redirect()
+    if guard:
+        return guard
     error = create_account_field_definition(
         request.form.get("field_label", ""),
         request.form.get("field_type", "text"),
@@ -1834,6 +1901,9 @@ def admin_add_account_field():
 @app.route("/admin/account-fields/<int:field_id>/update", methods=("POST",))
 @admin_required
 def admin_update_account_field(field_id):
+    guard = require_application_admin_redirect()
+    if guard:
+        return guard
     before = get_account_field_definition(field_id)
     error = update_account_field_definition(
         field_id,
@@ -1858,6 +1928,9 @@ def admin_update_account_field(field_id):
 @app.route("/admin/account-fields/<int:field_id>/deactivate", methods=("POST",))
 @admin_required
 def admin_deactivate_account_field(field_id):
+    guard = require_application_admin_redirect()
+    if guard:
+        return guard
     field = get_account_field_definition(field_id)
     set_account_field_active(field_id, False)
     log_admin_audit(
@@ -1873,6 +1946,9 @@ def admin_deactivate_account_field(field_id):
 @app.route("/admin/account-fields/<int:field_id>/reactivate", methods=("POST",))
 @admin_required
 def admin_reactivate_account_field(field_id):
+    guard = require_application_admin_redirect()
+    if guard:
+        return guard
     field = get_account_field_definition(field_id)
     set_account_field_active(field_id, True)
     log_admin_audit(
@@ -1891,13 +1967,18 @@ def admin_update_user_identity(user_id):
     user = get_user_for_admin(user_id)
     if not user:
         return redirect(url_for("admin_user_profile", user_id=user_id, error="Profile was not found."))
+    actor = current_user()
+    if not current_admin_can_manage_user(user):
+        return redirect(url_for("admin_users", error="You can only manage users in your company."))
     old_email = user["email"]
     old_name = user["full_name"]
     old_team = user["team"] if "team" in user.keys() and user["team"] else ""
+    old_company = user["company"] if "company" in user.keys() and user["company"] else ""
     new_email = request.form.get("email", "")
     new_name = request.form.get("full_name", "")
     new_team = request.form.get("team", "")
-    error = update_user_identity(user_id, new_email, new_name, new_team)
+    new_company = request.form.get("company", old_company) if is_application_admin(actor) else old_company
+    error = update_user_identity(user_id, new_email, new_name, new_team, new_company)
     if error:
         return redirect(url_for("admin_user_profile", user_id=user_id, error=error))
 
@@ -1908,6 +1989,8 @@ def admin_update_user_identity(user_id):
         changes.append(f"Email changed from {old_email} to {new_email.strip().lower()}")
     if old_team != new_team.strip():
         changes.append(f"Team changed from {old_team or 'Not set'} to {new_team.strip() or 'Not set'}")
+    if old_company != new_company.strip():
+        changes.append(f"Company changed from {old_company or 'Not set'} to {new_company.strip() or 'Not set'}")
     log_admin_audit(
         current_user(),
         "Profile details updated",
@@ -1924,6 +2007,8 @@ def admin_deactivate_user(user_id):
     if user_id == session.get("user_id"):
         return redirect(url_for("admin_user_profile", user_id=user_id, error="You cannot deactivate your own admin profile."))
     user = get_user_for_admin(user_id)
+    if not current_admin_can_manage_user(user):
+        return redirect(url_for("admin_users", error="You can only manage users in your company."))
     set_user_active(user_id, False)
     log_admin_audit(
         current_user(),
@@ -1939,6 +2024,8 @@ def admin_deactivate_user(user_id):
 @admin_required
 def admin_reactivate_user(user_id):
     user = get_user_for_admin(user_id)
+    if not current_admin_can_manage_user(user):
+        return redirect(url_for("admin_users", error="You can only manage users in your company."))
     set_user_active(user_id, True)
     log_admin_audit(
         current_user(),
@@ -1956,8 +2043,13 @@ def admin_update_user_role(user_id):
     if user_id == session.get("user_id"):
         return redirect(url_for("admin_user_profile", user_id=user_id, error="You cannot change your own admin role."))
     user = get_user_for_admin(user_id)
+    actor = current_user()
+    if not current_admin_can_manage_user(user):
+        return redirect(url_for("admin_users", error="You can only manage users in your company."))
     old_role = user["role"] if user else "unknown"
     new_role = request.form.get("role", "")
+    if not is_application_admin(actor) and new_role == "admin":
+        return redirect(url_for("admin_user_profile", user_id=user_id, error="Only application administrators can assign application administrator access."))
     error = set_user_role(user_id, new_role)
     if error:
         return redirect(url_for("admin_user_profile", user_id=user_id, error=error))
@@ -1975,6 +2067,8 @@ def admin_update_user_role(user_id):
 @admin_required
 def admin_reset_user_password(user_id):
     user = get_user_for_admin(user_id)
+    if not current_admin_can_manage_user(user):
+        return redirect(url_for("admin_users", error="You can only manage users in your company."))
     error = reset_user_password(user_id, request.form.get("password", ""))
     if error:
         return redirect(url_for("admin_user_profile", user_id=user_id, error=error))
@@ -2300,6 +2394,25 @@ def get_or_create_partner(connection, partner_name):
     """, (partner_name, actor["id"], actor["email"], actor["name"]))
 
     return cursor.lastrowid
+
+
+def normalise_email_value(value):
+    return (value or "").strip().lower()
+
+
+def contact_email_error(connection, email, contact_id=None):
+    email = normalise_email_value(email)
+    if not email:
+        return "Contact email is required and must be unique."
+    params = [email]
+    query = "SELECT id FROM contacts WHERE LOWER(email) = ?"
+    if contact_id is not None:
+        query += " AND id != ?"
+        params.append(contact_id)
+    existing = connection.execute(query, params).fetchone()
+    if existing:
+        return "A contact already exists with this email address."
+    return ""
 
 
 def normalise_partner_website(website):
@@ -7085,6 +7198,16 @@ def contacts():
 def add_contact():
     if request.method == "POST":
         connection = get_db_connection()
+        contact_email = normalise_email_value(request.form.get("email"))
+        email_error = contact_email_error(connection, contact_email)
+        if email_error:
+            accounts = connection.execute("""
+                SELECT *
+                FROM accounts
+                ORDER BY account_name, business_unit
+            """).fetchall()
+            connection.close()
+            return render_template("add_contact.html", accounts=accounts, error=email_error)
         try:
             photo_data = uploaded_photo_data_url(request.files.get("photo"))
         except ValueError as exc:
@@ -7111,7 +7234,7 @@ def add_contact():
             request.form.get("job_title"),
             request.form.get("org_dept"),
             request.form.get("responsibilities"),
-            request.form.get("email"),
+            contact_email,
             request.form.get("phone"),
             request.form.get("location"),
             request.form.get("linkedin"),
@@ -7133,7 +7256,7 @@ def add_contact():
             "name": request.form.get("name"),
             "job_title": request.form.get("job_title"),
             "org_dept": request.form.get("org_dept"),
-            "email": request.form.get("email"),
+            "email": contact_email,
             "phone": request.form.get("phone"),
             "status": request.form.get("status") or "Active",
             "bmc_relationship": request.form.get("bmc_relationship"),
@@ -7215,6 +7338,16 @@ def edit_contact(contact_id):
     """).fetchall()
 
     if request.method == "POST":
+        contact_email = normalise_email_value(request.form.get("email"))
+        email_error = contact_email_error(connection, contact_email, contact_id)
+        if email_error:
+            connection.close()
+            return render_template(
+                "edit_contact.html",
+                contact=contact,
+                accounts=accounts,
+                error=email_error,
+            )
         new_values = {
             "account_id": request.form.get("account_id"),
             "category": request.form.get("category"),
@@ -7222,7 +7355,7 @@ def edit_contact(contact_id):
             "job_title": request.form.get("job_title"),
             "org_dept": request.form.get("org_dept"),
             "responsibilities": request.form.get("responsibilities"),
-            "email": request.form.get("email"),
+            "email": contact_email,
             "phone": request.form.get("phone"),
             "location": request.form.get("location"),
             "linkedin": request.form.get("linkedin"),
@@ -9459,7 +9592,7 @@ def collect_audit_entries():
     rows.extend(normalise_audit_row(row, "admin") for row in admin_rows)
 
     if using_postgres():
-        for user in list_users():
+        for user in list_users(current_user()):
             schema = user["workspace_schema"] if "workspace_schema" in user.keys() else ""
             if not schema:
                 continue

@@ -65,7 +65,8 @@
     <textarea id="responsibilities" name="responsibilities" rows="4">{{ contact.responsibilities }}</textarea>
 
     <label for="email">Email</label>
-    <input type="email" id="email" name="email" value="{{ contact.email }}">
+    <input type="email" id="email" name="email" value="{{ contact.email }}" required>
+    <p class="field-help">Email is the unique contact identifier and cannot be reused.</p>
 
     <label for="phone">Phone</label>
     <input type="text" id="phone" name="phone" value="{{ contact.phone }}">

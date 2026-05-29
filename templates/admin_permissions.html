@@ -18,7 +18,9 @@
     </div>
     <div class="admin-subnav-actions">
         <a href="{{ url_for('admin_permissions') }}" class="btn btn-primary btn-small">Permissions & Controls</a>
-        <a href="{{ url_for('admin_permissions') }}#broadcast-messages" class="btn btn-secondary btn-small">Broadcast Messages</a>
+        {% if is_app_admin %}
+            <a href="{{ url_for('admin_permissions') }}#broadcast-messages" class="btn btn-secondary btn-small">Broadcast Messages</a>
+        {% endif %}
         <a href="{{ url_for('audit_trail') }}" class="btn btn-secondary btn-small">Audit Trail</a>
     </div>
 </div>
@@ -97,7 +99,7 @@
     <div class="section-header">
         <div>
             <h3>User Permissions</h3>
-            <p class="muted-text">Update user details, move people between teams, promote trusted users to Admin, move people back to standard access, or pause profiles when access is no longer needed.</p>
+            <p class="muted-text">Update user details, company membership, teams, roles and access. Company administrators only see users inside their own company.</p>
         </div>
     </div>
 
@@ -107,6 +109,7 @@
                 <tr>
                     <th>Full Name</th>
                     <th>Email</th>
+                    <th>Company</th>
                     <th>Team</th>
                     <th>Role</th>
                     <th>Status</th>
@@ -121,8 +124,9 @@
                             </a>
                         </td>
                         <td>{{ user["email"] }}</td>
+                        <td>{{ user["company"] or "Not set" }}</td>
                         <td>{{ user["team"] or "Not set" }}</td>
-                        <td><span class="permission-badge">{{ user["role"]|capitalize }}</span></td>
+                        <td><span class="permission-badge">{{ user["role"]|replace("_", " ")|title }}</span></td>
                         <td>
                             <span class="user-status-pill {{ 'user-status-active' if user['is_active'] else 'user-status-inactive' }}">
                                 {{ "Active" if user["is_active"] else "Inactive" }}
@@ -131,7 +135,7 @@
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="5">No user profiles found.</td>
+                        <td colspan="6">No user profiles found.</td>
                     </tr>
                 {% endfor %}
             </tbody>
@@ -139,6 +143,7 @@
     </div>
 </div>
 
+{% if is_app_admin %}
 <div class="card admin-broadcast-card" id="broadcast-messages">
     <div class="section-header">
         <div>
@@ -370,6 +375,7 @@
         <button type="submit" class="btn btn-primary">Save Auto-delete Setting</button>
     </form>
 </div>
+{% endif %}
 
 <script>
     document.querySelectorAll(".js-single-submit").forEach((form) => {
