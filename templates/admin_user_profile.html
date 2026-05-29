@@ -86,7 +86,7 @@
             <h4>Role & Access</h4>
             <form method="POST" action="{{ url_for('admin_update_user_role', user_id=user['id']) }}" class="pipeflow-form compact-admin-form">
                 <label for="role">Role</label>
-                <select id="role" name="role" {% if user['id'] == session.get('user_id') %}disabled{% endif %}>
+                <select id="role" name="role">
                     <option value="user" {% if user["role"] == "user" %}selected{% endif %}>User</option>
                     <option value="manager" {% if user["role"] == "manager" %}selected{% endif %}>Manager</option>
                     <option value="company_admin" {% if user["role"] == "company_admin" %}selected{% endif %}>Company Admin</option>
@@ -94,9 +94,10 @@
                         <option value="admin" {% if user["role"] == "admin" %}selected{% endif %}>Application Admin</option>
                     {% endif %}
                 </select>
+                <p class="field-help">Application administrators can amend any role, including another application administrator. Company administrators can amend roles inside their own company, except Application Admin.</p>
 
                 <div class="form-actions">
-                    <button type="submit" class="btn btn-secondary" {% if user['id'] == session.get('user_id') %}disabled{% endif %}>Update Role</button>
+                    <button type="submit" class="btn btn-secondary">Update Role</button>
                 </div>
             </form>
 

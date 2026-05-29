@@ -37,18 +37,27 @@
     <div class="section-header">
         <div>
             <h3>Permission Structure</h3>
-            <p class="muted-text">Roles are deliberately simple. Admins manage access and configuration, while each user keeps their own PipeFlow data private.</p>
+            <p class="muted-text">Roles separate full application administration, company-scoped administration and standard workspace access.</p>
         </div>
     </div>
 
     <div class="permission-card-grid">
         <div class="permission-card permission-card-admin">
             <div class="permission-card-header">
-                <span class="permission-badge">Admin</span>
-                <span class="permission-level">Full control</span>
+                <span class="permission-badge">Application Admin</span>
+                <span class="permission-level">Full system control</span>
             </div>
-            <p>Can manage profiles, grant or remove admin access, reset passwords, deactivate users, configure account fields and delete accounts in their own workspace.</p>
-            <p class="permission-note">Admin access does not open another user's private account, contact, partner, outreach or task data.</p>
+            <p>Can manage every company, every user profile, company membership, role, access status, password reset, broadcasts, system settings, audit retention and global account fields.</p>
+            <p class="permission-note">Application Admin is intended for the small group who administer PipeFlow and prevent single-person dependency if one administrator leaves.</p>
+        </div>
+
+        <div class="permission-card permission-card-admin">
+            <div class="permission-card-header">
+                <span class="permission-badge">Company Admin</span>
+                <span class="permission-level">Company control</span>
+            </div>
+            <p>Can manage people, roles, passwords, active status, data and sharing permissions inside their own company only.</p>
+            <p class="permission-note">Company Admins cannot see, share or administer records from another company and cannot assign Application Admin access.</p>
         </div>
 
         <div class="permission-card">
@@ -82,16 +91,16 @@
 
 <div class="admin-control-strip">
     <div>
-        <strong>Privacy rule</strong>
-        <p>Admins manage the system, not another user's private PipeFlow records.</p>
+        <strong>Tenancy rule</strong>
+        <p>Application Admins can manage the full system. Company Admins are constrained to their associated company.</p>
     </div>
     <div>
-        <strong>Account deletion</strong>
-        <p>Only admins see and can use Delete Account, and only inside their own workspace.</p>
+        <strong>Sharing boundary</strong>
+        <p>Sharing and assignment lists only include users inside the same company unless the user is an Application Admin.</p>
     </div>
     <div>
         <strong>Global fields</strong>
-        <p>Account field changes appear on every user's forms, while field values stay private per user.</p>
+        <p>Only Application Admins manage global account fields, fiscal settings, broadcast messages and audit retention.</p>
     </div>
 </div>
 

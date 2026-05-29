@@ -49,6 +49,9 @@ RELEASE_NOTES = [
             "Enhanced Admin user management with company visibility and company-scoped user controls.",
             "Enhanced navigation highlighting so Insights Dashboard behaves consistently with every other active tab.",
             "Enhanced contact data integrity so email is required, normalised and enforced as the unique contact identifier.",
+            "Enhanced administrator role management so application administrators can amend Role and Access for any user type, including their own profile and other application administrators.",
+            "Enhanced the User Guide and generated PDF with detailed step-by-step coverage for company tenancy, role administration, sharing boundaries, PG Bible exports and core workflows.",
+            "Enhanced the Admin permission structure tiles to explain Application Admin and Company Admin responsibilities.",
         ],
         "fixed": [],
         "sub_releases": [],
@@ -400,10 +403,11 @@ USER_GUIDE_SECTIONS = [
         "slug": "getting-started",
         "title": "Getting Started",
         "summary": "Set up your profile, understand navigation and get your first workspace ready.",
-        "access": "All signed-in users can use the standard navigation. Admin appears only for users with admin permission, and Audit is available inside Admin as an admin-only sub tab.",
+        "access": "All signed-in users can use the standard navigation. Admin appears only for Application Admin and Company Admin users, and Audit is available inside Admin as an admin-only sub tab.",
         "navigation": [
             "Use the top navigation from left to right as your normal workflow: Dashboard, Outreach Tasks, Accounts, Contacts, Partners, Reports, Profile and Release Notes.",
             "Use the User Guide link in the top right whenever you need help without leaving the application structure.",
+            "Use Release Notes in the header to review the latest major and minor release changes.",
             "Use the global search field in the header when you know the account, contact, partner, campaign or outreach text you want to find.",
             "Use Sign Out as the final navigation option when you have finished working.",
         ],
@@ -412,6 +416,7 @@ USER_GUIDE_SECTIONS = [
             "Open Profile and confirm your full name, team, job title and working hours.",
             "Add any non-working date blocks so generated campaigns avoid those days.",
             "Create accounts first, add contacts to those accounts, then create outreach tasks or generate campaigns.",
+            "Check that every contact has a unique email address because email is the contact identifier used for reporting and exports.",
             "Review Dashboard and Reports regularly to check execution progress and accountability.",
             "Use Release Notes after a deployment to understand what has changed before you continue testing.",
             "When you are unsure where to work next, start with Dashboard metrics, then open the matching account or outreach record.",
@@ -420,6 +425,7 @@ USER_GUIDE_SECTIONS = [
             "Your workspace data is private unless you explicitly share an account through Outreach Tasks.",
             "Use the global search field when you know the account, contact, partner or outreach text you are looking for.",
             "If a menu item is missing, it is normally because your profile does not have permission for that function.",
+            "Users only appear in sharing, assignment and administration lists when company tenancy rules allow them to be visible.",
         ],
     },
     {
@@ -438,6 +444,7 @@ USER_GUIDE_SECTIONS = [
             "Open Weekly Wrap Up after Sunday midday to review the completed Monday to Friday working week and where to focus next.",
             "Use the current-quarter outcome breakdown to see which outcomes are being recorded in the active fiscal quarter.",
             "Use Execution Learning to decide which account, contact, campaign or sales play needs attention next.",
+            "Use Insights Dashboard when you want the broader execution view; its active tab highlight behaves the same way as the other tabs.",
             "Open the relevant record from the table and record a clear outcome after completing the recommended next move.",
             "Click metric cards such as Overdue Actions, Untouched Accounts or All Active Outreach to move into the related work list.",
             "Review Meetings Booked This Week to confirm that successful meeting outcomes are being captured correctly.",
@@ -465,6 +472,7 @@ USER_GUIDE_SECTIONS = [
             "Set Account Tier to 1, 2 or 3 for prioritisation.",
             "Set PG Bible Order when the account must appear in a specific sequence in exports.",
             "Enter Pipeline Target USD ACV so the Dashboard can calculate total PG target value.",
+            "Use custom account fields when Application Admins have configured additional organisation-specific data capture.",
             "Review or reassign the Account Owner on the edit account form when ownership changes.",
             "Open an account record to review contacts, partner involvement, outreach history and timeline entries.",
             "Use Org Chart from the account record to map who works for whom inside the customer or partner organisation.",
@@ -473,6 +481,7 @@ USER_GUIDE_SECTIONS = [
             "Use the colour legend below the Org Chart search box to understand how relationship types such as Champion, Coach or Executive are represented.",
             "Use Export PDF from the Org Chart page when you need an offline landscape or portrait view of the account structure.",
             "Use Account Sharing on the account record to review and revoke access if you own the account.",
+            "Delete an account only when you are certain it should be removed from your workspace; administration roles do not override company tenancy boundaries for other companies.",
         ],
         "tips": [
             "Use business organisation to distinguish large accounts with multiple internal groups.",
@@ -495,11 +504,13 @@ USER_GUIDE_SECTIONS = [
         "steps": [
             "Add contacts from the Contacts page or from an account context.",
             "Select the account before entering stakeholder details.",
+            "Enter a unique contact email address. PipeFlow blocks blank or reused email addresses so contacts remain identifiable.",
             "Capture job title, organisation, relationship, responsibilities and personal context where known.",
             "Use contact data to make campaign recommendations more accurate over time.",
             "Keep contact records current when a stakeholder changes role, leaves or becomes more important to the sales play.",
             "Use the Active or Inactive status so reports and admin archive actions can identify contacts that no longer need regular attention.",
             "Use BMC Relationship to describe how useful the stakeholder is to the sales motion, such as Champion, Coach or Influencer.",
+            "Edit a contact when their role, email, relationship status or account context changes so reports and the PG Bible remain accurate.",
         ],
         "tips": [
             "Accounts must have at least one contact before Campaign Builder can generate a campaign.",
@@ -525,6 +536,7 @@ USER_GUIDE_SECTIONS = [
             "Use the Assigned To dropdown in each row and click Save Assignment to commit task ownership.",
             "Use the compact status filter to show All Open, All Completed, All or specific statuses.",
             "Add an Activity Update before closing or completing an outreach task.",
+            "Record dated activity updates consistently because PG Bible export combines every interaction into the contact activity cell from most recent to oldest.",
             "Use Complete and Create Follow-Up when the current task is done but another task is needed.",
             "Select multiple contacts when one outreach activity applies to more than one customer or partner stakeholder.",
             "Use the contact checkbox picker by clicking the field, selecting contacts, then clicking outside the picker to close it.",
@@ -536,6 +548,7 @@ USER_GUIDE_SECTIONS = [
             "Tasks can only be assigned to users who have access to the related account.",
             "Completed and cancelled outreach is hidden unless you explicitly filter for it.",
             "If a user is missing from the assignment dropdown, check that the account has been shared with them first.",
+            "If a user is outside your company, they will not appear in sharing or assignment controls.",
         ],
     },
     {
@@ -554,6 +567,7 @@ USER_GUIDE_SECTIONS = [
             "Set PG Week, campaign start and campaign end dates.",
             "Set the total outreach task quantity and how many times per week activities should occur.",
             "Generate the campaign to create outreach tasks across the selected contacts.",
+            "Wait for generation to finish before editing the resulting tasks; generated tasks are placed into Outreach Tasks for review.",
             "Review the generated dates and assignee before beginning execution.",
             "Check the generated activity mix so VITO is first and later email-style steps are not repeating the initial VITO.",
             "If the campaign starts today, confirm the generated times are later than the current submit time.",
@@ -580,6 +594,7 @@ USER_GUIDE_SECTIONS = [
         "steps": [
             "Open Outreach Tasks from the top navigation.",
             "Use Share Full Account to copy an account, contacts, outreach tasks and account details to one or more users.",
+            "Select recipients from the company-scoped user list; users outside your company cannot receive or see the shared account.",
             "Use Sharing Permissions to revoke access when a user no longer needs the account.",
             "Use the Assigned To dropdown and Save Assignment button in the task table to reassign work.",
             "Review active follow-up tasks grouped by customer and campaign.",
@@ -592,6 +607,7 @@ USER_GUIDE_SECTIONS = [
             "Sharing copies the full account package into the selected user's workspace while the originator retains their own access.",
             "Revoking an account share moves any tasks assigned to that user back to the account owner.",
             "Use sharing for collaboration. Use ownership reassignment only when responsibility for the account itself changes.",
+            "Application Admins can administer sharing policy and users, but the visible user lists still protect company boundaries for normal company users.",
         ],
     },
     {
@@ -607,6 +623,7 @@ USER_GUIDE_SECTIONS = [
             "Create partner organisations with type, location, website, managers and notes.",
             "Add partner contacts who work for the partner organisation.",
             "Map partner contacts and partner involvement to accounts where they help progress opportunities.",
+            "Use partner account mappings to explain which partner is supporting which customer account and what next action is required.",
             "Review partner metrics and account links from the partner record.",
             "Keep partner manager and BMC partner manager fields current so ownership is clear.",
             "Link partner contacts to customer accounts where they are actively helping progress the account.",
@@ -634,6 +651,8 @@ USER_GUIDE_SECTIONS = [
             "Use Outreach Reports to review activity volume, account-grouped outcome breakdown by date, due-date filters and monthly meeting conversion.",
             "Use Task Reports to review due dates, overdue activity and ownership.",
             "Export PG Bible when you need the formatted workbook output.",
+            "Watch the PG Bible progress indicator while the workbook is prepared; it moves from 0 to 100 percent and then downloads the file.",
+            "Review PG Bible contact activity cells to see every mapped interaction in most-recent-first order for each contact.",
             "Use filters before exporting when the report supports narrowing by date, account, status or assignee.",
             "Use the Export CSV button when you need the report data outside PipeFlow.",
             "In Outreach Reports, review Outcome Breakdown by account, contact, activity date and outcome.",
@@ -643,6 +662,7 @@ USER_GUIDE_SECTIONS = [
             "Reports reflect the same fields used across account, contact, outreach and task views.",
             "Outreach Reports use Due Date to focus on when work must be completed, rather than campaign end date.",
             "PG Bible uses account target and ordering fields configured in the account form.",
+            "PG Bible contact ordering uses the most recent contact activity date first so active stakeholders are presented before stale records.",
             "Task Reports include SLA by assignee so timeliness is measured against the person currently assigned.",
         ],
     },
@@ -663,6 +683,7 @@ USER_GUIDE_SECTIONS = [
             "Review these settings before using Campaign Builder because auto-scheduling uses them.",
             "Use non-working blocks for full-day or multi-day absence so Campaign Builder avoids scheduling work during those dates.",
             "Update your profile name if it is wrong because that name appears in assignment dropdowns and audit history.",
+            "Contact an administrator if your company, role or access level is wrong; those fields are maintained from Admin.",
         ],
         "tips": [
             "Saturday and Sunday are non-working by default for auto-scheduling.",
@@ -673,27 +694,37 @@ USER_GUIDE_SECTIONS = [
     {
         "slug": "admin",
         "title": "Admin",
-        "summary": "Manage users, permissions and broadcasts when signed in as an administrator.",
-        "access": "Admin forms are only visible to admin users. Non-admin users will not see Admin in the navigation and cannot access the admin routes.",
+        "summary": "Manage users, permissions, companies, broadcasts and application controls when signed in as an administrator.",
+        "access": "Admin forms are visible to Application Admin and Company Admin users. Application Admins can manage every company and all application-level settings. Company Admins can manage people, data and permissions only inside their own company.",
         "navigation": [
             "Admin appears near the end of the navigation only for admin users.",
             "Use Admin for user management, role changes, broadcasts and profile administration.",
+            "Open a user from User Permissions when you need to update profile details, company, Role, Access, active status or password.",
             "Use the Broadcast Messages sub tab inside Admin to create, pause, edit or delete user messages.",
             "Use the Audit Trail sub tab inside Admin to review administrative and data-change history.",
         ],
         "steps": [
             "Open Admin from the top navigation when available.",
-            "Review user profiles and update role, team or email when required.",
+            "Review the Permission Structure tiles to confirm the difference between Application Admin, Company Admin, Manager, User and Inactive status.",
+            "Open User Permissions and select the user's name to manage their profile.",
+            "Update full name, email, company and team. Only Application Admins can move a user between companies.",
+            "Use Role & Access to amend the user's role. Application Admins can assign User, Manager, Company Admin or Application Admin to any user type, including another Application Admin.",
+            "Use Company Admin when a person should administer only their company users, company data and company sharing permissions.",
+            "Use Manager or User for standard workspace access when no administration rights are required.",
             "Deactivate users who should no longer access PipeFlow.",
+            "Reactivate users when access should be restored.",
+            "Reset a user's password only after confirming the request with that user or following the company support process.",
             "Create broadcast messages with start and stop times for login and dashboard announcements.",
             "Set New Week Start so weekly dashboard calculations begin on the correct day for your operating rhythm.",
             "Set Fiscal Year Settings so dashboard outcome breakdowns and quarterly reports use the correct fiscal dates.",
-            "Use admin password reset only after confirming the request with the user.",
+            "Configure global account fields when every user's account forms need a common additional field.",
             "Use the Broadcast Messages sub tab to create dated messages that appear on login and dashboard ticker areas.",
             "Use retention and audit settings deliberately because they affect how long administration history is kept.",
         ],
         "tips": [
             "Admin actions are recorded in the admin audit trail.",
+            "Application Admin should be held by a small number of trusted administrators so the application never depends on one person.",
+            "Company Admins cannot see or manage another company's users or data.",
             "Only admins can access Admin, including its Audit Trail sub tab.",
             "If a user cannot see an admin form, check their role before troubleshooting the page.",
         ],
@@ -705,7 +736,7 @@ USER_GUIDE_SECTIONS = [
         "access": "Audit is an admin-only sub tab inside Admin. Release Notes are visible to all users so everyone can understand what changed.",
         "navigation": [
             "Open Admin from the navigation, then use the Audit Trail sub tab.",
-            "Open Release Notes from the navigation to see product changes.",
+            "Open Release Notes from the header to see product changes.",
             "Use the accordion controls to expand older release entries when needed.",
         ],
         "steps": [
@@ -2040,8 +2071,6 @@ def admin_reactivate_user(user_id):
 @app.route("/admin/users/<int:user_id>/role", methods=("POST",))
 @admin_required
 def admin_update_user_role(user_id):
-    if user_id == session.get("user_id"):
-        return redirect(url_for("admin_user_profile", user_id=user_id, error="You cannot change your own admin role."))
     user = get_user_for_admin(user_id)
     actor = current_user()
     if not current_admin_can_manage_user(user):
