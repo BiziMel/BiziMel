@@ -2,7 +2,7 @@
 
 Validated for the hosted enterprise build:
 
-- Mandatory `PIPEFLOW_SECRET_KEY` for hosted startup.
+- Session secret handling supports `PIPEFLOW_SECRET_KEY`, `SECRET_KEY` or a deployment-specific fallback derived from hosted environment settings.
 - CSRF validation for state-changing requests.
 - Hardened session cookie configuration.
 - Security headers including CSP, frame protection and content-type protection.

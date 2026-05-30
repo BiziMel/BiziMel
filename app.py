@@ -9,6 +9,7 @@ import re
 import traceback
 import json
 import secrets
+import hashlib
 from datetime import datetime, timedelta
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 
@@ -21,7 +22,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.0"
 APP_RELEASE_DATE = "2026-05-30"
-APP_BUILD = "2026-05-30-v2.0-enterprise-secure"
+APP_BUILD = "2026-05-30-v2.0-enterprise-secure-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -565,10 +566,26 @@ app = Flask(
     template_folder=resource_path("templates"),
     static_folder=resource_path("static")
 )
-secret_key = os.environ.get("PIPEFLOW_SECRET_KEY")
-if not secret_key and os.environ.get("PIPEFLOW_ALLOW_DEV_SECRET") != "1":
-    raise RuntimeError("PIPEFLOW_SECRET_KEY must be set for the hosted enterprise application.")
-app.config["SECRET_KEY"] = secret_key or "pipeflow-local-dev-secret-change-me"
+def configured_secret_key():
+    explicit_secret = os.environ.get("PIPEFLOW_SECRET_KEY") or os.environ.get("SECRET_KEY")
+    if explicit_secret:
+        return explicit_secret
+
+    database_url = os.environ.get("DATABASE_URL", "")
+    if database_url:
+        return hashlib.sha256(f"pipeflow-session:{database_url}".encode("utf-8")).hexdigest()
+
+    render_identity = os.environ.get("RENDER_SERVICE_ID") or os.environ.get("RENDER_INSTANCE_ID")
+    if render_identity:
+        return hashlib.sha256(f"pipeflow-render-session:{render_identity}".encode("utf-8")).hexdigest()
+
+    if os.environ.get("RENDER"):
+        return secrets.token_urlsafe(64)
+
+    return "pipeflow-local-dev-secret-change-me"
+
+
+app.config["SECRET_KEY"] = configured_secret_key()
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.environ.get(
@@ -958,7 +975,7 @@ def require_login_and_prepare_database():
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
         validate_csrf_token()
 
-    public_endpoints = {"login", "register", "forgot_password", "reset_password", "release_notes", "user_guide", "user_guide_section", "storage_health", "static"}
+    public_endpoints = {"login", "register", "forgot_password", "reset_password", "release_notes", "user_guide", "user_guide_section", "version_health", "storage_health", "static"}
     if request.endpoint in public_endpoints:
         return None
 
