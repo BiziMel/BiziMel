@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Tenant Administration - PipeFlow PG Manager{% endblock %}
+
+{% block content %}
+<section class="page-header admin-hero">
+    <div>
+        <p class="eyebrow">Admin Console</p>
+        <h2>Tenant</h2>
+        <p class="muted-text">Create and review company tenancies for the hosted enterprise application.</p>
+    </div>
+    <a href="{{ url_for('admin_permissions') }}" class="btn btn-secondary">Back to Admin</a>
+</section>
+
+<div class="admin-subnav-card">
+    <div>
+        <strong>Application Admin Only</strong>
+        <p>Tenants define the company boundary used for user administration, sharing and assignment visibility.</p>
+    </div>
+    <div class="admin-subnav-actions">
+        <a href="{{ url_for('admin_permissions') }}" class="btn btn-secondary btn-small">Permissions & Controls</a>
+        <a href="{{ url_for('admin_tenants') }}" class="btn btn-primary btn-small">Tenant</a>
+        <a href="{{ url_for('audit_trail') }}" class="btn btn-secondary btn-small">Audit Trail</a>
+    </div>
+</div>
+
+{% if message %}
+    <div class="alert-success">{{ message }}</div>
+{% endif %}
+
+{% if error %}
+    <div class="alert-error">{{ error }}</div>
+{% endif %}
+
+<section class="card tenant-form-card">
+    <div class="section-header">
+        <div>
+            <h3>Create Tenant</h3>
+            <p class="muted-text">Add the company tenancy before assigning users to that company.</p>
+        </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('admin_tenants') }}" class="tenant-form">
+        <div class="form-group">
+            <label for="company_name">Company Name</label>
+            <input type="text" id="company_name" name="company_name" required>
+        </div>
+        <div class="form-group">
+            <label for="country">Country</label>
+            <input type="text" id="country" name="country" required>
+        </div>
+        <div class="form-group">
+            <label for="company_contact">Company contact</label>
+            <input type="text" id="company_contact" name="company_contact" placeholder="Primary company administrator" required>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Create Tenant</button>
+        </div>
+    </form>
+</section>
+
+<section class="card">
+    <div class="section-header">
+        <div>
+            <h3>Configured Tenants</h3>
+            <p class="muted-text">These companies are available for user profile tenancy assignment.</p>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th>Company Name</th>
+                    <th>Country</th>
+                    <th>Company contact</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for tenant in tenants %}
+                    <tr>
+                        <td>{{ tenant["company_name"] }}</td>
+                        <td>{{ tenant["country"] }}</td>
+                        <td>{{ tenant["company_contact"] }}</td>
+                        <td>{{ "Active" if tenant["is_active"] else "Inactive" }}</td>
+                        <td>{{ tenant["date_created"] }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="5">No tenants have been configured.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

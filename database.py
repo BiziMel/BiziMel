@@ -140,7 +140,7 @@ def initialise_database(force=False):
             job_title TEXT,
             org_dept TEXT,
             responsibilities TEXT,
-            email TEXT NOT NULL UNIQUE,
+            email TEXT,
             phone TEXT,
             location TEXT,
             linkedin TEXT,
@@ -189,30 +189,6 @@ def initialise_database(force=False):
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(account_id) REFERENCES accounts(id),
             FOREIGN KEY(contact_id) REFERENCES contacts(id)
-        )
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS outreach_contact_links (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            outreach_id INTEGER NOT NULL,
-            contact_id INTEGER NOT NULL,
-            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(outreach_id, contact_id),
-            FOREIGN KEY(outreach_id) REFERENCES outreach(id),
-            FOREIGN KEY(contact_id) REFERENCES contacts(id)
-        )
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS outreach_partner_contact_links (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            outreach_id INTEGER NOT NULL,
-            partner_contact_id INTEGER NOT NULL,
-            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(outreach_id, partner_contact_id),
-            FOREIGN KEY(outreach_id) REFERENCES outreach(id),
-            FOREIGN KEY(partner_contact_id) REFERENCES partner_contacts(id)
         )
     """)
 
@@ -320,33 +296,6 @@ def initialise_database(force=False):
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS org_charts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            account_id INTEGER NOT NULL,
-            layout_prefs TEXT,
-            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
-            last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(account_id) REFERENCES accounts(id)
-        )
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS org_chart_nodes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            org_chart_id INTEGER NOT NULL,
-            contact_id INTEGER NOT NULL,
-            parent_contact_id INTEGER,
-            sort_index INTEGER DEFAULT 0,
-            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
-            last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(org_chart_id, contact_id),
-            FOREIGN KEY(org_chart_id) REFERENCES org_charts(id),
-            FOREIGN KEY(contact_id) REFERENCES contacts(id),
-            FOREIGN KEY(parent_contact_id) REFERENCES contacts(id)
-        )
-    """)
-
-    cursor.execute("""
         CREATE TABLE IF NOT EXISTS timeline_entries (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             related_type TEXT NOT NULL,
@@ -430,18 +379,6 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "account_org_chart_people", "sort_order", "INTEGER DEFAULT 0")
     add_column_if_missing(cursor, "account_org_chart_people", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "account_org_chart_people", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
-    add_column_if_missing(cursor, "org_charts", "team_id", "INTEGER DEFAULT 1")
-    add_column_if_missing(cursor, "org_charts", "account_id", "INTEGER")
-    add_column_if_missing(cursor, "org_charts", "layout_prefs", "TEXT")
-    add_column_if_missing(cursor, "org_charts", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
-    add_column_if_missing(cursor, "org_charts", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
-    add_column_if_missing(cursor, "org_chart_nodes", "team_id", "INTEGER DEFAULT 1")
-    add_column_if_missing(cursor, "org_chart_nodes", "org_chart_id", "INTEGER")
-    add_column_if_missing(cursor, "org_chart_nodes", "contact_id", "INTEGER")
-    add_column_if_missing(cursor, "org_chart_nodes", "parent_contact_id", "INTEGER")
-    add_column_if_missing(cursor, "org_chart_nodes", "sort_index", "INTEGER DEFAULT 0")
-    add_column_if_missing(cursor, "org_chart_nodes", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
-    add_column_if_missing(cursor, "org_chart_nodes", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
 
     # Safe migrations for accounts
     add_column_if_missing(cursor, "accounts", "team_id", "INTEGER DEFAULT 1")
@@ -484,17 +421,6 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "contacts", "team_id", "INTEGER DEFAULT 1")
     add_column_if_missing(cursor, "contacts", "status", "TEXT DEFAULT 'Active'")
     add_column_if_missing(cursor, "contacts", "archived_at", "TEXT")
-    try:
-        cursor.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_email_unique
-            ON contacts (LOWER(email))
-            WHERE email IS NOT NULL
-              AND TRIM(email) != ''
-        """)
-    except Exception:
-        # Legacy workspaces with duplicate contact emails remain accessible. New saves
-        # are still blocked by form validation until duplicates are cleaned up.
-        pass
     add_column_if_missing(cursor, "pg_action_contact_updates", "exec_first", "TEXT")
     add_column_if_missing(cursor, "pg_action_contact_updates", "nbm_completed", "TEXT")
 
@@ -513,17 +439,6 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "outreach", "next_action_time", "TEXT")
     add_column_if_missing(cursor, "outreach", "task_status", "TEXT DEFAULT 'Not Started'")
     add_column_if_missing(cursor, "outreach", "assigned_to", "TEXT")
-    add_column_if_missing(cursor, "outreach_contact_links", "outreach_id", "INTEGER")
-    add_column_if_missing(cursor, "outreach_contact_links", "contact_id", "INTEGER")
-    add_column_if_missing(cursor, "outreach_contact_links", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
-    add_column_if_missing(cursor, "outreach_partner_contact_links", "outreach_id", "INTEGER")
-    add_column_if_missing(cursor, "outreach_partner_contact_links", "partner_contact_id", "INTEGER")
-    add_column_if_missing(cursor, "outreach_partner_contact_links", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
-    cursor.execute("UPDATE outreach SET task_status = 'Completed' WHERE task_status = 'Closed'")
-    cursor.execute(
-        "UPDATE outreach SET activity_type = 'Partner Touchpoint' WHERE activity_type LIKE ?",
-        ("Partner:%",),
-    )
 
     # Safe migrations for account partners
     add_column_if_missing(cursor, "account_partners", "team_id", "INTEGER DEFAULT 1")
@@ -665,7 +580,6 @@ def initialise_database(force=False):
         ("idx_pg_action_contact_updates_contact", "pg_action_contact_updates", ["contact_id"]),
         ("idx_contacts_account", "contacts", ["account_id"]),
         ("idx_contacts_category", "contacts", ["category"]),
-        ("idx_contacts_email", "contacts", ["email"]),
         ("idx_outreach_account", "outreach", ["account_id"]),
         ("idx_outreach_contact", "outreach", ["contact_id"]),
         ("idx_outreach_activity_date", "outreach", ["activity_date"]),
@@ -673,10 +587,6 @@ def initialise_database(force=False):
         ("idx_outreach_task_status", "outreach", ["task_status"]),
         ("idx_outreach_campaign", "outreach", ["campaign"]),
         ("idx_outreach_sales_play", "outreach", ["sales_play"]),
-        ("idx_outreach_contact_links_outreach", "outreach_contact_links", ["outreach_id"]),
-        ("idx_outreach_contact_links_contact", "outreach_contact_links", ["contact_id"]),
-        ("idx_outreach_partner_contact_links_outreach", "outreach_partner_contact_links", ["outreach_id"]),
-        ("idx_outreach_partner_contact_links_contact", "outreach_partner_contact_links", ["partner_contact_id"]),
         ("idx_account_partners_account", "account_partners", ["account_id"]),
         ("idx_account_partners_partner", "account_partners", ["partner_id"]),
         ("idx_partner_contacts_partner", "partner_contacts", ["partner_id"]),
@@ -685,9 +595,6 @@ def initialise_database(force=False):
         ("idx_account_org_charts_account", "account_org_charts", ["account_id"]),
         ("idx_account_org_chart_people_chart", "account_org_chart_people", ["chart_id"]),
         ("idx_account_org_chart_people_account", "account_org_chart_people", ["account_id"]),
-        ("idx_org_charts_account", "org_charts", ["account_id"]),
-        ("idx_org_chart_nodes_chart", "org_chart_nodes", ["org_chart_id"]),
-        ("idx_org_chart_nodes_contact", "org_chart_nodes", ["contact_id"]),
         ("idx_audit_entity", "audit_entries", ["entity_type", "entity_id"]),
         ("idx_non_working_blocks_dates", "non_working_blocks", ["start_date", "end_date"]),
     ]

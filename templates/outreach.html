@@ -92,21 +92,11 @@
             </div>
 
             <div class="form-group">
-                <label for="due_start_date">Due From</label>
-                <input type="date" id="due_start_date" name="due_start_date" value="{{ due_start_filter or '' }}">
-            </div>
-
-            <div class="form-group">
-                <label for="due_end_date">Due To</label>
-                <input type="date" id="due_end_date" name="due_end_date" value="{{ due_end_filter or '' }}">
-            </div>
-
-            <div class="form-group">
                 <label>Status</label>
                 <details class="checkbox-dropdown compact-checkbox-dropdown status-filter-dropdown">
                     <summary>{{ selected_statuses | join(", ") }}</summary>
                     <div class="checkbox-dropdown-panel">
-                        {% for status_filter in ["All Open", "All Completed", "All"] %}
+                        {% for status_filter in ["All Open", "All Closed", "All"] %}
                             <label class="checkbox-row">
                                 <input type="checkbox" name="task_status" value="{{ status_filter }}" {% if status_filter in selected_statuses %}checked{% endif %}>
                                 <span>{{ status_filter }}</span>
@@ -216,6 +206,13 @@
                                         <span>{{ item.contact_job_title }}</span>
                                     </div>
                                 {% endif %}
+                                {% if item.contact_email or item.contact_phone or item.contact_linkedin %}
+                                    <div class="outreach-contact-system-fields">
+                                        {% if item.contact_email %}<span>Email: {{ item.contact_email }}</span>{% endif %}
+                                        {% if item.contact_phone %}<span>Phone: {{ item.contact_phone }}</span>{% endif %}
+                                        {% if item.contact_linkedin %}<span>LinkedIn: {{ item.contact_linkedin }}</span>{% endif %}
+                                    </div>
+                                {% endif %}
                             </td>
                             <td>
                                 <strong>{{ item.sales_play or "No sales play" }}</strong>
@@ -226,7 +223,7 @@
                                 <span class="muted">{{ item.subject or "No subject" }}</span>
                             </td>
                             <td>
-                                {% set task_locked = item.task_status in ['Completed', 'Cancelled'] %}
+                                {% set task_locked = item.task_status in ['Closed', 'Completed', 'Cancelled'] %}
                                 <form method="POST" action="{{ url_for('reassign_team_outreach') }}" class="inline-form compact-assignment-form">
                                     <input type="hidden" name="return_to" value="{{ url_for('outreach') }}">
                                     <input type="hidden" name="workspace_schema" value="{{ item.workspace_schema }}">

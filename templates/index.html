@@ -15,33 +15,16 @@
     <section class="dashboard-broadcast-ticker" aria-label="Broadcast messages">
         <div class="dashboard-broadcast-label">Broadcast</div>
         <div class="dashboard-broadcast-window">
-            <div class="dashboard-broadcast-track" data-broadcast-carousel>
+            <div class="dashboard-broadcast-track">
                 {% for broadcast in broadcast_messages %}
-                    <div class="dashboard-broadcast-item broadcast-{{ broadcast['severity'] }} {% if loop.first %}is-active{% endif %}">
+                    <span class="dashboard-broadcast-item broadcast-{{ broadcast['severity'] }}">
                         <strong>{{ broadcast['title'] }}</strong>
-                        <span>{{ broadcast['message'] }}</span>
-                    </div>
+                        {{ broadcast['message'] }}
+                    </span>
                 {% endfor %}
             </div>
         </div>
     </section>
-
-    <script>
-        document.addEventListener("DOMContentLoaded", () => {
-            document.querySelectorAll("[data-broadcast-carousel]").forEach((carousel) => {
-                const items = Array.from(carousel.querySelectorAll(".dashboard-broadcast-item"));
-                if (items.length <= 1) {
-                    return;
-                }
-                let activeIndex = 0;
-                window.setInterval(() => {
-                    items[activeIndex].classList.remove("is-active");
-                    activeIndex = (activeIndex + 1) % items.length;
-                    items[activeIndex].classList.add("is-active");
-                }, 5000);
-            });
-        });
-    </script>
 {% endif %}
 
 <div class="dashboard-page-layout">
@@ -62,7 +45,7 @@
                 </a>
                 <a href="{{ url_for('reports') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
-                        <h3>Completed This Week</h3>
+                        <h3>Closed This Week</h3>
                         <p class="metric-number">{{ this_week_completed }}</p>
                     </div>
                 </a>
@@ -72,16 +55,16 @@
                         <p class="metric-number">{{ this_week_overdue }}</p>
                     </div>
                 </a>
-                <a href="{{ url_for('accounts', filter='untouched') }}" class="metric-card-link">
+                <a href="{{ url_for('accounts') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
                         <h3>Untouched Accounts</h3>
                         <p class="metric-number">{{ this_week_untouched_accounts }}</p>
-                        <p class="metric-subtext">No contacts or outreach history</p>
+                        <p class="metric-subtext">No active campaign or outreach tasks</p>
                     </div>
                 </a>
                 <a href="{{ url_for('outreach') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
-                        <h3>Meetings Booked This Week</h3>
+                        <h3>Meetings This Week</h3>
                         <p class="metric-number">{{ this_week_meetings_booked }}</p>
                     </div>
                 </a>
@@ -94,14 +77,19 @@
                 </a>
                 <a href="{{ url_for('accounts') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
-                        <h3>Number Accounts</h3>
+                        <h3>Total Accounts</h3>
                         <p class="metric-number">{{ total_accounts }}</p>
-                        <p class="metric-subtext">Unique PG plan numbers</p>
+                    </div>
+                </a>
+                <a href="{{ url_for('contacts') }}" class="metric-card-link">
+                    <div class="metric-card compact-command-card">
+                        <h3>Total Contacts</h3>
+                        <p class="metric-number">{{ total_contacts }}</p>
                     </div>
                 </a>
                 <a href="{{ url_for('outreach') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
-                        <h3>All Active Outreach</h3>
+                        <h3>Total Outreach</h3>
                         <p class="metric-number">{{ total_outreach }}</p>
                     </div>
                 </a>
@@ -113,34 +101,10 @@
                     </div>
                 </a>
             </div>
-            {% if daily_wrap_up %}
-                <details class="weekly-wrap-up-card daily-wrap-up-card" open>
-                    <summary>
-                        <span>{{ daily_wrap_up.title }}</span>
-                        <small>{{ daily_wrap_up.period }}</small>
-                    </summary>
-                    <div class="weekly-wrap-up-content">
-                        <p>{{ daily_wrap_up.paragraph_one }}</p>
-                        <p>{{ daily_wrap_up.paragraph_two }}</p>
-                    </div>
-                </details>
-            {% endif %}
-            {% if weekly_wrap_up %}
-                <details class="weekly-wrap-up-card">
-                    <summary>
-                        <span>{{ weekly_wrap_up.title }}</span>
-                        <small>{{ weekly_wrap_up.period }}</small>
-                    </summary>
-                    <div class="weekly-wrap-up-content">
-                        <p>{{ weekly_wrap_up.paragraph_one }}</p>
-                        <p>{{ weekly_wrap_up.paragraph_two }}</p>
-                    </div>
-                </details>
-            {% endif %}
             <div class="outcome-breakdown-strip">
                 <div class="outcome-strip-header">
-                    <h2>Outcome Breakdown - Current Quarter {{ outcome_quarter_label }}</h2>
-                    <p>{{ outcome_quarter_start }} to {{ outcome_quarter_end }}</p>
+                    <h2>Outcome Breakdown</h2>
+                    <p>Current outreach outcomes across your workspace.</p>
                 </div>
                 {% if outcome_breakdown %}
                     <div class="outcome-strip-items">
@@ -160,8 +124,8 @@
     <section class="form-card dashboard-execution-insights-card">
             <div class="section-header">
                 <div>
-                    <h2>Execution Learning</h2>
-                    <p>Data-driven learning from accounts, contacts and campaigns for the next best sales actions.</p>
+                    <h2>Execution Insights</h2>
+                    <p>Combined AI guidance and campaign learning for the next best sales actions.</p>
                 </div>
                 <a href="{{ url_for('campaign_builder') }}" class="btn btn-secondary">Build Campaign</a>
             </div>
@@ -198,7 +162,7 @@
                 </div>
             {% else %}
                 <div class="empty-state">
-                    <h3>No execution learning yet</h3>
+                    <h3>No execution insights yet</h3>
                     <p>Add accounts, contacts, outreach, outcomes and campaign activity to generate recommendations.</p>
                 </div>
             {% endif %}

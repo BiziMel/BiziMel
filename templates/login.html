@@ -17,6 +17,8 @@
         {% endif %}
 
         <form method="POST" class="form-grid auth-form" autocomplete="on">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
             <label for="email">Email</label>
             <input type="email" id="email" name="email" autocomplete="username" required autofocus>
 
@@ -49,6 +51,7 @@
                     <article class="login-broadcast-message broadcast-{{ broadcast['severity'] }}">
                         <div class="broadcast-message-topline">
                             <span>{{ broadcast['severity']|capitalize }}</span>
+                            <small>{{ broadcast['start_at'] }} to {{ broadcast['stop_at'] }}</small>
                         </div>
                         <div class="compact-login-broadcast-body">
                             <h3>{{ broadcast['title'] }}</h3>

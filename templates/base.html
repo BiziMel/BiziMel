@@ -23,23 +23,21 @@
             </div>
         </div>
 
-        <div class="header-help-actions">
-            <a href="{{ url_for('user_guide') }}" class="btn btn-secondary user-guide-link">User Guide</a>
-            <a href="{{ url_for('release_notes') }}" class="btn btn-secondary user-guide-link">Release Notes</a>
-        </div>
+        <a href="{{ url_for('user_guide') }}" class="btn btn-secondary user-guide-link">User Guide</a>
         </div>
 
     <nav class="button-group nav-stack">
-    <a href="/" class="btn btn-primary nav-tab {% if request.endpoint == 'home' %}is-active{% endif %}">Insights Dashboard</a>
-    <a href="{{ url_for('pg_progress') }}" class="btn btn-primary nav-tab {% if request.endpoint in ['pg_progress', 'dashboard_new'] %}is-active{% endif %}">PG Progress</a>
-    <a href="/outreach" class="btn btn-primary nav-tab {% if request.path.startswith('/outreach') or request.endpoint == 'team_outreach' %}is-active{% endif %}">Outreach Tasks</a>
-    <a href="/accounts" class="btn btn-primary nav-tab {% if request.path.startswith('/accounts') %}is-active{% endif %}">Accounts</a>
-    <a href="/contacts" class="btn btn-primary nav-tab {% if request.path.startswith('/contacts') %}is-active{% endif %}">Contacts</a>
-    <a href="/partners" class="btn btn-primary nav-tab {% if request.path.startswith('/partners') %}is-active{% endif %}">Partners</a>
-    <a href="/reports" class="btn btn-primary nav-tab {% if request.path.startswith('/reports') %}is-active{% endif %}">Reports</a>
-    <a href="/profile" class="btn btn-secondary nav-tab {% if request.path.startswith('/profile') %}is-active{% endif %}">Profile</a>
+    <a href="/" class="btn btn-primary">Insights Dashboard</a>
+    <a href="{{ url_for('pg_progress') }}" class="btn btn-primary">PG Progress</a>
+    <a href="/outreach" class="btn btn-primary">Outreach Tasks</a>
+    <a href="/accounts" class="btn btn-primary">Accounts</a>
+    <a href="/contacts" class="btn btn-primary">Contacts</a>
+    <a href="/partners" class="btn btn-primary">Partners</a>
+    <a href="/reports" class="btn btn-primary">Reports</a>
+    <a href="/profile" class="btn btn-secondary">Profile</a>
+    <a href="/release-notes" class="btn btn-secondary">Release Notes</a>
     {% if current_user and current_user["role"] in ["admin", "company_admin"] %}
-    <a href="/admin/permissions" class="btn btn-secondary nav-tab {% if request.path.startswith('/admin') or request.path.startswith('/audit') %}is-active{% endif %}">Admin</a>
+    <a href="/admin/permissions" class="btn btn-secondary">Admin</a>
     {% endif %}
     {% if current_user %}
     <a href="/logout" class="btn btn-secondary">Sign Out</a>
@@ -78,8 +76,17 @@
     </main>
 
     <script>
+        window.PIPEFLOW_CSRF_TOKEN = "{{ csrf_token() }}";
         document.addEventListener("DOMContentLoaded", () => {
             document.querySelectorAll("form").forEach((form) => {
+                const method = (form.getAttribute("method") || "GET").toUpperCase();
+                if (method === "POST" && !form.querySelector("input[name='csrf_token']")) {
+                    const csrfField = document.createElement("input");
+                    csrfField.type = "hidden";
+                    csrfField.name = "csrf_token";
+                    csrfField.value = window.PIPEFLOW_CSRF_TOKEN;
+                    form.appendChild(csrfField);
+                }
                 if (form.classList.contains("auth-form")) {
                     return;
                 }

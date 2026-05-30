@@ -71,123 +71,12 @@
         <p>Export a single-sheet PG Bible workbook from the PipeFlow data set.</p>
 
         <div class="button-group">
-            <a href="{{ url_for('export_pg_bible') }}" class="btn btn-primary" id="pg-bible-export-button">
+            <a href="{{ url_for('export_pg_bible') }}" class="btn btn-primary">
                 Export PG Bible
             </a>
         </div>
     </div>
 
 </div>
-
-<div class="export-progress-panel" id="pg-bible-progress-panel" hidden aria-live="polite">
-    <div class="export-progress-card">
-        <div class="export-progress-header">
-            <div>
-                <strong>Exporting PG Bible</strong>
-                <span id="pg-bible-progress-status">Preparing workbook...</span>
-            </div>
-            <span class="export-progress-percent" id="pg-bible-progress-percent">0%</span>
-        </div>
-        <div class="export-progress-track">
-            <div class="export-progress-fill" id="pg-bible-progress-fill" style="width: 0%"></div>
-        </div>
-    </div>
-</div>
-
-<script>
-    document.addEventListener("DOMContentLoaded", () => {
-        const button = document.getElementById("pg-bible-export-button");
-        const panel = document.getElementById("pg-bible-progress-panel");
-        const fill = document.getElementById("pg-bible-progress-fill");
-        const percentLabel = document.getElementById("pg-bible-progress-percent");
-        const statusLabel = document.getElementById("pg-bible-progress-status");
-
-        if (!button || !panel || !fill || !percentLabel || !statusLabel) {
-            return;
-        }
-
-        let progressTimer = null;
-
-        const setProgress = (value, status) => {
-            const nextValue = Math.max(0, Math.min(100, Math.round(value)));
-            fill.style.width = `${nextValue}%`;
-            percentLabel.textContent = `${nextValue}%`;
-            if (status) {
-                statusLabel.textContent = status;
-            }
-        };
-
-        const filenameFromHeader = (headerValue) => {
-            const fallback = "PGBible.xlsx";
-            if (!headerValue) {
-                return fallback;
-            }
-            const utfMatch = headerValue.match(/filename\\*=UTF-8''([^;]+)/i);
-            if (utfMatch) {
-                return decodeURIComponent(utfMatch[1].replace(/"/g, ""));
-            }
-            const match = headerValue.match(/filename="?([^"]+)"?/i);
-            return match ? match[1] : fallback;
-        };
-
-        const downloadBlob = (blob, filename) => {
-            const url = URL.createObjectURL(blob);
-            const anchor = document.createElement("a");
-            anchor.href = url;
-            anchor.download = filename;
-            document.body.appendChild(anchor);
-            anchor.click();
-            anchor.remove();
-            URL.revokeObjectURL(url);
-        };
-
-        button.addEventListener("click", async (event) => {
-            event.preventDefault();
-            if (button.dataset.exporting === "1") {
-                return;
-            }
-
-            button.dataset.exporting = "1";
-            button.setAttribute("aria-disabled", "true");
-            panel.hidden = false;
-            setProgress(0, "Preparing workbook...");
-
-            let progress = 0;
-            progressTimer = window.setInterval(() => {
-                const increment = progress < 60 ? 7 : progress < 85 ? 3 : 1;
-                progress = Math.min(95, progress + increment);
-                setProgress(progress, progress < 85 ? "Collecting report data..." : "Writing workbook...");
-            }, 350);
-
-            try {
-                const response = await fetch(button.href, {
-                    credentials: "same-origin",
-                    headers: {"X-Requested-With": "fetch"}
-                });
-
-                if (!response.ok) {
-                    const message = await response.text();
-                    throw new Error(message || `Export failed with status ${response.status}`);
-                }
-
-                const blob = await response.blob();
-                window.clearInterval(progressTimer);
-                setProgress(100, "Download ready.");
-                downloadBlob(blob, filenameFromHeader(response.headers.get("Content-Disposition")));
-                window.setTimeout(() => {
-                    panel.hidden = true;
-                    setProgress(0, "Preparing workbook...");
-                }, 1200);
-            } catch (error) {
-                window.clearInterval(progressTimer);
-                setProgress(100, "Export failed. Please try again or contact support.");
-                alert(error.message || "PG Bible export failed.");
-            } finally {
-                button.dataset.exporting = "0";
-                button.removeAttribute("aria-disabled");
-            }
-        });
-    });
-</script>
 
 {% endblock %}

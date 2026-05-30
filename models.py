@@ -46,7 +46,6 @@ class PlanItem:
     nbm_target: str = ""
     sales_play: str = ""
     customer: str = ""
-    customer_business_unit: str = ""
     estimated_value: Decimal = Decimal("0")
 
 
@@ -60,7 +59,6 @@ class ActionItem:
     made_contact: str = ""
     discovery_completed: str = ""
     discovery_next_action: str = ""
-    nbm_booked: str = ""
     nbm_booked_date: str = ""
     nbm_booked_name_title: str = ""
     why_buy: str = ""

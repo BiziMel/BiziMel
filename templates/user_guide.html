@@ -9,12 +9,9 @@
         <h1>User Guide</h1>
         <p>Practical guidance for using PipeFlow PG Manager to manage pipeline generation activity.</p>
     </div>
-    <div class="button-group guide-header-actions">
-        <a href="{{ url_for('export_user_guide_pdf') }}" class="btn btn-primary">Generate PDF</a>
     {% if selected_section %}
         <a href="{{ url_for('user_guide') }}" class="btn btn-secondary">All Guide Topics</a>
     {% endif %}
-    </div>
 </div>
 
 {% if selected_section %}
@@ -76,9 +73,8 @@
 {% else %}
     <div class="form-card guide-intro-card">
         <h2>Choose A Topic</h2>
-        <p>Use these guide pages as a step-by-step reference while working through accounts, contacts, outreach, shared tasks, reporting, company tenancy and administration.</p>
-        <p>Navigate PipeFlow from left to right for the usual workflow: start at Dashboard, work Outreach Tasks, maintain Accounts and Contacts, review Partners, use Reports, then update Profile or Release Notes when needed. Admin and Audit only appear for Application Admin and Company Admin users.</p>
-        <p>Select Generate PDF when you want a full offline copy of every guide topic in one document.</p>
+        <p>Use these guide pages as a quick reference while working through accounts, contacts, outreach, shared tasks, reporting and administration.</p>
+        <p>Navigate PipeFlow from left to right for the usual workflow: start at Dashboard, work Outreach Tasks, maintain Accounts and Contacts, review Partners, use Reports, then update Profile or Release Notes when needed. Admin and Audit only appear for admin users.</p>
     </div>
 
     <div class="guide-topic-grid">

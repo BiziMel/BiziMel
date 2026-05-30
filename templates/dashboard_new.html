@@ -99,7 +99,7 @@
                 <thead>
                     <tr>
                         <th>Related NBM Target</th>
-                        <th>Account / Contact</th>
+                        <th>Targeted or Booked Discovery Meeting</th>
                         <th>Completed Discovery Meeting</th>
                         <th>Exec First</th>
                         <th>NBM Completed</th>
@@ -119,17 +119,17 @@
                             </td>
                             <td>
                                 {% if row.company_name %}
-                                    <div class="pg-person-line"><span>{% if row.is_partner_row %}Account{% else %}Company{% endif %}</span><strong>{{ row.company_name }}</strong></div>
+                                    <div class="pg-person-line"><span>Company</span><strong>{{ row.company_name }}</strong></div>
                                 {% endif %}
                                 {% if row.business_org %}
-                                    <div class="pg-person-line"><span>{% if row.is_partner_row %}Activity Type{% else %}Business / Org{% endif %}</span><em>{{ row.business_org }}</em></div>
+                                    <div class="pg-person-line"><span>Business / Org</span><strong>{{ row.business_org }}</strong></div>
                                 {% endif %}
                                 {% if row.department %}
-                                    <div class="pg-person-line"><span>{% if row.is_partner_row %}Partner Company{% else %}Department{% endif %}</span><em>{{ row.department }}</em></div>
+                                    <div class="pg-person-line"><span>Department</span><strong>{{ row.department }}</strong></div>
                                 {% endif %}
-                                <div class="pg-person-line"><span>{% if row.is_partner_row %}Partner Contact{% else %}Contact{% endif %}</span><em>{{ row.targeted_discovery or "No account contacts entered" }}</em></div>
+                                <div class="pg-person-line"><span>Contact</span><strong>{{ row.targeted_discovery or "No account contacts entered" }}</strong></div>
                                 {% if row.contact_job_title %}
-                                    <div class="pg-person-line"><span>Job Title</span><em>{{ row.contact_job_title }}</em></div>
+                                    <div class="pg-person-line"><span>Job Title</span><strong>{{ row.contact_job_title }}</strong></div>
                                 {% endif %}
                             </td>
                             <td>
@@ -161,26 +161,23 @@
                                     <div class="activity-update-list">
                                         {% for entry in row.last_7_days_activity_entries %}
                                             <div class="activity-update-entry">
-                                                <div class="pg-activity-meta">
-                                                    <span class="pg-activity-date">{{ entry.date }}</span>
-                                                    <span class="pg-activity-type">{{ entry.activity }}</span>
-                                                </div>
-                                                <p>{{ entry.activity_update }}</p>
+                                                <strong>{{ entry.date }}</strong>
+                                                <span class="activity-update-arrow" aria-hidden="true">&rarr;</span>
+                                                <span>{{ entry.activity_update }}</span>
                                             </div>
                                         {% endfor %}
                                     </div>
                                 {% endif %}
                             </td>
-                            <td class="scheduled-actions-cell">
+                            <td>
                                 {% if row.next_7_days_actions %}
                                     <div class="scheduled-action-list">
                                         {% for action in row.next_7_days_actions %}
                                             <div class="scheduled-action-entry">
-                                                <div class="pg-activity-meta">
-                                                    <span class="pg-activity-date">{{ action.date }}</span>
-                                                    <span class="pg-activity-type">{{ action.activity }}</span>
-                                                </div>
-                                                <p>{{ action.activity_update }}</p>
+                                                <span>{{ action.subject }}</span>
+                                                {% if action.due %}
+                                                    <strong>{{ action.due }}</strong>
+                                                {% endif %}
                                             </div>
                                         {% endfor %}
                                     </div>

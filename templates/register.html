@@ -5,13 +5,15 @@
 {% block content %}
 <section class="auth-panel">
     <h2>Create Profile</h2>
-    <p class="muted-text">Your accounts, contacts, outreach, tasks, partners, reports and exports stay private to this profile.</p>
+    <p class="muted-text">Create the first Application Admin profile. After setup, all new profiles are created by an administrator inside the hosted enterprise Admin area.</p>
 
     {% if error %}
         <div class="alert-error">{{ error }}</div>
     {% endif %}
 
     <form method="POST" class="form-grid auth-form" autocomplete="on">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
         <label for="full_name">Full Name</label>
         <input type="text" id="full_name" name="full_name" autocomplete="name" required autofocus>
 

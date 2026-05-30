@@ -19,12 +19,6 @@
 {% if error %}
     <div class="alert-error">{{ error }}</div>
 {% endif %}
-{% if active_account_filter == "untouched" %}
-    <div class="alert-info compact-alert">
-        Showing untouched accounts with no contacts or no outreach history.
-        <a href="{{ url_for('accounts') }}">Clear filter</a>
-    </div>
-{% endif %}
 
 <section class="form-card compact-filter-card account-sharing-card">
     <div class="section-header compact-section-header">
@@ -154,17 +148,17 @@
                     </td>
 
                     <td>
-                        <a href="{{ url_for('view_account', account_id=account['id']) }}"
+                        <a href="{{ url_for('edit_account', account_id=account['id']) }}"
                            class="account-name-link"
-                           title="View account {{ account['account_name'] or 'Unknown' }}"
-                           aria-label="View account {{ account['account_name'] or 'Unknown' }}">
+                           title="Edit account {{ account['account_name'] or 'Unknown' }}"
+                           aria-label="Edit account {{ account['account_name'] or 'Unknown' }}">
                             {{ account["account_name"] or "Unknown" }}
                         </a>
                         <div class="account-meta-stack">
                             {% if account["business_unit"] %}<span>{{ account["business_unit"] }}</span>{% endif %}
                             <span>{{ account["industry"] or "Industry not set" }}</span>
-                            <a href="{{ url_for('account_orgchart', account_id=account['id']) }}" class="account-text-link">
-                                Org Chart
+                            <a href="{{ url_for('account_org_chart', account_id=account['id']) }}" class="account-text-link">
+                                Build Org Chart
                             </a>
                             {% if account["website"] %}
                                 <a href="{{ account['website'] }}" target="_blank" class="account-text-link">Website</a>

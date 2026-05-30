@@ -22,32 +22,13 @@ for vendor_base in (
 
 from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
-from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from models import GoalsSummary, OwnerReport, PGBibleExportError
 
 
 SECTION_LABELS = ["PG GOALS", "PG PLAN", "PG ACTIONS", "PG RESULTS"]
-MAY_2026_SECTION_LABELS = ["PG GOALS", "PG PLAN", "PG ACTIONS"]
 INVALID_SHEET_CHARS = r"[]:*?/\\"
-ILLEGAL_EXCEL_TEXT_RE = re.compile(r"[\x00-\x08\x0b-\x0c\x0e-\x1f]")
-MAX_EXCEL_CELL_TEXT_LENGTH = 32767
-EXCEL_TRUNCATION_SUFFIX = "\n[Text truncated for Excel]"
-NBM_COLOURS = {
-    0: ("D90000", "FFFFFF"),
-    1: ("F00000", "FFFFFF"),
-    2: ("FFC000", "FFFFFF"),
-    3: ("FFF200", "111111"),
-    4: ("92D050", "111111"),
-    5: ("00B050", "FFFFFF"),
-    6: ("00B0F0", "FFFFFF"),
-    7: ("0070C0", "FFFFFF"),
-    8: ("002060", "FFFFFF"),
-    9: ("000000", "FFFFFF"),
-    10: ("7F7F7F", "FFFFFF"),
-    11: ("595959", "FFFFFF"),
-}
 MONTH_ORDER = {
     "april": 1,
     "may": 2,
@@ -102,13 +83,6 @@ def sanitize_filename(value: str) -> str:
     return cleaned or "PipeFlow"
 
 
-def sanitize_excel_text(value: str) -> str:
-    cleaned = ILLEGAL_EXCEL_TEXT_RE.sub(" ", value)
-    if len(cleaned) > MAX_EXCEL_CELL_TEXT_LENGTH:
-        return cleaned[: MAX_EXCEL_CELL_TEXT_LENGTH - len(EXCEL_TRUNCATION_SUFFIX)].rstrip() + EXCEL_TRUNCATION_SUFFIX
-    return cleaned
-
-
 def decimal_value(value: Any) -> Decimal:
     if value in (None, ""):
         raise PGBibleExportError("CALC_INPUT_MISSING", "A required calculation input is missing.", ["empty value"])
@@ -161,17 +135,16 @@ class PGBibleExporter:
         reporting_date = reporting_date or date.today()
         wb = load_workbook(self.template_path, data_only=False)
 
-        template_sheet_name = "Real example" if "Real example" in wb.sheetnames else ("Name" if "Name" in wb.sheetnames else None)
-        if template_sheet_name is None:
+        if "Real example" not in wb.sheetnames:
             raise PGBibleExportError(
                 "TEMPLATE_SHEET_MISSING",
-                "The template workbook is missing a supported PG Bible worksheet.",
-                ["Real example", "Name"],
+                "The template workbook is missing the Real example worksheet.",
+                ["Real example"],
             )
 
-        ws = wb[template_sheet_name]
+        ws = wb["Real example"]
         for other in list(wb.worksheets):
-            if other.title != template_sheet_name:
+            if other.title != "Real example":
                 wb.remove(other)
 
         final_sheet_name = sanitize_excel_name(report.profile.profile_name)
@@ -179,32 +152,20 @@ class PGBibleExporter:
         print(f"profile name used: {report.profile.profile_name}")
         print(f"sheet name final: {final_sheet_name}")
 
-        is_may_2026_template = self._is_may_2026_template(ws)
-        if is_may_2026_template:
-            self._validate_sections(ws, MAY_2026_SECTION_LABELS)
-            self._configure_may_2026_mapping()
-            self._prepare_may_2026_capacity(ws, report)
-            baseline = self._structural_snapshot(ws)
-            self._clear_may_2026_template(ws)
-            self._write_may_2026_goals(ws, report)
-            plan_count = self._write_may_2026_plan(ws, report)
-            action_count = self._write_may_2026_actions(ws, report)
-            weekly_count = 0
-        else:
-            self._validate_sections(ws)
-            self._validate_tables(ws)
-            baseline = self._structural_snapshot(ws)
-            report.goals = report.goals or self._compute_goals(report, reporting_date)
+        self._validate_sections(ws)
+        self._validate_tables(ws)
+        baseline = self._structural_snapshot(ws)
+        report.goals = report.goals or self._compute_goals(report, reporting_date)
 
-            self._clear_goals(ws)
-            self._clear_table(ws, self.header_cache["PG PLAN"])
-            self._clear_table(ws, self.header_cache["PG ACTIONS"])
-            self._clear_weekly_rows(ws, self.header_cache["PG RESULTS"])
+        self._clear_goals(ws)
+        self._clear_table(ws, self.header_cache["PG PLAN"])
+        self._clear_table(ws, self.header_cache["PG ACTIONS"])
+        self._clear_weekly_rows(ws, self.header_cache["PG RESULTS"])
 
-            self._write_goals(ws, report.goals)
-            plan_count = self._write_plan(ws, report)
-            action_count = self._write_actions(ws, report)
-            weekly_count = self._write_weekly_results(ws, report)
+        self._write_goals(ws, report.goals)
+        plan_count = self._write_plan(ws, report)
+        action_count = self._write_actions(ws, report)
+        weekly_count = self._write_weekly_results(ws, report)
 
         print(f"plan rows written: {plan_count}")
         print(f"action rows written: {action_count}")
@@ -212,8 +173,6 @@ class PGBibleExporter:
 
         output_path = self.output_dir / f"PGBible_{sanitize_filename(report.profile.username)}.xlsx"
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        if is_may_2026_template:
-            baseline = self._structural_snapshot(ws)
         self._self_check(ws, baseline)
         wb.save(output_path)
         saved_wb = load_workbook(output_path, data_only=False)
@@ -233,40 +192,9 @@ class PGBibleExporter:
         print(f"calculation pipeline_gap output: {gap}")
         return GoalsSummary(starting_pipeline=starting, pipeline_added=added, pipeline_target=target, pipeline_gap=gap)
 
-    def _is_may_2026_template(self, ws) -> bool:
-        return bool(self._find_exact(ws, "FY Current Pipeline")) and not bool(self._find_exact(ws, "PG RESULTS"))
-
-    def _configure_may_2026_mapping(self) -> None:
-        self.header_cache["PG PLAN"] = TableRegion(
-            "PG PLAN",
-            {8, 9},
-            {
-                "nbm_target": 2,
-                "sales_play": 4,
-                "customer": 12,
-                "estimated_value": 13,
-            },
-            11,
-            29,
-        )
-        self.header_cache["PG ACTIONS"] = TableRegion(
-            "PG ACTIONS",
-            {31, 32},
-            {
-                "related_nbm_target": 2,
-                "account_contact": 3,
-                "discovery_completed": 6,
-                "discovery_next_action": 7,
-                "nbm_booked": 16,
-                "exec_first": 14,
-            },
-            33,
-            79,
-        )
-
-    def _validate_sections(self, ws, labels: list[str] | None = None) -> None:
+    def _validate_sections(self, ws) -> None:
         missing = []
-        for label in labels or SECTION_LABELS:
+        for label in SECTION_LABELS:
             matches = self._find_exact(ws, label)
             if not matches:
                 missing.append(label)
@@ -278,105 +206,6 @@ class PGBibleExporter:
 
         if missing:
             raise PGBibleExportError("SECTION_MISSING", "The template is missing one or more required sections.", missing)
-
-    def _clear_may_2026_template(self, ws) -> None:
-        for coordinate in ("F3", "L3"):
-            cell = ws[coordinate]
-            if not self._is_formula(cell):
-                cell.value = None
-        self._clear_mapped_rows(ws, 11, 29, range(2, 14))
-        action_region = self.header_cache["PG ACTIONS"]
-        self._clear_mapped_rows(ws, action_region.start_row, action_region.end_row, range(2, 21))
-
-    def _prepare_may_2026_capacity(self, ws, report: OwnerReport) -> None:
-        plan_region = self.header_cache["PG PLAN"]
-        self._ensure_capacity(ws, plan_region, len(report.plan_items))
-        self._sync_following_region_after_insert("PG ACTIONS", plan_region)
-        self._ensure_capacity(ws, self.header_cache["PG ACTIONS"], len(report.action_items))
-
-    def _clear_mapped_rows(self, ws, start_row: int, end_row: int, columns) -> None:
-        for row in range(start_row, end_row + 1):
-            for col in columns:
-                cell = ws.cell(row, col)
-                if isinstance(cell, MergedCell) or self._is_formula(cell):
-                    continue
-                cell.value = None
-
-    def _write_may_2026_goals(self, ws, report: OwnerReport) -> None:
-        target = report.calc_payload.get("pipeline_target")
-        current = report.calc_payload.get("current_pipeline", report.calc_payload.get("starting_pipeline"))
-        self._write_value(ws["L3"], decimal_value(target or 0))
-        self._write_value(ws["F3"], decimal_value(current or 0))
-
-    def _write_may_2026_plan(self, ws, report: OwnerReport) -> int:
-        region = self.header_cache["PG PLAN"]
-        rows = sorted(
-            report.plan_items,
-            key=lambda item: (
-                item.pg_bible_order if item.pg_bible_order is not None else 999999,
-                item.customer.casefold(),
-            ),
-        )
-        for offset, item in enumerate(rows):
-            row = region.start_row + offset
-            nbm_value = item.nbm_target or item.pg_bible_order or ""
-            self._write_value(ws.cell(row, 2), nbm_value)
-            self._apply_nbm_fill(ws.cell(row, 2), nbm_value)
-            self._write_value(ws.cell(row, 4), item.sales_play)
-            self._format_large_text_cell(ws.cell(row, 4), item.sales_play, 80)
-            self._write_value(ws.cell(row, 12), self._join_parts([item.customer, item.customer_business_unit], ", "))
-            self._format_large_text_cell(ws.cell(row, 12), self._join_parts([item.customer, item.customer_business_unit], ", "), 35)
-            self._write_value(ws.cell(row, 13), item.estimated_value)
-            self._expand_row_for_text(ws, row, [4, 12])
-        return len(rows)
-
-    def _write_may_2026_actions(self, ws, report: OwnerReport) -> int:
-        region = self.header_cache["PG ACTIONS"]
-        for offset, item in enumerate(report.action_items):
-            row = region.start_row + offset
-            nbm_value = item.related_nbm_target or ""
-            self._write_value(ws.cell(row, 2), nbm_value)
-            self._apply_nbm_fill(ws.cell(row, 2), nbm_value)
-            self._write_value(ws.cell(row, 3), item.discovery_target_name_title)
-            self._format_large_text_cell(ws.cell(row, 3), item.discovery_target_name_title, 45)
-            self._write_value(ws.cell(row, 6), self._yes_no(item.discovery_completed))
-            self._write_value(ws.cell(row, 7), item.discovery_next_action)
-            self._format_large_text_cell(ws.cell(row, 7), item.discovery_next_action, 55)
-            self._write_value(ws.cell(row, 16), self._yes_no_or_na(item.nbm_completed or item.nbm_booked or item.nbm_booked_date))
-            self._write_value(ws.cell(row, 14), self._yes_no(item.exec_first))
-            self._expand_row_for_text(ws, row, [3, 7])
-        return len(report.action_items)
-
-    def _sync_following_region_after_insert(self, following_region_name: str, preceding_region: TableRegion) -> None:
-        following = self.header_cache.get(following_region_name)
-        if not following:
-            return
-        expected_start = 33
-        shift = preceding_region.end_row - 29
-        if following_region_name in self.sections:
-            self.sections[following_region_name].row = 31 + shift
-        following.header_rows = {row + shift for row in {31, 32}}
-        following.start_row = expected_start + shift
-        following.end_row = 79 + shift
-
-    def _apply_nbm_fill(self, cell, value: Any) -> None:
-        try:
-            colour_index = int(str(value or "0")) % 12
-        except ValueError:
-            colour_index = 0
-        fill_colour, font_colour = NBM_COLOURS[colour_index]
-        cell.fill = PatternFill(fill_type="solid", fgColor=fill_colour)
-        cell.font = copy.copy(cell.font)
-        cell.font = Font(
-            name=cell.font.name,
-            sz=cell.font.sz,
-            b=cell.font.b,
-            i=cell.font.i,
-            vertAlign=cell.font.vertAlign,
-            underline=cell.font.underline,
-            strike=cell.font.strike,
-            color=font_colour,
-        )
 
     def _validate_tables(self, ws) -> None:
         self.header_cache["PG PLAN"] = self._discover_plan(ws)
@@ -676,33 +505,8 @@ class PGBibleExporter:
             return
         if isinstance(value, Decimal):
             cell.value = float(value)
-        elif isinstance(value, str):
-            cell.value = sanitize_excel_text(value)
         else:
             cell.value = value
-
-    def _format_large_text_cell(self, cell, value: Any, chars_per_line: int = 60) -> None:
-        cell.alignment = copy.copy(cell.alignment)
-        cell.alignment = cell.alignment.copy(
-            horizontal="left",
-            vertical="top",
-            wrap_text=True,
-        )
-
-    def _estimated_text_lines(self, value: Any, chars_per_line: int = 60) -> int:
-        text = str(value or "")
-        if not text:
-            return 1
-        lines = 0
-        for part in text.splitlines() or [""]:
-            length = len(part)
-            lines += max(1, (length + chars_per_line - 1) // chars_per_line)
-        return lines
-
-    def _expand_row_for_text(self, ws, row: int, columns: list[int]) -> None:
-        existing_height = ws.row_dimensions[row].height or 18
-        estimated_lines = max(self._estimated_text_lines(ws.cell(row, col).value) for col in columns)
-        ws.row_dimensions[row].height = max(existing_height, min(180, 16 * estimated_lines + 8))
 
     def _yes_no(self, value: Any) -> str:
         if value in (None, ""):
@@ -713,17 +517,6 @@ class PGBibleExporter:
         if text in {"no", "n", "false", "0"}:
             return "No"
         return str(value).strip()
-
-    def _yes_no_or_na(self, value: Any) -> str:
-        if value in (None, ""):
-            return ""
-        text = str(value).strip().casefold()
-        if text in {"n/a", "na", "not applicable"}:
-            return "N/A"
-        return self._yes_no(value)
-
-    def _join_parts(self, parts: list[Any], separator: str) -> str:
-        return separator.join(str(part).strip() for part in parts if str(part or "").strip())
 
     def _coerce_week_key(self, value: Any, data_type: str):
         if data_type == "date" and isinstance(value, str):
@@ -755,16 +548,9 @@ class PGBibleExporter:
         return {
             "merges": sorted(str(rng) for rng in ws.merged_cells.ranges),
             "column_widths": {col: ws.column_dimensions[get_column_letter(col)].width for col in range(1, ws.max_column + 1)},
-            "row_heights": {
-                row: self._normal_dimension(ws.row_dimensions[row].height)
-                for row in range(1, ws.max_row + 1)
-                if ws.row_dimensions[row].height is not None
-            },
+            "row_heights": {row: ws.row_dimensions[row].height for row in range(1, ws.max_row + 1)},
             "header_strings": self._header_strings(ws),
         }
-
-    def _normal_dimension(self, value: Any) -> str:
-        return "" if value is None else f"{float(value):.3f}"
 
     def _header_strings(self, ws) -> dict[str, str]:
         protected_rows = set()
@@ -775,25 +561,12 @@ class PGBibleExporter:
         values = {}
         for row in protected_rows:
             for col in range(1, ws.max_column + 1):
-                if not self._is_merge_anchor_or_unmerged(ws, row, col):
-                    continue
                 value = ws.cell(row, col).value
                 if isinstance(value, str) and value.strip():
                     values[f"{row}:{col}"] = value
         return values
 
-    def _is_merge_anchor_or_unmerged(self, ws, row: int, col: int) -> bool:
-        for merged in ws.merged_cells.ranges:
-            if merged.min_row <= row <= merged.max_row and merged.min_col <= col <= merged.max_col:
-                return row == merged.min_row and col == merged.min_col
-        return True
-
     def _copy_row_style(self, ws, source_row: int, target_row: int) -> None:
-        source_merges = [
-            merged
-            for merged in list(ws.merged_cells.ranges)
-            if merged.min_row == source_row and merged.max_row == source_row
-        ]
         ws.row_dimensions[target_row].height = ws.row_dimensions[source_row].height
         for col in range(1, ws.max_column + 1):
             source = ws.cell(source_row, col)
@@ -802,10 +575,6 @@ class PGBibleExporter:
                 target._style = copy.copy(source._style)
             if source.number_format:
                 target.number_format = source.number_format
-        for merged in source_merges:
-            target_range = f"{get_column_letter(merged.min_col)}{target_row}:{get_column_letter(merged.max_col)}{target_row}"
-            if target_range not in {str(rng) for rng in ws.merged_cells.ranges}:
-                ws.merge_cells(target_range)
 
     def _find_exact(self, ws, text: str):
         matches = []

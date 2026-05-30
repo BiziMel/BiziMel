@@ -6,11 +6,7 @@
 
 <h2>Edit Contact</h2>
 
-{% if error %}
-    <div class="alert-error">{{ error }}</div>
-{% endif %}
-
-<form method="POST" enctype="multipart/form-data" class="pipeflow-form">
+<form method="POST" class="pipeflow-form">
 
     <label for="account_id">Company / Account</label>
     <select id="account_id" name="account_id" required>
@@ -44,14 +40,6 @@
         <option value="Inactive" {% if contact.status == 'Inactive' %}selected{% endif %}>Inactive</option>
     </select>
 
-    <label for="photo">Photo</label>
-    {% if contact.photo %}
-        <div class="contact-photo-preview">
-            <img src="{{ contact.photo }}" alt="{{ contact.name }}">
-        </div>
-    {% endif %}
-    <input type="file" id="photo" name="photo" accept=".png,.jpg,.jpeg">
-
     <label for="name">Name</label>
     <input type="text" id="name" name="name" value="{{ contact.name }}" required>
 
@@ -65,8 +53,7 @@
     <textarea id="responsibilities" name="responsibilities" rows="4">{{ contact.responsibilities }}</textarea>
 
     <label for="email">Email</label>
-    <input type="email" id="email" name="email" value="{{ contact.email }}" required>
-    <p class="field-help">Email is the unique contact identifier and cannot be reused.</p>
+    <input type="email" id="email" name="email" value="{{ contact.email }}">
 
     <label for="phone">Phone</label>
     <input type="text" id="phone" name="phone" value="{{ contact.phone }}">

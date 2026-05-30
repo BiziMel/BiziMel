@@ -9,6 +9,11 @@ def assert_ok(condition, message):
         raise AssertionError(message)
 
 
+def csrf_from_session(client):
+    with client.session_transaction() as sess:
+        return sess.get("_csrf_token", "")
+
+
 def seed_validation_data(db_path):
     connection = sqlite3.connect(db_path)
     account_id = connection.execute(
@@ -113,6 +118,7 @@ def main():
         response = client.post(
             "/register",
             data={
+                "csrf_token": csrf_from_session(client),
                 "full_name": "Smoke Test Admin",
                 "email": "smoke-test@example.com",
                 "password": "Password123!",
@@ -155,6 +161,7 @@ def main():
         response = client.post(
             f"/tasks/{outreach_id}/update",
             data={
+                "csrf_token": csrf_from_session(client),
                 "return_to": "/",
                 "next_action": "Updated smoke follow up",
                 "next_action_date": "2026-05-06",

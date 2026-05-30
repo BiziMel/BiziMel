@@ -23,9 +23,6 @@
             <span class="status-pill">Partner{% if outreach_item.partner_name %}: {{ outreach_item.partner_name }}{% endif %}</span>
         {% endif %}
     </p>
-    {% if outreach_item.contact_job_title %}
-        <p><strong>Job Title:</strong> {{ outreach_item.contact_job_title }}</p>
-    {% endif %}
     <p><strong>Activity Type:</strong> {{ outreach_item.activity_type }}</p>
     <p><strong>Activity Start Date:</strong> {{ outreach_item.activity_date }}</p>
     <p><strong>Activity Start Time:</strong> {{ outreach_item.activity_time }}</p>

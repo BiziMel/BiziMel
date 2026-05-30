@@ -24,8 +24,6 @@ USER_TABLES = {
     "partner_contacts",
     "account_org_charts",
     "account_org_chart_people",
-    "org_charts",
-    "org_chart_nodes",
     "timeline_entries",
     "user_profile",
 }
@@ -33,16 +31,6 @@ USER_TABLES = {
 
 def using_postgres():
     return bool(os.environ.get("DATABASE_URL"))
-
-
-def psycopg_connect():
-    return psycopg.connect(
-        os.environ["DATABASE_URL"],
-        row_factory=dict_row,
-        connect_timeout=10,
-        application_name=os.environ.get("PIPEFLOW_DB_APP_NAME", "pipeflow"),
-        prepare_threshold=None,
-    )
 
 
 def sqlite_data_root():
@@ -121,9 +109,6 @@ class HybridRow:
     def keys(self):
         return self.data.keys()
 
-    def get(self, key, default=None):
-        return self.data.get(key, default)
-
     def items(self):
         return self.data.items()
 
@@ -172,7 +157,6 @@ class PgConnectionAdapter:
         self.connection = connection
 
     def execute(self, sql, params=None):
-        raw_params = params
         params = tuple(params or ())
         translated = translate_sql(sql)
         if re.search(r"\binsert\s+into\s+partners\s*\(partner_name\)[\s\S]+\bselect\b", translated, flags=re.IGNORECASE) and "on conflict" not in translated.lower():
@@ -184,10 +168,7 @@ class PgConnectionAdapter:
             translated = translated.rstrip().rstrip(";") + " RETURNING id"
             auto_returning = True
 
-        if raw_params is None:
-            cursor = self.connection.execute(translated)
-        else:
-            cursor = self.connection.execute(translated, params)
+        cursor = self.connection.execute(translated, params)
         lastrowid = None
         if auto_returning and cursor.description:
             row = cursor.fetchone()
@@ -233,7 +214,7 @@ def sqlite_connection():
 def postgres_connection(schema=None):
     if psycopg is None:
         raise RuntimeError("DATABASE_URL is set but psycopg is not installed.")
-    connection = psycopg_connect()
+    connection = psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row)
     schema = schema or current_user_schema()
     with connection.cursor() as cursor:
         cursor.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
@@ -488,7 +469,7 @@ def postgres_connection(schema=None):
         _POSTGRES_READY_SCHEMAS.add(schema)
         return connection
 
-    connection = psycopg_connect()
+    connection = psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row)
     with connection.cursor() as cursor:
         if schema not in _POSTGRES_READY_SCHEMAS:
             cursor.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')

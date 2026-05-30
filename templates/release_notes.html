@@ -17,22 +17,11 @@
 </div>
 
 <div class="release-notes-list">
-    {% for group in grouped_release_notes %}
-        <details class="form-card release-family-card release-accordion" {% if loop.first %}open{% endif %}>
-            <summary class="release-summary release-family-summary">
-                <div>
-                    <h2>Release {{ group.family }}</h2>
-                    <p>Grouped release family. The latest minor release is shown first.</p>
-                </div>
-                <span class="status-pill">{{ group.latest_release_date }}</span>
-            </summary>
-
-            <div class="release-family-list">
-                {% for release in group.releases %}
-        <details class="release-card release-accordion nested-release-card" {% if loop.first %}open{% endif %}>
+    {% for release in release_notes %}
+        <details class="form-card release-card release-accordion" {% if loop.first %}open{% endif %}>
             <summary class="release-summary">
                 <div>
-                    <h2>Version {{ release.display_version or release.version }}</h2>
+                    <h2>Version {{ release.version }}</h2>
                     <p>{{ release.title }}</p>
                 </div>
                 <span class="status-pill">{{ release.release_date }}</span>
@@ -65,9 +54,6 @@
                         {% endfor %}
                     </ul>
                 </section>
-            </div>
-        </details>
-                {% endfor %}
             </div>
         </details>
     {% endfor %}

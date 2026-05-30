@@ -68,8 +68,9 @@
             </div>
 
             <div class="form-group">
-                <label for="contact_id">Contacts</label>
-                <select id="contact_id" name="contact_ids" multiple size="6">
+                <label for="contact_id">Contact</label>
+                <select id="contact_id" name="contact_id">
+                    <option value="">Select contact</option>
                     {% for contact in contacts %}
                         <option value="{{ contact.id }}"
                                 data-account-id="{{ contact.account_id or '' }}"
@@ -78,7 +79,7 @@
                                 data-phone="{{ contact.phone or '' }}"
                                 data-linkedin="{{ contact.linkedin or '' }}"
                                 data-job-title="{{ contact.job_title or '' }}"
-                                {% if contact.id|string in (prefill.contact_values or []) or prefill.contact_id|string == contact.id|string %}selected{% endif %}>
+                                {% if prefill.contact_id|string == contact.id|string %}selected{% endif %}>
                             {{ contact.name }}{% if contact.account_name %} - {{ contact.account_name }}{% endif %}
                         </option>
                     {% endfor %}
@@ -91,14 +92,12 @@
                                 data-linkedin="{{ partner_contact.linkedin or '' }}"
                                 data-job-title="{{ partner_contact.job_title or '' }}"
                                 data-partner-name="{{ partner_contact.partner_name or '' }}"
-                                {% if 'partner_contact:' ~ partner_contact.id|string in (prefill.contact_values or []) or prefill.contact_id|string == 'partner_contact:' ~ partner_contact.id|string %}selected{% endif %}>
+                                {% if prefill.contact_id|string == 'partner_contact:' ~ partner_contact.id|string %}selected{% endif %}>
                             {{ partner_contact.name }} - Partner: {{ partner_contact.partner_name }}{% if partner_contact.account_name %} - {{ partner_contact.account_name }}{% endif %}
                         </option>
                     {% endfor %}
                 </select>
-                <p class="field-help">Hold Command on Mac or Ctrl on Windows to select more than one customer or partner contact.</p>
                 <a href="#" id="open_contact_record" target="_blank" class="btn btn-secondary btn-small contact-open-button" hidden>Open</a>
-                <div id="contact_system_fields" class="system-inline-fields contact-job-title-inline">Select a contact to show their job title.</div>
             </div>
 
             <div class="form-group">
@@ -132,6 +131,14 @@
                     {% for activity in dropdown_values.outreach_activity_types %}
                         <option value="{{ activity }}" {% if prefill.activity_type == activity %}selected{% endif %}>{{ activity }}</option>
                     {% endfor %}
+                    {% for partner in partner_activity_options %}
+                        <option value="Partner: {{ partner.partner_name }}"
+                                data-account-id="{{ partner.account_id }}"
+                                class="partner-activity-option"
+                                {% if prefill.activity_type == 'Partner: ' ~ partner.partner_name %}selected{% endif %}>
+                            Partner: {{ partner.partner_name }}{% if partner.partner_type %} ({{ partner.partner_type }}){% endif %}
+                        </option>
+                    {% endfor %}
                 </select>
             </div>
 
@@ -158,6 +165,11 @@
             <div class="form-group full-width">
                 <label for="subject">Subject</label>
                 <input type="text" id="subject" name="subject" value="{{ prefill.subject or '' }}" required>
+            </div>
+
+            <div class="form-group full-width">
+                <label>Contact System Fields</label>
+                <div id="contact_system_fields" class="system-inline-fields">Select a contact to show phone, email and LinkedIn.</div>
             </div>
 
             <div class="form-group">
@@ -231,6 +243,7 @@
     function constrainContactsByAccount() {
         const accountSelect = document.getElementById("account_id");
         const contactSelect = document.getElementById("contact_id");
+        const activityTypeSelect = document.getElementById("activity_type");
         const salesPlayDatalist = document.getElementById("sales_play_options");
         const allSalesPlayOptions = salesPlayDatalist ? Array.from(salesPlayDatalist.options).map((option) => ({
             value: option.value,
@@ -238,73 +251,11 @@
         })) : [];
         const openContactButton = document.getElementById("open_contact_record");
         const contactSystemFields = document.getElementById("contact_system_fields");
-        let refreshContactPicker = () => {};
         if (!accountSelect || !contactSelect) return;
-
-        function selectedContactOptions() {
-            return Array.from(contactSelect.options).filter((option) => option.selected && option.value && !option.disabled && !option.hidden);
-        }
-
-        function buildContactPicker() {
-            const picker = document.createElement("div");
-            picker.className = "contact-checkbox-picker";
-            const trigger = document.createElement("button");
-            trigger.type = "button";
-            trigger.className = "contact-picker-trigger";
-            const panel = document.createElement("div");
-            panel.className = "contact-picker-panel";
-            panel.hidden = true;
-            picker.appendChild(trigger);
-            picker.appendChild(panel);
-            contactSelect.classList.add("native-multi-select-hidden");
-            contactSelect.insertAdjacentElement("afterend", picker);
-
-            refreshContactPicker = function () {
-                const selected = selectedContactOptions();
-                trigger.textContent = selected.length
-                    ? selected.map((option) => option.textContent.trim()).join(", ")
-                    : "Select contacts";
-                trigger.style.minHeight = selected.length > 1 ? "auto" : "";
-                panel.innerHTML = "";
-                Array.from(contactSelect.options)
-                    .filter((option) => option.value && !option.hidden && !option.disabled)
-                    .forEach((option) => {
-                        const label = document.createElement("label");
-                        label.className = "contact-picker-option";
-                        const checkbox = document.createElement("input");
-                        checkbox.type = "checkbox";
-                        checkbox.checked = option.selected;
-                        checkbox.addEventListener("change", () => {
-                            option.selected = checkbox.checked;
-                            contactSelect.dispatchEvent(new Event("change", { bubbles: true }));
-                        });
-                        const span = document.createElement("span");
-                        span.textContent = option.textContent.trim();
-                        label.appendChild(checkbox);
-                        label.appendChild(span);
-                        panel.appendChild(label);
-                    });
-                if (!panel.children.length) {
-                    const empty = document.createElement("p");
-                    empty.className = "field-help";
-                    empty.textContent = accountSelect.value ? "No contacts are available for this account." : "Select an account first.";
-                    panel.appendChild(empty);
-                }
-            };
-
-            trigger.addEventListener("click", () => {
-                panel.hidden = !panel.hidden;
-            });
-            document.addEventListener("click", (event) => {
-                if (!picker.contains(event.target)) {
-                    panel.hidden = true;
-                }
-            });
-        }
 
         function applyContactFilter() {
             const selectedAccountId = accountSelect.value;
-            let selectedContactStillValid = selectedContactOptions().length === 0;
+            let selectedContactStillValid = !contactSelect.value;
 
             Array.from(contactSelect.options).forEach((option) => {
                 if (!option.value) {
@@ -318,18 +269,23 @@
                 option.disabled = !belongsToSelectedAccount;
                 if (option.selected && belongsToSelectedAccount) {
                     selectedContactStillValid = true;
-                } else if (option.selected && !belongsToSelectedAccount) {
-                    option.selected = false;
                 }
             });
 
             if (!selectedContactStillValid) {
-                Array.from(contactSelect.options).forEach((option) => {
-                    option.selected = false;
-                });
+                contactSelect.value = "";
             }
 
             contactSelect.disabled = !selectedAccountId;
+            if (activityTypeSelect) {
+                Array.from(activityTypeSelect.options).forEach((option) => {
+                    if (!option.classList.contains("partner-activity-option")) return;
+                    const showPartner = selectedAccountId && option.dataset.accountId === selectedAccountId;
+                    option.hidden = !showPartner;
+                    option.disabled = !showPartner;
+                    if (option.selected && !showPartner) activityTypeSelect.value = "";
+                });
+            }
             if (salesPlayDatalist) {
                 salesPlayDatalist.innerHTML = "";
                 allSalesPlayOptions
@@ -341,8 +297,8 @@
                     });
             }
             if (openContactButton) {
-                const selectedContact = selectedContactOptions()[0];
-                if (selectedContact) {
+                if (contactSelect.value) {
+                    const selectedContact = contactSelect.options[contactSelect.selectedIndex];
                     openContactButton.href = selectedContact ? selectedContact.dataset.contactUrl || "#" : "#";
                     openContactButton.hidden = false;
                 } else {
@@ -350,19 +306,18 @@
                 }
             }
             if (contactSystemFields) {
-                const selected = selectedContactOptions();
-                contactSystemFields.innerHTML = selected.length
-                    ? selected.map((selectedContact) => {
-                        const jobTitle = selectedContact.dataset.jobTitle || "";
-                        const partnerName = selectedContact.dataset.partnerName || "";
-                        return `<span>${partnerName ? "Partner contact" : "Customer contact"}${partnerName ? `: ${partnerName}` : ""}</span><span>Job title: ${jobTitle || "Not set"}</span>`;
-                    }).join("")
-                    : "Select a contact to show their job title.";
+                const selectedContact = contactSelect.options[contactSelect.selectedIndex];
+                const email = selectedContact ? selectedContact.dataset.email || "" : "";
+                const phone = selectedContact ? selectedContact.dataset.phone || "" : "";
+                const linkedin = selectedContact ? selectedContact.dataset.linkedin || "" : "";
+                const jobTitle = selectedContact ? selectedContact.dataset.jobTitle || "" : "";
+                const partnerName = selectedContact ? selectedContact.dataset.partnerName || "" : "";
+                contactSystemFields.innerHTML = contactSelect.value
+                    ? `<span>${partnerName ? "Partner contact" : "Customer contact"}${partnerName ? `: ${partnerName}` : ""}</span><span>Job title: ${jobTitle || "Not set"}</span><span>Email: ${email || "Not set"}</span><span>Phone: ${phone || "Not set"}</span><span>LinkedIn: ${linkedin || "Not set"}</span>`
+                    : "Select a contact to show phone, email and LinkedIn.";
             }
-            refreshContactPicker();
         }
 
-        buildContactPicker();
         accountSelect.addEventListener("change", applyContactFilter);
         contactSelect.addEventListener("change", applyContactFilter);
         applyContactFilter();

@@ -19,6 +19,7 @@
     <div class="admin-subnav-actions">
         <a href="{{ url_for('admin_permissions') }}" class="btn btn-primary btn-small">Permissions & Controls</a>
         {% if is_app_admin %}
+            <a href="{{ url_for('admin_tenants') }}" class="btn btn-secondary btn-small">Tenant</a>
             <a href="{{ url_for('admin_permissions') }}#broadcast-messages" class="btn btn-secondary btn-small">Broadcast Messages</a>
         {% endif %}
         <a href="{{ url_for('audit_trail') }}" class="btn btn-secondary btn-small">Audit Trail</a>
@@ -47,17 +48,17 @@
                 <span class="permission-badge">Application Admin</span>
                 <span class="permission-level">Full system control</span>
             </div>
-            <p>Can manage every company, every user profile, company membership, role, access status, password reset, broadcasts, system settings, audit retention and global account fields.</p>
-            <p class="permission-note">Application Admin is intended for the small group who administer PipeFlow and prevent single-person dependency if one administrator leaves.</p>
+            <p>Can create tenants, manage all companies, amend any user role, configure system settings, broadcasts, audit retention and global account fields.</p>
+            <p class="permission-note">Application Admin is intended for the small group who administer the full hosted enterprise system.</p>
         </div>
 
         <div class="permission-card permission-card-admin">
             <div class="permission-card-header">
                 <span class="permission-badge">Company Admin</span>
-                <span class="permission-level">Company control</span>
+                <span class="permission-level">Tenant control</span>
             </div>
-            <p>Can manage people, roles, passwords, active status, data and sharing permissions inside their own company only.</p>
-            <p class="permission-note">Company Admins cannot see, share or administer records from another company and cannot assign Application Admin access.</p>
+            <p>Can manage users, roles, passwords and access inside their own company tenant only.</p>
+            <p class="permission-note">Company Admins cannot see another company, assign Application Admin access or manage application-level controls.</p>
         </div>
 
         <div class="permission-card">
@@ -92,15 +93,15 @@
 <div class="admin-control-strip">
     <div>
         <strong>Tenancy rule</strong>
-        <p>Application Admins can manage the full system. Company Admins are constrained to their associated company.</p>
+        <p>Every user must belong to one tenant. Company Admins only see their own company.</p>
     </div>
     <div>
         <strong>Sharing boundary</strong>
-        <p>Sharing and assignment lists only include users inside the same company unless the user is an Application Admin.</p>
+        <p>Sharing and assignment lists only include users inside the same company tenancy.</p>
     </div>
     <div>
-        <strong>Global fields</strong>
-        <p>Only Application Admins manage global account fields, fiscal settings, broadcast messages and audit retention.</p>
+        <strong>Global controls</strong>
+        <p>Only Application Admins manage tenants, broadcasts, global account fields and audit retention.</p>
     </div>
 </div>
 
@@ -108,47 +109,122 @@
     <div class="section-header">
         <div>
             <h3>User Permissions</h3>
-            <p class="muted-text">Update user details, company membership, teams, roles and access. Company administrators only see users inside their own company.</p>
+            <p class="muted-text">Create users and update profile, tenant, team, role and access. Company administrators only see users inside their own company.</p>
         </div>
     </div>
 
-    <div class="table-container admin-users-table-container">
-        <table class="report-table admin-users-table">
-            <thead>
-                <tr>
-                    <th>Full Name</th>
-                    <th>Email</th>
-                    <th>Company</th>
-                    <th>Team</th>
-                    <th>Role</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for user in users %}
-                    <tr>
-                        <td>
-                            <a href="{{ url_for('admin_user_profile', user_id=user['id']) }}" class="table-primary-link">
-                                {{ user["full_name"] }}
-                            </a>
-                        </td>
-                        <td>{{ user["email"] }}</td>
-                        <td>{{ user["company"] or "Not set" }}</td>
-                        <td>{{ user["team"] or "Not set" }}</td>
-                        <td><span class="permission-badge">{{ user["role"]|replace("_", " ")|title }}</span></td>
-                        <td>
-                            <span class="user-status-pill {{ 'user-status-active' if user['is_active'] else 'user-status-inactive' }}">
-                                {{ "Active" if user["is_active"] else "Inactive" }}
-                            </span>
-                        </td>
-                    </tr>
-                {% else %}
-                    <tr>
-                        <td colspan="6">No user profiles found.</td>
-                    </tr>
+    <section class="admin-user-create-panel">
+        <h4>Create User Profile</h4>
+        <form method="POST" action="{{ url_for('admin_create_user') }}" class="admin-user-create-form">
+            <input type="text" name="full_name" placeholder="Full name" required>
+            <input type="email" name="email" placeholder="Email" required>
+            <select name="company" required>
+                {% for tenant in tenant_options %}
+                    <option value="{{ tenant['company_name'] }}">{{ tenant['company_name'] }}</option>
                 {% endfor %}
-            </tbody>
-        </table>
+            </select>
+            <select name="role">
+                <option value="user">User</option>
+                <option value="manager">Manager</option>
+                <option value="company_admin">Company Admin</option>
+                {% if is_app_admin %}
+                    <option value="admin">Application Admin</option>
+                {% endif %}
+            </select>
+            <input type="password" name="password" minlength="8" placeholder="Temporary password" required>
+            <input type="password" name="reset_phrase" minlength="12" placeholder="Secret reset phrase" required>
+            <button type="submit" class="btn btn-primary">Create User</button>
+        </form>
+    </section>
+
+    <div class="admin-user-card-grid">
+        {% for user in users %}
+            <article class="admin-user-card">
+                <div class="admin-user-card-header">
+                    <div>
+                        <h4>{{ user["full_name"] }}</h4>
+                        <p>{{ user["email"] }}</p>
+                    </div>
+                    <div class="admin-user-badges">
+                        <span class="permission-badge">{{ user["role"]|replace("_", " ")|title }}</span>
+                        <span class="user-status-pill {{ 'user-status-active' if user['is_active'] else 'user-status-inactive' }}">
+                            {{ "Active" if user["is_active"] else "Inactive" }}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="admin-user-meta-grid">
+                    <div>
+                        <span>Company</span>
+                        <strong>{{ user["company"] or "Not set" }}</strong>
+                    </div>
+                    <div>
+                        <span>Team</span>
+                        <strong>{{ user["team"] or "Not set" }}</strong>
+                    </div>
+                    <div>
+                        <span>Created</span>
+                        <strong>{{ user["date_created"] }}</strong>
+                    </div>
+                </div>
+
+                <div class="admin-user-section">
+                    <h5>Profile Details</h5>
+                    <form method="POST" action="{{ url_for('admin_update_user_identity', user_id=user['id']) }}" class="admin-user-details-form">
+                        <input type="text" name="full_name" value="{{ user['full_name'] }}" placeholder="Name" required>
+                        <input type="email" name="email" value="{{ user['email'] }}" placeholder="Email" required>
+                        <select name="company" required {% if not is_app_admin %}disabled{% endif %}>
+                            {% for tenant in tenant_options %}
+                                <option value="{{ tenant['company_name'] }}" {% if tenant['company_name'] == user['company'] %}selected{% endif %}>{{ tenant['company_name'] }}</option>
+                            {% endfor %}
+                        </select>
+                        {% if not is_app_admin %}
+                            <input type="hidden" name="company" value="{{ user['company'] }}">
+                        {% endif %}
+                        <input type="text" name="team" value="{{ user['team'] or '' }}" placeholder="Team">
+                        <button type="submit" class="btn btn-secondary">Save Details</button>
+                    </form>
+                </div>
+
+                <div class="admin-user-section admin-user-actions-grid">
+                    <div>
+                        <h5>Role</h5>
+                        <form method="POST" action="{{ url_for('admin_update_user_role', user_id=user['id']) }}" class="admin-user-role-form">
+                            <select name="role">
+                                <option value="user" {% if user["role"] == "user" %}selected{% endif %}>User</option>
+                                <option value="manager" {% if user["role"] == "manager" %}selected{% endif %}>Manager</option>
+                                <option value="company_admin" {% if user["role"] == "company_admin" %}selected{% endif %}>Company Admin</option>
+                                {% if is_app_admin %}
+                                    <option value="admin" {% if user["role"] == "admin" %}selected{% endif %}>Application Admin</option>
+                                {% endif %}
+                            </select>
+                            <button type="submit" class="btn btn-secondary">Update Role</button>
+                        </form>
+                    </div>
+
+                    <div>
+                        <h5>Access</h5>
+                        {% if user["is_active"] %}
+                            <form method="POST" action="{{ url_for('admin_deactivate_user', user_id=user['id']) }}">
+                                <button type="submit" class="btn btn-danger">Deactivate Profile</button>
+                            </form>
+                        {% else %}
+                            <form method="POST" action="{{ url_for('admin_reactivate_user', user_id=user['id']) }}">
+                                <button type="submit" class="btn btn-secondary">Reactivate Profile</button>
+                            </form>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="admin-user-section">
+                    <h5>Password Reset</h5>
+                    <form method="POST" action="{{ url_for('admin_reset_user_password', user_id=user['id']) }}" class="admin-user-password-form">
+                        <input type="password" name="password" minlength="8" placeholder="New password" required>
+                        <button type="submit" class="btn btn-secondary">Reset Password</button>
+                    </form>
+                </div>
+            </article>
+        {% endfor %}
     </div>
 </div>
 
@@ -221,91 +297,77 @@
         </div>
 
         {% if broadcast_messages %}
-            <form method="POST" action="{{ url_for('admin_bulk_broadcasts') }}" class="broadcast-table-form">
-                <div class="broadcast-table-actions">
-                    <p class="muted-text">Select rows in the table, then save or delete the selected broadcasts in bulk.</p>
-                    <div>
-                        <button type="submit" name="bulk_action" value="save" class="btn btn-primary btn-small">Save Selected</button>
-                        <button type="submit" name="bulk_action" value="delete" class="btn btn-danger btn-small" id="delete_selected_broadcasts">Delete Selected</button>
-                    </div>
-                </div>
+            <div class="broadcast-card-grid">
+                {% for broadcast in broadcast_messages %}
+                    <article class="broadcast-management-card broadcast-{{ broadcast['severity'] }}">
+                        <div class="broadcast-management-header">
+                            <div>
+                                <span class="broadcast-status-pill {{ 'broadcast-status-active' if broadcast['is_active'] else 'broadcast-status-hidden' }}">
+                                    {{ "Active" if broadcast["is_active"] else "Paused" }}
+                                </span>
+                                <span class="broadcast-type-pill">{{ broadcast['severity']|capitalize }}</span>
+                            </div>
+                            <small>{{ broadcast['start_at'] or 'Not scheduled' }} to {{ broadcast['stop_at'] or 'Not scheduled' }}</small>
+                        </div>
 
-                <div class="table-container broadcast-table-container">
-                    <table class="report-table broadcast-management-table no-sort">
-                        <thead>
-                            <tr>
-                                <th>
-                                    <input type="checkbox"
-                                           id="select_all_broadcasts"
-                                           aria-label="Select all broadcasts">
-                                </th>
-                                <th>Status</th>
-                                <th>Type</th>
-                                <th>Title</th>
-                                <th>Message</th>
-                                <th>Start</th>
-                                <th>Stop</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for broadcast in broadcast_messages %}
-                                <tr class="broadcast-{{ broadcast['severity'] }}">
-                                    <td>
-                                        <input type="checkbox"
-                                               class="broadcast-row-checkbox"
-                                               name="selected_broadcast_ids"
-                                               value="{{ broadcast['id'] }}">
-                                    </td>
-                                    <td>
-                                        <label class="checkbox-label compact-checkbox">
-                                            <input type="checkbox"
-                                                   name="broadcast_{{ broadcast['id'] }}_is_active"
-                                                   value="1"
-                                                   {% if broadcast['is_active'] %}checked{% endif %}>
-                                            Active
-                                        </label>
-                                    </td>
-                                    <td>
-                                        <select name="broadcast_{{ broadcast['id'] }}_severity" aria-label="Broadcast type">
-                                            <option value="info" {% if broadcast['severity'] == 'info' %}selected{% endif %}>Info</option>
-                                            <option value="success" {% if broadcast['severity'] == 'success' %}selected{% endif %}>Success</option>
-                                            <option value="warning" {% if broadcast['severity'] == 'warning' %}selected{% endif %}>Warning</option>
-                                            <option value="urgent" {% if broadcast['severity'] == 'urgent' %}selected{% endif %}>Urgent</option>
-                                        </select>
-                                    </td>
-                                    <td>
-                                        <input type="text"
-                                               name="broadcast_{{ broadcast['id'] }}_title"
-                                               value="{{ broadcast['title'] }}"
-                                               aria-label="Broadcast title"
-                                               required>
-                                    </td>
-                                    <td>
-                                        <textarea name="broadcast_{{ broadcast['id'] }}_message"
-                                                  rows="2"
-                                                  aria-label="Broadcast message"
-                                                  required>{{ broadcast['message'] }}</textarea>
-                                    </td>
-                                    <td>
-                                        <input type="datetime-local"
-                                               name="broadcast_{{ broadcast['id'] }}_start_at"
-                                               value="{{ broadcast['start_at'] or '' }}"
-                                               aria-label="Broadcast start"
-                                               required>
-                                    </td>
-                                    <td>
-                                        <input type="datetime-local"
-                                               name="broadcast_{{ broadcast['id'] }}_stop_at"
-                                               value="{{ broadcast['stop_at'] or '' }}"
-                                               aria-label="Broadcast stop"
-                                               required>
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </form>
+                        <form method="POST" action="{{ url_for('admin_update_broadcast', message_id=broadcast['id']) }}" class="broadcast-edit-form js-single-submit">
+                            <div class="form-group">
+                                <label>Title</label>
+                                <input type="text" name="title" value="{{ broadcast['title'] }}" required>
+                            </div>
+
+                            <div class="form-group full-width">
+                                <label>Message</label>
+                                <textarea name="message" rows="3" required>{{ broadcast['message'] }}</textarea>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Type</label>
+                                <select name="severity">
+                                    <option value="info" {% if broadcast['severity'] == 'info' %}selected{% endif %}>Info</option>
+                                    <option value="success" {% if broadcast['severity'] == 'success' %}selected{% endif %}>Success</option>
+                                    <option value="warning" {% if broadcast['severity'] == 'warning' %}selected{% endif %}>Warning</option>
+                                    <option value="urgent" {% if broadcast['severity'] == 'urgent' %}selected{% endif %}>Urgent</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Start Date & Time</label>
+                                <input type="datetime-local" name="start_at" value="{{ broadcast['start_at'] or '' }}" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Stop Date & Time</label>
+                                <input type="datetime-local" name="stop_at" value="{{ broadcast['stop_at'] or '' }}" required>
+                            </div>
+
+                            <label class="checkbox-label broadcast-active-control">
+                                <input type="checkbox" name="is_active" value="1" {% if broadcast['is_active'] %}checked{% endif %}>
+                                Active
+                            </label>
+
+                            <div class="broadcast-form-actions full-width">
+                                <button type="submit" class="btn btn-secondary">Save Changes</button>
+                            </div>
+                        </form>
+
+                        <div class="broadcast-secondary-actions">
+                            {% if broadcast["is_active"] %}
+                                <form method="POST" action="{{ url_for('admin_deactivate_broadcast', message_id=broadcast['id']) }}" class="inline-form">
+                                    <button type="submit" class="btn btn-secondary">Pause Broadcast</button>
+                                </form>
+                            {% else %}
+                                <form method="POST" action="{{ url_for('admin_reactivate_broadcast', message_id=broadcast['id']) }}" class="inline-form">
+                                    <button type="submit" class="btn btn-secondary">Reactivate Broadcast</button>
+                                </form>
+                            {% endif %}
+                            <form method="POST" action="{{ url_for('admin_delete_broadcast', message_id=broadcast['id']) }}" class="inline-form broadcast-delete-form">
+                                <button type="submit" class="btn btn-danger">Delete Broadcast</button>
+                            </form>
+                        </div>
+                    </article>
+                {% endfor %}
+            </div>
         {% else %}
             <div class="empty-state broadcast-empty-state">
                 <h3>No broadcast messages yet</h3>
@@ -313,53 +375,6 @@
             </div>
         {% endif %}
     </section>
-</div>
-
-
-<div class="card admin-system-card">
-    <div class="section-header">
-        <div>
-            <h3>System Week Settings</h3>
-            <p class="muted-text">Choose the day that PipeFlow treats as the start of each new reporting week. This affects weekly dashboard metrics and weekly PG Bible result grouping.</p>
-        </div>
-        <span class="status-pill">Starts {{ new_week_start_label }}</span>
-    </div>
-
-    <form method="POST" action="{{ url_for('admin_update_new_week_start') }}" class="retention-toggle-form">
-        <div class="form-group retention-select-group">
-            <label for="new_week_start">New week start</label>
-            <select id="new_week_start" name="new_week_start">
-                {% for option in week_start_options %}
-                    <option value="{{ option.value }}" {% if new_week_start == option.value %}selected{% endif %}>
-                        {{ option.label }}
-                    </option>
-                {% endfor %}
-            </select>
-        </div>
-        <button type="submit" class="btn btn-primary">Save New Week Start</button>
-    </form>
-</div>
-
-<div class="card admin-system-card">
-    <div class="section-header">
-        <div>
-            <h3>Fiscal Year Settings</h3>
-            <p class="muted-text">Set the fiscal year date range that PipeFlow uses to calculate current-quarter dashboard outcome metrics and quarterly reporting windows.</p>
-        </div>
-        <span class="status-pill">{{ fiscal_year_start }} to {{ fiscal_year_end }}</span>
-    </div>
-
-    <form method="POST" action="{{ url_for('admin_update_fiscal_year') }}" class="retention-toggle-form">
-        <div class="form-group retention-select-group">
-            <label for="fiscal_year_start">Fiscal year start</label>
-            <input id="fiscal_year_start" type="date" name="fiscal_year_start" value="{{ fiscal_year_start }}" required>
-        </div>
-        <div class="form-group retention-select-group">
-            <label for="fiscal_year_end">Fiscal year end</label>
-            <input id="fiscal_year_end" type="date" name="fiscal_year_end" value="{{ fiscal_year_end }}" required>
-        </div>
-        <button type="submit" class="btn btn-primary">Save Fiscal Year</button>
-    </form>
 </div>
 
 
@@ -397,30 +412,12 @@
         });
     });
 
-    const selectAllBroadcasts = document.getElementById("select_all_broadcasts");
-    const broadcastCheckboxes = Array.from(document.querySelectorAll(".broadcast-row-checkbox"));
-    if (selectAllBroadcasts) {
-        selectAllBroadcasts.addEventListener("change", () => {
-            broadcastCheckboxes.forEach((checkbox) => {
-                checkbox.checked = selectAllBroadcasts.checked;
-            });
-        });
-    }
-
-    const broadcastBulkForm = document.querySelector(".broadcast-table-form");
-    if (broadcastBulkForm) {
-        broadcastBulkForm.addEventListener("submit", (event) => {
-            const selectedCount = broadcastCheckboxes.filter((checkbox) => checkbox.checked).length;
-            const submitter = event.submitter;
-            if (!selectedCount) {
-                event.preventDefault();
-                window.alert("Select at least one broadcast message.");
-                return;
-            }
-            if (submitter && submitter.value === "delete" && !window.confirm(`Delete ${selectedCount} selected broadcast message(s)?`)) {
+    document.querySelectorAll(".broadcast-delete-form").forEach((form) => {
+        form.addEventListener("submit", (event) => {
+            if (!window.confirm("Delete this broadcast message?")) {
                 event.preventDefault();
             }
         });
-    }
+    });
 </script>
 {% endblock %}

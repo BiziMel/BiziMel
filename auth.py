@@ -14,6 +14,7 @@ AUTH_DB_NAME = "pipeflow_server_auth.db"
 VALID_ROLES = {"admin", "company_admin", "manager", "user"}
 VALID_ACCOUNT_FIELD_TYPES = {"text", "number", "date", "textarea"}
 VALID_BROADCAST_SEVERITIES = {"info", "success", "warning", "urgent"}
+DEFAULT_ADMIN_TENANT = "PipeFlow Administration"
 
 
 
@@ -87,6 +88,17 @@ def initialise_auth_database() -> None:
                 last_updated TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS tenants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_name TEXT NOT NULL UNIQUE,
+            country TEXT NOT NULL,
+            company_contact TEXT NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     connection.execute("""
         CREATE TABLE IF NOT EXISTS account_field_definitions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -174,6 +186,41 @@ def initialise_auth_database() -> None:
     add_column_if_missing(connection, "broadcast_messages", "stop_at", "TEXT")
     add_column_if_missing(connection, "team_memberships", "role", "TEXT DEFAULT 'member'")
     add_column_if_missing(connection, "team_invites", "status", "TEXT DEFAULT 'pending'")
+    connection.execute(
+        """
+        INSERT INTO tenants (company_name, country, company_contact, is_active)
+        SELECT ?, ?, ?, 1
+        WHERE NOT EXISTS (SELECT 1 FROM tenants WHERE LOWER(company_name) = LOWER(?))
+        """,
+        (DEFAULT_ADMIN_TENANT, "United Kingdom", "Application Administrator", DEFAULT_ADMIN_TENANT),
+    )
+    existing_companies = connection.execute(
+        """
+        SELECT DISTINCT TRIM(company) AS company_name
+        FROM users
+        WHERE company IS NOT NULL
+          AND TRIM(company) != ''
+        """
+    ).fetchall()
+    for row in existing_companies:
+        company_name = row["company_name"]
+        connection.execute(
+            """
+            INSERT INTO tenants (company_name, country, company_contact, is_active)
+            SELECT ?, ?, ?, 1
+            WHERE NOT EXISTS (SELECT 1 FROM tenants WHERE LOWER(company_name) = LOWER(?))
+            """,
+            (company_name, "Not set", "Not set", company_name),
+        )
+    connection.execute(
+        """
+        UPDATE users
+        SET company = ?
+        WHERE company IS NULL
+           OR TRIM(company) = ''
+        """,
+        (DEFAULT_ADMIN_TENANT,),
+    )
     connection.commit()
     connection.close()
 
@@ -182,10 +229,115 @@ def normalise_email(email: str) -> str:
     return (email or "").strip().lower()
 
 
-def create_user(email: str, password: str, full_name: str, reset_phrase: str = ""):
+def user_count() -> int:
+    connection = get_auth_connection()
+    row = connection.execute("SELECT COUNT(*) AS total FROM users").fetchone()
+    connection.close()
+    return int(row["total"] if hasattr(row, "keys") else row[0])
+
+
+def normalise_company_name(company_name: str) -> str:
+    return " ".join((company_name or "").strip().split())
+
+
+def is_application_admin(user):
+    return bool(user and user["role"] == "admin")
+
+
+def is_company_admin(user):
+    return bool(user and user["role"] == "company_admin")
+
+
+def same_company(left, right):
+    if not left or not right:
+        return False
+    left_company = left["company"] if "company" in left.keys() and left["company"] else ""
+    right_company = right["company"] if "company" in right.keys() and right["company"] else ""
+    return normalise_company_name(left_company).lower() == normalise_company_name(right_company).lower()
+
+
+def tenant_exists(company_name: str) -> bool:
+    company_name = normalise_company_name(company_name)
+    if not company_name:
+        return False
+    connection = get_auth_connection()
+    row = connection.execute(
+        """
+        SELECT id
+        FROM tenants
+        WHERE LOWER(company_name) = LOWER(?)
+          AND is_active = 1
+        """,
+        (company_name,),
+    ).fetchone()
+    connection.close()
+    return bool(row)
+
+
+def list_tenants(actor=None, active_only: bool = True):
+    connection = get_auth_connection()
+    params = []
+    query = """
+        SELECT *
+        FROM tenants
+        WHERE 1 = 1
+    """
+    if active_only:
+        query += " AND is_active = 1"
+    if actor and not is_application_admin(actor):
+        query += " AND LOWER(company_name) = LOWER(?)"
+        params.append(actor["company"] if "company" in actor.keys() and actor["company"] else "")
+    query += " ORDER BY company_name"
+    rows = connection.execute(query, params).fetchall()
+    connection.close()
+    return rows
+
+
+def create_tenant(company_name: str, country: str, company_contact: str):
+    company_name = normalise_company_name(company_name)
+    country = (country or "").strip()
+    company_contact = (company_contact or "").strip()
+    if not company_name or not country or not company_contact:
+        return "Company Name, Country and Company contact are required."
+    connection = get_auth_connection()
+    try:
+        connection.execute(
+            """
+            INSERT INTO tenants (company_name, country, company_contact, is_active)
+            VALUES (?, ?, ?, 1)
+            """,
+            (company_name, country, company_contact),
+        )
+        connection.commit()
+        return ""
+    except Exception as exc:
+        if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+            return "A tenant already exists for that company name."
+        raise
+    finally:
+        connection.close()
+
+
+def get_tenant_by_name(company_name: str):
+    company_name = normalise_company_name(company_name)
+    connection = get_auth_connection()
+    row = connection.execute(
+        """
+        SELECT *
+        FROM tenants
+        WHERE LOWER(company_name) = LOWER(?)
+        """,
+        (company_name,),
+    ).fetchone()
+    connection.close()
+    return row
+
+
+def create_user(email: str, password: str, full_name: str, reset_phrase: str = "", company: str = ""):
     email = normalise_email(email)
     full_name = (full_name or "").strip()
     reset_phrase = (reset_phrase or "").strip()
+    company = normalise_company_name(company)
     if not email or not password or not full_name or not reset_phrase:
         return None, "All fields are required."
     if len(reset_phrase) < 12:
@@ -195,7 +347,10 @@ def create_user(email: str, password: str, full_name: str, reset_phrase: str = "
     try:
         existing_count = connection.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         role = "admin" if existing_count == 0 else "user"
-        company = "Application" if existing_count == 0 else ""
+        if existing_count == 0 and not company:
+            company = DEFAULT_ADMIN_TENANT
+        if not company or not tenant_exists(company):
+            return None, "Select a valid tenant before creating a user profile."
         if using_postgres():
             cursor = connection.execute(
                 """
@@ -301,6 +456,8 @@ def current_user():
         FROM users
         WHERE id = ?
           AND is_active = 1
+          AND company IS NOT NULL
+          AND TRIM(company) != ''
         """,
         (user_id,),
     ).fetchone()
@@ -379,22 +536,17 @@ def list_active_team_members(user):
     if not team_id:
         return []
     connection = get_auth_connection()
-    company_clause = ""
-    params = [team_id]
-    if user and user["role"] != "admin":
-        company_clause = "AND COALESCE(users.company, '') = ?"
-        params.append(user["company"] if "company" in user.keys() and user["company"] else "")
     members = connection.execute(
-        f"""
+        """
         SELECT users.id, users.email, users.full_name, users.company, users.team, users.workspace_schema, team_memberships.role
         FROM team_memberships
         JOIN users ON users.id = team_memberships.user_id
         WHERE team_memberships.team_id = ?
           AND users.is_active = 1
-          {company_clause}
+          AND LOWER(users.company) = LOWER(?)
         ORDER BY users.full_name, users.email
         """,
-        tuple(params),
+        (team_id, user["company"] if "company" in user.keys() and user["company"] else ""),
     ).fetchall()
     connection.close()
     return members
@@ -490,51 +642,34 @@ def ensure_user_workspace_schema(user):
     return schema
 
 
-def is_application_admin(user) -> bool:
-    return bool(user and user["role"] == "admin")
-
-
-def is_company_admin(user) -> bool:
-    return bool(user and user["role"] == "company_admin")
-
-
-def same_company(left, right) -> bool:
-    return bool(left and right and (left["company"] if "company" in left.keys() else "") and (left["company"] if "company" in left.keys() else "") == (right["company"] if "company" in right.keys() else ""))
-
-
 def list_users(actor=None):
     connection = get_auth_connection()
-    if is_company_admin(actor):
-        users = connection.execute(
-            """
-            SELECT id, email, full_name, company, team, role, is_active, workspace_schema, date_created, last_updated
-            FROM users
-            WHERE COALESCE(company, '') = ?
-            ORDER BY full_name, email
-            """,
-            (actor["company"] or "",),
-        ).fetchall()
-    else:
-        users = connection.execute(
-            """
-            SELECT id, email, full_name, company, team, role, is_active, workspace_schema, date_created, last_updated
-            FROM users
-            ORDER BY full_name, email
-            """
-        ).fetchall()
+    params = []
+    company_clause = ""
+    if actor and not is_application_admin(actor):
+        company_clause = "WHERE LOWER(company) = LOWER(?)"
+        params.append(actor["company"] if "company" in actor.keys() and actor["company"] else "")
+    users = connection.execute(
+        f"""
+        SELECT id, email, full_name, company, team, role, is_active, workspace_schema, date_created, last_updated
+        FROM users
+        {company_clause}
+        ORDER BY full_name, email
+        """,
+        params,
+    ).fetchall()
     connection.close()
     for user in users:
         ensure_user_workspace_schema(user)
     connection = get_auth_connection()
     users = connection.execute(
-        """
+        f"""
         SELECT id, email, full_name, company, team, role, is_active, workspace_schema, date_created, last_updated
         FROM users
-        {where_clause}
+        {company_clause}
         ORDER BY full_name, email
-        """
-    .format(where_clause="WHERE COALESCE(company, '') = ?" if is_company_admin(actor) else ""),
-        (actor["company"] or "",) if is_company_admin(actor) else (),
+        """,
+        params,
     ).fetchall()
     connection.close()
     return users
@@ -543,40 +678,38 @@ def list_users(actor=None):
 def list_assignable_users(actor=None):
     actor = actor or current_user()
     connection = get_auth_connection()
-    if actor and actor["role"] != "admin":
-        users = connection.execute(
-            """
-            SELECT id, email, full_name, company, team, role, is_active, workspace_schema, date_created, last_updated
-            FROM users
-            WHERE is_active = 1
-              AND COALESCE(company, '') = ?
-            ORDER BY full_name, email
-            """,
-            (actor["company"] if "company" in actor.keys() and actor["company"] else "",),
-        ).fetchall()
-    else:
-        users = connection.execute(
-            """
-            SELECT id, email, full_name, company, team, role, is_active, workspace_schema, date_created, last_updated
-            FROM users
-            WHERE is_active = 1
-            ORDER BY full_name, email
-            """
-        ).fetchall()
+    params = []
+    company_clause = ""
+    if actor:
+        company_clause = "AND LOWER(company) = LOWER(?)"
+        params.append(actor["company"] if "company" in actor.keys() and actor["company"] else "")
+    users = connection.execute(
+        f"""
+        SELECT id, email, full_name, company, team, role, is_active, workspace_schema, date_created, last_updated
+        FROM users
+        WHERE is_active = 1
+          AND company IS NOT NULL
+          AND TRIM(company) != ''
+          {company_clause}
+        ORDER BY full_name, email
+        """,
+        params,
+    ).fetchall()
     connection.close()
     for user in users:
         ensure_user_workspace_schema(user)
     connection = get_auth_connection()
     users = connection.execute(
-        """
+        f"""
         SELECT id, email, full_name, company, team, role, is_active, workspace_schema, date_created, last_updated
         FROM users
         WHERE is_active = 1
-        {company_clause}
+          AND company IS NOT NULL
+          AND TRIM(company) != ''
+          {company_clause}
         ORDER BY full_name, email
-        """
-    .format(company_clause="AND COALESCE(company, '') = ?" if actor and actor["role"] != "admin" else ""),
-        ((actor["company"] if "company" in actor.keys() and actor["company"] else ""),) if actor and actor["role"] != "admin" else (),
+        """,
+        params,
     ).fetchall()
     connection.close()
     return users
@@ -812,61 +945,11 @@ def cleanup_duplicate_broadcast_messages(connection):
         connection.commit()
 
 
-def insert_system_admin_audit(connection, action_type: str, target_type: str = "", target_label: str = "", detail: str = ""):
-    connection.execute(
-        """
-        INSERT INTO admin_audit_entries (
-            actor_user_id,
-            actor_name,
-            actor_email,
-            action_type,
-            target_type,
-            target_label,
-            detail
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        (None, "System", "", action_type, target_type, target_label, detail),
-    )
-
-
 def cleanup_expired_broadcast_messages(connection=None):
     close_connection = connection is None
     if connection is None:
         connection = get_auth_connection()
-    now = datetime.now(broadcast_timezone())
-    today_key = now.strftime("%Y-%m-%d")
-    if now.hour < 1:
-        cleanup_duplicate_broadcast_messages(connection)
-        if close_connection:
-            connection.close()
-        return
-
-    last_cleanup = connection.execute(
-        """
-        SELECT setting_value
-        FROM admin_settings
-        WHERE setting_key = ?
-        """,
-        ("broadcast_expiry_cleanup_date",),
-    ).fetchone()
-    if last_cleanup and last_cleanup["setting_value"] == today_key:
-        cleanup_duplicate_broadcast_messages(connection)
-        if close_connection:
-            connection.close()
-        return
-
     now_key = current_broadcast_key()
-    expired_rows = connection.execute(
-        """
-        SELECT *
-        FROM broadcast_messages
-        WHERE stop_at IS NOT NULL
-          AND stop_at != ''
-          AND stop_at < ?
-        """,
-        (now_key,),
-    ).fetchall()
     connection.execute(
         """
         DELETE FROM broadcast_messages
@@ -876,36 +959,6 @@ def cleanup_expired_broadcast_messages(connection=None):
         """,
         (now_key,),
     )
-    for row in expired_rows:
-        insert_system_admin_audit(
-            connection,
-            "Broadcast auto-deleted",
-            "Broadcast",
-            row["title"],
-            f"Expired broadcast removed after stop time {row['stop_at']}.",
-        )
-    existing = connection.execute(
-        "SELECT setting_key FROM admin_settings WHERE setting_key = ?",
-        ("broadcast_expiry_cleanup_date",),
-    ).fetchone()
-    if existing:
-        connection.execute(
-            """
-            UPDATE admin_settings
-            SET setting_value = ?,
-                last_updated = CURRENT_TIMESTAMP
-            WHERE setting_key = ?
-            """,
-            (today_key, "broadcast_expiry_cleanup_date"),
-        )
-    else:
-        connection.execute(
-            """
-            INSERT INTO admin_settings (setting_key, setting_value)
-            VALUES (?, ?)
-            """,
-            ("broadcast_expiry_cleanup_date", today_key),
-        )
     connection.commit()
     cleanup_duplicate_broadcast_messages(connection)
     if close_connection:
@@ -928,16 +981,6 @@ def list_broadcast_messages(active_only: bool = False):
               AND stop_at >= ?
         """
         params.extend([1, now_key, now_key])
-    else:
-        now_key = current_broadcast_key()
-        query += """
-            WHERE (
-                stop_at IS NULL
-                OR stop_at = ''
-                OR stop_at >= ?
-            )
-        """
-        params.append(now_key)
     query += """
         ORDER BY
             is_active DESC,
@@ -1092,7 +1135,7 @@ def get_user_for_admin(user_id: int):
     connection = get_auth_connection()
     user = connection.execute(
         """
-        SELECT id, email, full_name, company, team, role, is_active, workspace_schema, date_created, last_updated
+        SELECT id, email, full_name, company, team, role, is_active, workspace_schema
         FROM users
         WHERE id = ?
         """,
@@ -1220,13 +1263,15 @@ def cleanup_admin_audit_entries_older_than(cutoff):
 
 
 
-def update_user_identity(user_id: int, email: str, full_name: str, team: str, company: str | None = None):
+def update_user_identity(user_id: int, email: str, full_name: str, team: str, company: str):
     email = normalise_email(email)
     full_name = (full_name or "").strip()
     team = (team or "").strip()
-    company = (company if company is not None else "").strip()
-    if not email or not full_name:
-        return "Name and email are required."
+    company = normalise_company_name(company)
+    if not email or not full_name or not company:
+        return "Name, email and tenant are required."
+    if not tenant_exists(company):
+        return "Select a valid tenant."
 
     user = get_user_for_admin(user_id)
     if not user:
