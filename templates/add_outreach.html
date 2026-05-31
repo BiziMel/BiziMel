@@ -68,9 +68,8 @@
             </div>
 
             <div class="form-group">
-                <label for="contact_id">Contact</label>
-                <select id="contact_id" name="contact_id">
-                    <option value="">Select contact</option>
+                <label for="contact_id">Contacts</label>
+                <select id="contact_id" name="contact_ids" multiple size="6">
                     {% for contact in contacts %}
                         <option value="{{ contact.id }}"
                                 data-account-id="{{ contact.account_id or '' }}"
@@ -79,7 +78,7 @@
                                 data-phone="{{ contact.phone or '' }}"
                                 data-linkedin="{{ contact.linkedin or '' }}"
                                 data-job-title="{{ contact.job_title or '' }}"
-                                {% if prefill.contact_id|string == contact.id|string %}selected{% endif %}>
+                                {% if contact.id|string in selected_contact_values %}selected{% endif %}>
                             {{ contact.name }}{% if contact.account_name %} - {{ contact.account_name }}{% endif %}
                         </option>
                     {% endfor %}
@@ -92,11 +91,12 @@
                                 data-linkedin="{{ partner_contact.linkedin or '' }}"
                                 data-job-title="{{ partner_contact.job_title or '' }}"
                                 data-partner-name="{{ partner_contact.partner_name or '' }}"
-                                {% if prefill.contact_id|string == 'partner_contact:' ~ partner_contact.id|string %}selected{% endif %}>
+                                {% if 'partner_contact:' ~ partner_contact.id|string in selected_contact_values %}selected{% endif %}>
                             {{ partner_contact.name }} - Partner: {{ partner_contact.partner_name }}{% if partner_contact.account_name %} - {{ partner_contact.account_name }}{% endif %}
                         </option>
                     {% endfor %}
                 </select>
+                <p class="field-help">Select one or more contacts. The first selected contact is used as the primary report contact.</p>
                 <a href="#" id="open_contact_record" target="_blank" class="btn btn-secondary btn-small contact-open-button" hidden>Open</a>
             </div>
 
@@ -255,7 +255,6 @@
 
         function applyContactFilter() {
             const selectedAccountId = accountSelect.value;
-            let selectedContactStillValid = !contactSelect.value;
 
             Array.from(contactSelect.options).forEach((option) => {
                 if (!option.value) {
@@ -267,14 +266,10 @@
                 const belongsToSelectedAccount = selectedAccountId && option.dataset.accountId === selectedAccountId;
                 option.hidden = !belongsToSelectedAccount;
                 option.disabled = !belongsToSelectedAccount;
-                if (option.selected && belongsToSelectedAccount) {
-                    selectedContactStillValid = true;
+                if (option.selected && !belongsToSelectedAccount) {
+                    option.selected = false;
                 }
             });
-
-            if (!selectedContactStillValid) {
-                contactSelect.value = "";
-            }
 
             contactSelect.disabled = !selectedAccountId;
             if (activityTypeSelect) {
@@ -297,8 +292,9 @@
                     });
             }
             if (openContactButton) {
-                if (contactSelect.value) {
-                    const selectedContact = contactSelect.options[contactSelect.selectedIndex];
+                const selectedContacts = Array.from(contactSelect.selectedOptions || []).filter((option) => option.value);
+                if (selectedContacts.length) {
+                    const selectedContact = selectedContacts[0];
                     openContactButton.href = selectedContact ? selectedContact.dataset.contactUrl || "#" : "#";
                     openContactButton.hidden = false;
                 } else {
@@ -306,15 +302,17 @@
                 }
             }
             if (contactSystemFields) {
-                const selectedContact = contactSelect.options[contactSelect.selectedIndex];
+                const selectedContacts = Array.from(contactSelect.selectedOptions || []).filter((option) => option.value);
+                const selectedContact = selectedContacts[0];
                 const email = selectedContact ? selectedContact.dataset.email || "" : "";
                 const phone = selectedContact ? selectedContact.dataset.phone || "" : "";
                 const linkedin = selectedContact ? selectedContact.dataset.linkedin || "" : "";
                 const jobTitle = selectedContact ? selectedContact.dataset.jobTitle || "" : "";
                 const partnerName = selectedContact ? selectedContact.dataset.partnerName || "" : "";
-                contactSystemFields.innerHTML = contactSelect.value
-                    ? `<span>${partnerName ? "Partner contact" : "Customer contact"}${partnerName ? `: ${partnerName}` : ""}</span><span>Job title: ${jobTitle || "Not set"}</span><span>Email: ${email || "Not set"}</span><span>Phone: ${phone || "Not set"}</span><span>LinkedIn: ${linkedin || "Not set"}</span>`
-                    : "Select a contact to show phone, email and LinkedIn.";
+                const extraCount = selectedContacts.length > 1 ? `<span>+ ${selectedContacts.length - 1} more selected</span>` : "";
+                contactSystemFields.innerHTML = selectedContact
+                    ? `<span>${partnerName ? "Partner contact" : "Customer contact"}${partnerName ? `: ${partnerName}` : ""}</span><span>Job title: ${jobTitle || "Not set"}</span><span>Email: ${email || "Not set"}</span><span>Phone: ${phone || "Not set"}</span><span>LinkedIn: ${linkedin || "Not set"}</span>${extraCount}`
+                    : "Select one or more contacts to show phone, email and LinkedIn.";
             }
         }
 

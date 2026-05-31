@@ -193,6 +193,18 @@ def initialise_database(force=False):
     """)
 
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS outreach_recipients (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            outreach_id INTEGER NOT NULL,
+            contact_id INTEGER,
+            partner_contact_id INTEGER,
+            sort_order INTEGER DEFAULT 0,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(outreach_id, contact_id, partner_contact_id)
+        )
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS account_partners (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             account_id INTEGER NOT NULL,
@@ -439,6 +451,8 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "outreach", "next_action_time", "TEXT")
     add_column_if_missing(cursor, "outreach", "task_status", "TEXT DEFAULT 'Not Started'")
     add_column_if_missing(cursor, "outreach", "assigned_to", "TEXT")
+    add_column_if_missing(cursor, "outreach_recipients", "partner_contact_id", "INTEGER")
+    add_column_if_missing(cursor, "outreach_recipients", "sort_order", "INTEGER DEFAULT 0")
 
     # Safe migrations for account partners
     add_column_if_missing(cursor, "account_partners", "team_id", "INTEGER DEFAULT 1")

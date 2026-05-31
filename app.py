@@ -21,8 +21,8 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 
 APP_VERSION = "2.0"
-APP_RELEASE_DATE = "2026-05-30"
-APP_BUILD = "2026-05-30-v2.0-enterprise-secure-r1"
+APP_RELEASE_DATE = "2026-05-31"
+APP_BUILD = "2026-05-31-v2.0-enterprise-regression-r2"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -40,6 +40,8 @@ RELEASE_NOTES = [
             "Added Company Admin access for administrators who manage users, data and permissions only inside their associated tenant.",
         ],
         "enhanced": [
+            "Enhanced active navigation tabs so Insights Dashboard and every primary app tab use the same active-tab colour behaviour.",
+            "Enhanced Outreach task RAG status so future tasks remain green, tasks turn amber only on their due date, and tasks turn red immediately after the due date and time expires.",
             "Enhanced user administration so tenant assignment is selected from preconfigured companies rather than typed as free text.",
             "Enhanced tenancy security so every user must have a tenant and company admins only see their own company in company controls.",
             "Enhanced sharing and assignment user lists so they remain inside the signed-in user's company tenancy.",
@@ -47,6 +49,8 @@ RELEASE_NOTES = [
             "Enhanced hosted security with CSRF validation, hardened session cookies, security headers, mandatory deployment secret configuration and safer redirect handling.",
         ],
         "fixed": [
+            "Restored multi-contact association on manual Outreach tasks, including add, edit, view and delete cleanup paths.",
+            "Restored Outreach activity outcomes for NBM Booked, Discovery Booked and Exec Meeting Booked.",
             "Fixed Role and Access updates so Application Admins can amend any user type, including their own administrator profile and other Application Admins.",
         ],
     },
@@ -1738,6 +1742,7 @@ def delete_account_records(connection, account_ids):
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'outreach' AND related_id IN (SELECT id FROM outreach WHERE account_id = ?)", (account_id,))
         connection.execute("DELETE FROM account_partners WHERE account_id = ?", (account_id,))
         connection.execute("DELETE FROM account_custom_values WHERE account_id = ?", (account_id,))
+        connection.execute("DELETE FROM outreach_recipients WHERE outreach_id IN (SELECT id FROM outreach WHERE account_id = ?)", (account_id,))
         connection.execute("DELETE FROM partner_contacts WHERE account_id = ?", (account_id,))
         connection.execute("DELETE FROM outreach WHERE account_id = ?", (account_id,))
         connection.execute("DELETE FROM contacts WHERE account_id = ?", (account_id,))
@@ -1749,6 +1754,7 @@ def delete_contact_records(connection, contact_ids):
         contact = connection.execute("SELECT name FROM contacts WHERE id = ?", (contact_id,)).fetchone()
         audit_record_delete(connection, "contact", contact_id, contact["name"] if contact else "")
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'contact' AND related_id = ?", (contact_id,))
+        connection.execute("DELETE FROM outreach_recipients WHERE contact_id = ?", (contact_id,))
         connection.execute("DELETE FROM outreach WHERE contact_id = ?", (contact_id,))
         connection.execute("DELETE FROM contacts WHERE id = ?", (contact_id,))
 
@@ -1758,6 +1764,7 @@ def delete_outreach_records(connection, outreach_ids):
         outreach = connection.execute("SELECT subject FROM outreach WHERE id = ?", (outreach_id,)).fetchone()
         audit_record_delete(connection, "outreach", outreach_id, outreach["subject"] if outreach else "")
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'outreach' AND related_id = ?", (outreach_id,))
+        connection.execute("DELETE FROM outreach_recipients WHERE outreach_id = ?", (outreach_id,))
         connection.execute("DELETE FROM outreach WHERE id = ?", (outreach_id,))
 
 
@@ -3237,14 +3244,16 @@ def due_rag_class(next_action_date, next_action_time, task_status):
     if not next_action_date:
         return "rag-green"
     try:
-        due_text = f"{next_action_date} {next_action_time or '23:59'}"
-        due_at = datetime.strptime(due_text, "%Y-%m-%d %H:%M")
+        due_date = datetime.strptime(next_action_date, "%Y-%m-%d").date()
+        due_time_text = next_action_time or "23:59"
+        due_at = datetime.strptime(f"{next_action_date} {due_time_text}", "%Y-%m-%d %H:%M")
     except (TypeError, ValueError):
         return "rag-green"
     now = datetime.now()
+    today = now.date()
     if due_at < now:
         return "rag-red"
-    if due_at <= now + timedelta(days=1):
+    if due_date == today:
         return "rag-amber"
     return "rag-green"
 
@@ -3274,6 +3283,31 @@ def parse_outreach_contact_selection(value):
     return value or None, None
 
 
+def parse_outreach_contact_selections(values):
+    recipients = []
+    seen = set()
+    for value in values:
+        contact_id, partner_contact_id = parse_outreach_contact_selection(value)
+        if not contact_id and not partner_contact_id:
+            continue
+        key = (str(contact_id or ""), str(partner_contact_id or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        recipients.append((contact_id, partner_contact_id))
+    return recipients
+
+
+def outreach_contact_form_values(form):
+    values = form.getlist("contact_ids")
+    if not values:
+        values = form.getlist("contact_id")
+    single_value = form.get("contact_id")
+    if single_value and single_value not in values:
+        values.insert(0, single_value)
+    return values
+
+
 def partner_contact_matches_account(connection, account_id, partner_contact_id):
     if not partner_contact_id:
         return True
@@ -3293,6 +3327,49 @@ def outreach_recipient_matches_account(connection, account_id, contact_id, partn
         contact_matches_account(connection, account_id, contact_id)
         and partner_contact_matches_account(connection, account_id, partner_contact_id)
     )
+
+
+def outreach_recipients_match_account(connection, account_id, recipients):
+    return all(
+        outreach_recipient_matches_account(connection, account_id, contact_id, partner_contact_id)
+        for contact_id, partner_contact_id in recipients
+    )
+
+
+def save_outreach_recipients(connection, outreach_id, recipients):
+    connection.execute("DELETE FROM outreach_recipients WHERE outreach_id = ?", (outreach_id,))
+    for index, (contact_id, partner_contact_id) in enumerate(recipients, start=1):
+        connection.execute(
+            """
+            INSERT INTO outreach_recipients (outreach_id, contact_id, partner_contact_id, sort_order)
+            VALUES (?, ?, ?, ?)
+            """,
+            (outreach_id, contact_id, partner_contact_id, index),
+        )
+
+
+def selected_outreach_contact_values(connection, outreach_item):
+    rows = connection.execute(
+        """
+        SELECT contact_id, partner_contact_id
+        FROM outreach_recipients
+        WHERE outreach_id = ?
+        ORDER BY sort_order, id
+        """,
+        (outreach_item["id"],),
+    ).fetchall()
+    values = []
+    for row in rows:
+        if row["partner_contact_id"]:
+            values.append(f"partner_contact:{row['partner_contact_id']}")
+        elif row["contact_id"]:
+            values.append(str(row["contact_id"]))
+    if not values:
+        if outreach_item["partner_contact_id"]:
+            values.append(f"partner_contact:{outreach_item['partner_contact_id']}")
+        elif outreach_item["contact_id"]:
+            values.append(str(outreach_item["contact_id"]))
+    return values
 
 
 def partner_contacts_for_outreach(connection):
@@ -4135,6 +4212,7 @@ def delete_partner_contact(partner_id, contact_id):
     """, (contact_id, partner_id)).fetchone()
     if contact:
         audit_record_delete(connection, "partner_contact", contact_id, contact["name"])
+    connection.execute("DELETE FROM outreach_recipients WHERE partner_contact_id = ?", (contact_id,))
     connection.execute("""
         DELETE FROM partner_contacts
         WHERE id = ?
@@ -6134,19 +6212,22 @@ def add_outreach():
             (prefill_from_id,),
         ).fetchone()
         if source:
+            source_contact_values = selected_outreach_contact_values(connection, source)
             prefill = {
                 "account_id": source["account_id"],
-                "contact_id": f"partner_contact:{source['partner_contact_id']}" if source["partner_contact_id"] else source["contact_id"],
+                "contact_ids": source_contact_values,
                 "notes": f"Follow-on task from completed outreach #{source['id']}.",
             }
 
     if request.method == "POST":
         prefill = dict(request.form)
         requested_status = request.form.get("task_status", "Not Started")
-        contact_id, partner_contact_id = parse_outreach_contact_selection(request.form.get("contact_id"))
+        recipient_values = outreach_contact_form_values(request.form)
+        recipients = parse_outreach_contact_selections(recipient_values)
+        contact_id, partner_contact_id = recipients[0] if recipients else (None, None)
         if not fy_quarter_are_valid(request.form.get("fy"), request.form.get("quarter")):
             error = fy_quarter_required_message()
-        elif not outreach_recipient_matches_account(connection, request.form.get("account_id"), contact_id, partner_contact_id):
+        elif not outreach_recipients_match_account(connection, request.form.get("account_id"), recipients):
             error = "Select a contact or partner contact that belongs to the selected account."
         elif status_requires_activity_update(requested_status) and not activity_update_is_valid(request.form.get("next_action")):
             error = activity_update_required_message()
@@ -6181,6 +6262,7 @@ def add_outreach():
                 request.form.get("assigned_to", "")
             ))
             outreach_id = cursor.lastrowid
+            save_outreach_recipients(connection, outreach_id, recipients)
             audit_record_create(connection, "outreach", outreach_id, {
                 "fy": request.form.get("fy"),
                 "quarter": request.form.get("quarter"),
@@ -6229,6 +6311,10 @@ def add_outreach():
         FROM non_working_blocks
         ORDER BY start_date, end_date, id
     """).fetchall()
+    if request.method == "POST":
+        selected_contact_values = outreach_contact_form_values(request.form)
+    else:
+        selected_contact_values = prefill.get("contact_ids", [])
     connection.close()
 
     return render_template(
@@ -6241,6 +6327,7 @@ def add_outreach():
         partner_activity_options=partner_activity_options,
         partner_contacts=partner_contacts,
         prefill=prefill,
+        selected_contact_values=selected_contact_values,
         error=error
     )
 
@@ -6522,11 +6609,28 @@ def view_outreach(outreach_id):
         ORDER BY date_created DESC
     """, (outreach_id,)).fetchall()
 
+    outreach_recipients = connection.execute("""
+        SELECT
+            outreach_recipients.contact_id,
+            outreach_recipients.partner_contact_id,
+            COALESCE(contacts.name, partner_contacts.name) AS contact_name,
+            COALESCE(contacts.job_title, partner_contacts.job_title) AS contact_job_title,
+            CASE WHEN outreach_recipients.partner_contact_id IS NOT NULL THEN 'Partner' ELSE 'Customer' END AS contact_source,
+            partners.partner_name AS partner_name
+        FROM outreach_recipients
+        LEFT JOIN contacts ON outreach_recipients.contact_id = contacts.id
+        LEFT JOIN partner_contacts ON outreach_recipients.partner_contact_id = partner_contacts.id
+        LEFT JOIN partners ON partner_contacts.partner_id = partners.id
+        WHERE outreach_recipients.outreach_id = ?
+        ORDER BY outreach_recipients.sort_order, outreach_recipients.id
+    """, (outreach_id,)).fetchall()
+
     connection.close()
 
     return render_template(
         "view_outreach.html",
         outreach_item=outreach_item,
+        outreach_recipients=outreach_recipients,
         timeline_entries=timeline_entries
     )
 
@@ -6614,7 +6718,9 @@ def edit_outreach(outreach_id):
             return redirect(url_for("outreach", error="Closed, completed and cancelled tasks cannot be modified."))
         submit_action = request.form.get("submit_action", "save")
         sales_play_value = request.form.get("sales_play")
-        contact_id, partner_contact_id = parse_outreach_contact_selection(request.form.get("contact_id"))
+        recipient_values = outreach_contact_form_values(request.form)
+        recipients = parse_outreach_contact_selections(recipient_values)
+        contact_id, partner_contact_id = recipients[0] if recipients else (None, None)
         new_values = {
             "fy": request.form.get("fy"),
             "quarter": request.form.get("quarter"),
@@ -6655,10 +6761,11 @@ def edit_outreach(outreach_id):
                 sales_play_options=sales_play_rows,
                 partner_activity_options=partner_activity_options,
                 partner_contacts=partner_contacts,
+                selected_contact_values=recipient_values,
                 error=error
             )
 
-        if not outreach_recipient_matches_account(connection, new_values["account_id"], new_values["contact_id"], new_values["partner_contact_id"]):
+        if not outreach_recipients_match_account(connection, new_values["account_id"], recipients):
             error = "Select a contact or partner contact that belongs to the selected account."
             connection.close()
             return render_template(
@@ -6671,6 +6778,7 @@ def edit_outreach(outreach_id):
                 sales_play_options=sales_play_rows,
                 partner_activity_options=partner_activity_options,
                 partner_contacts=partner_contacts,
+                selected_contact_values=recipient_values,
                 error=error
             )
 
@@ -6687,6 +6795,7 @@ def edit_outreach(outreach_id):
                 sales_play_options=sales_play_rows,
                 partner_activity_options=partner_activity_options,
                 partner_contacts=partner_contacts,
+                selected_contact_values=recipient_values,
                 error=error
             )
 
@@ -6756,6 +6865,7 @@ def edit_outreach(outreach_id):
             new_values["assigned_to"],
             outreach_id
         ))
+        save_outreach_recipients(connection, outreach_id, recipients)
 
         if changes:
             audit_record_update(connection, "outreach", outreach_id, outreach_item, new_values, labels)
@@ -6775,6 +6885,7 @@ def edit_outreach(outreach_id):
 
         return redirect(url_for("outreach"))
 
+    selected_contact_values = selected_outreach_contact_values(connection, outreach_item)
     connection.close()
 
     return render_template(
@@ -6787,6 +6898,7 @@ def edit_outreach(outreach_id):
         sales_play_options=sales_play_rows,
         partner_activity_options=partner_activity_options,
         partner_contacts=partner_contacts,
+        selected_contact_values=selected_contact_values,
         error=error
     )
 

@@ -16,13 +16,27 @@
     <p><strong>Quarter:</strong> {{ outreach_item.quarter }}</p>
     <p><strong>Sales Play or Initiative:</strong> {{ outreach_item.sales_play or "Not set" }}</p>
     <p><strong>Account:</strong> {{ outreach_item.account_name }}</p>
-    <p>
-        <strong>Contact:</strong>
-        {{ outreach_item.contact_name or "Not set" }}
-        {% if outreach_item.contact_source == "Partner" %}
-            <span class="status-pill">Partner{% if outreach_item.partner_name %}: {{ outreach_item.partner_name }}{% endif %}</span>
+    <div>
+        <strong>Contacts:</strong>
+        {% if outreach_recipients %}
+            <ul class="compact-list">
+                {% for recipient in outreach_recipients %}
+                    <li>
+                        {{ recipient.contact_name or "Not set" }}
+                        {% if recipient.contact_job_title %} - {{ recipient.contact_job_title }}{% endif %}
+                        {% if recipient.contact_source == "Partner" %}
+                            <span class="status-pill">Partner{% if recipient.partner_name %}: {{ recipient.partner_name }}{% endif %}</span>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            {{ outreach_item.contact_name or "Not set" }}
+            {% if outreach_item.contact_source == "Partner" %}
+                <span class="status-pill">Partner{% if outreach_item.partner_name %}: {{ outreach_item.partner_name }}{% endif %}</span>
+            {% endif %}
         {% endif %}
-    </p>
+    </div>
     <p><strong>Activity Type:</strong> {{ outreach_item.activity_type }}</p>
     <p><strong>Activity Start Date:</strong> {{ outreach_item.activity_date }}</p>
     <p><strong>Activity Start Time:</strong> {{ outreach_item.activity_time }}</p>

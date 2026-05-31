@@ -43,6 +43,13 @@ def seed_validation_data(db_path):
         """,
         (account_id, "Executive", "Smoke Test Contact", "CIO", "contact@example.com", "12345", "London"),
     ).lastrowid
+    second_contact_id = connection.execute(
+        """
+        INSERT INTO contacts (account_id, category, name, job_title, email, phone, location)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (account_id, "Technical", "Smoke Second Contact", "CTO", "second@example.com", "67890", "London"),
+    ).lastrowid
     partner_id = connection.execute(
         """
         INSERT INTO partners (partner_name, partner_type, country, city, relationship_owner)
@@ -52,11 +59,11 @@ def seed_validation_data(db_path):
     ).lastrowid
     connection.execute(
         """
-        INSERT INTO partner_contacts (partner_id, name, job_title, partner_contact_role, email)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO partner_contacts (partner_id, account_id, name, job_title, partner_contact_role, email)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (partner_id, "Smoke Partner Contact", "CTO", "Presales", "partner@example.com"),
-    )
+        (partner_id, account_id, "Smoke Partner Contact", "CTO", "Presales", "partner@example.com"),
+    ).lastrowid
     connection.execute(
         """
         INSERT INTO account_partners (account_id, partner_id, partner_name, partner_role, involvement_status)
@@ -99,7 +106,7 @@ def seed_validation_data(db_path):
     ).lastrowid
     connection.commit()
     connection.close()
-    return account_id, contact_id, partner_id, outreach_id
+    return account_id, contact_id, second_contact_id, partner_id, outreach_id
 
 
 def main():
@@ -130,7 +137,7 @@ def main():
         assert_ok(client.get("/health/version").status_code == 200, "health/version failed")
 
         db_path = Path(tmp) / "users" / "1" / "pipeflow.db"
-        account_id, contact_id, partner_id, outreach_id = seed_validation_data(db_path)
+        account_id, contact_id, second_contact_id, partner_id, outreach_id = seed_validation_data(db_path)
 
         pages = {
             "/": "Dashboard",
@@ -173,6 +180,95 @@ def main():
             follow_redirects=False,
         )
         assert_ok(response.status_code in (302, 303), "dashboard task update failed")
+
+        response = client.get("/outreach/add")
+        add_html = response.get_data(as_text=True)
+        for outcome in ("NBM Booked", "Discovery Booked", "Exec Meeting Booked"):
+            assert_ok(outcome in add_html, f"{outcome} outcome missing from Outreach form")
+
+        response = client.post(
+            "/outreach/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "fy": "27",
+                "quarter": "Q1",
+                "account_id": str(account_id),
+                "sales_play": "Smoke Multi Contact Play",
+                "contact_ids": [str(contact_id), str(second_contact_id)],
+                "task_status": "Not Started",
+                "assigned_to": "Smoke Test Admin",
+                "activity_type": "Call",
+                "activity_date": "2026-05-07",
+                "activity_time": "09:00",
+                "next_action_date": "2026-05-08",
+                "next_action_time": "10:00",
+                "subject": "Smoke multi-contact outreach",
+                "outcome": "NBM Booked",
+                "next_action": "",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "multi-contact outreach add failed")
+
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        multi_outreach = connection.execute(
+            "SELECT * FROM outreach WHERE subject = ?",
+            ("Smoke multi-contact outreach",),
+        ).fetchone()
+        assert_ok(multi_outreach is not None, "multi-contact outreach was not saved")
+        assert_ok(str(multi_outreach["contact_id"]) == str(contact_id), "primary outreach contact was not preserved")
+        assert_ok(multi_outreach["outcome"] == "NBM Booked", "NBM Booked outcome was not saved")
+        recipient_count = connection.execute(
+            "SELECT COUNT(*) FROM outreach_recipients WHERE outreach_id = ?",
+            (multi_outreach["id"],),
+        ).fetchone()[0]
+        connection.close()
+        assert_ok(recipient_count == 2, "multi-contact outreach recipients were not saved")
+
+        response = client.get(f"/outreach/{multi_outreach['id']}/edit")
+        edit_html = response.get_data(as_text=True)
+        assert_ok(response.status_code == 200 and "name=\"contact_ids\"" in edit_html, "edit Outreach multi-contact field missing")
+
+        response = client.post(
+            f"/outreach/{multi_outreach['id']}/edit",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "submit_action": "save",
+                "fy": "27",
+                "quarter": "Q1",
+                "account_id": str(account_id),
+                "sales_play": "Smoke Multi Contact Play",
+                "contact_ids": [str(second_contact_id)],
+                "task_status": "In Progress",
+                "assigned_to": "Smoke Test Admin",
+                "activity_type": "Call",
+                "activity_date": "2026-05-07",
+                "activity_time": "09:00",
+                "next_action_date": "2026-05-08",
+                "next_action_time": "10:00",
+                "subject": "Smoke multi-contact outreach",
+                "outcome": "Exec Meeting Booked",
+                "next_action": "",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "multi-contact outreach edit failed")
+
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        edited_outreach = connection.execute(
+            "SELECT * FROM outreach WHERE id = ?",
+            (multi_outreach["id"],),
+        ).fetchone()
+        edited_recipient_count = connection.execute(
+            "SELECT COUNT(*) FROM outreach_recipients WHERE outreach_id = ?",
+            (multi_outreach["id"],),
+        ).fetchone()[0]
+        connection.close()
+        assert_ok(str(edited_outreach["contact_id"]) == str(second_contact_id), "edited primary contact was not updated")
+        assert_ok(edited_outreach["outcome"] == "Exec Meeting Booked", "Exec Meeting Booked outcome was not saved")
+        assert_ok(edited_recipient_count == 1, "edited outreach recipients were not replaced")
 
         for path in (
             "/reports/accounts/export",

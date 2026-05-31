@@ -27,17 +27,17 @@
         </div>
 
     <nav class="button-group nav-stack">
-    <a href="/" class="btn btn-primary">Insights Dashboard</a>
-    <a href="{{ url_for('pg_progress') }}" class="btn btn-primary">PG Progress</a>
-    <a href="/outreach" class="btn btn-primary">Outreach Tasks</a>
-    <a href="/accounts" class="btn btn-primary">Accounts</a>
-    <a href="/contacts" class="btn btn-primary">Contacts</a>
-    <a href="/partners" class="btn btn-primary">Partners</a>
-    <a href="/reports" class="btn btn-primary">Reports</a>
-    <a href="/profile" class="btn btn-secondary">Profile</a>
-    <a href="/release-notes" class="btn btn-secondary">Release Notes</a>
+    <a href="/" class="btn btn-primary {% if request.endpoint == 'home' %}active-tab{% endif %}">Insights Dashboard</a>
+    <a href="{{ url_for('pg_progress') }}" class="btn btn-primary {% if request.endpoint == 'pg_progress' %}active-tab{% endif %}">PG Progress</a>
+    <a href="/outreach" class="btn btn-primary {% if request.endpoint in ['outreach', 'add_outreach', 'edit_outreach', 'view_outreach', 'campaign_builder'] %}active-tab{% endif %}">Outreach Tasks</a>
+    <a href="/accounts" class="btn btn-primary {% if request.endpoint in ['accounts', 'add_account', 'edit_account', 'view_account'] %}active-tab{% endif %}">Accounts</a>
+    <a href="/contacts" class="btn btn-primary {% if request.endpoint in ['contacts', 'add_contact', 'edit_contact', 'view_contact'] %}active-tab{% endif %}">Contacts</a>
+    <a href="/partners" class="btn btn-primary {% if request.endpoint in ['partners', 'add_partner', 'edit_partner', 'view_partner'] %}active-tab{% endif %}">Partners</a>
+    <a href="/reports" class="btn btn-primary {% if request.endpoint in ['reports', 'partner_reports', 'account_reports', 'task_reports', 'outreach_reports', 'contact_reports'] %}active-tab{% endif %}">Reports</a>
+    <a href="/profile" class="btn btn-secondary {% if request.endpoint == 'profile' %}active-tab{% endif %}">Profile</a>
+    <a href="/release-notes" class="btn btn-secondary {% if request.endpoint == 'release_notes' %}active-tab{% endif %}">Release Notes</a>
     {% if current_user and current_user["role"] in ["admin", "company_admin"] %}
-    <a href="/admin/permissions" class="btn btn-secondary">Admin</a>
+    <a href="/admin/permissions" class="btn btn-secondary {% if request.endpoint and request.endpoint.startswith('admin') %}active-tab{% endif %}">Admin</a>
     {% endif %}
     {% if current_user %}
     <a href="/logout" class="btn btn-secondary">Sign Out</a>

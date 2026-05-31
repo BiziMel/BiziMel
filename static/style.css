@@ -157,6 +157,16 @@ input[type="submit"]:hover {
     background-color: #dfeedd;
 }
 
+.btn.active-tab {
+    background-color: #2f6f45;
+    color: #ffffff !important;
+    box-shadow: inset 0 0 0 2px #214d31;
+}
+
+.btn.active-tab:hover {
+    background-color: #285f3b;
+}
+
 .btn-danger {
     background-color: #e8b4b4;
 }
@@ -4569,4 +4579,13 @@ body {
     padding: 5px 10px;
     font-size: 12px;
     line-height: 1.2;
+}
+
+.compact-list {
+    margin: 8px 0 0;
+    padding-left: 20px;
+}
+
+.compact-list li {
+    margin-bottom: 6px;
 }
