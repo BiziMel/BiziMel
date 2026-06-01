@@ -10,8 +10,9 @@ import traceback
 import json
 import secrets
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session, abort
 from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, user_count
@@ -21,14 +22,19 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 
 APP_VERSION = "2.0"
-APP_RELEASE_DATE = "2026-05-31"
-APP_BUILD = "2026-05-31-v2.0-enterprise-regression-r2"
+APP_RELEASE_DATE = "2026-06-01"
+APP_BUILD = "2026-06-01-v2.0-enterprise-regression-r3"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
 RESET_ATTEMPTS = {}
 RATE_LIMIT_WINDOW_SECONDS = 15 * 60
 MAX_AUTH_ATTEMPTS = 8
+
+try:
+    APP_TIMEZONE = ZoneInfo(os.environ.get("PIPEFLOW_TIMEZONE", "Europe/London"))
+except ZoneInfoNotFoundError:
+    APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
     {
@@ -41,7 +47,7 @@ RELEASE_NOTES = [
         ],
         "enhanced": [
             "Enhanced active navigation tabs so Insights Dashboard and every primary app tab use the same active-tab colour behaviour.",
-            "Enhanced Outreach task RAG status so future tasks remain green, tasks turn amber only on their due date, and tasks turn red immediately after the due date and time expires.",
+            "Enhanced Outreach task RAG status so future tasks remain green, tasks turn amber only on their due date, and tasks turn red one second after the due date and time expires in the application timezone.",
             "Enhanced user administration so tenant assignment is selected from preconfigured companies rather than typed as free text.",
             "Enhanced tenancy security so every user must have a tenant and company admins only see their own company in company controls.",
             "Enhanced sharing and assignment user lists so they remain inside the signed-in user's company tenancy.",
@@ -3238,6 +3244,18 @@ def status_requires_activity_update(status):
     return is_closed_task_status(status)
 
 
+def parse_due_time(value):
+    value = str(value or "").strip()
+    if not value:
+        return time(23, 59, 59)
+    for time_format in ("%H:%M:%S", "%H:%M"):
+        try:
+            return datetime.strptime(value, time_format).time()
+        except ValueError:
+            continue
+    return None
+
+
 def due_rag_class(next_action_date, next_action_time, task_status):
     if is_closed_task_status(task_status):
         return "rag-closed"
@@ -3245,13 +3263,15 @@ def due_rag_class(next_action_date, next_action_time, task_status):
         return "rag-green"
     try:
         due_date = datetime.strptime(next_action_date, "%Y-%m-%d").date()
-        due_time_text = next_action_time or "23:59"
-        due_at = datetime.strptime(f"{next_action_date} {due_time_text}", "%Y-%m-%d %H:%M")
+        due_time_value = parse_due_time(next_action_time)
+        if due_time_value is None:
+            return "rag-green"
+        due_at = datetime.combine(due_date, due_time_value, tzinfo=APP_TIMEZONE)
     except (TypeError, ValueError):
         return "rag-green"
-    now = datetime.now()
+    now = datetime.now(APP_TIMEZONE)
     today = now.date()
-    if due_at < now:
+    if now >= due_at + timedelta(seconds=1):
         return "rag-red"
     if due_date == today:
         return "rag-amber"
