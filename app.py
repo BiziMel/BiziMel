@@ -23,7 +23,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.0"
 APP_RELEASE_DATE = "2026-06-02"
-APP_BUILD = "2026-06-02-v2.0-enterprise-regression-r5"
+APP_BUILD = "2026-06-02-v2.0-enterprise-regression-r7"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -53,6 +53,7 @@ RELEASE_NOTES = [
             "Enhanced Outreach forms so an account must be selected before contacts are presented, and only contacts associated with that selected account are available.",
             "Enhanced Outreach Tasks so users can update individual activity due dates directly from the table.",
             "Enhanced Outreach Tasks with bulk due-date updates for selected outreach activities.",
+            "Enhanced the Outreach Tasks table spacing so due-date controls are collapsed by default and the table uses a wider scrollable layout to avoid field overlap.",
             "Enhanced user administration so tenant assignment is selected from preconfigured companies rather than typed as free text.",
             "Enhanced tenancy security so every user must have a tenant and company admins only see their own company in company controls.",
             "Enhanced sharing and assignment user lists so they remain inside the signed-in user's company tenancy.",
@@ -62,6 +63,7 @@ RELEASE_NOTES = [
         "fixed": [
             "Restored multi-contact association on manual Outreach tasks, including add, edit, view and delete cleanup paths.",
             "Restored Outreach activity outcomes for NBM Booked, Discovery Booked and Exec Meeting Booked.",
+            "Fixed intermittent bulk Outreach delete server errors by using one explicit bulk action route and skipping stale selected task IDs safely.",
             "Fixed Role and Access updates so Application Admins can amend any user type, including their own administrator profile and other Application Admins.",
         ],
     },
@@ -1771,12 +1773,17 @@ def delete_contact_records(connection, contact_ids):
 
 
 def delete_outreach_records(connection, outreach_ids):
+    deleted_count = 0
     for outreach_id in outreach_ids:
         outreach = connection.execute("SELECT subject FROM outreach WHERE id = ?", (outreach_id,)).fetchone()
+        if not outreach:
+            continue
         audit_record_delete(connection, "outreach", outreach_id, outreach["subject"] if outreach else "")
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'outreach' AND related_id = ?", (outreach_id,))
         connection.execute("DELETE FROM outreach_recipients WHERE outreach_id = ?", (outreach_id,))
         connection.execute("DELETE FROM outreach WHERE id = ?", (outreach_id,))
+        deleted_count += 1
+    return deleted_count
 
 
 def delete_partner_records(connection, partner_ids):
@@ -6682,22 +6689,62 @@ def add_outreach_timeline(outreach_id):
 @app.route("/outreach/<int:outreach_id>/delete", methods=("POST",))
 def delete_outreach(outreach_id):
     connection = get_db_connection()
-    delete_outreach_records(connection, [outreach_id])
+    deleted_count = delete_outreach_records(connection, [outreach_id])
     connection.commit()
     connection.close()
 
-    return redirect(url_for("outreach"))
+    if deleted_count:
+        return redirect(url_for("outreach", message="Deleted 1 outreach record."))
+    return redirect(url_for("outreach", error="The selected outreach task could not be found."))
 
 
 @app.route("/outreach/bulk-delete", methods=("POST",))
 def bulk_delete_outreach():
+    return_to = safe_redirect_target(request.form.get("return_to") or request.referrer or url_for("outreach"), "outreach")
     outreach_ids = selected_record_ids()
+    deleted_count = 0
     if outreach_ids:
         connection = get_db_connection()
-        delete_outreach_records(connection, outreach_ids)
+        deleted_count = delete_outreach_records(connection, outreach_ids)
         connection.commit()
         connection.close()
-    return redirect(url_for("outreach", message=f"Deleted {len(outreach_ids)} outreach record(s)."))
+    if deleted_count:
+        return redirect_with_query(return_to, message=f"Deleted {deleted_count} outreach record(s).")
+    return redirect_with_query(return_to, error="No selected outreach records could be deleted.")
+
+
+@app.route("/outreach/bulk-action", methods=("POST",))
+def bulk_outreach_action():
+    action = request.form.get("bulk_action")
+    return_to = safe_redirect_target(request.form.get("return_to") or request.referrer or url_for("outreach"), "outreach")
+    outreach_ids = selected_record_ids()
+    if not outreach_ids:
+        return redirect_with_query(return_to, error="Select at least one outreach task before applying a bulk action.")
+    if action == "delete":
+        connection = get_db_connection()
+        deleted_count = delete_outreach_records(connection, outreach_ids)
+        connection.commit()
+        connection.close()
+        if deleted_count:
+            return redirect_with_query(return_to, message=f"Deleted {deleted_count} outreach record(s).")
+        return redirect_with_query(return_to, error="No selected outreach records could be deleted.")
+    if action == "update_due":
+        next_action_date = request.form.get("bulk_next_action_date", "")
+        next_action_time = request.form.get("bulk_next_action_time", "")
+        connection = get_db_connection()
+        updated_count = update_outreach_due_date_records(
+            connection,
+            outreach_ids,
+            next_action_date,
+            next_action_time,
+            "Bulk due date update from Outreach table",
+        )
+        connection.commit()
+        connection.close()
+        if updated_count:
+            return redirect_with_query(return_to, message=f"Updated the due date for {updated_count} outreach task(s).")
+        return redirect_with_query(return_to, error="No selected open outreach tasks could be updated.")
+    return redirect_with_query(return_to, error="Select a valid bulk action.")
 
 
 def update_outreach_due_date_records(connection, outreach_ids, next_action_date, next_action_time, actor_label):

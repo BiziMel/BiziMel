@@ -303,10 +303,11 @@ def main():
         assert_ok(inline_due["next_action_time"] == "12:15", "inline due time was not saved")
 
         response = client.post(
-            "/outreach/bulk-due-date",
+            "/outreach/bulk-action",
             data={
                 "csrf_token": csrf_from_session(client),
                 "return_to": "/outreach",
+                "bulk_action": "update_due",
                 "selected_ids": [str(outreach_id), str(multi_outreach["id"])],
                 "bulk_next_action_date": "2026-05-10",
                 "bulk_next_action_time": "14:45",
@@ -341,6 +342,31 @@ def main():
         response = client.get("/reports/pg-bible/export")
         assert_ok(response.status_code == 200, f"PG Bible export returned {response.status_code}")
         assert_ok(response.headers.get("Content-Disposition"), "PG Bible did not download")
+
+        response = client.post(
+            "/outreach/bulk-action",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "return_to": "/outreach",
+                "bulk_action": "delete",
+                "selected_ids": [str(outreach_id), str(multi_outreach["id"])],
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "bulk Outreach delete failed")
+
+        connection = sqlite3.connect(db_path)
+        remaining_outreach = connection.execute(
+            "SELECT COUNT(*) FROM outreach WHERE id IN (?, ?)",
+            (outreach_id, multi_outreach["id"]),
+        ).fetchone()[0]
+        remaining_recipients = connection.execute(
+            "SELECT COUNT(*) FROM outreach_recipients WHERE outreach_id IN (?, ?)",
+            (outreach_id, multi_outreach["id"]),
+        ).fetchone()[0]
+        connection.close()
+        assert_ok(remaining_outreach == 0, "bulk Outreach delete did not remove selected tasks")
+        assert_ok(remaining_recipients == 0, "bulk Outreach delete did not remove selected recipients")
 
     print("PipeFlow smoke test passed.")
 

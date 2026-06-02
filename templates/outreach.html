@@ -126,11 +126,7 @@
     {% if outreach_records %}
         <form id="bulk-outreach-form"
               method="POST"
-              action="{{ url_for('bulk_update_outreach_due_date') }}"></form>
-        <form id="bulk-delete-outreach-form"
-              method="POST"
-              action="{{ url_for('bulk_delete_outreach') }}"
-              onsubmit="return confirm('Delete the selected outreach records? This cannot be undone.');"></form>
+              action="{{ url_for('bulk_outreach_action') }}"></form>
 
         <div class="bulk-action-bar outreach-bulk-action-bar" data-bulk-action-bar="bulk-outreach-form" hidden>
             <span><strong data-bulk-selected-count>0</strong> outreach record(s) selected.</span>
@@ -138,10 +134,11 @@
             <input type="date" id="bulk_next_action_date" name="bulk_next_action_date" form="bulk-outreach-form">
             <input type="time" id="bulk_next_action_time" name="bulk_next_action_time" form="bulk-outreach-form">
             <input type="hidden" name="return_to" value="{{ request.full_path }}" form="bulk-outreach-form">
-            <button type="submit" form="bulk-outreach-form" class="btn btn-primary btn-small">Update Due Date</button>
+            <button type="submit" form="bulk-outreach-form" name="bulk_action" value="update_due" class="btn btn-primary btn-small">Update Due Date</button>
             <button type="submit"
                     form="bulk-outreach-form"
-                    formaction="{{ url_for('bulk_delete_outreach') }}"
+                    name="bulk_action"
+                    value="delete"
                     class="btn btn-danger btn-small"
                     onclick="return confirm('Delete the selected outreach records? This cannot be undone.');">
                 Delete Selected
@@ -192,24 +189,28 @@
                                         <span>{{ item.next_action_time or "No due time" }}</span>
                                         <span class="outreach-status-chip">{{ item.task_status or "Not Started" }}</span>
                                     </div>
-                                    <form method="POST"
-                                          action="{{ url_for('update_outreach_due_date', outreach_id=item.id) }}"
-                                          class="inline-form outreach-due-inline-form">
-                                        <input type="hidden" name="return_to" value="{{ request.full_path }}">
-                                        <label for="next_action_date_{{ item.id }}" class="table-field-label">Change Due</label>
-                                        <div class="outreach-due-edit-controls">
-                                            <input type="date"
-                                                   id="next_action_date_{{ item.id }}"
-                                                   name="next_action_date"
-                                                   value="{{ item.next_action_date or '' }}"
-                                                   {% if task_locked %}disabled{% endif %}>
-                                            <input type="time"
-                                                   name="next_action_time"
-                                                   value="{{ item.next_action_time or '' }}"
-                                                   {% if task_locked %}disabled{% endif %}>
-                                            <button type="submit" class="btn btn-primary btn-small" {% if task_locked %}disabled{% endif %}>Save</button>
-                                        </div>
-                                    </form>
+                                    {% if not task_locked %}
+                                        <details class="outreach-due-editor">
+                                            <summary>Change</summary>
+                                            <form method="POST"
+                                                  action="{{ url_for('update_outreach_due_date', outreach_id=item.id) }}"
+                                                  class="inline-form outreach-due-inline-form">
+                                                <input type="hidden" name="return_to" value="{{ request.full_path }}">
+                                                <div class="outreach-due-edit-controls">
+                                                    <input type="date"
+                                                           id="next_action_date_{{ item.id }}"
+                                                           name="next_action_date"
+                                                           value="{{ item.next_action_date or '' }}"
+                                                           aria-label="Activity due date">
+                                                    <input type="time"
+                                                           name="next_action_time"
+                                                           value="{{ item.next_action_time or '' }}"
+                                                           aria-label="Activity due time">
+                                                    <button type="submit" class="btn btn-primary btn-small">Save</button>
+                                                </div>
+                                            </form>
+                                        </details>
+                                    {% endif %}
                                 </div>
                             </td>
                             <td>
