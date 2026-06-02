@@ -23,7 +23,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.0"
 APP_RELEASE_DATE = "2026-06-01"
-APP_BUILD = "2026-06-01-v2.0-enterprise-regression-r3"
+APP_BUILD = "2026-06-01-v2.0-enterprise-regression-r4"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -48,6 +48,8 @@ RELEASE_NOTES = [
         "enhanced": [
             "Enhanced active navigation tabs so Insights Dashboard and every primary app tab use the same active-tab colour behaviour.",
             "Enhanced Outreach task RAG status so future tasks remain green, tasks turn amber only on their due date, and tasks turn red one second after the due date and time expires in the application timezone.",
+            "Enhanced Outreach contact selection into a closed checkbox dropdown that supports multiple contacts and click-outside closing.",
+            "Enhanced Outreach contact details so every selected contact appears as a separate row in a framed details panel below the contact field.",
             "Enhanced user administration so tenant assignment is selected from preconfigured companies rather than typed as free text.",
             "Enhanced tenancy security so every user must have a tenant and company admins only see their own company in company controls.",
             "Enhanced sharing and assignment user lists so they remain inside the signed-in user's company tenancy.",

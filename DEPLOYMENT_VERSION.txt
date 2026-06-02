@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
 Version: 2.0
 Release date: 2026-06-01
-Build: 2026-06-01-v2.0-enterprise-regression-r3
+Build: 2026-06-01-v2.0-enterprise-regression-r4
 Package purpose: Hosted enterprise deployment only.

@@ -74,34 +74,50 @@
             </div>
 
             <div class="form-group">
-                <label for="contact_id">Contacts</label>
-                <select id="contact_id" name="contact_ids" multiple size="6">
+                <label for="contact_picker_toggle">Contacts</label>
+                <div class="checkbox-select" id="contact_picker">
+                    <button type="button"
+                            id="contact_picker_toggle"
+                            class="checkbox-select-toggle"
+                            aria-expanded="false"
+                            aria-controls="contact_picker_panel">
+                        Select contacts
+                    </button>
+                    <div class="checkbox-select-panel" id="contact_picker_panel" hidden>
                     {% for contact in contacts %}
-                        <option value="{{ contact.id }}"
-                                data-account-id="{{ contact.account_id or '' }}"
-                                data-contact-url="{{ url_for('view_contact', contact_id=contact.id) }}"
-                                data-email="{{ contact.email or '' }}"
-                                data-phone="{{ contact.phone or '' }}"
-                                data-linkedin="{{ contact.linkedin or '' }}"
-                                data-job-title="{{ contact.job_title or '' }}"
-                                {% if contact.id|string in selected_contact_values %}selected{% endif %}>
-                            {{ contact.name }}{% if contact.account_name %} - {{ contact.account_name }}{% endif %}
-                        </option>
+                        <label class="checkbox-select-option" data-contact-option data-account-id="{{ contact.account_id or '' }}">
+                            <input type="checkbox"
+                                   name="contact_ids"
+                                   value="{{ contact.id }}"
+                                   data-contact-url="{{ url_for('view_contact', contact_id=contact.id) }}"
+                                   data-email="{{ contact.email or '' }}"
+                                   data-phone="{{ contact.phone or '' }}"
+                                   data-linkedin="{{ contact.linkedin or '' }}"
+                                   data-job-title="{{ contact.job_title or '' }}"
+                                   data-partner-name=""
+                                   data-contact-label="{{ contact.name }}{% if contact.account_name %} - {{ contact.account_name }}{% endif %}"
+                                   {% if contact.id|string in selected_contact_values %}checked{% endif %}>
+                            <span>{{ contact.name }}{% if contact.account_name %} - {{ contact.account_name }}{% endif %}</span>
+                        </label>
                     {% endfor %}
                     {% for partner_contact in partner_contacts %}
-                        <option value="partner_contact:{{ partner_contact.id }}"
-                                data-account-id="{{ partner_contact.account_id or '' }}"
-                                data-contact-url="{{ url_for('view_partner', partner_id=partner_contact.partner_id) }}"
-                                data-email="{{ partner_contact.email or '' }}"
-                                data-phone="{{ partner_contact.phone or '' }}"
-                                data-linkedin="{{ partner_contact.linkedin or '' }}"
-                                data-job-title="{{ partner_contact.job_title or '' }}"
-                                data-partner-name="{{ partner_contact.partner_name or '' }}"
-                                {% if 'partner_contact:' ~ partner_contact.id|string in selected_contact_values %}selected{% endif %}>
-                            {{ partner_contact.name }} - Partner: {{ partner_contact.partner_name }}{% if partner_contact.account_name %} - {{ partner_contact.account_name }}{% endif %}
-                        </option>
+                        <label class="checkbox-select-option" data-contact-option data-account-id="{{ partner_contact.account_id or '' }}">
+                            <input type="checkbox"
+                                   name="contact_ids"
+                                   value="partner_contact:{{ partner_contact.id }}"
+                                   data-contact-url="{{ url_for('view_partner', partner_id=partner_contact.partner_id) }}"
+                                   data-email="{{ partner_contact.email or '' }}"
+                                   data-phone="{{ partner_contact.phone or '' }}"
+                                   data-linkedin="{{ partner_contact.linkedin or '' }}"
+                                   data-job-title="{{ partner_contact.job_title or '' }}"
+                                   data-partner-name="{{ partner_contact.partner_name or '' }}"
+                                   data-contact-label="{{ partner_contact.name }} - Partner: {{ partner_contact.partner_name }}{% if partner_contact.account_name %} - {{ partner_contact.account_name }}{% endif %}"
+                                   {% if 'partner_contact:' ~ partner_contact.id|string in selected_contact_values %}checked{% endif %}>
+                            <span>{{ partner_contact.name }} - Partner: {{ partner_contact.partner_name }}{% if partner_contact.account_name %} - {{ partner_contact.account_name }}{% endif %}</span>
+                        </label>
                     {% endfor %}
-                </select>
+                    </div>
+                </div>
                 <p class="field-help">Select one or more contacts. The first selected contact is used as the primary report contact.</p>
                 <a href="#" id="open_contact_record" target="_blank" class="btn btn-secondary btn-small contact-open-button" hidden>Open</a>
             </div>
@@ -178,8 +194,8 @@
             </div>
 
             <div class="form-group full-width">
-                <label>Contact System Fields</label>
-                <div id="contact_system_fields" class="system-inline-fields">Select a contact to show phone, email and LinkedIn.</div>
+                <label>Selected Contact Details</label>
+                <div id="contact_system_fields" class="selected-contact-frame">Select one or more contacts to show phone, email and LinkedIn.</div>
             </div>
 
             <div class="form-group">
@@ -262,7 +278,11 @@
 
     function constrainContactsByAccount() {
         const accountSelect = document.getElementById("account_id");
-        const contactSelect = document.getElementById("contact_id");
+        const contactPicker = document.getElementById("contact_picker");
+        const contactToggle = document.getElementById("contact_picker_toggle");
+        const contactPanel = document.getElementById("contact_picker_panel");
+        const contactOptions = Array.from(document.querySelectorAll("[data-contact-option]"));
+        const contactInputs = contactOptions.map((option) => option.querySelector("input[name='contact_ids']")).filter(Boolean);
         const activityTypeSelect = document.getElementById("activity_type");
         const salesPlayDatalist = document.getElementById("sales_play_options");
         const allSalesPlayOptions = salesPlayDatalist ? Array.from(salesPlayDatalist.options).map((option) => ({
@@ -271,27 +291,80 @@
         })) : [];
         const openContactButton = document.getElementById("open_contact_record");
         const contactSystemFields = document.getElementById("contact_system_fields");
-        if (!accountSelect || !contactSelect) return;
+        if (!accountSelect || !contactPicker || !contactToggle || !contactPanel) return;
+
+        function selectedContacts() {
+            return contactInputs.filter((input) => input.checked && !input.disabled);
+        }
+
+        function setContactPanelOpen(isOpen) {
+            contactPanel.hidden = !isOpen;
+            contactToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+        }
+
+        function updateContactSummary() {
+            const selected = selectedContacts();
+            if (!accountSelect.value) {
+                contactToggle.textContent = "Select an account first";
+            } else if (!selected.length) {
+                contactToggle.textContent = "Select contacts";
+            } else if (selected.length === 1) {
+                contactToggle.textContent = selected[0].dataset.contactLabel || "1 contact selected";
+            } else {
+                contactToggle.textContent = `${selected.length} contacts selected`;
+            }
+        }
+
+        function renderContactDetails() {
+            const selected = selectedContacts();
+            if (openContactButton) {
+                if (selected.length) {
+                    openContactButton.href = selected[0].dataset.contactUrl || "#";
+                    openContactButton.hidden = false;
+                } else {
+                    openContactButton.hidden = true;
+                }
+            }
+            if (!contactSystemFields) return;
+            if (!selected.length) {
+                contactSystemFields.textContent = "Select one or more contacts to show phone, email and LinkedIn.";
+                return;
+            }
+            contactSystemFields.innerHTML = selected.map((contact) => {
+                const partnerName = contact.dataset.partnerName || "";
+                const source = partnerName ? `Partner contact: ${partnerName}` : "Customer contact";
+                return `
+                    <div class="selected-contact-row">
+                        <strong>${contact.dataset.contactLabel || "Selected contact"}</strong>
+                        <span>${source}</span>
+                        <span>Job title: ${contact.dataset.jobTitle || "Not set"}</span>
+                        <span>Email: ${contact.dataset.email || "Not set"}</span>
+                        <span>Phone: ${contact.dataset.phone || "Not set"}</span>
+                        <span>LinkedIn: ${contact.dataset.linkedin || "Not set"}</span>
+                    </div>
+                `;
+            }).join("");
+        }
 
         function applyContactFilter() {
             const selectedAccountId = accountSelect.value;
 
-            Array.from(contactSelect.options).forEach((option) => {
-                if (!option.value) {
-                    option.hidden = false;
-                    option.disabled = false;
-                    return;
-                }
-
+            contactOptions.forEach((option) => {
+                const input = option.querySelector("input[name='contact_ids']");
                 const belongsToSelectedAccount = selectedAccountId && option.dataset.accountId === selectedAccountId;
                 option.hidden = !belongsToSelectedAccount;
-                option.disabled = !belongsToSelectedAccount;
-                if (option.selected && !belongsToSelectedAccount) {
-                    option.selected = false;
+                if (input) {
+                    input.disabled = !belongsToSelectedAccount;
+                    if (input.checked && !belongsToSelectedAccount) {
+                        input.checked = false;
+                    }
                 }
             });
 
-            contactSelect.disabled = !selectedAccountId;
+            contactToggle.disabled = !selectedAccountId;
+            if (!selectedAccountId) {
+                setContactPanelOpen(false);
+            }
             if (activityTypeSelect) {
                 Array.from(activityTypeSelect.options).forEach((option) => {
                     if (!option.classList.contains("partner-activity-option")) return;
@@ -311,33 +384,25 @@
                         salesPlayDatalist.appendChild(element);
                     });
             }
-            if (openContactButton) {
-                const selectedContacts = Array.from(contactSelect.selectedOptions || []).filter((option) => option.value);
-                if (selectedContacts.length) {
-                    const selectedContact = selectedContacts[0];
-                    openContactButton.href = selectedContact ? selectedContact.dataset.contactUrl || "#" : "#";
-                    openContactButton.hidden = false;
-                } else {
-                    openContactButton.hidden = true;
-                }
-            }
-            if (contactSystemFields) {
-                const selectedContacts = Array.from(contactSelect.selectedOptions || []).filter((option) => option.value);
-                const selectedContact = selectedContacts[0];
-                const email = selectedContact ? selectedContact.dataset.email || "" : "";
-                const phone = selectedContact ? selectedContact.dataset.phone || "" : "";
-                const linkedin = selectedContact ? selectedContact.dataset.linkedin || "" : "";
-                const jobTitle = selectedContact ? selectedContact.dataset.jobTitle || "" : "";
-                const partnerName = selectedContact ? selectedContact.dataset.partnerName || "" : "";
-                const extraCount = selectedContacts.length > 1 ? `<span>+ ${selectedContacts.length - 1} more selected</span>` : "";
-                contactSystemFields.innerHTML = selectedContact
-                    ? `<span>${partnerName ? "Partner contact" : "Customer contact"}${partnerName ? `: ${partnerName}` : ""}</span><span>Job title: ${jobTitle || "Not set"}</span><span>Email: ${email || "Not set"}</span><span>Phone: ${phone || "Not set"}</span><span>LinkedIn: ${linkedin || "Not set"}</span>${extraCount}`
-                    : "Select one or more contacts to show phone, email and LinkedIn.";
-            }
+            updateContactSummary();
+            renderContactDetails();
         }
 
+        contactToggle.addEventListener("click", () => {
+            if (!contactToggle.disabled) {
+                setContactPanelOpen(contactPanel.hidden);
+            }
+        });
+        contactInputs.forEach((input) => input.addEventListener("change", () => {
+            updateContactSummary();
+            renderContactDetails();
+        }));
+        document.addEventListener("click", (event) => {
+            if (!contactPicker.contains(event.target)) {
+                setContactPanelOpen(false);
+            }
+        });
         accountSelect.addEventListener("change", applyContactFilter);
-        contactSelect.addEventListener("change", applyContactFilter);
         applyContactFilter();
     }
 
