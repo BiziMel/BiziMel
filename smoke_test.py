@@ -228,7 +228,12 @@ def main():
 
         response = client.get(f"/outreach/{multi_outreach['id']}/edit")
         edit_html = response.get_data(as_text=True)
-        assert_ok(response.status_code == 200 and "name=\"contact_ids\"" in edit_html, "edit Outreach multi-contact field missing")
+        assert_ok(
+            response.status_code == 200
+            and "class=\"checkbox-select\"" in edit_html
+            and "name=\"contact_ids\"" in edit_html,
+            "edit Outreach multi-contact checkbox field missing",
+        )
 
         response = client.post(
             f"/outreach/{multi_outreach['id']}/edit",
@@ -269,6 +274,58 @@ def main():
         assert_ok(str(edited_outreach["contact_id"]) == str(second_contact_id), "edited primary contact was not updated")
         assert_ok(edited_outreach["outcome"] == "Exec Meeting Booked", "Exec Meeting Booked outcome was not saved")
         assert_ok(edited_recipient_count == 1, "edited outreach recipients were not replaced")
+
+        response = client.get("/outreach")
+        outreach_html = response.get_data(as_text=True)
+        assert_ok("bulk_next_action_date" in outreach_html, "bulk Outreach due-date control missing")
+        assert_ok("next_action_date_" in outreach_html, "inline Outreach due-date control missing")
+
+        response = client.post(
+            f"/outreach/{multi_outreach['id']}/due-date",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "return_to": "/outreach",
+                "next_action_date": "2026-05-09",
+                "next_action_time": "12:15",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "inline Outreach due-date update failed")
+
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        inline_due = connection.execute(
+            "SELECT next_action_date, next_action_time FROM outreach WHERE id = ?",
+            (multi_outreach["id"],),
+        ).fetchone()
+        connection.close()
+        assert_ok(inline_due["next_action_date"] == "2026-05-09", "inline due date was not saved")
+        assert_ok(inline_due["next_action_time"] == "12:15", "inline due time was not saved")
+
+        response = client.post(
+            "/outreach/bulk-due-date",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "return_to": "/outreach",
+                "selected_ids": [str(outreach_id), str(multi_outreach["id"])],
+                "bulk_next_action_date": "2026-05-10",
+                "bulk_next_action_time": "14:45",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "bulk Outreach due-date update failed")
+
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        bulk_due_rows = connection.execute(
+            "SELECT next_action_date, next_action_time FROM outreach WHERE id IN (?, ?) ORDER BY id",
+            (outreach_id, multi_outreach["id"]),
+        ).fetchall()
+        connection.close()
+        assert_ok(
+            all(row["next_action_date"] == "2026-05-10" and row["next_action_time"] == "14:45" for row in bulk_due_rows),
+            "bulk due date was not saved for selected outreach tasks",
+        )
 
         for path in (
             "/reports/accounts/export",

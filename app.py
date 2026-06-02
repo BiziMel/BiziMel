@@ -22,8 +22,8 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 
 APP_VERSION = "2.0"
-APP_RELEASE_DATE = "2026-06-01"
-APP_BUILD = "2026-06-01-v2.0-enterprise-regression-r4"
+APP_RELEASE_DATE = "2026-06-02"
+APP_BUILD = "2026-06-02-v2.0-enterprise-regression-r5"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -50,6 +50,9 @@ RELEASE_NOTES = [
             "Enhanced Outreach task RAG status so future tasks remain green, tasks turn amber only on their due date, and tasks turn red one second after the due date and time expires in the application timezone.",
             "Enhanced Outreach contact selection into a closed checkbox dropdown that supports multiple contacts and click-outside closing.",
             "Enhanced Outreach contact details so every selected contact appears as a separate row in a framed details panel below the contact field.",
+            "Enhanced Outreach forms so an account must be selected before contacts are presented, and only contacts associated with that selected account are available.",
+            "Enhanced Outreach Tasks so users can update individual activity due dates directly from the table.",
+            "Enhanced Outreach Tasks with bulk due-date updates for selected outreach activities.",
             "Enhanced user administration so tenant assignment is selected from preconfigured companies rather than typed as free text.",
             "Enhanced tenancy security so every user must have a tenant and company admins only see their own company in company controls.",
             "Enhanced sharing and assignment user lists so they remain inside the signed-in user's company tenancy.",
@@ -6337,6 +6340,7 @@ def add_outreach():
         selected_contact_values = outreach_contact_form_values(request.form)
     else:
         selected_contact_values = prefill.get("contact_ids", [])
+    selected_account_id = request.form.get("account_id") if request.method == "POST" else prefill.get("account_id", "")
     connection.close()
 
     return render_template(
@@ -6350,6 +6354,7 @@ def add_outreach():
         partner_contacts=partner_contacts,
         prefill=prefill,
         selected_contact_values=selected_contact_values,
+        selected_account_id=selected_account_id,
         error=error
     )
 
@@ -6692,7 +6697,91 @@ def bulk_delete_outreach():
         delete_outreach_records(connection, outreach_ids)
         connection.commit()
         connection.close()
-    return redirect(url_for("outreach"))
+    return redirect(url_for("outreach", message=f"Deleted {len(outreach_ids)} outreach record(s)."))
+
+
+def update_outreach_due_date_records(connection, outreach_ids, next_action_date, next_action_time, actor_label):
+    updated_count = 0
+    labels = {
+        "next_action_date": "Activity due date",
+        "next_action_time": "Activity due time",
+    }
+    for outreach_id in outreach_ids:
+        outreach_item = connection.execute(
+            "SELECT * FROM outreach WHERE id = ?",
+            (outreach_id,),
+        ).fetchone()
+        if not outreach_item or is_closed_task_status(outreach_item["task_status"]):
+            continue
+        new_values = {
+            "next_action_date": next_action_date,
+            "next_action_time": next_action_time,
+        }
+        changes = build_change_log(outreach_item, new_values, labels)
+        connection.execute(
+            """
+            UPDATE outreach
+            SET next_action_date = ?,
+                next_action_time = ?,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (next_action_date, next_action_time, outreach_id),
+        )
+        if changes:
+            audit_record_update(connection, "outreach", outreach_id, outreach_item, new_values, labels)
+            add_timeline_entry(
+                connection,
+                "outreach",
+                outreach_id,
+                "Task Updated",
+                f"{actor_label}: " + "; ".join(changes),
+            )
+        updated_count += 1
+    return updated_count
+
+
+@app.route("/outreach/<int:outreach_id>/due-date", methods=("POST",))
+def update_outreach_due_date(outreach_id):
+    return_to = safe_redirect_target(request.form.get("return_to") or request.referrer or url_for("outreach"), "outreach")
+    next_action_date = request.form.get("next_action_date", "")
+    next_action_time = request.form.get("next_action_time", "")
+    connection = get_db_connection()
+    updated_count = update_outreach_due_date_records(
+        connection,
+        [outreach_id],
+        next_action_date,
+        next_action_time,
+        "Due date updated from Outreach table",
+    )
+    connection.commit()
+    connection.close()
+    if updated_count:
+        return redirect_with_query(return_to, message="Activity due date updated.")
+    return redirect_with_query(return_to, error="Closed, completed and cancelled tasks cannot have their due date changed.")
+
+
+@app.route("/outreach/bulk-due-date", methods=("POST",))
+def bulk_update_outreach_due_date():
+    return_to = safe_redirect_target(request.form.get("return_to") or request.referrer or url_for("outreach"), "outreach")
+    outreach_ids = selected_record_ids()
+    if not outreach_ids:
+        return redirect_with_query(return_to, error="Select at least one outreach task before applying a bulk due date update.")
+    next_action_date = request.form.get("bulk_next_action_date", "")
+    next_action_time = request.form.get("bulk_next_action_time", "")
+    connection = get_db_connection()
+    updated_count = update_outreach_due_date_records(
+        connection,
+        outreach_ids,
+        next_action_date,
+        next_action_time,
+        "Bulk due date update from Outreach table",
+    )
+    connection.commit()
+    connection.close()
+    if updated_count:
+        return redirect_with_query(return_to, message=f"Updated the due date for {updated_count} outreach task(s).")
+    return redirect_with_query(return_to, error="No selected open outreach tasks could be updated.")
 
 
 @app.route("/outreach/<int:outreach_id>/edit", methods=("GET", "POST"))
@@ -6784,6 +6873,7 @@ def edit_outreach(outreach_id):
                 partner_activity_options=partner_activity_options,
                 partner_contacts=partner_contacts,
                 selected_contact_values=recipient_values,
+                selected_account_id=new_values["account_id"],
                 error=error
             )
 
@@ -6801,6 +6891,7 @@ def edit_outreach(outreach_id):
                 partner_activity_options=partner_activity_options,
                 partner_contacts=partner_contacts,
                 selected_contact_values=recipient_values,
+                selected_account_id=new_values["account_id"],
                 error=error
             )
 
@@ -6818,6 +6909,7 @@ def edit_outreach(outreach_id):
                 partner_activity_options=partner_activity_options,
                 partner_contacts=partner_contacts,
                 selected_contact_values=recipient_values,
+                selected_account_id=new_values["account_id"],
                 error=error
             )
 
@@ -6908,6 +7000,7 @@ def edit_outreach(outreach_id):
         return redirect(url_for("outreach"))
 
     selected_contact_values = selected_outreach_contact_values(connection, outreach_item)
+    selected_account_id = outreach_item["account_id"]
     connection.close()
 
     return render_template(
@@ -6921,6 +7014,7 @@ def edit_outreach(outreach_id):
         partner_activity_options=partner_activity_options,
         partner_contacts=partner_contacts,
         selected_contact_values=selected_contact_values,
+        selected_account_id=selected_account_id,
         error=error
     )
 

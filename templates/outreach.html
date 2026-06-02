@@ -124,14 +124,28 @@
 
 <div class="form-card">
     {% if outreach_records %}
+        <form id="bulk-outreach-form"
+              method="POST"
+              action="{{ url_for('bulk_update_outreach_due_date') }}"></form>
         <form id="bulk-delete-outreach-form"
               method="POST"
               action="{{ url_for('bulk_delete_outreach') }}"
               onsubmit="return confirm('Delete the selected outreach records? This cannot be undone.');"></form>
 
-        <div class="bulk-action-bar" data-bulk-action-bar="bulk-delete-outreach-form" hidden>
+        <div class="bulk-action-bar outreach-bulk-action-bar" data-bulk-action-bar="bulk-outreach-form" hidden>
             <span><strong data-bulk-selected-count>0</strong> outreach record(s) selected.</span>
-            <button type="submit" form="bulk-delete-outreach-form" class="btn btn-danger btn-small">Delete Selected</button>
+            <label for="bulk_next_action_date" class="table-field-label">Bulk Due Date</label>
+            <input type="date" id="bulk_next_action_date" name="bulk_next_action_date" form="bulk-outreach-form">
+            <input type="time" id="bulk_next_action_time" name="bulk_next_action_time" form="bulk-outreach-form">
+            <input type="hidden" name="return_to" value="{{ request.full_path }}" form="bulk-outreach-form">
+            <button type="submit" form="bulk-outreach-form" class="btn btn-primary btn-small">Update Due Date</button>
+            <button type="submit"
+                    form="bulk-outreach-form"
+                    formaction="{{ url_for('bulk_delete_outreach') }}"
+                    class="btn btn-danger btn-small"
+                    onclick="return confirm('Delete the selected outreach records? This cannot be undone.');">
+                Delete Selected
+            </button>
         </div>
 
         <div class="table-container outreach-table-container">
@@ -159,9 +173,10 @@
 
                 <tbody>
                     {% for item in outreach_records %}
+                        {% set task_locked = item.task_status in ['Closed', 'Completed', 'Cancelled'] %}
                         <tr class="outreach-main-row {{ item.due_rag_class }}">
                             <td class="bulk-select-col">
-                                <input type="checkbox" name="selected_ids" value="{{ item.id }}" form="bulk-delete-outreach-form" aria-label="Select outreach {{ item.subject or item.id }}">
+                                <input type="checkbox" name="selected_ids" value="{{ item.id }}" form="bulk-outreach-form" aria-label="Select outreach {{ item.subject or item.id }}">
                             </td>
                             <td data-sort-value="{{ item.next_action_date or '9999-12-31' }} {{ item.next_action_time or '99:99' }}">
                                 <div class="outreach-due-date-block">
@@ -177,6 +192,24 @@
                                         <span>{{ item.next_action_time or "No due time" }}</span>
                                         <span class="outreach-status-chip">{{ item.task_status or "Not Started" }}</span>
                                     </div>
+                                    <form method="POST"
+                                          action="{{ url_for('update_outreach_due_date', outreach_id=item.id) }}"
+                                          class="inline-form outreach-due-inline-form">
+                                        <input type="hidden" name="return_to" value="{{ request.full_path }}">
+                                        <label for="next_action_date_{{ item.id }}" class="table-field-label">Change Due</label>
+                                        <div class="outreach-due-edit-controls">
+                                            <input type="date"
+                                                   id="next_action_date_{{ item.id }}"
+                                                   name="next_action_date"
+                                                   value="{{ item.next_action_date or '' }}"
+                                                   {% if task_locked %}disabled{% endif %}>
+                                            <input type="time"
+                                                   name="next_action_time"
+                                                   value="{{ item.next_action_time or '' }}"
+                                                   {% if task_locked %}disabled{% endif %}>
+                                            <button type="submit" class="btn btn-primary btn-small" {% if task_locked %}disabled{% endif %}>Save</button>
+                                        </div>
+                                    </form>
                                 </div>
                             </td>
                             <td>
@@ -223,7 +256,6 @@
                                 <span class="muted">{{ item.subject or "No subject" }}</span>
                             </td>
                             <td>
-                                {% set task_locked = item.task_status in ['Closed', 'Completed', 'Cancelled'] %}
                                 <form method="POST" action="{{ url_for('reassign_team_outreach') }}" class="inline-form compact-assignment-form">
                                     <input type="hidden" name="return_to" value="{{ url_for('outreach') }}">
                                     <input type="hidden" name="workspace_schema" value="{{ item.workspace_schema }}">

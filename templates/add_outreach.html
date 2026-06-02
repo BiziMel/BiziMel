@@ -79,7 +79,8 @@
                     </button>
                     <div class="checkbox-select-panel" id="contact_picker_panel" hidden>
                     {% for contact in contacts %}
-                        <label class="checkbox-select-option" data-contact-option data-account-id="{{ contact.account_id or '' }}">
+                        {% set contact_available = selected_account_id and contact.account_id|string == selected_account_id|string %}
+                        <label class="checkbox-select-option" data-contact-option data-account-id="{{ contact.account_id or '' }}" {% if not contact_available %}hidden{% endif %}>
                             <input type="checkbox"
                                    name="contact_ids"
                                    value="{{ contact.id }}"
@@ -90,12 +91,14 @@
                                    data-job-title="{{ contact.job_title or '' }}"
                                    data-partner-name=""
                                    data-contact-label="{{ contact.name }}{% if contact.account_name %} - {{ contact.account_name }}{% endif %}"
+                                   {% if not contact_available %}disabled{% endif %}
                                    {% if contact.id|string in selected_contact_values %}checked{% endif %}>
                             <span>{{ contact.name }}{% if contact.account_name %} - {{ contact.account_name }}{% endif %}</span>
                         </label>
                     {% endfor %}
                     {% for partner_contact in partner_contacts %}
-                        <label class="checkbox-select-option" data-contact-option data-account-id="{{ partner_contact.account_id or '' }}">
+                        {% set partner_contact_available = selected_account_id and partner_contact.account_id|string == selected_account_id|string %}
+                        <label class="checkbox-select-option" data-contact-option data-account-id="{{ partner_contact.account_id or '' }}" {% if not partner_contact_available %}hidden{% endif %}>
                             <input type="checkbox"
                                    name="contact_ids"
                                    value="partner_contact:{{ partner_contact.id }}"
@@ -106,6 +109,7 @@
                                    data-job-title="{{ partner_contact.job_title or '' }}"
                                    data-partner-name="{{ partner_contact.partner_name or '' }}"
                                    data-contact-label="{{ partner_contact.name }} - Partner: {{ partner_contact.partner_name }}{% if partner_contact.account_name %} - {{ partner_contact.account_name }}{% endif %}"
+                                   {% if not partner_contact_available %}disabled{% endif %}
                                    {% if 'partner_contact:' ~ partner_contact.id|string in selected_contact_values %}checked{% endif %}>
                             <span>{{ partner_contact.name }} - Partner: {{ partner_contact.partner_name }}{% if partner_contact.account_name %} - {{ partner_contact.account_name }}{% endif %}</span>
                         </label>
