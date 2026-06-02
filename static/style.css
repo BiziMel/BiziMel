@@ -103,6 +103,18 @@ h1, h2, h3, h4, h5, h6, p, label, a, span {
     margin-top: 4px;
 }
 
+.header-action-stack {
+    display: grid;
+    gap: 8px;
+    justify-items: end;
+    flex: 0 0 auto;
+}
+
+.header-action-stack .btn {
+    width: 100%;
+    text-align: center;
+}
+
 .version-pill {
     display: inline-block;
     width: fit-content;
@@ -3929,9 +3941,14 @@ body {
         text-align: left;
     }
 
+    .header-action-stack,
     .user-guide-link {
         width: 100%;
         text-align: center;
+    }
+
+    .header-action-stack {
+        justify-items: stretch;
     }
 
     .guide-sidebar {

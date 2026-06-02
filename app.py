@@ -23,7 +23,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.0"
 APP_RELEASE_DATE = "2026-06-02"
-APP_BUILD = "2026-06-02-v2.0-enterprise-regression-r7"
+APP_BUILD = "2026-06-02-v2.0-enterprise-regression-r8"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -54,6 +54,7 @@ RELEASE_NOTES = [
             "Enhanced Outreach Tasks so users can update individual activity due dates directly from the table.",
             "Enhanced Outreach Tasks with bulk due-date updates for selected outreach activities.",
             "Enhanced the Outreach Tasks table spacing so due-date controls are collapsed by default and the table uses a wider scrollable layout to avoid field overlap.",
+            "Moved Release Notes into the header action stack directly below User Guide.",
             "Enhanced user administration so tenant assignment is selected from preconfigured companies rather than typed as free text.",
             "Enhanced tenancy security so every user must have a tenant and company admins only see their own company in company controls.",
             "Enhanced sharing and assignment user lists so they remain inside the signed-in user's company tenancy.",
@@ -64,6 +65,7 @@ RELEASE_NOTES = [
             "Restored multi-contact association on manual Outreach tasks, including add, edit, view and delete cleanup paths.",
             "Restored Outreach activity outcomes for NBM Booked, Discovery Booked and Exec Meeting Booked.",
             "Fixed intermittent bulk Outreach delete server errors by using one explicit bulk action route and skipping stale selected task IDs safely.",
+            "Fixed hosted Outreach delete resilience by refreshing the tenant schema safely before single or bulk delete cleanup runs.",
             "Fixed Role and Access updates so Application Admins can amend any user type, including their own administrator profile and other Application Admins.",
         ],
     },
@@ -6688,6 +6690,7 @@ def add_outreach_timeline(outreach_id):
 
 @app.route("/outreach/<int:outreach_id>/delete", methods=("POST",))
 def delete_outreach(outreach_id):
+    initialise_database(force=True)
     connection = get_db_connection()
     deleted_count = delete_outreach_records(connection, [outreach_id])
     connection.commit()
@@ -6704,6 +6707,7 @@ def bulk_delete_outreach():
     outreach_ids = selected_record_ids()
     deleted_count = 0
     if outreach_ids:
+        initialise_database(force=True)
         connection = get_db_connection()
         deleted_count = delete_outreach_records(connection, outreach_ids)
         connection.commit()
@@ -6721,6 +6725,7 @@ def bulk_outreach_action():
     if not outreach_ids:
         return redirect_with_query(return_to, error="Select at least one outreach task before applying a bulk action.")
     if action == "delete":
+        initialise_database(force=True)
         connection = get_db_connection()
         deleted_count = delete_outreach_records(connection, outreach_ids)
         connection.commit()

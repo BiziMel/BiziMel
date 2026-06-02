@@ -165,6 +165,13 @@ def main():
             html = response.get_data(as_text=True)
             assert_ok(response.status_code == 200 and marker in html, f"{path} failed")
 
+        dashboard_html = client.get("/").get_data(as_text=True)
+        assert_ok("header-action-stack" in dashboard_html, "header action stack missing")
+        assert_ok(
+            dashboard_html.index("User Guide") < dashboard_html.index("Release Notes") < dashboard_html.index("<nav"),
+            "Release Notes is not stacked below User Guide before the main nav",
+        )
+
         response = client.post(
             f"/tasks/{outreach_id}/update",
             data={
