@@ -46,6 +46,7 @@ RELEASE_NOTES = [
         ],
         "enhanced": [
             "Enhanced dashboard, account, task-report and campaign-learning overdue calculations so every page refresh recalculates from current data and the configured application timezone.",
+            "Enhanced AI Insight and Campaign Learning criteria so executive coverage, Discovery Booked and NBM Booked outcomes are prioritised as pipeline generation success signals.",
             "Enhanced the User Guide so dashboard, Outreach Tasks, Reports and Release Notes guidance reflects the 2.0.1 workflow.",
             "Enhanced version metadata, deployment health output and deployment checklist references for the 2.0.1 release.",
         ],
@@ -318,6 +319,7 @@ USER_GUIDE_SECTIONS = [
             "Review the command centre metrics for this week.",
             "Use Overdue Actions to see open outreach tasks whose Activity Due Date and due time have passed.",
             "Use Follow-ups Due to see open follow-ups due through the next 7 days, including overdue work.",
+            "Use PG Success This Week to track Discovery Booked, NBM Booked, Exec Meeting Booked and legacy Meeting Booked outcomes.",
             "Use the pipeline target card to see total PG target ACV across your accounts.",
             "Work active outreach tasks directly from the dashboard task table.",
             "Use Execution Insights to decide which account, campaign or sales play needs attention next.",
@@ -327,6 +329,7 @@ USER_GUIDE_SECTIONS = [
             "Untouched accounts are accounts with no active campaign or outreach tasks.",
             "Closed, completed and cancelled work is removed from active execution views, overdue counts and AI Insights.",
             "AI Insights are recalculated on every dashboard refresh from current account, contact, partner, outreach, outcome and due-date data.",
+            "Insights prioritise executive coverage and PG conversion. NBM Booked is treated as the strongest success signal, followed by Discovery Booked and executive meeting outcomes.",
             "Overdue logic is time-aware. A blank due time is treated as end of day.",
             "Pipeline generated value should be treated as a source-system metric when it belongs in SFDC rather than PipeFlow.",
         ],
@@ -702,6 +705,7 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "Start with the command centre metrics to see what needs attention this week.",
             "Use Overdue Actions and Execution Insights together; both refresh from current open-task due dates and due times.",
+            "Treat PG Success as Discovery Booked, NBM Booked, Exec Meeting Booked or legacy Meeting Booked, with NBM Booked weighted highest in insights.",
             "Review execution insights for suggested next actions across accounts, campaigns and sales plays.",
             "Use the top navigation to move into Outreach Tasks, Accounts, Contacts, Partners, Reports, Profile or Release Notes.",
         ],
@@ -856,7 +860,7 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "Review outreach volume, outcomes, campaigns, sales plays and due dates.",
             "Use filters to narrow reporting by account, date range, outcome or activity type.",
-            "Compare outcomes to improve future campaign recommendations.",
+            "Compare Discovery Booked, NBM Booked and executive meeting outcomes to improve future campaign recommendations.",
         ],
     },
     "task_reports": {
@@ -2150,7 +2154,7 @@ def build_campaign_success_context(connection, account_id, contact_ids, sales_pl
         if row["outcome"] in POSITIVE_OUTCOMES:
             row_score += 8
             evidence[activity_type]["positive"] += 1
-        if row["outcome"] == "Meeting Booked" or activity_type == "Meeting":
+        if is_pg_success_outcome(row["outcome"], activity_type):
             row_score += 5
             evidence[activity_type]["meeting"] += 1
         if row["outcome"] in NEGATIVE_OUTCOMES:
@@ -2337,8 +2341,58 @@ def build_pg_campaign_steps(pg_week_start):
 POSITIVE_OUTCOMES = (
     "Positive Response",
     "Meeting Booked",
+    "NBM Booked",
+    "Discovery Booked",
+    "Exec Meeting Booked",
     "Referral Made",
     "Follow-up Required",
+)
+
+PG_SUCCESS_OUTCOMES = (
+    "Discovery Booked",
+    "NBM Booked",
+    "Exec Meeting Booked",
+    "Meeting Booked",
+)
+
+PRIMARY_PG_SUCCESS_OUTCOMES = (
+    "Discovery Booked",
+    "NBM Booked",
+)
+
+NBM_SUCCESS_OUTCOMES = (
+    "NBM Booked",
+)
+
+EXECUTIVE_CONTACT_CATEGORIES = (
+    "Executive",
+)
+
+EXECUTIVE_RELATIONSHIPS = (
+    "Executive Buyer",
+    "Executive Assistant",
+)
+
+EXECUTIVE_TITLE_KEYWORDS = (
+    "chief",
+    "ceo",
+    "cfo",
+    "cio",
+    "cto",
+    "ciso",
+    "coo",
+    "cro",
+    "cdo",
+    "vp",
+    "vice president",
+    "evp",
+    "svp",
+    "president",
+    "executive",
+    "director",
+    "general manager",
+    "managing director",
+    "head of",
 )
 
 NEGATIVE_OUTCOMES = (
@@ -2411,9 +2465,35 @@ def overdue_task_params(now=None):
     return (app_datetime_key(now), *open_task_params())
 
 
+def is_pg_success_outcome(outcome, activity_type=""):
+    return (outcome or "").strip() in PG_SUCCESS_OUTCOMES or (activity_type or "").strip() == "Meeting"
+
+
+def is_primary_pg_success_outcome(outcome):
+    return (outcome or "").strip() in PRIMARY_PG_SUCCESS_OUTCOMES
+
+
+def is_nbm_success_outcome(outcome):
+    return (outcome or "").strip() in NBM_SUCCESS_OUTCOMES
+
+
+def is_executive_contact(category="", bmc_relationship="", job_title=""):
+    category = (category or "").strip()
+    relationship = (bmc_relationship or "").strip()
+    title = (job_title or "").strip().lower()
+    return (
+        category in EXECUTIVE_CONTACT_CATEGORIES
+        or relationship in EXECUTIVE_RELATIONSHIPS
+        or any(keyword in title for keyword in EXECUTIVE_TITLE_KEYWORDS)
+    )
+
+
 def score_learning_row(row):
     return (
-        (row["meeting_total"] or 0) * 4
+        (row["nbm_total"] or 0) * 8
+        + (row["primary_pg_success_total"] or 0) * 6
+        + (row["executive_success_total"] or 0) * 5
+        + (row["meeting_total"] or 0) * 4
         + (row["positive_total"] or 0) * 3
         + (row["completed_total"] or 0)
         - (row["negative_total"] or 0) * 2
@@ -2437,6 +2517,9 @@ def add_learning_score(rows):
     scored_rows.sort(
         key=lambda row: (
             row["score"],
+            row["nbm_total"] or 0,
+            row["primary_pg_success_total"] or 0,
+            row["executive_success_total"] or 0,
             row["meeting_total"] or 0,
             row["positive_total"] or 0,
             row["total"] or 0,
@@ -2549,6 +2632,9 @@ def deduplicate_execution_insights(insights):
 
 def build_learning_insights(connection):
     positive_placeholders = ",".join("?" for _ in POSITIVE_OUTCOMES)
+    pg_success_placeholders = ",".join("?" for _ in PG_SUCCESS_OUTCOMES)
+    primary_pg_success_placeholders = ",".join("?" for _ in PRIMARY_PG_SUCCESS_OUTCOMES)
+    nbm_success_placeholders = ",".join("?" for _ in NBM_SUCCESS_OUTCOMES)
     negative_placeholders = ",".join("?" for _ in NEGATIVE_OUTCOMES)
     overdue_predicate = overdue_task_sql("outreach")
     learning_select = f"""
@@ -2559,10 +2645,30 @@ def build_learning_insights(connection):
             THEN 1 ELSE 0
         END) AS positive_total,
         SUM(CASE
-            WHEN outreach.outcome = 'Meeting Booked'
+            WHEN outreach.outcome IN ({pg_success_placeholders})
               OR outreach.activity_type = 'Meeting'
             THEN 1 ELSE 0
         END) AS meeting_total,
+        SUM(CASE
+            WHEN outreach.outcome IN ({primary_pg_success_placeholders})
+            THEN 1 ELSE 0
+        END) AS primary_pg_success_total,
+        SUM(CASE
+            WHEN outreach.outcome IN ({nbm_success_placeholders})
+            THEN 1 ELSE 0
+        END) AS nbm_total,
+        SUM(CASE
+            WHEN outreach.outcome = 'Exec Meeting Booked'
+              OR contacts.category = 'Executive'
+              OR contacts.bmc_relationship IN ('Executive Buyer', 'Executive Assistant')
+              OR lower(COALESCE(contacts.job_title, '')) LIKE '%chief%'
+              OR lower(COALESCE(contacts.job_title, '')) LIKE '%vp%'
+              OR lower(COALESCE(contacts.job_title, '')) LIKE '%vice president%'
+              OR lower(COALESCE(contacts.job_title, '')) LIKE '%executive%'
+              OR lower(COALESCE(contacts.job_title, '')) LIKE '%director%'
+              OR lower(COALESCE(contacts.job_title, '')) LIKE '%head of%'
+            THEN 1 ELSE 0
+        END) AS executive_success_total,
         SUM(CASE
             WHEN outreach.outcome IN ({negative_placeholders})
             THEN 1 ELSE 0
@@ -2576,7 +2682,14 @@ def build_learning_insights(connection):
             THEN 1 ELSE 0
         END) AS overdue_total
     """
-    learning_params = (*POSITIVE_OUTCOMES, *NEGATIVE_OUTCOMES, *overdue_task_params())
+    learning_params = (
+        *POSITIVE_OUTCOMES,
+        *PG_SUCCESS_OUTCOMES,
+        *PRIMARY_PG_SUCCESS_OUTCOMES,
+        *NBM_SUCCESS_OUTCOMES,
+        *NEGATIVE_OUTCOMES,
+        *overdue_task_params(),
+    )
     insights = []
 
     sales_play_rows = add_learning_score(connection.execute(f"""
@@ -2584,6 +2697,7 @@ def build_learning_insights(connection):
             outreach.sales_play,
             {learning_select}
         FROM outreach
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
         WHERE outreach.sales_play IS NOT NULL
           AND outreach.sales_play != ''
         GROUP BY outreach.sales_play
@@ -2595,11 +2709,12 @@ def build_learning_insights(connection):
             "signal": "Sales Play",
             "title": f"{sales_play['sales_play']} is resonating best",
             "message": (
-                f"This play has {sales_play['positive_total']} positive signal(s) "
-                f"and {sales_play['meeting_total']} meeting(s) from "
+                f"This play has {sales_play['nbm_total']} NBM booking(s), "
+                f"{sales_play['primary_pg_success_total']} Discovery/NBM success outcome(s), "
+                f"and {sales_play['executive_success_total']} executive route signal(s) from "
                 f"{sales_play['total']} touchpoint(s)."
             ),
-            "action": "Prioritise this play for contacts with comparable roles, needs or buying context.",
+            "action": "Prioritise this play for executive contacts and use the route that produced Discovery or NBM bookings.",
             "link": url_for("outreach")
         })
 
@@ -2611,6 +2726,7 @@ def build_learning_insights(connection):
             {learning_select}
         FROM outreach
         LEFT JOIN accounts ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
         WHERE accounts.account_name IS NOT NULL
           AND outreach.sales_play IS NOT NULL
           AND outreach.sales_play != ''
@@ -2642,8 +2758,9 @@ def build_learning_insights(connection):
             "title": f"{account['account_name']} has a working pattern",
             "message": (
                 f"{' + '.join(label_parts)} has produced "
-                f"{account['positive_total']} positive signal(s) and "
-                f"{account['meeting_total']} meeting(s)."
+                f"{account['nbm_total']} NBM booking(s), "
+                f"{account['primary_pg_success_total']} Discovery/NBM success outcome(s), "
+                f"and {account['executive_success_total']} executive route signal(s)."
             ),
             "action": behaviour_action,
             "link": url_for("view_account", account_id=account["account_id"])
@@ -2685,8 +2802,8 @@ def build_learning_insights(connection):
             "signal": "Contact",
             "title": f"{category['sales_play']} works best with {category['category']} contacts",
             "message": (
-                f"This combination has {category['positive_total']} positive signal(s), "
-                f"{category['meeting_total']} meeting(s), and "
+                f"This combination has {category['nbm_total']} NBM booking(s), "
+                f"{category['primary_pg_success_total']} Discovery/NBM success outcome(s), and "
                 f"{category['negative_total']} negative signal(s)."
             ),
             "action": category_action,
@@ -2713,10 +2830,11 @@ def build_learning_insights(connection):
             "signal": "Relationship",
             "title": f"{relationship['sales_play']} is strongest with {relationship['bmc_relationship']} contacts",
             "message": (
-                f"The data shows {relationship['positive_total']} positive signal(s) "
+                f"The data shows {relationship['primary_pg_success_total']} Discovery/NBM success outcome(s), "
+                f"{relationship['nbm_total']} NBM booking(s), and {relationship['positive_total']} positive signal(s) "
                 f"from {relationship['total']} touchpoint(s)."
             ),
-            "action": "Use this play when a similar relationship type appears in another account.",
+            "action": "Use this play when a similar executive or buying relationship appears in another account.",
             "link": url_for("contacts")
         })
 
@@ -2726,6 +2844,7 @@ def build_learning_insights(connection):
             outreach.activity_type,
             {learning_select}
         FROM outreach
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
         WHERE outreach.sales_play IS NOT NULL
           AND outreach.sales_play != ''
           AND outreach.activity_type IS NOT NULL
@@ -2898,7 +3017,7 @@ def build_dashboard_response(connection):
                 this_week_completed += 1
 
         if activity_date and week_start <= activity_date <= week_end:
-            if row["outcome"] == "Meeting Booked" or row["activity_type"] == "Meeting":
+            if is_pg_success_outcome(row["outcome"], row["activity_type"]):
                 this_week_meetings_booked += 1
 
     this_week_untouched_accounts = connection.execute(f"""
@@ -2918,7 +3037,7 @@ def build_dashboard_response(connection):
 
     meetings_booked = connection.execute("""
         SELECT COUNT(*) FROM outreach
-        WHERE outcome = 'Meeting Booked'
+        WHERE outcome IN ('Discovery Booked', 'NBM Booked', 'Exec Meeting Booked', 'Meeting Booked')
            OR activity_type = 'Meeting'
     """).fetchone()[0]
 
@@ -3015,10 +3134,40 @@ def build_dashboard_response(connection):
                 FROM outreach
                 WHERE outreach.account_id = accounts.id
                   AND (
-                        outreach.outcome = 'Meeting Booked'
+                        outreach.outcome IN ('Discovery Booked', 'NBM Booked', 'Exec Meeting Booked', 'Meeting Booked')
                      OR outreach.activity_type = 'Meeting'
                   )
             ) AS meeting_count,
+
+            (
+                SELECT COUNT(*)
+                FROM outreach
+                WHERE outreach.account_id = accounts.id
+                  AND outreach.outcome IN ('Discovery Booked', 'NBM Booked')
+            ) AS primary_pg_success_count,
+
+            (
+                SELECT COUNT(*)
+                FROM outreach
+                WHERE outreach.account_id = accounts.id
+                  AND outreach.outcome = 'NBM Booked'
+            ) AS nbm_success_count,
+
+            (
+                SELECT COUNT(*)
+                FROM contacts
+                WHERE contacts.account_id = accounts.id
+                  AND (
+                        contacts.category = 'Executive'
+                     OR contacts.bmc_relationship IN ('Executive Buyer', 'Executive Assistant')
+                     OR lower(COALESCE(contacts.job_title, '')) LIKE '%chief%'
+                     OR lower(COALESCE(contacts.job_title, '')) LIKE '%vp%'
+                     OR lower(COALESCE(contacts.job_title, '')) LIKE '%vice president%'
+                     OR lower(COALESCE(contacts.job_title, '')) LIKE '%executive%'
+                     OR lower(COALESCE(contacts.job_title, '')) LIKE '%director%'
+                     OR lower(COALESCE(contacts.job_title, '')) LIKE '%head of%'
+                  )
+            ) AS executive_contact_count,
 
             (
                 SELECT COUNT(*)
@@ -3091,6 +3240,15 @@ def build_dashboard_response(connection):
                 "link": url_for("view_account", account_id=account["id"])
             })
 
+        if (account["executive_contact_count"] or 0) == 0:
+            ai_insights.append({
+                "type": "Executive Gap",
+                "severity": "high",
+                "title": f"{account['account_name']} has no executive route mapped",
+                "message": "PG success needs executive access. Add an executive buyer, executive assistant or senior sponsor before relying on more lower-level follow-up.",
+                "link": url_for("view_account", account_id=account["id"])
+            })
+
         if (account["overdue_followups"] or 0) > 0:
             ai_insights.append({
                 "type": "Action Risk",
@@ -3100,12 +3258,12 @@ def build_dashboard_response(connection):
                 "link": url_for("view_account", account_id=account["id"])
             })
 
-        if (account["outreach_count"] or 0) > 0 and (account["meeting_count"] or 0) == 0:
+        if (account["outreach_count"] or 0) > 0 and (account["primary_pg_success_count"] or 0) == 0:
             ai_insights.append({
-                "type": "Conversion Gap",
+                "type": "PG Conversion Gap",
                 "severity": "medium",
-                "title": f"{account['account_name']} has outreach but no meetings",
-                "message": "Activity is happening, but no meeting has been booked yet. Consider changing message, route or stakeholder.",
+                "title": f"{account['account_name']} has outreach but no Discovery or NBM booked",
+                "message": "Activity is happening, but the PG success outcome is missing. Change route toward an executive stakeholder or sharpen the Discovery/NBM ask.",
                 "link": url_for("view_account", account_id=account["id"])
             })
 
@@ -3125,6 +3283,17 @@ def build_dashboard_response(connection):
             FROM contacts
             WHERE account_id = ?
             ORDER BY
+                CASE
+                    WHEN category = 'Executive'
+                      OR bmc_relationship IN ('Executive Buyer', 'Executive Assistant')
+                      OR lower(COALESCE(job_title, '')) LIKE '%chief%'
+                      OR lower(COALESCE(job_title, '')) LIKE '%vp%'
+                      OR lower(COALESCE(job_title, '')) LIKE '%vice president%'
+                      OR lower(COALESCE(job_title, '')) LIKE '%executive%'
+                      OR lower(COALESCE(job_title, '')) LIKE '%director%'
+                      OR lower(COALESCE(job_title, '')) LIKE '%head of%'
+                    THEN 0 ELSE 1
+                END,
                 CASE WHEN bmc_relationship IS NULL OR bmc_relationship = '' THEN 1 ELSE 0 END,
                 CASE WHEN responsibilities IS NULL OR responsibilities = '' THEN 1 ELSE 0 END,
                 name
@@ -3145,10 +3314,11 @@ def build_dashboard_response(connection):
             reason = str(reason).strip()
             if reason:
                 recommended_move = behaviour_signal_from_notes([reason])
+                route_label = "executive route" if is_executive_contact(best_contact["category"], best_contact["bmc_relationship"], best_contact["job_title"]) else "stakeholder route"
                 ai_insights.append({
                     "type": "Engagement Route",
                     "severity": "medium",
-                    "title": f"Use a sharper route into {account['account_name']}",
+                    "title": f"Use a sharper {route_label} into {account['account_name']}",
                     "message": f"Start with {contact_label}. {recommended_move}",
                     "link": url_for("view_account", account_id=account["id"])
                 })
@@ -3180,21 +3350,30 @@ def build_dashboard_response(connection):
                 "link": url_for("view_account", account_id=account["id"])
             })
 
-        if (account["outreach_count"] or 0) >= 3 and (account["meeting_count"] or 0) > 0:
+        if (account["outreach_count"] or 0) >= 3 and (account["primary_pg_success_count"] or 0) > 0:
             ai_insights.append({
-                "type": "Momentum",
+                "type": "PG Momentum",
                 "severity": "positive",
-                "title": f"{account['account_name']} is showing positive engagement",
-                "message": "This account has both outreach activity and meetings. Keep progressing next actions.",
+                "title": f"{account['account_name']} is converting toward PG outcomes",
+                "message": f"This account has {account['primary_pg_success_count']} Discovery/NBM success outcome(s). Keep progressing next actions toward NBM completion.",
                 "link": url_for("view_account", account_id=account["id"])
             })
 
-        if (account["active_partner_count"] or 0) >= 2 and (account["meeting_count"] or 0) > 0:
+        if (account["nbm_success_count"] or 0) > 0:
+            ai_insights.append({
+                "type": "NBM Success",
+                "severity": "positive",
+                "title": f"{account['account_name']} has NBM booked",
+                "message": f"{account['nbm_success_count']} NBM booking(s) recorded. Treat this as the strongest PG success signal and keep the executive path warm.",
+                "link": url_for("view_account", account_id=account["id"])
+            })
+
+        if (account["active_partner_count"] or 0) >= 2 and (account["primary_pg_success_count"] or 0) > 0:
             ai_insights.append({
                 "type": "Partner Momentum",
                 "severity": "positive",
                 "title": f"{account['account_name']} has strong partner coverage",
-                "message": "Multiple active partner relationships are mapped alongside meeting activity. Keep partner owners aligned on the next move.",
+                "message": "Multiple active partner relationships are mapped alongside Discovery/NBM success. Keep partner owners aligned on the next executive move.",
                 "link": url_for("view_account", account_id=account["id"])
             })
 
@@ -3911,7 +4090,7 @@ def accounts():
                 FROM outreach
                 WHERE outreach.account_id = accounts.id
                   AND (
-                        outreach.outcome = 'Meeting Booked'
+                        outreach.outcome IN ('Discovery Booked', 'NBM Booked', 'Exec Meeting Booked', 'Meeting Booked')
                      OR outreach.activity_type = 'Meeting'
                   )
             ) AS meeting_count,
@@ -4560,7 +4739,7 @@ def view_account(account_id):
                 FROM outreach
                 WHERE outreach.account_id = accounts.id
                   AND (
-                        outreach.outcome = 'Meeting Booked'
+                        outreach.outcome IN ('Discovery Booked', 'NBM Booked', 'Exec Meeting Booked', 'Meeting Booked')
                      OR outreach.activity_type = 'Meeting'
                   )
             ) AS meeting_count,
@@ -8478,7 +8657,7 @@ def build_pg_bible_report_from_db(connection):
             FROM outreach
             WHERE contact_id = ?
               AND (
-                    outcome = 'Meeting Booked'
+                    outcome IN ('Discovery Booked', 'NBM Booked', 'Exec Meeting Booked', 'Meeting Booked')
                  OR activity_type = 'Meeting'
               )
         """, (contact["id"],)).fetchone()[0]
@@ -8540,19 +8719,22 @@ def build_pg_bible_report_from_db(connection):
                 "pipeline_generated_value": 0,
             }
         totals = weekly_totals[week_key]
-        is_meeting_booked = row["outcome"] == "Meeting Booked"
-        is_pipeline_outcome = row["outcome"] in ("Meeting Booked", "Positive Response", "Referral Made")
+        is_discovery_booked = row["outcome"] == "Discovery Booked" or row["activity_type"] == "Meeting"
+        is_nbm_booked = row["outcome"] == "NBM Booked"
+        is_exec_meeting_booked = row["outcome"] == "Exec Meeting Booked"
+        is_pg_success = is_pg_success_outcome(row["outcome"], row["activity_type"])
+        is_pipeline_outcome = row["outcome"] in (*PG_SUCCESS_OUTCOMES, "Positive Response", "Referral Made")
         if row["activity_type"] == "VITO":
             totals["vitos_sent"] += 1
             if row["outcome"] != "No Response Yet":
                 totals["vitos_chased"] += 1
-        if row["activity_type"] == "Meeting" or is_meeting_booked:
+        if is_discovery_booked or is_pg_success:
             totals["discovery_booked"] += 1
         if row["activity_type"] == "Meeting":
             totals["discovery_completed"] += 1
-        if is_meeting_booked:
+        if is_nbm_booked or is_exec_meeting_booked:
             totals["nbms_booked"] += 1
-            if row["category"] == "Executive":
+            if row["category"] == "Executive" or is_exec_meeting_booked:
                 totals["nbms_exec_firsts"] += 1
             if is_closed_task_status(row["task_status"]):
                 totals["nbms_completed"] += 1
@@ -9094,7 +9276,7 @@ def outreach_reports():
     total_outreach = len(filtered_outreach)
     meetings_booked = sum(
         1 for item in filtered_outreach
-        if item["outcome"] == "Meeting Booked" or item["activity_type"] == "Meeting"
+        if is_pg_success_outcome(item["outcome"], item["activity_type"])
     )
     meeting_conversion_total = meetings_booked
 
@@ -9112,7 +9294,7 @@ def outreach_reports():
             if month not in monthly_totals:
                 monthly_totals[month] = {"total_outreach": 0, "meetings_booked": 0}
             monthly_totals[month]["total_outreach"] += 1
-            if item["outcome"] == "Meeting Booked" or item["activity_type"] == "Meeting":
+            if is_pg_success_outcome(item["outcome"], item["activity_type"]):
                 monthly_totals[month]["meetings_booked"] += 1
 
     outcome_breakdown = [

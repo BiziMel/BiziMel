@@ -26,6 +26,7 @@ The main differences are feature evolution since v1.5.2, especially tenant admin
 ### Dashboard and AI Insights
 
 - v1.5.2 documented the Insights Dashboard as weekly command metrics, outcome breakdown, wrap-up and execution learning. Current 2.0.1 uses a command centre plus Execution Insights, combining AI Insight account/contact/partner signals and Campaign Learning patterns.
+- Current 2.0.1 insight criteria prioritise executive coverage and PG success outcomes. NBM Booked is weighted as the strongest success signal, followed by Discovery Booked and executive meeting outcomes.
 - v1.5.2 did not define one precise overdue rule. Before 2.0.1, current code had multiple overdue definitions: date-only dashboard counts, time-aware account AI counts and inconsistent closed-status filtering. v2.0.1 now uses one shared rule: open task, valid Activity Due Date, due time defaulting to end of day when blank, and due datetime before current application time.
 - v2.0.1 excludes Closed, Completed and Cancelled tasks from overdue counts, active execution counts, AI Insights, account health and task SLA reporting.
 
