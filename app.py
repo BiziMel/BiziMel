@@ -2931,6 +2931,15 @@ def home():
 
 
 def render_dashboard_fallback():
+    fallback_insight = {
+        "source": "AI Insight",
+        "category": "Dashboard Check",
+        "title": "Dashboard data needs a refresh",
+        "message": "One dashboard query could not be loaded. Other app pages should still be available while this is checked.",
+        "action": "Open Reports or Accounts to continue working while the dashboard query is checked.",
+        "link": url_for("reports"),
+        "priority": "high",
+    }
     return render_template(
         "index.html",
         this_week_due=0,
@@ -2951,15 +2960,9 @@ def render_dashboard_fallback():
         outcome_breakdown=[],
         top_accounts=[],
         needs_attention_accounts=[],
-        ai_insights=[{
-            "type": "Dashboard Check",
-            "severity": "high",
-            "title": "Dashboard data needs a refresh",
-            "message": "One dashboard query could not be loaded. Other app pages should still be available while this is checked.",
-            "link": url_for("reports")
-        }],
+        ai_insights=[fallback_insight],
         learning_insights=[],
-        execution_insights=[],
+        execution_insights=[fallback_insight],
         dashboard_tasks=[],
         task_statuses=DROPDOWN_VALUES["task_statuses"],
         outreach_outcomes=DROPDOWN_VALUES["outreach_outcomes"],

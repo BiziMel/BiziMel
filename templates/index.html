@@ -144,16 +144,16 @@
                         <tbody>
                             {% for insight in execution_insights %}
                                 <tr>
-                                    <td><strong>{{ insight.source }}</strong></td>
-                                    <td>{{ insight.category }}</td>
+                                    <td><strong>{{ insight.source or "AI Insight" }}</strong></td>
+                                    <td>{{ insight.category or "PG Focus" }}</td>
                                     <td>
-                                        <strong>{{ insight.title }}</strong><br>
-                                        <span class="muted">{{ insight.message }}</span>
+                                        <strong>{{ insight.title or "Review PG execution" }}</strong><br>
+                                        <span class="muted">{{ insight.message or "Add executive contacts, outreach activity and Discovery or NBM outcomes so PipeFlow can generate more specific guidance." }}</span>
                                     </td>
                                     <td>
-                                        {{ insight.action }}
+                                        {{ insight.action or "Open the related record and set the next action toward an executive Discovery or NBM step." }}
                                         <br><br>
-                                        <a href="{{ insight.link }}" class="btn btn-secondary btn-small">Open</a>
+                                        <a href="{{ insight.link or url_for('accounts') }}" class="btn btn-secondary btn-small">Open</a>
                                     </td>
                                 </tr>
                             {% endfor %}
