@@ -2533,26 +2533,37 @@ def add_learning_score(rows):
 def build_execution_insights(ai_insights, learning_insights):
     combined = []
     for insight in ai_insights:
+        title = str(insight.get("title") or insight.get("type") or "Account needs attention").strip()
+        message = str(insight.get("message") or "Review this account and update the next best PG action.").strip()
+        action = str(insight.get("action") or message).strip()
         combined.append({
             "source": "AI Insight",
-            "category": insight.get("type", "Insight"),
-            "title": insight.get("title", ""),
-            "message": insight.get("message", ""),
-            "action": insight.get("message", ""),
+            "category": insight.get("type", "Insight") or "Insight",
+            "title": title,
+            "message": message,
+            "action": action,
             "link": insight.get("link", url_for("home")),
             "priority": insight.get("severity", "medium"),
         })
 
     for insight in learning_insights:
+        title = str(insight.get("title") or insight.get("signal") or "Campaign learning needs data").strip()
+        message = str(insight.get("message") or "Add outcomes to campaign touchpoints so PipeFlow can identify what converts to Discovery and NBM bookings.").strip()
+        action = str(insight.get("action") or "Update campaign outcomes and focus the next move on an executive route.").strip()
         combined.append({
             "source": "Campaign Learning",
-            "category": insight.get("signal", "Learning"),
-            "title": insight.get("title", ""),
-            "message": insight.get("message", ""),
-            "action": insight.get("action", ""),
+            "category": insight.get("signal", "Learning") or "Learning",
+            "title": title,
+            "message": message,
+            "action": action,
             "link": insight.get("link", url_for("campaign_builder")),
             "priority": "learning",
         })
+
+    combined = [
+        insight for insight in combined
+        if insight["title"] or insight["message"] or insight["action"]
+    ]
 
     priority_order = {
         "high": 1,
@@ -3237,6 +3248,7 @@ def build_dashboard_response(connection):
                 "severity": "high",
                 "title": f"{account['account_name']} has low relationship coverage",
                 "message": "There are fewer than 2 contacts mapped. Add more stakeholders to reduce single-thread risk.",
+                "action": "Add at least one additional stakeholder, prioritising an executive buyer, executive assistant or senior sponsor.",
                 "link": url_for("view_account", account_id=account["id"])
             })
 
@@ -3246,6 +3258,16 @@ def build_dashboard_response(connection):
                 "severity": "high",
                 "title": f"{account['account_name']} has no executive route mapped",
                 "message": "PG success needs executive access. Add an executive buyer, executive assistant or senior sponsor before relying on more lower-level follow-up.",
+                "action": "Map at least one executive stakeholder, executive assistant or senior sponsor, then set the next action around a Discovery or NBM ask.",
+                "link": url_for("view_account", account_id=account["id"])
+            })
+        elif (account["primary_pg_success_count"] or 0) == 0:
+            ai_insights.append({
+                "type": "Executive Route",
+                "severity": "medium",
+                "title": f"{account['account_name']} has an executive route but no PG success yet",
+                "message": f"{account['executive_contact_count']} executive route contact(s) are mapped, but no Discovery or NBM booking has been recorded.",
+                "action": "Use the mapped executive route for the next touchpoint and make the ask specifically about Discovery or NBM.",
                 "link": url_for("view_account", account_id=account["id"])
             })
 
@@ -3255,6 +3277,7 @@ def build_dashboard_response(connection):
                 "severity": "high",
                 "title": f"{account['account_name']} has overdue follow-ups",
                 "message": f"{account['overdue_followups']} follow-up(s) are overdue. Review next actions before momentum drops.",
+                "action": "Clear the overdue work first, then reset the next action toward an executive Discovery or NBM step.",
                 "link": url_for("view_account", account_id=account["id"])
             })
 
@@ -3264,6 +3287,7 @@ def build_dashboard_response(connection):
                 "severity": "medium",
                 "title": f"{account['account_name']} has outreach but no Discovery or NBM booked",
                 "message": "Activity is happening, but the PG success outcome is missing. Change route toward an executive stakeholder or sharpen the Discovery/NBM ask.",
+                "action": "Change the route or message before adding more activity; aim the next touchpoint at Discovery Booked or NBM Booked.",
                 "link": url_for("view_account", account_id=account["id"])
             })
 
@@ -3320,6 +3344,7 @@ def build_dashboard_response(connection):
                     "severity": "medium",
                     "title": f"Use a sharper {route_label} into {account['account_name']}",
                     "message": f"Start with {contact_label}. {recommended_move}",
+                    "action": "Use this route for the next executive-facing touchpoint and record whether it converts to Discovery or NBM.",
                     "link": url_for("view_account", account_id=account["id"])
                 })
 
@@ -3329,6 +3354,7 @@ def build_dashboard_response(connection):
                 "severity": "medium",
                 "title": f"{account['account_name']} has no partner involvement mapped",
                 "message": "This account has activity but no partner coverage. Add a relevant partner to test a warmer route in.",
+                "action": "Add a partner route if it can help secure executive access or support the Discovery/NBM ask.",
                 "link": url_for("view_account", account_id=account["id"])
             })
 
@@ -3338,6 +3364,7 @@ def build_dashboard_response(connection):
                 "severity": "medium",
                 "title": f"{account['account_name']} has partner coverage but no active partner",
                 "message": "Partner relationships are mapped, but none are introduced, engaged or active. Pick the best partner and set a next action.",
+                "action": "Activate the strongest partner route and align it to the executive stakeholder or NBM target.",
                 "link": url_for("view_account", account_id=account["id"])
             })
 
@@ -3347,6 +3374,7 @@ def build_dashboard_response(connection):
                 "severity": "medium",
                 "title": f"{account['account_name']} has active partner involvement without a next action",
                 "message": f"{account['active_partner_next_action_gaps']} active partner relationship(s) need a clear next action.",
+                "action": "Set the partner next action around gaining executive access, booking Discovery or progressing to NBM.",
                 "link": url_for("view_account", account_id=account["id"])
             })
 
@@ -3356,6 +3384,7 @@ def build_dashboard_response(connection):
                 "severity": "positive",
                 "title": f"{account['account_name']} is converting toward PG outcomes",
                 "message": f"This account has {account['primary_pg_success_count']} Discovery/NBM success outcome(s). Keep progressing next actions toward NBM completion.",
+                "action": "Protect the momentum by keeping the executive path warm and confirming the next NBM or follow-on action.",
                 "link": url_for("view_account", account_id=account["id"])
             })
 
@@ -3365,6 +3394,7 @@ def build_dashboard_response(connection):
                 "severity": "positive",
                 "title": f"{account['account_name']} has NBM booked",
                 "message": f"{account['nbm_success_count']} NBM booking(s) recorded. Treat this as the strongest PG success signal and keep the executive path warm.",
+                "action": "Prepare the NBM follow-through and capture the outcome so future campaign learning can reuse the pattern.",
                 "link": url_for("view_account", account_id=account["id"])
             })
 
@@ -3374,6 +3404,7 @@ def build_dashboard_response(connection):
                 "severity": "positive",
                 "title": f"{account['account_name']} has strong partner coverage",
                 "message": "Multiple active partner relationships are mapped alongside Discovery/NBM success. Keep partner owners aligned on the next executive move.",
+                "action": "Keep partner owners aligned to the next executive action and record whether the partner route helped the booking.",
                 "link": url_for("view_account", account_id=account["id"])
             })
 
@@ -3388,6 +3419,7 @@ def build_dashboard_response(connection):
                     "severity": "medium",
                     "title": f"{account['account_name']} has had no outreach for {days_since_outreach} days",
                     "message": "This account may be going cold. Add a relevant touchpoint or next action.",
+                    "action": "Restart with an executive-facing touchpoint or partner-backed route rather than a generic follow-up.",
                     "link": url_for("view_account", account_id=account["id"])
                 })
 
@@ -3422,6 +3454,16 @@ def build_dashboard_response(connection):
     execution_insights = deduplicate_execution_insights(
         build_execution_insights(ai_insights, learning_insights)
     )
+    if not execution_insights:
+        execution_insights = [{
+            "source": "AI Insight",
+            "category": "PG Focus",
+            "title": "Build an executive route for PG success",
+            "message": "Add accounts, executive contacts and outreach outcomes so PipeFlow can identify where Discovery and NBM bookings are most likely.",
+            "action": "Start by mapping an executive stakeholder, then record Discovery Booked or NBM Booked outcomes as they happen.",
+            "link": url_for("accounts"),
+            "priority": "medium",
+        }]
     execution_insights = execution_insights[:12]
 
     return render_template(
