@@ -1,8 +1,6 @@
 import sys
 import os
 from pathlib import Path
-import threading
-import webbrowser
 import csv
 import io
 import re
@@ -15,15 +13,16 @@ from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session, abort
+from werkzeug.utils import secure_filename
 from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, user_count
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection
 
 
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.1.1"
 APP_RELEASE_DATE = "2026-06-03"
-APP_BUILD = "2026-06-03-v2.0.1-enterprise-insights-refresh-r1"
+APP_BUILD = "2026-06-03-v2.1.1-enterprise-org-campaign-contact-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -37,6 +36,26 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.1.1",
+        "release_date": "2026-06-03",
+        "title": "Enterprise outreach contact filtering and campaign scheduling fixes",
+        "new": [],
+        "enhanced": [
+            "Preserved PipeFlow PG Manager branding for the hosted enterprise build.",
+            "Enhanced campaign scheduling so VITO is the first touch per contact and later steps can vary based on learned successful activity patterns.",
+            "Enhanced BMC Relationship with the Lead value everywhere the shared relationship dropdown is used.",
+            "Enhanced account pages with a contact table showing uploaded photos and linked contact names.",
+            "Enhanced partner selection on account pages with persistent checkboxes and selected partner tiles.",
+            "Enhanced contact records so photos can be uploaded or replaced, viewed on contact/account/org chart surfaces and printed in a visual contact sheet.",
+        ],
+        "fixed": [
+            "Fixed Outreach creation and edit forms so the contact picker only shows contacts associated to the selected account.",
+            "Fixed Campaign Builder contact selection so only contacts associated to the selected account are visible and selectable.",
+            "Fixed campaign generation so tasks created on the submit date are not scheduled earlier than the campaign submit time.",
+            "Fixed dashboard metric cards so command-centre values render as zero rather than blank if a refresh path returns an empty value.",
+        ],
+    },
     {
         "version": "2.0.1",
         "release_date": "2026-06-03",
@@ -674,6 +693,19 @@ def redirect_with_query(target, **params):
     return redirect(urlunparse(("", "", parsed.path, parsed.params, urlencode(query_items), parsed.fragment)))
 
 
+def save_contact_photo(upload, existing_photo=""):
+    if not upload or not upload.filename:
+        return existing_photo or ""
+    extension = Path(upload.filename).suffix.lower()
+    if extension not in {".png", ".jpg", ".jpeg"}:
+        return existing_photo or ""
+    filename = secure_filename(f"{secrets.token_hex(12)}{extension}")
+    photo_dir = Path(resource_path("static")) / "contact_photos"
+    photo_dir.mkdir(parents=True, exist_ok=True)
+    upload.save(photo_dir / filename)
+    return url_for("static", filename=f"contact_photos/{filename}")
+
+
 def rate_limit_key(prefix, identifier):
     return f"{prefix}:{request.remote_addr or 'unknown'}:{(identifier or '').strip().lower()}"
 
@@ -930,7 +962,7 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "Release notes show latest to earliest.",
             "Open a release to review New, Enhanced and Fixed changes.",
-            "Version 2.0.1 includes the refreshed overdue insight calculation, current user guidance and updated deployment version metadata.",
+            "Version 2.1.1 includes enterprise-only packaging, account-scoped outreach contacts, campaign scheduling fixes and refreshed command-centre safeguards.",
         ],
     },
     "user_guide": {
@@ -2275,12 +2307,13 @@ def next_working_date(action_date, campaign_start, campaign_end, profile=None, n
     return action_date
 
 
-def available_campaign_time(action_date, preferred_time, profile=None, reserved_slots=None):
+def available_campaign_time(action_date, preferred_time, profile=None, reserved_slots=None, earliest_time=None):
     reserved_slots = reserved_slots or set()
     start_time = parse_time_value(profile["work_day_start"] if profile and profile["work_day_start"] else "", "09:00")
     end_time = parse_time_value(profile["work_day_end"] if profile and profile["work_day_end"] else "", "17:00")
     preferred = parse_time_value(preferred_time, "09:00")
-    current_dt = datetime.combine(action_date, max(start_time, min(preferred, end_time)))
+    earliest = earliest_time if earliest_time else start_time
+    current_dt = datetime.combine(action_date, max(start_time, earliest, min(preferred, end_time)))
     end_dt = datetime.combine(action_date, end_time)
     while current_dt <= end_dt:
         slot = (action_date.isoformat(), current_dt.strftime("%H:%M"))
@@ -2288,13 +2321,13 @@ def available_campaign_time(action_date, preferred_time, profile=None, reserved_
             reserved_slots.add(slot)
             return current_dt.strftime("%H:%M")
         current_dt += timedelta(minutes=15)
-    fallback = datetime.combine(action_date, start_time)
+    fallback = datetime.combine(action_date, max(start_time, earliest))
     slot = (action_date.isoformat(), fallback.strftime("%H:%M"))
     reserved_slots.add(slot)
     return fallback.strftime("%H:%M")
 
 
-def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per_week, templates=None, profile=None, reserved_slots=None, non_working_blocks=None):
+def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per_week, templates=None, profile=None, reserved_slots=None, non_working_blocks=None, submitted_at=None):
     templates = templates or campaign_step_templates()
     total_tasks = max(1, int(total_tasks or 1))
     times_per_week = max(1, min(int(times_per_week or 1), 7))
@@ -2319,15 +2352,22 @@ def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per
         if index == 0:
             template = dict(initial_vito_template)
         else:
-            template = dict(templates[index % len(templates)])
-            if template.get("activity_type") in ("VITO", "Email"):
+            template = dict(templates[(index - 1) % len(templates)])
+            if template.get("activity_type") == "VITO":
                 template["campaign"] = "Follow-up"
                 template["activity_type"] = "Follow-up"
                 template["subject_prefix"] = "Follow-up email"
                 template["next_action"] = "Send follow-up email"
                 template["time"] = template.get("time") or "09:00"
         template["action_date"] = action_date
-        template["time"] = available_campaign_time(action_date, template.get("time", "09:00"), profile, reserved_slots)
+        earliest_time = submitted_at.time() if submitted_at and action_date == submitted_at.date() else None
+        template["time"] = available_campaign_time(
+            action_date,
+            template.get("time", "09:00"),
+            profile,
+            reserved_slots,
+            earliest_time=earliest_time,
+        )
         template["times_per_week"] = times_per_week
         schedule.append(template)
 
@@ -6107,17 +6147,19 @@ def contacts():
 def add_contact():
     if request.method == "POST":
         connection = get_db_connection()
+        photo_path = save_contact_photo(request.files.get("photo"))
         cursor = connection.execute("""
             INSERT INTO contacts (
-                account_id, category, name, job_title, org_dept, responsibilities,
+                account_id, category, photo, name, job_title, org_dept, responsibilities,
                 email, phone, location, linkedin, bmc_relationship, characteristics,
                 background, personal_interests, personal_win, education,
                 social_media, additional_notes, status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             request.form.get("account_id"),
             request.form.get("category"),
+            photo_path,
             request.form.get("name"),
             request.form.get("job_title"),
             request.form.get("org_dept"),
@@ -6145,6 +6187,7 @@ def add_contact():
             "org_dept": request.form.get("org_dept"),
             "email": request.form.get("email"),
             "phone": request.form.get("phone"),
+            "photo": photo_path,
             "status": request.form.get("status") or "Active",
             "bmc_relationship": request.form.get("bmc_relationship"),
         })
@@ -6192,6 +6235,21 @@ def view_contact(contact_id):
     )
 
 
+@app.route("/contacts/<int:contact_id>/print")
+def print_contact(contact_id):
+    connection = get_db_connection()
+    contact = connection.execute("""
+        SELECT contacts.*, accounts.account_name, accounts.account_tier
+        FROM contacts
+        LEFT JOIN accounts ON contacts.account_id = accounts.id
+        WHERE contacts.id = ?
+    """, (contact_id,)).fetchone()
+    connection.close()
+    if not contact:
+        return redirect(url_for("contacts", error="The selected contact could not be found."))
+    return render_template("print_contact.html", contact=contact)
+
+
 @app.route("/contacts/<int:contact_id>/timeline/add", methods=("POST",))
 def add_contact_timeline(contact_id):
     connection = get_db_connection()
@@ -6225,9 +6283,11 @@ def edit_contact(contact_id):
     """).fetchall()
 
     if request.method == "POST":
+        photo_path = save_contact_photo(request.files.get("photo"), contact["photo"] if "photo" in contact.keys() else "")
         new_values = {
             "account_id": request.form.get("account_id"),
             "category": request.form.get("category"),
+            "photo": photo_path,
             "name": request.form.get("name"),
             "job_title": request.form.get("job_title"),
             "org_dept": request.form.get("org_dept"),
@@ -6250,6 +6310,7 @@ def edit_contact(contact_id):
         labels = {
             "account_id": "Account",
             "category": "Category",
+            "photo": "Photo",
             "name": "Name",
             "job_title": "Job title",
             "org_dept": "Org / Dept",
@@ -6275,6 +6336,7 @@ def edit_contact(contact_id):
             UPDATE contacts
             SET account_id = ?,
                 category = ?,
+                photo = ?,
                 name = ?,
                 job_title = ?,
                 org_dept = ?,
@@ -6297,6 +6359,7 @@ def edit_contact(contact_id):
         """, (
             new_values["account_id"],
             new_values["category"],
+            new_values["photo"],
             new_values["name"],
             new_values["job_title"],
             new_values["org_dept"],
@@ -6767,6 +6830,7 @@ def campaign_builder():
                     for row in reserved_rows
                     if row["next_action_date"]
                 }
+                submitted_at = current_app_datetime()
 
                 for contact in contacts:
                     for step in build_campaign_schedule(
@@ -6777,7 +6841,8 @@ def campaign_builder():
                         schedule_templates,
                         profile=profile,
                         reserved_slots=reserved_slots,
-                        non_working_blocks=non_working_blocks
+                        non_working_blocks=non_working_blocks,
+                        submitted_at=submitted_at
                     ):
                         action_date = step["action_date"]
                         subject = f"{step['subject_prefix']}: {sales_play}"
@@ -9824,11 +9889,5 @@ def export_outreach():
     return response
 
 
-def open_browser():
-    webbrowser.open_new("http://127.0.0.1:5000")
-
-
 if __name__ == "__main__":
-    if os.environ.get("PIPEFLOW_NO_BROWSER") != "1":
-        threading.Timer(1.5, open_browser).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")), debug=False)

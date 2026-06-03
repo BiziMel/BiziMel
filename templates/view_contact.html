@@ -8,6 +8,7 @@
 
     <div class="button-group">
         <a href="{{ url_for('contacts') }}" class="btn btn-secondary">Back to Contacts</a>
+        <a href="{{ url_for('print_contact', contact_id=contact.id) }}" target="_blank" class="btn btn-secondary">Print Contact</a>
         <a href="{{ url_for('edit_contact', contact_id=contact.id) }}" class="btn btn-primary">Edit Contact</a>
     </div>
 </div>
@@ -15,6 +16,12 @@
 
 <div class="detail-card">
     <h2>Contact Details</h2>
+
+    {% if contact.photo %}
+        <div class="contact-photo-preview">
+            <img src="{{ contact.photo }}" alt="{{ contact.name }}">
+        </div>
+    {% endif %}
 
     <p><strong>Account:</strong> {{ contact.account_name }}</p>
     <p>

@@ -36,7 +36,6 @@ gunicorn app:app
 Required environment variables:
 
 ```text
-PIPEFLOW_NO_BROWSER=1
 PIPEFLOW_SECRET_KEY=<long random secret>
 DATABASE_URL=<Supabase session pooler connection string>
 ```
@@ -79,7 +78,7 @@ If it shows `temporary_sqlite`, Render is not receiving `DATABASE_URL`.
 
 ```bash
 python3 -m pip install -r requirements.txt
-PIPEFLOW_NO_BROWSER=1 PORT=5070 python3 app.py
+PORT=5070 python3 app.py
 ```
 
 Open:

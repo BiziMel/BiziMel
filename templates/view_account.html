@@ -180,30 +180,33 @@
     </div>
 
     {% if account_contacts %}
-        <div class="contact-card-grid">
-            {% for contact in account_contacts %}
-                <div class="contact-summary-card">
-                    <div>
-                        <strong>{{ contact.name }}</strong>
-                        <p>{{ contact.job_title or "No job title" }}</p>
-                        <p class="muted">{{ contact.category or "No category" }}</p>
-                        <p class="muted">
-                            {% if account["account_tier"] %}
-                                Account Tier {{ account["account_tier"] }}
-                            {% else %}
-                                Account tier not set
-                            {% endif %}
-                        </p>
-                    </div>
-
-                    <div class="contact-summary-actions">
-                        <span class="status-pill">{{ contact.bmc_relationship or "No relationship" }}</span>
-                        <a href="{{ url_for('view_contact', contact_id=contact.id) }}" class="btn btn-secondary">
-                            Open
-                        </a>
-                    </div>
-                </div>
-            {% endfor %}
+        <div class="table-container">
+            <table class="report-table account-contact-table">
+                <thead>
+                    <tr>
+                        <th>Photo</th>
+                        <th>Name</th>
+                        <th>Title</th>
+                        <th>Category</th>
+                        <th>Relationship</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for contact in account_contacts %}
+                        <tr>
+                            <td>
+                                {% if contact.photo %}
+                                    <img src="{{ contact.photo }}" alt="{{ contact.name }}" class="contact-table-photo">
+                                {% endif %}
+                            </td>
+                            <td><a href="{{ url_for('view_contact', contact_id=contact.id) }}">{{ contact.name }}</a></td>
+                            <td>{{ contact.job_title or "" }}</td>
+                            <td>{{ contact.category or "" }}</td>
+                            <td>{{ contact.bmc_relationship or "" }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     {% else %}
         <p>No contacts linked to this account yet.</p>
@@ -230,12 +233,16 @@
 
         <div class="form-grid">
             <div class="form-group full-width">
-                <label for="partner_ids">Partner Organisations</label>
-                <select id="partner_ids" name="partner_ids" multiple size="6">
+                <label>Partner Organisations</label>
+                <div class="partner-checkbox-panel">
                     {% for partner in partner_options %}
-                        <option value="{{ partner.id }}">{{ partner.partner_name }}</option>
+                        <label class="partner-checkbox-option">
+                            <input type="checkbox" name="partner_ids" value="{{ partner.id }}" data-partner-name="{{ partner.partner_name }}">
+                            <span>{{ partner.partner_name }}{% if partner.partner_type %} - {{ partner.partner_type }}{% endif %}</span>
+                        </label>
                     {% endfor %}
-                </select>
+                </div>
+                <div class="partner-selected-tiles" id="partner_selected_tiles"></div>
                 <p class="field-help">Select one or more existing partner accounts to associate with this account.</p>
             </div>
 
@@ -461,5 +468,24 @@
         <p>No timeline entries yet.</p>
     {% endif %}
 </div>
+
+<script>
+    const partnerCheckboxes = Array.from(document.querySelectorAll(".partner-checkbox-option input[type='checkbox']"));
+    const partnerSelectedTiles = document.getElementById("partner_selected_tiles");
+
+    function renderSelectedPartnerTiles() {
+        if (!partnerSelectedTiles) return;
+        const selected = partnerCheckboxes.filter((checkbox) => checkbox.checked);
+        partnerSelectedTiles.innerHTML = selected.map((checkbox) => {
+            const name = checkbox.dataset.partnerName || "Selected partner";
+            return `<span class="partner-selected-tile">${name}</span>`;
+        }).join("");
+    }
+
+    partnerCheckboxes.forEach((checkbox) => {
+        checkbox.addEventListener("change", renderSelectedPartnerTiles);
+    });
+    renderSelectedPartnerTiles();
+</script>
 
 {% endblock %}

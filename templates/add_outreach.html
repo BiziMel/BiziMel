@@ -78,6 +78,7 @@
                         Select contacts
                     </button>
                     <div class="checkbox-select-panel" id="contact_picker_panel" hidden>
+                    <div class="checkbox-select-empty" id="contact_picker_empty" hidden>Select an account to show its contacts.</div>
                     {% for contact in contacts %}
                         {% set contact_available = selected_account_id and contact.account_id|string == selected_account_id|string %}
                         <label class="checkbox-select-option" data-contact-option data-account-id="{{ contact.account_id or '' }}" {% if not contact_available %}hidden{% endif %}>
@@ -90,10 +91,10 @@
                                    data-linkedin="{{ contact.linkedin or '' }}"
                                    data-job-title="{{ contact.job_title or '' }}"
                                    data-partner-name=""
-                                   data-contact-label="{{ contact.name }}{% if contact.account_name %} - {{ contact.account_name }}{% endif %}"
+                                   data-contact-label="{{ contact.name }}"
                                    {% if not contact_available %}disabled{% endif %}
                                    {% if contact.id|string in selected_contact_values %}checked{% endif %}>
-                            <span>{{ contact.name }}{% if contact.account_name %} - {{ contact.account_name }}{% endif %}</span>
+                            <span>{{ contact.name }}{% if contact.job_title %} - {{ contact.job_title }}{% endif %}</span>
                         </label>
                     {% endfor %}
                     {% for partner_contact in partner_contacts %}
@@ -108,10 +109,10 @@
                                    data-linkedin="{{ partner_contact.linkedin or '' }}"
                                    data-job-title="{{ partner_contact.job_title or '' }}"
                                    data-partner-name="{{ partner_contact.partner_name or '' }}"
-                                   data-contact-label="{{ partner_contact.name }} - Partner: {{ partner_contact.partner_name }}{% if partner_contact.account_name %} - {{ partner_contact.account_name }}{% endif %}"
+                                   data-contact-label="{{ partner_contact.name }} - Partner: {{ partner_contact.partner_name }}"
                                    {% if not partner_contact_available %}disabled{% endif %}
                                    {% if 'partner_contact:' ~ partner_contact.id|string in selected_contact_values %}checked{% endif %}>
-                            <span>{{ partner_contact.name }} - Partner: {{ partner_contact.partner_name }}{% if partner_contact.account_name %} - {{ partner_contact.account_name }}{% endif %}</span>
+                            <span>{{ partner_contact.name }} - Partner: {{ partner_contact.partner_name }}</span>
                         </label>
                     {% endfor %}
                     </div>
@@ -267,6 +268,7 @@
         const contactPanel = document.getElementById("contact_picker_panel");
         const contactOptions = Array.from(document.querySelectorAll("[data-contact-option]"));
         const contactInputs = contactOptions.map((option) => option.querySelector("input[name='contact_ids']")).filter(Boolean);
+        const contactEmpty = document.getElementById("contact_picker_empty");
         const activityTypeSelect = document.getElementById("activity_type");
         const salesPlayDatalist = document.getElementById("sales_play_options");
         const allSalesPlayOptions = salesPlayDatalist ? Array.from(salesPlayDatalist.options).map((option) => ({
@@ -311,7 +313,9 @@
             }
             if (!contactSystemFields) return;
             if (!selected.length) {
-                contactSystemFields.textContent = "Select one or more contacts to show phone, email and LinkedIn.";
+                contactSystemFields.textContent = accountSelect.value
+                    ? "Select one or more contacts from the selected account to show phone, email and LinkedIn."
+                    : "Select an account first to show its contacts.";
                 return;
             }
             contactSystemFields.innerHTML = selected.map((contact) => {
@@ -332,11 +336,15 @@
 
         function applyContactFilter() {
             const selectedAccountId = accountSelect.value;
+            let visibleCount = 0;
 
             contactOptions.forEach((option) => {
                 const input = option.querySelector("input[name='contact_ids']");
                 const belongsToSelectedAccount = selectedAccountId && option.dataset.accountId === selectedAccountId;
                 option.hidden = !belongsToSelectedAccount;
+                if (belongsToSelectedAccount) {
+                    visibleCount += 1;
+                }
                 if (input) {
                     input.disabled = !belongsToSelectedAccount;
                     if (input.checked && !belongsToSelectedAccount) {
@@ -346,6 +354,12 @@
             });
 
             contactToggle.disabled = !selectedAccountId;
+            if (contactEmpty) {
+                contactEmpty.hidden = Boolean(selectedAccountId && visibleCount);
+                contactEmpty.textContent = selectedAccountId
+                    ? "No contacts are associated to this account yet."
+                    : "Select an account to show its contacts.";
+            }
             if (!selectedAccountId) {
                 setContactPanelOpen(false);
             }

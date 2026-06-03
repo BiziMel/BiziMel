@@ -192,6 +192,7 @@
                         </tbody>
                     </table>
                 </div>
+                <p class="campaign-contact-empty" id="campaign_contact_empty" hidden>Select an account to show its contacts.</p>
             {% else %}
                 <p>No contacts available yet.</p>
             {% endif %}
@@ -210,6 +211,7 @@
     const campaignEndInput = document.getElementById("campaign_end_date");
     const accountInput = document.getElementById("account_id");
     const contactOptions = Array.from(document.querySelectorAll(".campaign-contact-option"));
+    const campaignContactEmpty = document.getElementById("campaign_contact_empty");
     const salesPlayDatalist = document.getElementById("sales_play_options");
     const allSalesPlayOptions = salesPlayDatalist ? Array.from(salesPlayDatalist.options).map((option) => ({
         value: option.value,
@@ -266,11 +268,15 @@
     function filterContactsForAccount() {
         if (!accountInput) return;
         const selectedAccountId = accountInput.value;
+        let visibleCount = 0;
         contactOptions.forEach((option) => {
             const checkbox = option.querySelector("input[type='checkbox']");
             const openButton = option.querySelector(".campaign-contact-open-button");
             const belongsToSelectedAccount = checkbox && checkbox.dataset.accountId === selectedAccountId;
             option.hidden = !belongsToSelectedAccount;
+            if (belongsToSelectedAccount) {
+                visibleCount += 1;
+            }
             option.classList.toggle("campaign-contact-available", belongsToSelectedAccount);
             option.classList.toggle("campaign-contact-unavailable", !belongsToSelectedAccount);
             if (checkbox) {
@@ -283,6 +289,12 @@
                 openButton.hidden = !(belongsToSelectedAccount && checkbox && checkbox.checked);
             }
         });
+        if (campaignContactEmpty) {
+            campaignContactEmpty.hidden = Boolean(selectedAccountId && visibleCount);
+            campaignContactEmpty.textContent = selectedAccountId
+                ? "No contacts are associated to this account yet."
+                : "Select an account to show its contacts.";
+        }
         if (salesPlayDatalist) {
             salesPlayDatalist.innerHTML = "";
             allSalesPlayOptions

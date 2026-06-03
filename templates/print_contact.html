@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Print Contact | {{ contact.name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="print-page">
+    <main class="print-contact-sheet">
+        <header class="print-contact-header">
+            {% if contact.photo %}
+                <img src="{{ contact.photo }}" alt="{{ contact.name }}">
+            {% endif %}
+            <div>
+                <h1>{{ contact.name }}</h1>
+                {% if contact.job_title %}<p>{{ contact.job_title }}</p>{% endif %}
+                {% if contact.account_name %}<p>{{ contact.account_name }}</p>{% endif %}
+            </div>
+        </header>
+
+        <section class="print-contact-grid">
+            {% set fields = [
+                ("Account Tier", "Tier " ~ contact.account_tier if contact.account_tier else ""),
+                ("Category", contact.category),
+                ("Org / Dept", contact.org_dept),
+                ("Email", contact.email),
+                ("Phone", contact.phone),
+                ("Location", contact.location),
+                ("LinkedIn", contact.linkedin),
+                ("BMC Relationship", contact.bmc_relationship),
+                ("Responsibilities", contact.responsibilities),
+                ("Characteristics", contact.characteristics),
+                ("Background", contact.background),
+                ("Personal Interests", contact.personal_interests),
+                ("Personal Win", contact.personal_win),
+                ("Education", contact.education),
+                ("Social Media", contact.social_media),
+                ("Additional Notes", contact.additional_notes)
+            ] %}
+            {% for label, value in fields %}
+                {% if value %}
+                    <article>
+                        <strong>{{ label }}</strong>
+                        <p>{{ value }}</p>
+                    </article>
+                {% endif %}
+            {% endfor %}
+        </section>
+    </main>
+    <script>
+        window.addEventListener("load", () => window.print());
+    </script>
+</body>
+</html>

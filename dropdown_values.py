@@ -65,6 +65,7 @@ DROPDOWN_VALUES = {
     "bmc_relationships": [
         "Champion",
         "Coach",
+        "Lead",
         "Influencer",
         "Executive Buyer",
         "Executive Assistant",

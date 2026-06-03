@@ -219,6 +219,34 @@ def main():
 
         connection = sqlite3.connect(db_path)
         connection.row_factory = sqlite3.Row
+        other_account_id = connection.execute(
+            """
+            INSERT INTO accounts (
+                account_name, pg_bible_order, account_tier, industry, business_unit,
+                country, city, website, pipeline_target, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "Smoke Other Account",
+                2,
+                "2",
+                "Technology",
+                "BMC",
+                "United Kingdom",
+                "London",
+                "https://other.example.com",
+                250000,
+                "Smoke test other account",
+            ),
+        ).lastrowid
+        other_contact_id = connection.execute(
+            """
+            INSERT INTO contacts (account_id, category, name, job_title, email, phone, location)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (other_account_id, "Technical", "Smoke Other Contact", "Architect", "other@example.com", "55555", "London"),
+        ).lastrowid
+        connection.commit()
         multi_outreach = connection.execute(
             "SELECT * FROM outreach WHERE subject = ?",
             ("Smoke multi-contact outreach",),
@@ -232,6 +260,35 @@ def main():
         ).fetchone()[0]
         connection.close()
         assert_ok(recipient_count == 2, "multi-contact outreach recipients were not saved")
+
+        response = client.post(
+            "/outreach/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "fy": "27",
+                "quarter": "Q1",
+                "account_id": str(account_id),
+                "sales_play": "Smoke Mismatched Contact Play",
+                "contact_ids": [str(other_contact_id)],
+                "task_status": "Not Started",
+                "assigned_to": "Smoke Test Admin",
+                "activity_type": "Call",
+                "activity_date": "2026-05-07",
+                "activity_time": "09:00",
+                "next_action_date": "2026-05-08",
+                "next_action_time": "10:00",
+                "subject": "Smoke mismatched-contact outreach",
+                "outcome": "No Response Yet",
+                "next_action": "",
+            },
+            follow_redirects=True,
+        )
+        mismatch_html = response.get_data(as_text=True)
+        assert_ok(
+            response.status_code == 200
+            and "Select a contact or partner contact that belongs to the selected account." in mismatch_html,
+            "mismatched account/contact outreach was not rejected",
+        )
 
         response = client.get(f"/outreach/{multi_outreach['id']}/edit")
         edit_html = response.get_data(as_text=True)

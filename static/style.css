@@ -1197,6 +1197,38 @@ a:hover {
     gap: 10px;
 }
 
+.account-contact-table td,
+.account-contact-table th {
+    vertical-align: middle;
+}
+
+.contact-table-photo {
+    display: block;
+    width: 42px;
+    height: 42px;
+    border-radius: 6px;
+    object-fit: cover;
+    background: #e2e8f0;
+}
+
+.contact-photo-preview {
+    display: inline-grid;
+    place-items: center;
+    width: 112px;
+    height: 112px;
+    margin: 6px 0 12px;
+    border: 1px solid #dbe3ef;
+    border-radius: 8px;
+    background: #f8fafc;
+    overflow: hidden;
+}
+
+.contact-photo-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
 .partner-contact-card {
     align-items: flex-start;
     flex-direction: column;
@@ -1226,6 +1258,52 @@ a:hover {
 
 .partner-form {
     margin-bottom: 22px;
+}
+
+.partner-checkbox-panel {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 8px;
+    max-height: 280px;
+    overflow-y: auto;
+    padding: 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.partner-checkbox-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px;
+    border-radius: 6px;
+    background: #f8fafc;
+    color: #334155;
+    font-size: 13px;
+    line-height: 1.35;
+}
+
+.partner-checkbox-option input {
+    width: auto;
+    margin-top: 2px;
+}
+
+.partner-selected-tiles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.partner-selected-tile {
+    padding: 6px 9px;
+    border: 1px solid #bfdbfe;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1e3a8a;
+    font-size: 12px;
+    font-weight: 800;
 }
 
 .partner-card-grid {
@@ -4078,6 +4156,17 @@ body {
     color: #64748b;
 }
 
+.campaign-contact-empty {
+    margin: 12px 0 0;
+    padding: 12px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 13px;
+    font-weight: 700;
+}
+
 .outreach-main-row.rag-green {
     background: #f0fdf4;
 }
@@ -4714,6 +4803,13 @@ body {
     margin-top: 2px;
 }
 
+.checkbox-select-empty {
+    padding: 10px;
+    color: #475569;
+    font-size: 13px;
+    font-weight: 700;
+}
+
 .selected-contact-frame {
     display: grid;
     gap: 8px;
@@ -4744,6 +4840,63 @@ body {
 @media (max-width: 1100px) {
     .selected-contact-row {
         grid-template-columns: 1fr 1fr;
+    }
+}
+
+.print-page {
+    background: #ffffff;
+    color: #111827;
+}
+
+.print-contact-sheet {
+    width: min(100%, 920px);
+    margin: 0 auto;
+    padding: 28px;
+}
+
+.print-contact-header {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding-bottom: 18px;
+    border-bottom: 2px solid #111827;
+}
+
+.print-contact-header img {
+    width: 112px;
+    height: 112px;
+    border-radius: 8px;
+    object-fit: cover;
+}
+
+.print-contact-header h1,
+.print-contact-header p {
+    margin: 0 0 6px;
+}
+
+.print-contact-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 18px;
+}
+
+.print-contact-grid article {
+    break-inside: avoid;
+    padding: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+}
+
+.print-contact-grid strong,
+.print-contact-grid p {
+    overflow-wrap: anywhere;
+}
+
+@media print {
+    .print-contact-sheet {
+        width: 100%;
+        padding: 0;
     }
 }
 

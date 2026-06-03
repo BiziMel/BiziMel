@@ -32,7 +32,7 @@
             <div class="section-header">
                 <div>
                     <h2>This Week Command Centre</h2>
-                    <p>{{ this_week_start }} to {{ this_week_end }}. Your current execution position and open follow-up workload.</p>
+                    <p>{{ this_week_start|default("This week", true) }} to {{ this_week_end|default("This week", true) }}. Your current execution position and open follow-up workload.</p>
                 </div>
             </div>
 
@@ -40,32 +40,32 @@
                 <a href="{{ url_for('outreach') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
                         <h3>Due This Week</h3>
-                        <p class="metric-number">{{ this_week_due }}</p>
+                        <p class="metric-number">{{ this_week_due|default(0, true) }}</p>
                     </div>
                 </a>
                 <a href="{{ url_for('reports') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
                         <h3>Closed This Week</h3>
-                        <p class="metric-number">{{ this_week_completed }}</p>
+                        <p class="metric-number">{{ this_week_completed|default(0, true) }}</p>
                     </div>
                 </a>
                 <a href="{{ url_for('outreach') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card command-risk-card">
                         <h3>Overdue Actions</h3>
-                        <p class="metric-number">{{ this_week_overdue }}</p>
+                        <p class="metric-number">{{ this_week_overdue|default(0, true) }}</p>
                     </div>
                 </a>
                 <a href="{{ url_for('accounts') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
                         <h3>Untouched Accounts</h3>
-                        <p class="metric-number">{{ this_week_untouched_accounts }}</p>
+                        <p class="metric-number">{{ this_week_untouched_accounts|default(0, true) }}</p>
                         <p class="metric-subtext">No active campaign or outreach tasks</p>
                     </div>
                 </a>
                 <a href="{{ url_for('outreach') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
                         <h3>PG Success This Week</h3>
-                        <p class="metric-number">{{ this_week_meetings_booked }}</p>
+                        <p class="metric-number">{{ this_week_meetings_booked|default(0, true) }}</p>
                     </div>
                 </a>
                 <a href="{{ url_for('accounts') }}" class="metric-card-link">
@@ -78,25 +78,25 @@
                 <a href="{{ url_for('accounts') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
                         <h3>Total Accounts</h3>
-                        <p class="metric-number">{{ total_accounts }}</p>
+                        <p class="metric-number">{{ total_accounts|default(0, true) }}</p>
                     </div>
                 </a>
                 <a href="{{ url_for('contacts') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
                         <h3>Total Contacts</h3>
-                        <p class="metric-number">{{ total_contacts }}</p>
+                        <p class="metric-number">{{ total_contacts|default(0, true) }}</p>
                     </div>
                 </a>
                 <a href="{{ url_for('outreach') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
                         <h3>Total Outreach</h3>
-                        <p class="metric-number">{{ total_outreach }}</p>
+                        <p class="metric-number">{{ total_outreach|default(0, true) }}</p>
                     </div>
                 </a>
                 <a href="{{ url_for('outreach') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
                         <h3>Follow-ups Due</h3>
-                        <p class="metric-number">{{ follow_ups_due }}</p>
+                        <p class="metric-number">{{ follow_ups_due|default(0, true) }}</p>
                         <p class="metric-subtext">Overdue and next 7 days</p>
                     </div>
                 </a>
