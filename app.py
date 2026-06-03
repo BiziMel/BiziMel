@@ -21,9 +21,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection
 
 
-APP_VERSION = "2.0"
-APP_RELEASE_DATE = "2026-06-02"
-APP_BUILD = "2026-06-02-v2.0-enterprise-regression-r8"
+APP_VERSION = "2.0.1"
+APP_RELEASE_DATE = "2026-06-03"
+APP_BUILD = "2026-06-03-v2.0.1-enterprise-insights-refresh-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -37,6 +37,23 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.0.1",
+        "release_date": "2026-06-03",
+        "title": "Accurate refreshed AI insights and current user guidance",
+        "new": [
+            "Added a technical review note comparing the current 2.0.1 implementation with the previously documented 1.5.2 solution design.",
+        ],
+        "enhanced": [
+            "Enhanced dashboard, account, task-report and campaign-learning overdue calculations so every page refresh recalculates from current data and the configured application timezone.",
+            "Enhanced the User Guide so dashboard, Outreach Tasks, Reports and Release Notes guidance reflects the 2.0.1 workflow.",
+            "Enhanced version metadata, deployment health output and deployment checklist references for the 2.0.1 release.",
+        ],
+        "fixed": [
+            "Fixed AI Insights showing a different number of overdue follow-ups than the dashboard Overdue Actions card by using one shared overdue action rule.",
+            "Fixed cancelled outreach tasks being counted as active overdue work in several dashboard and reporting queries.",
+        ],
+    },
     {
         "version": "2.0",
         "release_date": "2026-05-29",
@@ -299,6 +316,8 @@ USER_GUIDE_SECTIONS = [
         ],
         "steps": [
             "Review the command centre metrics for this week.",
+            "Use Overdue Actions to see open outreach tasks whose Activity Due Date and due time have passed.",
+            "Use Follow-ups Due to see open follow-ups due through the next 7 days, including overdue work.",
             "Use the pipeline target card to see total PG target ACV across your accounts.",
             "Work active outreach tasks directly from the dashboard task table.",
             "Use Execution Insights to decide which account, campaign or sales play needs attention next.",
@@ -306,7 +325,9 @@ USER_GUIDE_SECTIONS = [
         ],
         "tips": [
             "Untouched accounts are accounts with no active campaign or outreach tasks.",
-            "Closed, completed and cancelled work is removed from active execution views by default.",
+            "Closed, completed and cancelled work is removed from active execution views, overdue counts and AI Insights.",
+            "AI Insights are recalculated on every dashboard refresh from current account, contact, partner, outreach, outcome and due-date data.",
+            "Overdue logic is time-aware. A blank due time is treated as end of day.",
             "Pipeline generated value should be treated as a source-system metric when it belongs in SFDC rather than PipeFlow.",
         ],
     },
@@ -379,6 +400,7 @@ USER_GUIDE_SECTIONS = [
         ],
         "tips": [
             "The due date is the Activity Due Date, based on the next action date.",
+            "Due-date colouring is time-aware: future work is green, work due today is amber, and overdue open work is red after the due date and time have passed.",
             "Tasks can only be assigned to users who have access to the related account.",
             "Closed, completed and cancelled outreach is hidden unless you explicitly filter for it.",
             "If a user is missing from the assignment dropdown, check that the account has been shared with them first and that they belong to the same company tenant.",
@@ -477,6 +499,7 @@ USER_GUIDE_SECTIONS = [
             "Reports reflect the same fields used across account, contact, outreach and task views.",
             "PG Bible uses account target and ordering fields configured in the account form.",
             "Task Reports include SLA by assignee so timeliness is measured against the person currently assigned.",
+            "Task Report overdue counts use the same time-aware open-task rule as the Dashboard and AI Insights.",
         ],
     },
     {
@@ -678,7 +701,7 @@ PAGE_INSTRUCTIONS = {
         "title": "How to Use This Page",
         "items": [
             "Start with the command centre metrics to see what needs attention this week.",
-            "Use the task table to update due dates, activity updates and task status without leaving the dashboard.",
+            "Use Overdue Actions and Execution Insights together; both refresh from current open-task due dates and due times.",
             "Review execution insights for suggested next actions across accounts, campaigns and sales plays.",
             "Use the top navigation to move into Outreach Tasks, Accounts, Contacts, Partners, Reports, Profile or Release Notes.",
         ],
@@ -840,7 +863,7 @@ PAGE_INSTRUCTIONS = {
         "title": "Task Reports Guidance",
         "items": [
             "Use SLA by Assignee to see who owns active, overdue and closed tasks.",
-            "Task timeliness is measured against the current assignee.",
+            "Task timeliness is measured against the current assignee using the same time-aware overdue rule as the Dashboard.",
             "Filter by account, status or assignee before exporting.",
         ],
     },
@@ -903,7 +926,7 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "Release notes show latest to earliest.",
             "Open a release to review New, Enhanced and Fixed changes.",
-            "Version changes are only made when the release status is agreed.",
+            "Version 2.0.1 includes the refreshed overdue insight calculation, current user guidance and updated deployment version metadata.",
         ],
     },
     "user_guide": {
@@ -1031,7 +1054,7 @@ def apply_security_headers(response):
 @app.route("/health/version")
 def version_health():
     from db_compat import translate_sql
-    sample = "datetime(next_action_date || ' ' || IFNULL(next_action_time, '00:00')) < datetime('now', '-1 hour')"
+    sample = "datetime(next_action_date || ' ' || COALESCE(NULLIF(next_action_time, ''), '23:59:59')) < datetime(?)"
     lines = [
         f"pipeflow_version={APP_VERSION}",
         f"pipeflow_release_date={APP_RELEASE_DATE}",
@@ -2334,6 +2357,60 @@ def is_closed_task_status(status):
     return (status or "").strip() in CLOSED_TASK_STATUSES
 
 
+def current_app_datetime():
+    return datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+
+
+def app_datetime_key(value=None):
+    value = value or current_app_datetime()
+    return value.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def task_due_datetime(next_action_date, next_action_time):
+    if not next_action_date:
+        return None
+    try:
+        due_date = datetime.strptime(str(next_action_date), "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+    due_time_value = parse_due_time(next_action_time)
+    if due_time_value is None:
+        return None
+    return datetime.combine(due_date, due_time_value)
+
+
+def is_overdue_task(next_action_date, next_action_time, task_status, now=None):
+    if is_closed_task_status(task_status):
+        return False
+    due_at = task_due_datetime(next_action_date, next_action_time)
+    return bool(due_at and due_at < (now or current_app_datetime()))
+
+
+def open_task_sql(alias="outreach"):
+    placeholders = ",".join("?" for _ in CLOSED_TASK_STATUSES)
+    return f"COALESCE({alias}.task_status, '') NOT IN ({placeholders})"
+
+
+def open_task_params():
+    return tuple(CLOSED_TASK_STATUSES)
+
+
+def overdue_task_sql(alias="outreach"):
+    return (
+        f"{alias}.next_action_date IS NOT NULL "
+        f"AND {alias}.next_action_date != '' "
+        f"AND datetime("
+        f"{alias}.next_action_date || ' ' || "
+        f"COALESCE(NULLIF({alias}.next_action_time, ''), '23:59:59')"
+        f") < datetime(?) "
+        f"AND {open_task_sql(alias)}"
+    )
+
+
+def overdue_task_params(now=None):
+    return (app_datetime_key(now), *open_task_params())
+
+
 def score_learning_row(row):
     return (
         (row["meeting_total"] or 0) * 4
@@ -2473,6 +2550,7 @@ def deduplicate_execution_insights(insights):
 def build_learning_insights(connection):
     positive_placeholders = ",".join("?" for _ in POSITIVE_OUTCOMES)
     negative_placeholders = ",".join("?" for _ in NEGATIVE_OUTCOMES)
+    overdue_predicate = overdue_task_sql("outreach")
     learning_select = f"""
         COUNT(outreach.id) AS total,
         SUM(CASE
@@ -2490,21 +2568,15 @@ def build_learning_insights(connection):
             THEN 1 ELSE 0
         END) AS negative_total,
         SUM(CASE
-            WHEN COALESCE(outreach.task_status, '') IN ('Closed', 'Completed')
+            WHEN COALESCE(outreach.task_status, '') IN ('Closed', 'Completed', 'Cancelled')
             THEN 1 ELSE 0
         END) AS completed_total,
         SUM(CASE
-            WHEN outreach.next_action_date IS NOT NULL
-              AND outreach.next_action_date != ''
-              AND datetime(
-                    outreach.next_action_date || ' ' ||
-                    IFNULL(outreach.next_action_time, '00:00')
-                  ) < datetime('now', '-1 hour')
-              AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
+            WHEN {overdue_predicate}
             THEN 1 ELSE 0
         END) AS overdue_total
     """
-    learning_params = (*POSITIVE_OUTCOMES, *NEGATIVE_OUTCOMES)
+    learning_params = (*POSITIVE_OUTCOMES, *NEGATIVE_OUTCOMES, *overdue_task_params())
     insights = []
 
     sales_play_rows = add_learning_score(connection.execute(f"""
@@ -2774,7 +2846,8 @@ def build_dashboard_response(connection):
         SELECT COALESCE(SUM(pipeline_target), 0)
         FROM accounts
     """).fetchone()[0]
-    today = datetime.now().date()
+    now = current_app_datetime()
+    today = now.date()
     week_start = today - timedelta(days=today.weekday())
     week_end = week_start + timedelta(days=6)
     week_start_key = week_start.isoformat()
@@ -2816,7 +2889,7 @@ def build_dashboard_response(connection):
         if next_action_date and week_start <= next_action_date <= week_end and not task_closed(row):
             this_week_due += 1
 
-        if next_action_date and next_action_date < today and not task_closed(row):
+        if is_overdue_task(row["next_action_date"], row["next_action_time"], row["task_status"], now):
             this_week_overdue += 1
 
         if task_closed(row):
@@ -2828,20 +2901,20 @@ def build_dashboard_response(connection):
             if row["outcome"] == "Meeting Booked" or row["activity_type"] == "Meeting":
                 this_week_meetings_booked += 1
 
-    this_week_untouched_accounts = connection.execute("""
+    this_week_untouched_accounts = connection.execute(f"""
         SELECT COUNT(*)
         FROM accounts
         WHERE NOT EXISTS (
             SELECT 1
             FROM outreach
             WHERE outreach.account_id = accounts.id
-              AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
+              AND {open_task_sql("outreach")}
               AND (
                     (outreach.sales_play IS NOT NULL AND outreach.sales_play != '')
                  OR (outreach.next_action IS NOT NULL AND outreach.next_action != '')
               )
         )
-    """).fetchone()[0]
+    """, open_task_params()).fetchone()[0]
 
     meetings_booked = connection.execute("""
         SELECT COUNT(*) FROM outreach
@@ -2849,13 +2922,13 @@ def build_dashboard_response(connection):
            OR activity_type = 'Meeting'
     """).fetchone()[0]
 
-    follow_ups_due = connection.execute("""
+    follow_ups_due = connection.execute(f"""
         SELECT COUNT(*) FROM outreach
         WHERE next_action_date IS NOT NULL
           AND next_action_date != ''
-          AND date(next_action_date) <= date('now', '+7 days')
-          AND COALESCE(task_status, '') NOT IN ('Closed', 'Completed')
-    """).fetchone()[0]
+          AND date(next_action_date) <= date(?)
+          AND {open_task_sql("outreach")}
+    """, ((today + timedelta(days=7)).isoformat(), *open_task_params())).fetchone()[0]
 
     outreach_by_account = connection.execute("""
         SELECT
@@ -2904,7 +2977,7 @@ def build_dashboard_response(connection):
         LIMIT 5
     """).fetchall()
 
-    dashboard_tasks = connection.execute("""
+    dashboard_tasks = connection.execute(f"""
         SELECT outreach.*, accounts.account_name, accounts.account_tier, contacts.name AS contact_name
         FROM outreach
         LEFT JOIN accounts ON outreach.account_id = accounts.id
@@ -2913,15 +2986,15 @@ def build_dashboard_response(connection):
           AND outreach.next_action != ''
           AND outreach.next_action_date IS NOT NULL
           AND outreach.next_action_date != ''
-          AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
+          AND {open_task_sql("outreach")}
         ORDER BY
-            CASE WHEN date(outreach.next_action_date) < date('now') THEN 0 ELSE 1 END,
+            CASE WHEN {overdue_task_sql("outreach")} THEN 0 ELSE 1 END,
             outreach.next_action_date ASC,
             outreach.next_action_time ASC
         LIMIT 8
-    """).fetchall()
+    """, (*open_task_params(), *overdue_task_params(now))).fetchall()
 
-    account_health_rows = connection.execute("""
+    account_health_rows = connection.execute(f"""
         SELECT 
             accounts.*,
 
@@ -2951,13 +3024,7 @@ def build_dashboard_response(connection):
                 SELECT COUNT(*)
                 FROM outreach
                 WHERE outreach.account_id = accounts.id
-                  AND outreach.next_action_date IS NOT NULL
-                  AND outreach.next_action_date != ''
-                  AND datetime(
-                        outreach.next_action_date || ' ' ||
-                        IFNULL(outreach.next_action_time, '00:00')
-                      ) < datetime('now', '-1 hour')
-                  AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
+                  AND {overdue_task_sql("outreach")}
             ) AS overdue_followups,
 
             (
@@ -2992,7 +3059,7 @@ def build_dashboard_response(connection):
 
         FROM accounts
         ORDER BY accounts.account_name
-    """).fetchall()
+    """, overdue_task_params(now)).fetchall()
 
     needs_attention_accounts = []
     ai_insights = []
@@ -3821,8 +3888,9 @@ def pg_progress():
 def accounts():
     user = current_user()
     connection = get_db_connection()
+    now = current_app_datetime()
 
-    account_rows = connection.execute("""
+    account_rows = connection.execute(f"""
         SELECT 
             accounts.*,
 
@@ -3852,13 +3920,7 @@ def accounts():
                 SELECT COUNT(*)
                 FROM outreach
                 WHERE outreach.account_id = accounts.id
-                  AND outreach.next_action_date IS NOT NULL
-                  AND outreach.next_action_date != ''
-                  AND datetime(
-                        outreach.next_action_date || ' ' ||
-                        IFNULL(outreach.next_action_time, '00:00')
-                      ) < datetime('now', '-1 hour')
-                  AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
+                  AND {overdue_task_sql("outreach")}
             ) AS overdue_followups,
 
             (
@@ -3869,7 +3931,7 @@ def accounts():
 
         FROM accounts
         ORDER BY accounts.account_name
-    """).fetchall()
+    """, overdue_task_params(now)).fetchall()
 
     accounts = []
 
@@ -4472,13 +4534,14 @@ def add_account():
 @app.route("/accounts/<int:account_id>")
 def view_account(account_id):
     connection = get_db_connection()
+    now = current_app_datetime()
 
     account = connection.execute(
         "SELECT * FROM accounts WHERE id = ?",
         (account_id,)
     ).fetchone()
 
-    account_stats = connection.execute("""
+    account_stats = connection.execute(f"""
         SELECT
             (
                 SELECT COUNT(*)
@@ -4506,13 +4569,7 @@ def view_account(account_id):
                 SELECT COUNT(*)
                 FROM outreach
                 WHERE outreach.account_id = accounts.id
-                  AND outreach.next_action_date IS NOT NULL
-                  AND outreach.next_action_date != ''
-                  AND datetime(
-                        outreach.next_action_date || ' ' ||
-                        IFNULL(outreach.next_action_time, '00:00')
-                      ) < datetime('now', '-1 hour')
-                  AND COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed')
+                  AND {overdue_task_sql("outreach")}
             ) AS overdue_followups,
 
             (
@@ -4523,7 +4580,7 @@ def view_account(account_id):
 
         FROM accounts
         WHERE accounts.id = ?
-    """, (account_id,)).fetchone()
+    """, (*overdue_task_params(now), account_id)).fetchone()
 
     account_outreach = connection.execute("""
         SELECT outreach.*, contacts.name AS contact_name
@@ -8780,11 +8837,12 @@ def task_reports():
         return True
 
     tasks = [task for task in all_tasks if include_task(task)]
-    today = datetime.now().date()
+    now = current_app_datetime()
+    today = now.date()
     active_tasks = [task for task in tasks if not is_closed_task_status(normalised_status(task))]
     overdue_tasks = sum(
         1 for task in active_tasks
-        if parse_report_date(task["next_action_date"]) and parse_report_date(task["next_action_date"]) < today
+        if is_overdue_task(task["next_action_date"], task["next_action_time"], task["task_status"], now)
     )
     due_today = sum(
         1 for task in active_tasks
@@ -8825,7 +8883,7 @@ def task_reports():
             assignee_totals[assignee]["closed_tasks"] += 1
         else:
             assignee_totals[assignee]["active_tasks"] += 1
-            if task_date and task_date < today:
+            if is_overdue_task(task["next_action_date"], task["next_action_time"], status, now):
                 assignee_totals[assignee]["overdue_active_tasks"] += 1
 
     tasks_by_status = [
