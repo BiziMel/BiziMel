@@ -20,9 +20,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection
 
 
-APP_VERSION = "2.1.2"
+APP_VERSION = "2.1.3"
 APP_RELEASE_DATE = "2026-06-04"
-APP_BUILD = "2026-06-04-v2.1.2-enterprise-dashboard-org-pg-r1"
+APP_BUILD = "2026-06-04-v2.1.3-enterprise-execution-insights-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -36,6 +36,18 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.1.3",
+        "date": "2026-06-04",
+        "title": "Execution Insights restoration and weekly strategic guidance",
+        "highlights": [
+            "Fixed the Severity 1 dashboard regression where Execution Insights could be replaced by the dashboard refresh fallback message.",
+            "Rebuilt Execution Insights so current accounts, contacts, outreach, overdue work, outcomes and campaign learning generate practical PG guidance.",
+            "Added Weekly Wrap up guidance, refreshed each Friday from the past week's execution and success signals.",
+            "Added Weekly Ahead Focus guidance, refreshed each Monday to direct deliberate PG focus for the week ahead.",
+            "Hardened dashboard insight generation so one learning query cannot blank the full Insights Dashboard.",
+        ],
+    },
     {
         "version": "2.1.2",
         "release_date": "2026-06-04",
@@ -357,6 +369,8 @@ USER_GUIDE_SECTIONS = [
             "Use Follow-ups Due to see open follow-ups due through the next 7 days, including overdue work.",
             "Use PG Success This Week to track Discovery Booked, NBM Booked, Exec Meeting Booked and legacy Meeting Booked outcomes.",
             "Use the pipeline target card to see total PG target ACV across your accounts.",
+            "Open Weekly Wrap up below the metrics to review the latest Friday-generated success and risk summary.",
+            "Open Weekly Ahead Focus up below the metrics to review the latest Monday-generated strategic focus for the week ahead.",
             "Work active outreach tasks directly from the dashboard task table.",
             "Use Execution Insights to decide which account, campaign or sales play needs attention next.",
             "Update task status and due dates as work progresses so the dashboard stays accurate.",
@@ -366,6 +380,8 @@ USER_GUIDE_SECTIONS = [
             "Closed, completed and cancelled work is removed from active execution views, overdue counts and AI Insights.",
             "AI Insights are recalculated on every dashboard refresh from current account, contact, partner, outreach, outcome and due-date data.",
             "Insights prioritise executive coverage and PG conversion. NBM Booked is treated as the strongest success signal, followed by Discovery Booked and executive meeting outcomes.",
+            "Weekly Wrap up is refreshed each Friday from midday and overwrites the previous wrap-up.",
+            "Weekly Ahead Focus up is refreshed each Monday from 06:00 and overwrites the previous focus guidance.",
             "Overdue logic is time-aware. A blank due time is treated as end of day.",
             "Pipeline generated value should be treated as a source-system metric when it belongs in SFDC rather than PipeFlow.",
         ],
@@ -994,7 +1010,7 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "Release notes show latest to earliest.",
             "Open a release to review New, Enhanced and Fixed changes.",
-            "Version 2.1.2 restores the Insights Dashboard, adds the single-pane org chart builder and updates PG Progress and PG Bible activity rules.",
+            "Version 2.1.3 restores Execution Insights and adds Weekly Wrap up and Weekly Ahead Focus up guidance to the Insights Dashboard.",
         ],
     },
     "user_guide": {
@@ -2713,6 +2729,254 @@ def deduplicate_execution_insights(insights):
     return unique_insights
 
 
+def dashboard_scalar(connection, sql, params=(), default=0):
+    try:
+        row = connection.execute(sql, params).fetchone()
+        if row is None:
+            return default
+        return row[0] if not isinstance(row, dict) else next(iter(row.values()), default)
+    except Exception:
+        traceback.print_exc()
+        return default
+
+
+def dashboard_rows(connection, sql, params=()):
+    try:
+        return connection.execute(sql, params).fetchall()
+    except Exception:
+        traceback.print_exc()
+        return []
+
+
+def build_dashboard_strategy_insights(connection, metric_values, account_health_rows=None, learning_insights=None):
+    account_health_rows = account_health_rows or []
+    learning_insights = learning_insights or []
+    insights = []
+    overdue_count = int(metric_values.get("this_week_overdue") or 0)
+    due_count = int(metric_values.get("this_week_due") or 0)
+    success_count = int(metric_values.get("this_week_meetings_booked") or 0)
+    untouched_count = int(metric_values.get("this_week_untouched_accounts") or 0)
+
+    if overdue_count:
+        insights.append({
+            "source": "Execution Guidance",
+            "category": "Execution Drag",
+            "title": f"Clear {overdue_count} overdue action(s) before adding new noise",
+            "message": "Open overdue work is the strongest sign that campaign momentum is slipping. Protect the active PG motion before building more tasks.",
+            "action": "Work overdue actions first, update the outcome or next action, then reset the next touchpoint toward Discovery Booked or NBM Booked.",
+            "link": url_for("outreach"),
+            "priority": "high",
+        })
+
+    if success_count:
+        insights.append({
+            "source": "Execution Guidance",
+            "category": "Scale What Works",
+            "title": f"{success_count} PG success outcome(s) landed this week",
+            "message": "Discovery, NBM and executive meeting bookings are the clearest signals of successful PG motion.",
+            "action": "Review which account, contact route and sales play produced the booking, then reuse that pattern on similar executive stakeholders.",
+            "link": url_for("reports"),
+            "priority": "positive",
+        })
+
+    executive_gap_count = sum(1 for row in account_health_rows if (row["executive_contact_count"] or 0) == 0)
+    conversion_gap_count = sum(
+        1 for row in account_health_rows
+        if (row["outreach_count"] or 0) > 0 and (row["primary_pg_success_count"] or 0) == 0
+    )
+
+    if executive_gap_count:
+        insights.append({
+            "source": "Execution Guidance",
+            "category": "Executive Coverage",
+            "title": f"{executive_gap_count} account(s) need an executive route",
+            "message": "PG success is strongest when the path reaches an executive buyer, assistant, sponsor or senior owner.",
+            "action": "Prioritise mapping executive contacts before increasing activity volume, then make the next ask specific to Discovery or NBM.",
+            "link": url_for("accounts"),
+            "priority": "high",
+        })
+
+    if conversion_gap_count:
+        insights.append({
+            "source": "Execution Guidance",
+            "category": "PG Conversion",
+            "title": f"{conversion_gap_count} active account(s) have activity but no Discovery or NBM",
+            "message": "Activity without a PG success outcome usually means the route, stakeholder level or ask needs to change.",
+            "action": "Stop repeating the same motion; switch to an executive route, partner route or sharper Discovery/NBM meeting ask.",
+            "link": url_for("outreach"),
+            "priority": "medium",
+        })
+
+    if untouched_count:
+        insights.append({
+            "source": "Execution Guidance",
+            "category": "Coverage Gap",
+            "title": f"{untouched_count} account(s) have no active campaign or outreach",
+            "message": "Untouched accounts do not create PG learning and can leave target coverage exposed.",
+            "action": "Choose the highest-value untouched accounts, map the executive path, then build a focused campaign rather than spreading effort thinly.",
+            "link": url_for("campaign_builder"),
+            "priority": "medium",
+        })
+
+    if due_count and not overdue_count:
+        insights.append({
+            "source": "Execution Guidance",
+            "category": "This Week Execution",
+            "title": f"{due_count} open action(s) are due this week",
+            "message": "The current week has executable work without overdue drag showing in the command centre.",
+            "action": "Complete the highest-value account actions first and record outcomes immediately so campaign learning can sharpen.",
+            "link": url_for("tasks"),
+            "priority": "medium",
+        })
+
+    for learning in learning_insights[:2]:
+        insights.append({
+            "source": "Campaign Learning",
+            "category": learning.get("signal", "Learning"),
+            "title": learning.get("title", "Campaign pattern detected"),
+            "message": learning.get("message", "PipeFlow has found a pattern in the current campaign data."),
+            "action": learning.get("action", "Apply the pattern to the next executive-facing touchpoint and record the outcome."),
+            "link": learning.get("link", url_for("campaign_builder")),
+            "priority": "learning",
+        })
+
+    if not insights:
+        insights.append({
+            "source": "Execution Guidance",
+            "category": "Build PG Learning",
+            "title": "Start building measurable PG execution data",
+            "message": "PipeFlow needs accounts, contacts, outreach tasks and outcomes to learn which campaign routes convert.",
+            "action": "Add account contacts, prioritise executive stakeholders, build a focused campaign and record Discovery Booked or NBM Booked outcomes.",
+            "link": url_for("accounts"),
+            "priority": "medium",
+        })
+
+    return insights[:8]
+
+
+def dashboard_guidance_week_key(today):
+    return today.strftime("%Y-W%W")
+
+
+def format_dashboard_guidance(title, lead, bullets):
+    cleaned_bullets = [str(item).strip() for item in bullets if str(item or "").strip()]
+    if not cleaned_bullets:
+        cleaned_bullets = ["Keep account, contact, outreach and outcome data current so PipeFlow can sharpen its recommendations."]
+    return {
+        "title": title,
+        "lead": lead,
+        "bullets": cleaned_bullets[:6],
+    }
+
+
+def generate_weekly_wrap_up(connection, week_start, week_end, metric_values, execution_insights):
+    week_successes = dashboard_rows(connection, """
+        SELECT accounts.account_name, outreach.sales_play, outreach.outcome, outreach.activity_type
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        WHERE outreach.activity_date >= ?
+          AND outreach.activity_date <= ?
+          AND (
+                outreach.outcome IN ('Discovery Booked', 'NBM Booked', 'Exec Meeting Booked', 'Meeting Booked')
+             OR outreach.activity_type = 'Meeting'
+          )
+        ORDER BY outreach.activity_date DESC, outreach.id DESC
+        LIMIT 5
+    """, (week_start.isoformat(), week_end.isoformat()))
+    closed_count = metric_values.get("this_week_completed", 0)
+    overdue_count = metric_values.get("this_week_overdue", 0)
+    success_count = metric_values.get("this_week_meetings_booked", 0)
+    success_accounts = compact_join([row["account_name"] for row in week_successes if row["account_name"]], 3)
+    bullets = [
+        f"{success_count} PG success outcome(s) were recorded this week, with NBM and Discovery bookings treated as the strongest success signals.",
+        f"{closed_count} outreach task(s) were closed this week, creating the cleanest evidence of execution progress.",
+    ]
+    if success_accounts:
+        bullets.append(f"Success was visible around {success_accounts}; review the route, contact level and sales play used there before scaling.")
+    if overdue_count:
+        bullets.append(f"{overdue_count} overdue action(s) remain and should be cleared before next week's campaign build-out.")
+    else:
+        bullets.append("No overdue actions are showing in the command centre, so focus can move to quality of route and outcome conversion.")
+    for insight in execution_insights[:2]:
+        bullets.append(f"{insight.get('category', 'Insight')}: {insight.get('action', '')}")
+    return format_dashboard_guidance(
+        "Weekly Wrap up",
+        "Key success areas and execution signals from the past week.",
+        bullets,
+    )
+
+
+def generate_weekly_ahead_focus(connection, week_start, week_end, metric_values, execution_insights):
+    next_week_end = week_start + timedelta(days=6)
+    upcoming_count = dashboard_scalar(connection, f"""
+        SELECT COUNT(*)
+        FROM outreach
+        WHERE next_action_date >= ?
+          AND next_action_date <= ?
+          AND {open_task_sql("outreach")}
+    """, (week_start.isoformat(), next_week_end.isoformat(), *open_task_params()), 0)
+    overdue_count = metric_values.get("this_week_overdue", 0)
+    untouched_count = metric_values.get("this_week_untouched_accounts", 0)
+    bullets = [
+        "Spend the first execution block on accounts with executive coverage and a direct Discovery or NBM ask.",
+        f"{upcoming_count} open action(s) are scheduled for the week ahead; prioritise the highest-value account actions first.",
+    ]
+    if overdue_count:
+        bullets.append(f"Clear {overdue_count} overdue action(s) before adding new campaign volume so stale work does not dilute focus.")
+    if untouched_count:
+        bullets.append(f"Select from {untouched_count} untouched account(s) only after confirming executive route, sales play and next action quality.")
+    for insight in execution_insights[:3]:
+        bullets.append(f"{insight.get('category', 'Focus')}: {insight.get('action', '')}")
+    return format_dashboard_guidance(
+        "Weekly Ahead Focus up",
+        "Strategic focus for where to spend deliberate PG time in the week ahead.",
+        bullets,
+    )
+
+
+def load_dashboard_weekly_guidance(connection, metric_values, execution_insights):
+    now = current_app_datetime()
+    today = now.date()
+    current_week_start = today - timedelta(days=today.weekday())
+    current_week_end = current_week_start + timedelta(days=6)
+    week_key = dashboard_guidance_week_key(today)
+    wrap_key = dashboard_setting(connection, "weekly_wrap_up_key", "")
+    focus_key = dashboard_setting(connection, "weekly_ahead_focus_key", "")
+    wrap_content = dashboard_setting(connection, "weekly_wrap_up_content", "")
+    focus_content = dashboard_setting(connection, "weekly_ahead_focus_content", "")
+
+    should_refresh_wrap = not wrap_content or wrap_key != week_key or (today.weekday() == 4 and now.time() >= time(12, 0))
+    should_refresh_focus = not focus_content or focus_key != week_key or (today.weekday() == 0 and now.time() >= time(6, 0))
+
+    if should_refresh_wrap:
+        generated = generate_weekly_wrap_up(connection, current_week_start, current_week_end, metric_values, execution_insights)
+        wrap_content = json.dumps(generated)
+        save_dashboard_setting(connection, "weekly_wrap_up_key", week_key)
+        save_dashboard_setting(connection, "weekly_wrap_up_content", wrap_content)
+
+    if should_refresh_focus:
+        generated = generate_weekly_ahead_focus(connection, current_week_start, current_week_end, metric_values, execution_insights)
+        focus_content = json.dumps(generated)
+        save_dashboard_setting(connection, "weekly_ahead_focus_key", week_key)
+        save_dashboard_setting(connection, "weekly_ahead_focus_content", focus_content)
+
+    connection.commit()
+
+    def parse_guidance(payload, fallback_title):
+        try:
+            parsed = json.loads(payload or "{}")
+            if isinstance(parsed, dict):
+                return format_dashboard_guidance(parsed.get("title") or fallback_title, parsed.get("lead") or "", parsed.get("bullets") or [])
+        except json.JSONDecodeError:
+            pass
+        return format_dashboard_guidance(fallback_title, "", [payload])
+
+    return {
+        "weekly_wrap_up": parse_guidance(wrap_content, "Weekly Wrap up"),
+        "weekly_ahead_focus": parse_guidance(focus_content, "Weekly Ahead Focus up"),
+    }
+
+
 def build_learning_insights(connection):
     positive_placeholders = ",".join("?" for _ in POSITIVE_OUTCOMES)
     pg_success_placeholders = ",".join("?" for _ in PG_SUCCESS_OUTCOMES)
@@ -3078,15 +3342,26 @@ def render_dashboard_fallback(connection=None):
     metric_values = dashboard_metric_fallback_values(connection) if connection else {}
     now = current_app_datetime()
     week_start = now.date() - timedelta(days=now.date().weekday())
-    fallback_insight = {
-        "source": "AI Insight",
-        "category": "Dashboard Check",
-        "title": "Dashboard data needs a refresh",
-        "message": "One dashboard query could not be loaded. Other app pages should still be available while this is checked.",
-        "action": "Open Reports or Accounts to continue working while the dashboard query is checked.",
-        "link": url_for("reports"),
-        "priority": "high",
-    }
+    fallback_insights = build_dashboard_strategy_insights(connection, metric_values) if connection else []
+    weekly_guidance = {}
+    if connection:
+        try:
+            weekly_guidance = load_dashboard_weekly_guidance(connection, metric_values, fallback_insights)
+        except Exception:
+            traceback.print_exc()
+    if not weekly_guidance:
+        weekly_guidance = {
+            "weekly_wrap_up": format_dashboard_guidance(
+                "Weekly Wrap up",
+                "Key success areas and execution signals from the past week.",
+                ["Keep account, contact, outreach and outcome data current so PipeFlow can sharpen execution guidance."],
+            ),
+            "weekly_ahead_focus": format_dashboard_guidance(
+                "Weekly Ahead Focus up",
+                "Strategic focus for where to spend deliberate PG time in the week ahead.",
+                ["Prioritise executive coverage, overdue action clearance and Discovery or NBM asks."],
+            ),
+        }
     return render_template(
         "index.html",
         this_week_due=metric_values.get("this_week_due", 0),
@@ -3107,9 +3382,11 @@ def render_dashboard_fallback(connection=None):
         outcome_breakdown=[],
         top_accounts=[],
         needs_attention_accounts=[],
-        ai_insights=[fallback_insight],
+        ai_insights=[],
         learning_insights=[],
-        execution_insights=[fallback_insight],
+        execution_insights=fallback_insights,
+        weekly_wrap_up=weekly_guidance["weekly_wrap_up"],
+        weekly_ahead_focus=weekly_guidance["weekly_ahead_focus"],
         dashboard_tasks=[],
         task_statuses=DROPDOWN_VALUES["task_statuses"],
         outreach_outcomes=DROPDOWN_VALUES["outreach_outcomes"],
@@ -3559,9 +3836,8 @@ def build_dashboard_response(connection):
             })
 
         if account["latest_outreach_date"]:
-            days_since_outreach = connection.execute("""
-                SELECT CAST(julianday('now') - julianday(?) AS INTEGER)
-            """, (account["latest_outreach_date"],)).fetchone()[0]
+            latest_outreach_date = parse_dashboard_date(str(account["latest_outreach_date"])[:10])
+            days_since_outreach = (today - latest_outreach_date).days if latest_outreach_date else None
 
             if days_since_outreach is not None and days_since_outreach >= 14:
                 ai_insights.append({
@@ -3588,7 +3864,24 @@ def build_dashboard_response(connection):
     )
 
     needs_attention_accounts = needs_attention_accounts[:5]
-    learning_insights = build_learning_insights(connection)
+    metric_values = {
+        "this_week_due": this_week_due,
+        "this_week_completed": this_week_completed,
+        "this_week_overdue": this_week_overdue,
+        "this_week_untouched_accounts": this_week_untouched_accounts,
+        "this_week_meetings_booked": this_week_meetings_booked,
+        "total_accounts": total_accounts,
+        "total_contacts": total_contacts,
+        "total_outreach": total_outreach,
+        "total_pg_target": total_pg_target,
+        "meetings_booked": meetings_booked,
+        "follow_ups_due": follow_ups_due,
+    }
+    try:
+        learning_insights = build_learning_insights(connection)
+    except Exception:
+        traceback.print_exc()
+        learning_insights = []
 
     insight_order = {
         "high": 1,
@@ -3602,7 +3895,8 @@ def build_dashboard_response(connection):
 
     ai_insights = ai_insights[:6]
     execution_insights = deduplicate_execution_insights(
-        build_execution_insights(ai_insights, learning_insights)
+        build_dashboard_strategy_insights(connection, metric_values, account_health_rows, learning_insights)
+        + build_execution_insights(ai_insights, learning_insights)
     )
     if not execution_insights:
         execution_insights = [{
@@ -3615,6 +3909,22 @@ def build_dashboard_response(connection):
             "priority": "medium",
         }]
     execution_insights = execution_insights[:12]
+    try:
+        weekly_guidance = load_dashboard_weekly_guidance(connection, metric_values, execution_insights)
+    except Exception:
+        traceback.print_exc()
+        weekly_guidance = {
+            "weekly_wrap_up": format_dashboard_guidance(
+                "Weekly Wrap up",
+                "Key success areas and execution signals from the past week.",
+                ["Review this week's successes, overdue work and account coverage to plan the next PG move."],
+            ),
+            "weekly_ahead_focus": format_dashboard_guidance(
+                "Weekly Ahead Focus up",
+                "Strategic focus for where to spend deliberate PG time in the week ahead.",
+                ["Focus on executive routes, Discovery Booked outcomes and NBM Booked progression."],
+            ),
+        }
 
     return render_template(
         "index.html",
@@ -3639,6 +3949,8 @@ def build_dashboard_response(connection):
         ai_insights=ai_insights,
         learning_insights=learning_insights,
         execution_insights=execution_insights,
+        weekly_wrap_up=weekly_guidance["weekly_wrap_up"],
+        weekly_ahead_focus=weekly_guidance["weekly_ahead_focus"],
         dashboard_tasks=dashboard_tasks,
         task_statuses=DROPDOWN_VALUES["task_statuses"],
         outreach_outcomes=DROPDOWN_VALUES["outreach_outcomes"],

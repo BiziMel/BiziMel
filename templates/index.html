@@ -101,6 +101,41 @@
                     </div>
                 </a>
             </div>
+
+            <div class="dashboard-weekly-guidance">
+                <details class="dashboard-guidance-accordion" open>
+                    <summary>{{ weekly_wrap_up.title if weekly_wrap_up else "Weekly Wrap up" }}</summary>
+                    <div class="dashboard-guidance-body">
+                        <p>{{ weekly_wrap_up.lead if weekly_wrap_up else "Key success areas and execution signals from the past week." }}</p>
+                        <ul>
+                            {% if weekly_wrap_up and weekly_wrap_up.bullets %}
+                                {% for item in weekly_wrap_up.bullets %}
+                                    <li>{{ item }}</li>
+                                {% endfor %}
+                            {% else %}
+                                <li>Keep account, contact, outreach and outcome data current so PipeFlow can sharpen execution guidance.</li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                </details>
+
+                <details class="dashboard-guidance-accordion">
+                    <summary>{{ weekly_ahead_focus.title if weekly_ahead_focus else "Weekly Ahead Focus up" }}</summary>
+                    <div class="dashboard-guidance-body">
+                        <p>{{ weekly_ahead_focus.lead if weekly_ahead_focus else "Strategic focus for where to spend deliberate PG time in the week ahead." }}</p>
+                        <ul>
+                            {% if weekly_ahead_focus and weekly_ahead_focus.bullets %}
+                                {% for item in weekly_ahead_focus.bullets %}
+                                    <li>{{ item }}</li>
+                                {% endfor %}
+                            {% else %}
+                                <li>Prioritise executive coverage, overdue action clearance and Discovery or NBM asks.</li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                </details>
+            </div>
+
             <div class="outcome-breakdown-strip">
                 <div class="outcome-strip-header">
                     <h2>Outcome Breakdown</h2>
