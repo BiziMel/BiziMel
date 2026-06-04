@@ -147,6 +147,10 @@
                         <input type="hidden" name="layout_actions" id="orgChartLayoutActions" value="[]">
                         <button type="submit" class="btn btn-primary" id="orgChartSaveButton" disabled>Save Layout</button>
                     </form>
+                    <div class="org-export-actions">
+                        <button type="button" class="btn btn-secondary" id="orgPrintPdfButton">Print PDF</button>
+                        <button type="button" class="btn btn-secondary" id="orgExportPngButton">Export PNG</button>
+                    </div>
                 </div>
 
                 <div class="org-label-controls">
@@ -205,6 +209,7 @@
                         </div>
                     {% endfor %}
                 </div>
+                <canvas id="orgExportCanvas" hidden></canvas>
             </div>
         </div>
     </section>
@@ -220,6 +225,9 @@ document.addEventListener("DOMContentLoaded", function () {
     const pendingList = document.getElementById("orgChartPendingList");
     const labelInput = document.getElementById("orgLabelText");
     const addLabelButton = document.getElementById("orgAddLabelButton");
+    const printPdfButton = document.getElementById("orgPrintPdfButton");
+    const exportPngButton = document.getElementById("orgExportPngButton");
+    const exportCanvas = document.getElementById("orgExportCanvas");
     const stagedActions = new Map();
     let draggedItem = null;
 
@@ -240,7 +248,8 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function tileHtml(item) {
-        const photo = item.photo ? `<img src="${item.photo}" alt="">` : "";
+        const initials = (item.name || "?").trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join("").toUpperCase();
+        const photo = item.photo ? `<img src="${item.photo}" alt="">` : `<span class="org-person-initials">${initials || "?"}</span>`;
         const title = item.title ? `<span>${item.title}</span>` : "";
         const group = item.group ? `<small>${item.group}</small>` : "";
         return `
@@ -334,12 +343,16 @@ document.addEventListener("DOMContentLoaded", function () {
     function placementForDrop(point, target, zone) {
         const width = 220;
         const height = 108;
+        const grid = 20;
+        function snap(value) {
+            return Math.round(value / grid) * grid;
+        }
         if (!target || !zone) {
             return {
                 relationship: "with",
                 related_node_id: "",
-                x: clamp(Math.round(point.x - width / 2), 12, pane.scrollWidth - width - 12),
-                y: clamp(Math.round(point.y - height / 2), 12, pane.scrollHeight - height - 12)
+                x: clamp(snap(point.x - width / 2), 12, pane.scrollWidth - width - 12),
+                y: clamp(snap(point.y - height / 2), 12, pane.scrollHeight - height - 12)
             };
         }
         const left = target.offsetLeft;
@@ -357,8 +370,8 @@ document.addEventListener("DOMContentLoaded", function () {
         return {
             relationship: placement.relationship,
             related_node_id: relatedNodeId,
-            x: clamp(Math.round(placement.x), 12, pane.scrollWidth - width - 12),
-            y: clamp(Math.round(placement.y), 12, pane.scrollHeight - height - 12)
+            x: clamp(snap(placement.x), 12, pane.scrollWidth - width - 12),
+            y: clamp(snap(placement.y), 12, pane.scrollHeight - height - 12)
         };
     }
 
@@ -440,7 +453,8 @@ document.addEventListener("DOMContentLoaded", function () {
         let node = draggedItem.element;
         if (draggedItem.type === "person") {
             node = createCanvasNode(draggedItem);
-            draggedItem.element.classList.add("org-move-staged");
+            draggedItem.element.hidden = true;
+            draggedItem.element.setAttribute("aria-hidden", "true");
         }
         placeNode(node, placement, draggedItem);
         draggedItem = null;
@@ -522,6 +536,62 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
     window.addEventListener("resize", drawLinks);
+    printPdfButton?.addEventListener("click", function () {
+        pane.classList.add("org-print-target");
+        window.print();
+        setTimeout(() => pane.classList.remove("org-print-target"), 300);
+    });
+    exportPngButton?.addEventListener("click", function () {
+        if (!exportCanvas) return;
+        const nodes = Array.from(pane.querySelectorAll(".org-canvas-node"));
+        const labels = Array.from(pane.querySelectorAll(".org-canvas-label"));
+        const width = Math.max(1200, pane.scrollWidth);
+        const height = Math.max(760, pane.scrollHeight);
+        exportCanvas.width = width;
+        exportCanvas.height = height;
+        const ctx = exportCanvas.getContext("2d");
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, width, height);
+        ctx.strokeStyle = "#2563eb";
+        ctx.lineWidth = 2;
+        nodes.forEach(function (node) {
+            const relatedId = node.dataset.relatedNodeId;
+            if (!relatedId) return;
+            const related = pane.querySelector(`.org-canvas-node[data-node-id="${relatedId}"]`);
+            if (!related) return;
+            const start = centerOf(related);
+            const end = centerOf(node);
+            ctx.beginPath();
+            ctx.moveTo(start.x, start.y);
+            ctx.lineTo(end.x, end.y);
+            ctx.stroke();
+        });
+        labels.forEach(function (label) {
+            ctx.fillStyle = "#f8fafc";
+            ctx.strokeStyle = "#94a3b8";
+            ctx.fillRect(label.offsetLeft, label.offsetTop, label.offsetWidth, label.offsetHeight);
+            ctx.strokeRect(label.offsetLeft, label.offsetTop, label.offsetWidth, label.offsetHeight);
+            ctx.fillStyle = "#0f172a";
+            ctx.font = "700 13px Arial";
+            ctx.fillText(label.textContent.trim(), label.offsetLeft + 10, label.offsetTop + 22);
+        });
+        nodes.forEach(function (node) {
+            ctx.fillStyle = "#ffffff";
+            ctx.strokeStyle = "#cbd5e1";
+            ctx.fillRect(node.offsetLeft, node.offsetTop, node.offsetWidth, node.offsetHeight);
+            ctx.strokeRect(node.offsetLeft, node.offsetTop, node.offsetWidth, node.offsetHeight);
+            ctx.fillStyle = "#0f172a";
+            ctx.font = "700 14px Arial";
+            ctx.fillText(node.dataset.personName || "Contact", node.offsetLeft + 14, node.offsetTop + 28);
+            ctx.font = "12px Arial";
+            ctx.fillText(node.dataset.personTitle || "", node.offsetLeft + 14, node.offsetTop + 48);
+            ctx.fillText(node.dataset.personGroup || "", node.offsetLeft + 14, node.offsetTop + 66);
+        });
+        const link = document.createElement("a");
+        link.download = "pipeflow-org-chart.png";
+        link.href = exportCanvas.toDataURL("image/png");
+        link.click();
+    });
     drawLinks();
 });
 </script>

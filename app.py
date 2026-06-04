@@ -38,14 +38,25 @@ except ZoneInfoNotFoundError:
 RELEASE_NOTES = [
     {
         "version": "2.1.3",
-        "date": "2026-06-04",
+        "release_date": "2026-06-04",
         "title": "Execution Insights restoration and weekly strategic guidance",
-        "highlights": [
-            "Fixed the Severity 1 dashboard regression where Execution Insights could be replaced by the dashboard refresh fallback message.",
+        "new": [
+            "Added Weekly Wrap Up guidance, refreshed each Friday from the past week's execution and success signals.",
+            "Added Week Ahead Focus guidance, refreshed each Monday to direct deliberate PG focus for the week ahead.",
+        ],
+        "enhanced": [
             "Rebuilt Execution Insights so current accounts, contacts, outreach, overdue work, outcomes and campaign learning generate practical PG guidance.",
-            "Added Weekly Wrap up guidance, refreshed each Friday from the past week's execution and success signals.",
-            "Added Weekly Ahead Focus guidance, refreshed each Monday to direct deliberate PG focus for the week ahead.",
             "Hardened dashboard insight generation so one learning query cannot blank the full Insights Dashboard.",
+            "Enhanced the org chart with fixed-size snap tiles, relationship lines, staged tray removal and print/PDF or PNG export controls.",
+            "Enhanced Outreach Tasks so the activity title is the first column and opens the outreach form directly.",
+            "Enhanced the Outreach Tasks table to fit the page more cleanly, with due date and assignment moved to the end columns and a sticky bulk action bar.",
+        ],
+        "fixed": [
+            "Fixed the Severity 1 dashboard regression where Execution Insights could be replaced by the dashboard refresh fallback message.",
+            "Fixed bulk Outreach delete handling so stale cleanup records do not produce an internal server error.",
+            "Fixed Release Notes 2.1.3 formatting so it renders in the correct release structure.",
+            "Fixed Outreach add and edit forms so only contacts for the selected account are rendered into the page.",
+            "Renamed Weekly Ahead Focus to Week Ahead Focus and kept Weekly Wrap Up closed until opened.",
         ],
     },
     {
@@ -369,8 +380,8 @@ USER_GUIDE_SECTIONS = [
             "Use Follow-ups Due to see open follow-ups due through the next 7 days, including overdue work.",
             "Use PG Success This Week to track Discovery Booked, NBM Booked, Exec Meeting Booked and legacy Meeting Booked outcomes.",
             "Use the pipeline target card to see total PG target ACV across your accounts.",
-            "Open Weekly Wrap up below the metrics to review the latest Friday-generated success and risk summary.",
-            "Open Weekly Ahead Focus up below the metrics to review the latest Monday-generated strategic focus for the week ahead.",
+            "Open Weekly Wrap Up below the metrics to review the latest Friday-generated success and risk summary.",
+            "Open Week Ahead Focus below the metrics to review the latest Monday-generated strategic focus for the week ahead.",
             "Work active outreach tasks directly from the dashboard task table.",
             "Use Execution Insights to decide which account, campaign or sales play needs attention next.",
             "Update task status and due dates as work progresses so the dashboard stays accurate.",
@@ -380,8 +391,8 @@ USER_GUIDE_SECTIONS = [
             "Closed, completed and cancelled work is removed from active execution views, overdue counts and AI Insights.",
             "AI Insights are recalculated on every dashboard refresh from current account, contact, partner, outreach, outcome and due-date data.",
             "Insights prioritise executive coverage and PG conversion. NBM Booked is treated as the strongest success signal, followed by Discovery Booked and executive meeting outcomes.",
-            "Weekly Wrap up is refreshed each Friday from midday and overwrites the previous wrap-up.",
-            "Weekly Ahead Focus up is refreshed each Monday from 06:00 and overwrites the previous focus guidance.",
+            "Weekly Wrap Up is refreshed each Friday from midday and overwrites the previous wrap-up.",
+            "Week Ahead Focus is refreshed each Monday from 06:00 and overwrites the previous focus guidance.",
             "Overdue logic is time-aware. A blank due time is treated as end of day.",
             "Pipeline generated value should be treated as a source-system metric when it belongs in SFDC rather than PipeFlow.",
         ],
@@ -1010,7 +1021,7 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "Release notes show latest to earliest.",
             "Open a release to review New, Enhanced and Fixed changes.",
-            "Version 2.1.3 restores Execution Insights and adds Weekly Wrap up and Weekly Ahead Focus up guidance to the Insights Dashboard.",
+            "Version 2.1.3 restores Execution Insights and adds Weekly Wrap Up and Week Ahead Focus guidance to the Insights Dashboard.",
         ],
     },
     "user_guide": {
@@ -1887,9 +1898,18 @@ def delete_outreach_records(connection, outreach_ids):
         outreach = connection.execute("SELECT subject FROM outreach WHERE id = ?", (outreach_id,)).fetchone()
         if not outreach:
             continue
-        audit_record_delete(connection, "outreach", outreach_id, outreach["subject"] if outreach else "")
-        connection.execute("DELETE FROM timeline_entries WHERE related_type = 'outreach' AND related_id = ?", (outreach_id,))
-        connection.execute("DELETE FROM outreach_recipients WHERE outreach_id = ?", (outreach_id,))
+        try:
+            audit_record_delete(connection, "outreach", outreach_id, outreach["subject"] if outreach else "")
+        except Exception:
+            traceback.print_exc()
+        for cleanup_sql in (
+            "DELETE FROM timeline_entries WHERE related_type = 'outreach' AND related_id = ?",
+            "DELETE FROM outreach_recipients WHERE outreach_id = ?",
+        ):
+            try:
+                connection.execute(cleanup_sql, (outreach_id,))
+            except Exception:
+                traceback.print_exc()
         connection.execute("DELETE FROM outreach WHERE id = ?", (outreach_id,))
         deleted_count += 1
     return deleted_count
@@ -2900,7 +2920,7 @@ def generate_weekly_wrap_up(connection, week_start, week_end, metric_values, exe
     for insight in execution_insights[:2]:
         bullets.append(f"{insight.get('category', 'Insight')}: {insight.get('action', '')}")
     return format_dashboard_guidance(
-        "Weekly Wrap up",
+        "Weekly Wrap Up",
         "Key success areas and execution signals from the past week.",
         bullets,
     )
@@ -2928,7 +2948,7 @@ def generate_weekly_ahead_focus(connection, week_start, week_end, metric_values,
     for insight in execution_insights[:3]:
         bullets.append(f"{insight.get('category', 'Focus')}: {insight.get('action', '')}")
     return format_dashboard_guidance(
-        "Weekly Ahead Focus up",
+        "Week Ahead Focus",
         "Strategic focus for where to spend deliberate PG time in the week ahead.",
         bullets,
     )
@@ -2966,14 +2986,14 @@ def load_dashboard_weekly_guidance(connection, metric_values, execution_insights
         try:
             parsed = json.loads(payload or "{}")
             if isinstance(parsed, dict):
-                return format_dashboard_guidance(parsed.get("title") or fallback_title, parsed.get("lead") or "", parsed.get("bullets") or [])
+                return format_dashboard_guidance(fallback_title, parsed.get("lead") or "", parsed.get("bullets") or [])
         except json.JSONDecodeError:
             pass
         return format_dashboard_guidance(fallback_title, "", [payload])
 
     return {
-        "weekly_wrap_up": parse_guidance(wrap_content, "Weekly Wrap up"),
-        "weekly_ahead_focus": parse_guidance(focus_content, "Weekly Ahead Focus up"),
+        "weekly_wrap_up": parse_guidance(wrap_content, "Weekly Wrap Up"),
+        "weekly_ahead_focus": parse_guidance(focus_content, "Week Ahead Focus"),
     }
 
 
@@ -3352,12 +3372,12 @@ def render_dashboard_fallback(connection=None):
     if not weekly_guidance:
         weekly_guidance = {
             "weekly_wrap_up": format_dashboard_guidance(
-                "Weekly Wrap up",
+                "Weekly Wrap Up",
                 "Key success areas and execution signals from the past week.",
                 ["Keep account, contact, outreach and outcome data current so PipeFlow can sharpen execution guidance."],
             ),
             "weekly_ahead_focus": format_dashboard_guidance(
-                "Weekly Ahead Focus up",
+                "Week Ahead Focus",
                 "Strategic focus for where to spend deliberate PG time in the week ahead.",
                 ["Prioritise executive coverage, overdue action clearance and Discovery or NBM asks."],
             ),
@@ -3915,12 +3935,12 @@ def build_dashboard_response(connection):
         traceback.print_exc()
         weekly_guidance = {
             "weekly_wrap_up": format_dashboard_guidance(
-                "Weekly Wrap up",
+                "Weekly Wrap Up",
                 "Key success areas and execution signals from the past week.",
                 ["Review this week's successes, overdue work and account coverage to plan the next PG move."],
             ),
             "weekly_ahead_focus": format_dashboard_guidance(
-                "Weekly Ahead Focus up",
+                "Week Ahead Focus",
                 "Strategic focus for where to spend deliberate PG time in the week ahead.",
                 ["Focus on executive routes, Discovery Booked outcomes and NBM Booked progression."],
             ),
@@ -4177,8 +4197,8 @@ def selected_outreach_contact_values(connection, outreach_item):
     return values
 
 
-def partner_contacts_for_outreach(connection):
-    return connection.execute("""
+def partner_contacts_for_outreach(connection, account_id=None):
+    query = """
         SELECT
             partner_contacts.*,
             partners.partner_name,
@@ -4188,8 +4208,13 @@ def partner_contacts_for_outreach(connection):
         LEFT JOIN partners ON partners.id = partner_contacts.partner_id
         LEFT JOIN accounts ON accounts.id = partner_contacts.account_id
         WHERE partner_contacts.account_id IS NOT NULL
-        ORDER BY accounts.account_name, partners.partner_name, partner_contacts.name
-    """).fetchall()
+    """
+    params = []
+    if account_id:
+        query += " AND partner_contacts.account_id = ?"
+        params.append(account_id)
+    query += " ORDER BY accounts.account_name, partners.partner_name, partner_contacts.name"
+    return connection.execute(query, params).fetchall()
 
 
 def create_partner_next_action_outreach(connection, account_id, partner_name, contact_name, next_action, assigned_to=""):
@@ -7207,6 +7232,13 @@ def add_outreach():
 
             return redirect(url_for("outreach"))
 
+    if request.method == "POST":
+        selected_contact_values = outreach_contact_form_values(request.form)
+        selected_account_id = request.form.get("account_id") or ""
+    else:
+        selected_contact_values = prefill.get("contact_ids", [])
+        selected_account_id = request.args.get("account_id") or prefill.get("account_id", "")
+
     accounts = connection.execute("SELECT * FROM accounts ORDER BY account_name").fetchall()
 
     contacts = connection.execute("""
@@ -7214,11 +7246,12 @@ def add_outreach():
         FROM contacts
         LEFT JOIN accounts ON contacts.account_id = accounts.id
         WHERE COALESCE(contacts.status, 'Active') = 'Active'
+          AND contacts.account_id = ?
         ORDER BY contacts.name
-    """).fetchall()
+    """, (selected_account_id,)).fetchall() if selected_account_id else []
     sales_play_rows = account_sales_play_options(connection)
     partner_activity_options = account_partner_activity_options(connection)
-    partner_contacts = partner_contacts_for_outreach(connection)
+    partner_contacts = partner_contacts_for_outreach(connection, selected_account_id)
 
     profile = connection.execute("""
         SELECT *
@@ -7230,11 +7263,6 @@ def add_outreach():
         FROM non_working_blocks
         ORDER BY start_date, end_date, id
     """).fetchall()
-    if request.method == "POST":
-        selected_contact_values = outreach_contact_form_values(request.form)
-    else:
-        selected_contact_values = prefill.get("contact_ids", [])
-    selected_account_id = request.form.get("account_id") if request.method == "POST" else prefill.get("account_id", "")
     connection.close()
 
     return render_template(
@@ -7614,8 +7642,14 @@ def bulk_outreach_action():
     if action == "delete":
         initialise_database(force=True)
         connection = get_db_connection()
-        deleted_count = delete_outreach_records(connection, outreach_ids)
-        connection.commit()
+        try:
+            deleted_count = delete_outreach_records(connection, outreach_ids)
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            traceback.print_exc()
+            connection.close()
+            return redirect_with_query(return_to, error="Selected outreach records could not be deleted. Refresh the table and try again.")
         connection.close()
         if deleted_count:
             return redirect_with_query(return_to, message=f"Deleted {deleted_count} outreach record(s).")
@@ -7740,17 +7774,21 @@ def edit_outreach(outreach_id):
         "SELECT * FROM accounts ORDER BY account_name"
     ).fetchall()
 
+    selected_account_for_contacts = request.form.get("account_id") if request.method == "POST" else (request.args.get("account_id") or outreach_item["account_id"])
     contacts = connection.execute("""
         SELECT contacts.*, accounts.account_name
         FROM contacts
         LEFT JOIN accounts ON contacts.account_id = accounts.id
-        WHERE COALESCE(contacts.status, 'Active') = 'Active'
-           OR contacts.id = ?
+        WHERE contacts.account_id = ?
+          AND (
+                COALESCE(contacts.status, 'Active') = 'Active'
+             OR contacts.id = ?
+          )
         ORDER BY contacts.name
-    """, (outreach_item["contact_id"],)).fetchall()
+    """, (selected_account_for_contacts, outreach_item["contact_id"])).fetchall() if selected_account_for_contacts else []
     sales_play_rows = account_sales_play_options(connection)
     partner_activity_options = account_partner_activity_options(connection)
-    partner_contacts = partner_contacts_for_outreach(connection)
+    partner_contacts = partner_contacts_for_outreach(connection, selected_account_for_contacts)
 
     profile = connection.execute("""
         SELECT *
@@ -7939,7 +7977,7 @@ def edit_outreach(outreach_id):
         return redirect(url_for("outreach"))
 
     selected_contact_values = selected_outreach_contact_values(connection, outreach_item)
-    selected_account_id = outreach_item["account_id"]
+    selected_account_id = selected_account_for_contacts
     connection.close()
 
     return render_template(

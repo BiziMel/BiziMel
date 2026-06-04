@@ -128,13 +128,13 @@
               method="POST"
               action="{{ url_for('bulk_outreach_action') }}"></form>
 
-        <div class="bulk-action-bar outreach-bulk-action-bar" data-bulk-action-bar="bulk-outreach-form" hidden>
+        <div class="bulk-action-bar outreach-bulk-action-bar outreach-floating-action-bar" data-bulk-action-bar="bulk-outreach-form" hidden>
             <span><strong data-bulk-selected-count>0</strong> outreach record(s) selected.</span>
             <label for="bulk_next_action_date" class="table-field-label">Bulk Due Date</label>
             <input type="date" id="bulk_next_action_date" name="bulk_next_action_date" form="bulk-outreach-form">
             <input type="time" id="bulk_next_action_time" name="bulk_next_action_time" form="bulk-outreach-form">
             <input type="hidden" name="return_to" value="{{ request.full_path }}" form="bulk-outreach-form">
-            <button type="submit" form="bulk-outreach-form" name="bulk_action" value="update_due" class="btn btn-primary btn-small">Update Due Date</button>
+            <button type="submit" form="bulk-outreach-form" name="bulk_action" value="update_due" class="btn btn-primary btn-small">Save Bulk Changes</button>
             <button type="submit"
                     form="bulk-outreach-form"
                     name="bulk_action"
@@ -149,21 +149,21 @@
             <table class="report-table outreach-table">
                 <colgroup>
                     <col class="bulk-select-col">
-                    <col class="outreach-due-col">
+                    <col class="outreach-title-col">
                     <col class="outreach-start-col">
                     <col class="outreach-account-col">
                     <col class="outreach-campaign-col">
-                    <col class="outreach-activity-col">
+                    <col class="outreach-due-col">
                     <col class="outreach-assigned-col">
                 </colgroup>
                 <thead>
                     <tr>
                         <th class="bulk-select-col">Select</th>
-                        <th data-default-sort="asc">Activity Due Date</th>
+                        <th>Activity</th>
                         <th>Activity Start Date</th>
                         <th>Account / Contact</th>
                         <th>Sales Play / Initiative</th>
-                        <th>Activity Type / Subject</th>
+                        <th data-default-sort="asc">Activity Due Date</th>
                         <th>Assigned To</th>
                     </tr>
                 </thead>
@@ -174,6 +174,44 @@
                         <tr class="outreach-main-row {{ item.due_rag_class }}">
                             <td class="bulk-select-col">
                                 <input type="checkbox" name="selected_ids" value="{{ item.id }}" form="bulk-outreach-form" aria-label="Select outreach {{ item.subject or item.id }}">
+                            </td>
+                            <td>
+                                <a href="{{ url_for('edit_outreach', outreach_id=item.id) }}" class="table-primary-link">
+                                    {{ item.subject or item.activity_type or "Open outreach" }}
+                                </a>
+                                <br>
+                                <span class="muted">{{ item.activity_type or "No activity type" }}</span>
+                            </td>
+                            <td>
+                                <div class="outreach-start-date-block">
+                                    <strong>
+                                        {% if item.activity_date %}
+                                            {{ item.activity_date[8:10] }}-{{ item.activity_date[5:7] }}-{{ item.activity_date[0:4] }}
+                                        {% else %}
+                                            No start date
+                                        {% endif %}
+                                    </strong>
+                                    <span>{{ item.activity_time or "No start time" }}</span>
+                                </div>
+                            </td>
+                            <td>
+                                <strong>{{ item.account_name or "No account" }}</strong>
+                                <br>
+                                <span class="muted">
+                                    {{ item.contact_name or "No contact" }}
+                                    {% if item.contact_source == "Partner" %}
+                                        · Partner{% if item.partner_name %}: {{ item.partner_name }}{% endif %}
+                                    {% endif %}
+                                </span>
+                                {% if item.contact_job_title %}
+                                    <div class="outreach-contact-job-title">
+                                        <span class="table-field-label">Job Title</span>
+                                        <span>{{ item.contact_job_title }}</span>
+                                    </div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <strong>{{ item.sales_play or "No sales play" }}</strong>
                             </td>
                             <td data-sort-value="{{ item.next_action_date or '9999-12-31' }} {{ item.next_action_time or '99:99' }}">
                                 <div class="outreach-due-date-block">
@@ -214,49 +252,6 @@
                                 </div>
                             </td>
                             <td>
-                                <div class="outreach-start-date-block">
-                                    <strong>
-                                        {% if item.activity_date %}
-                                            {{ item.activity_date[8:10] }}-{{ item.activity_date[5:7] }}-{{ item.activity_date[0:4] }}
-                                        {% else %}
-                                            No start date
-                                        {% endif %}
-                                    </strong>
-                                    <span>{{ item.activity_time or "No start time" }}</span>
-                                </div>
-                            </td>
-                            <td>
-                                <strong>{{ item.account_name or "No account" }}</strong>
-                                <br>
-                                <span class="muted">
-                                    {{ item.contact_name or "No contact" }}
-                                    {% if item.contact_source == "Partner" %}
-                                        · Partner{% if item.partner_name %}: {{ item.partner_name }}{% endif %}
-                                    {% endif %}
-                                </span>
-                                {% if item.contact_job_title %}
-                                    <div class="outreach-contact-job-title">
-                                        <span class="table-field-label">Job Title</span>
-                                        <span>{{ item.contact_job_title }}</span>
-                                    </div>
-                                {% endif %}
-                                {% if item.contact_email or item.contact_phone or item.contact_linkedin %}
-                                    <div class="outreach-contact-system-fields">
-                                        {% if item.contact_email %}<span>Email: {{ item.contact_email }}</span>{% endif %}
-                                        {% if item.contact_phone %}<span>Phone: {{ item.contact_phone }}</span>{% endif %}
-                                        {% if item.contact_linkedin %}<span>LinkedIn: {{ item.contact_linkedin }}</span>{% endif %}
-                                    </div>
-                                {% endif %}
-                            </td>
-                            <td>
-                                <strong>{{ item.sales_play or "No sales play" }}</strong>
-                            </td>
-                            <td>
-                                <strong>{{ item.activity_type or "No activity type" }}</strong>
-                                <br>
-                                <span class="muted">{{ item.subject or "No subject" }}</span>
-                            </td>
-                            <td>
                                 <form method="POST" action="{{ url_for('reassign_team_outreach') }}" class="inline-form compact-assignment-form">
                                     <input type="hidden" name="return_to" value="{{ url_for('outreach') }}">
                                     <input type="hidden" name="workspace_schema" value="{{ item.workspace_schema }}">
@@ -271,15 +266,7 @@
                                                 </option>
                                             {% endfor %}
                                         </select>
-                                        <div class="assignment-row-actions">
-                                            <button type="submit" class="btn btn-primary btn-small" {% if task_locked %}disabled{% endif %}>Save</button>
-                                            <a href="{{ url_for('edit_outreach', outreach_id=item.id) }}"
-                                               class="btn btn-secondary btn-small compact-row-edit-button"
-                                               title="Edit outreach {{ item.subject or item.activity_type or item.id }}"
-                                               aria-label="Edit outreach {{ item.subject or item.activity_type or item.id }}">
-                                                {% if task_locked %}View{% else %}Edit{% endif %}
-                                            </a>
-                                        </div>
+                                        <button type="submit" class="btn btn-primary btn-small" {% if task_locked %}disabled{% endif %}>Save</button>
                                     </div>
                                 </form>
                             </td>

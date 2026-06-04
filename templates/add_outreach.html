@@ -400,7 +400,15 @@
                 setContactPanelOpen(false);
             }
         });
-        accountSelect.addEventListener("change", applyContactFilter);
+        accountSelect.addEventListener("change", () => {
+            const url = new URL(window.location.href);
+            if (accountSelect.value) {
+                url.searchParams.set("account_id", accountSelect.value);
+            } else {
+                url.searchParams.delete("account_id");
+            }
+            window.location.href = url.toString();
+        });
         applyContactFilter();
     }
 

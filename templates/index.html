@@ -103,8 +103,8 @@
             </div>
 
             <div class="dashboard-weekly-guidance">
-                <details class="dashboard-guidance-accordion" open>
-                    <summary>{{ weekly_wrap_up.title if weekly_wrap_up else "Weekly Wrap up" }}</summary>
+                <details class="dashboard-guidance-accordion">
+                    <summary>{{ weekly_wrap_up.title if weekly_wrap_up else "Weekly Wrap Up" }}</summary>
                     <div class="dashboard-guidance-body">
                         <p>{{ weekly_wrap_up.lead if weekly_wrap_up else "Key success areas and execution signals from the past week." }}</p>
                         <ul>
@@ -120,7 +120,7 @@
                 </details>
 
                 <details class="dashboard-guidance-accordion">
-                    <summary>{{ weekly_ahead_focus.title if weekly_ahead_focus else "Weekly Ahead Focus up" }}</summary>
+                    <summary>{{ weekly_ahead_focus.title if weekly_ahead_focus else "Week Ahead Focus" }}</summary>
                     <div class="dashboard-guidance-body">
                         <p>{{ weekly_ahead_focus.lead if weekly_ahead_focus else "Strategic focus for where to spend deliberate PG time in the week ahead." }}</p>
                         <ul>

@@ -1614,19 +1614,19 @@ a:hover {
 .outreach-table {
     width: 100%;
     max-width: none;
-    font-size: 13px;
+    font-size: 12px;
     table-layout: fixed;
-    min-width: 1480px;
+    min-width: 0;
 }
 
 .outreach-table-container {
-    overflow-x: auto;
-    padding: 14px;
+    overflow-x: visible;
+    padding: 10px;
 }
 
 .outreach-table th,
 .outreach-table td {
-    padding: 14px 16px;
+    padding: 10px 9px;
     vertical-align: top;
     font-size: 13px;
     white-space: normal;
@@ -1645,27 +1645,27 @@ a:hover {
 
 .outreach-date-col,
 .outreach-due-col {
-    width: 17%;
+    width: 14%;
 }
 
 .outreach-start-col {
-    width: 10%;
+    width: 11%;
 }
 
 .outreach-account-col {
-    width: 19%;
+    width: 21%;
 }
 
 .outreach-campaign-col {
     width: 15%;
 }
 
-.outreach-activity-col {
+.outreach-title-col {
     width: 18%;
 }
 
 .outreach-assigned-col {
-    width: 17%;
+    width: 14%;
 }
 
 .outreach-next-col {
@@ -1793,6 +1793,16 @@ a:hover {
     min-height: 30px;
     padding: 6px 9px;
     font-size: 11px;
+}
+
+.table-primary-link {
+    color: #1d4ed8;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.table-primary-link:hover {
+    text-decoration: underline;
 }
 
 .outreach-main-row td {
@@ -4239,6 +4249,14 @@ body {
     flex-wrap: wrap;
 }
 
+.outreach-floating-action-bar {
+    position: sticky;
+    top: 8px;
+    z-index: 30;
+    margin-bottom: 10px;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+}
+
 .outreach-bulk-action-bar input[type="date"],
 .outreach-bulk-action-bar input[type="time"] {
     max-width: 150px;
@@ -4490,6 +4508,12 @@ body {
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+}
+
+.org-export-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
 }
 
 .org-chart-board {
@@ -4773,7 +4797,7 @@ body {
     display: grid;
     gap: 6px;
     width: 220px;
-    min-height: 108px;
+    height: 118px;
     padding: 10px;
     border: 2px solid #cbd5e1;
     border-radius: 8px;
@@ -4801,6 +4825,16 @@ body {
 .org-canvas-node small {
     max-width: 100%;
     overflow-wrap: anywhere;
+}
+
+.org-person-initials {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    color: #334155;
+    font-size: 16px;
+    font-weight: 800;
 }
 
 .org-canvas-node small {
@@ -4864,6 +4898,26 @@ body {
 
     .org-single-pane {
         min-height: 540px;
+    }
+}
+
+@media print {
+    body * {
+        visibility: hidden;
+    }
+
+    .org-print-target,
+    .org-print-target * {
+        visibility: visible;
+    }
+
+    .org-print-target {
+        position: absolute;
+        inset: 0 auto auto 0;
+        width: 100%;
+        height: auto;
+        overflow: visible;
+        border: 0;
     }
 }
 
