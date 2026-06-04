@@ -45,7 +45,7 @@
                 <select id="account_id" name="account_id" required>
                     <option value="">Select account</option>
                     {% for account in accounts %}
-                        <option value="{{ account.id }}" {% if prefill.account_id|string == account.id|string %}selected{% endif %}>{{ account.account_name }}</option>
+                        <option value="{{ account.id }}" {% if selected_account_id|string == account.id|string %}selected{% endif %}>{{ account.account_name }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -151,14 +151,6 @@
                     <option value="">Select activity type</option>
                     {% for activity in dropdown_values.outreach_activity_types %}
                         <option value="{{ activity }}" {% if prefill.activity_type == activity %}selected{% endif %}>{{ activity }}</option>
-                    {% endfor %}
-                    {% for partner in partner_activity_options %}
-                        <option value="Partner: {{ partner.partner_name }}"
-                                data-account-id="{{ partner.account_id }}"
-                                class="partner-activity-option"
-                                {% if prefill.activity_type == 'Partner: ' ~ partner.partner_name %}selected{% endif %}>
-                            Partner: {{ partner.partner_name }}{% if partner.partner_type %} ({{ partner.partner_type }}){% endif %}
-                        </option>
                     {% endfor %}
                 </select>
             </div>

@@ -50,7 +50,7 @@
                 <select id="account_id" name="account_id" required>
                     <option value="">Select account</option>
                     {% for account in accounts %}
-                        <option value="{{ account.id }}" {% if outreach_item.account_id == account.id %}selected{% endif %}>
+                        <option value="{{ account.id }}" {% if selected_account_id|string == account.id|string %}selected{% endif %}>
                             {{ account.account_name }}
                         </option>
                     {% endfor %}
@@ -162,14 +162,6 @@
                     {% for activity in dropdown_values.outreach_activity_types %}
                         <option value="{{ activity }}" {% if outreach_item.activity_type == activity %}selected{% endif %}>{{ activity }}</option>
                     {% endfor %}
-                    {% for partner in partner_activity_options %}
-                        <option value="Partner: {{ partner.partner_name }}"
-                                data-account-id="{{ partner.account_id }}"
-                                class="partner-activity-option"
-                                {% if outreach_item.activity_type == 'Partner: ' ~ partner.partner_name %}selected{% endif %}>
-                            Partner: {{ partner.partner_name }}{% if partner.partner_type %} ({{ partner.partner_type }}){% endif %}
-                        </option>
-                    {% endfor %}
                 </select>
             </div>
 
@@ -229,15 +221,11 @@
         <div class="form-actions">
             {% if not task_locked %}
             <button type="submit" name="submit_action" value="save" class="btn btn-primary">
-                Save Changes
+                Save
             </button>
 
             <button type="submit" name="submit_action" value="complete_and_follow" class="btn btn-primary">
                 Complete and Create Follow-on
-            </button>
-
-            <button type="submit" name="submit_action" value="complete_only" class="btn btn-secondary">
-                Complete Only
             </button>
             {% endif %}
 

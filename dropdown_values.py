@@ -137,7 +137,7 @@ DROPDOWN_VALUES = {
         "Events",
     ],
     "outreach_outcomes": [
-        "No Response Yet",
+        "No Response",
         "Positive Response",
         "Neutral Response",
         "Negative Response",

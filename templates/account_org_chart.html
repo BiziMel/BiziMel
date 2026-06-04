@@ -148,6 +148,7 @@
                         <button type="submit" class="btn btn-primary" id="orgChartSaveButton" disabled>Save Layout</button>
                     </form>
                     <div class="org-export-actions">
+                        <button type="button" class="btn btn-secondary" id="orgArrangeButton">Arrange Chart</button>
                         <button type="button" class="btn btn-secondary" id="orgPrintPdfButton">Print PDF</button>
                         <button type="button" class="btn btn-secondary" id="orgExportPngButton">Export PNG</button>
                     </div>
@@ -225,6 +226,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const pendingList = document.getElementById("orgChartPendingList");
     const labelInput = document.getElementById("orgLabelText");
     const addLabelButton = document.getElementById("orgAddLabelButton");
+    const arrangeButton = document.getElementById("orgArrangeButton");
     const printPdfButton = document.getElementById("orgPrintPdfButton");
     const exportPngButton = document.getElementById("orgExportPngButton");
     const exportCanvas = document.getElementById("orgExportCanvas");
@@ -396,6 +398,76 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
+    function currentPlacement(node) {
+        return {
+            relationship: node.dataset.relationship || "with",
+            related_node_id: node.dataset.relatedNodeId || "",
+            x: Math.round(node.offsetLeft),
+            y: Math.round(node.offsetTop)
+        };
+    }
+
+    function arrangeChart() {
+        const nodes = Array.from(pane.querySelectorAll(".org-canvas-node"));
+        if (!nodes.length) {
+            return;
+        }
+        const byId = new Map(nodes.filter((node) => node.dataset.nodeId).map((node) => [node.dataset.nodeId, node]));
+        const levels = new Map();
+        nodes.forEach((node) => {
+            if (!node.dataset.relatedNodeId) {
+                levels.set(node, 0);
+            }
+        });
+        for (let pass = 0; pass < nodes.length + 2; pass += 1) {
+            nodes.forEach((node) => {
+                const related = byId.get(node.dataset.relatedNodeId);
+                if (!related || !levels.has(related)) {
+                    if (!levels.has(node)) levels.set(node, 0);
+                    return;
+                }
+                const base = levels.get(related);
+                const relationship = node.dataset.relationship || "with";
+                const level = relationship === "above" ? base - 1 : relationship === "under" ? base + 1 : base;
+                levels.set(node, level);
+            });
+        }
+        const minLevel = Math.min(...Array.from(levels.values()));
+        const rows = new Map();
+        nodes.forEach((node) => {
+            const row = levels.get(node) - minLevel;
+            if (!rows.has(row)) rows.set(row, []);
+            rows.get(row).push(node);
+        });
+        const tileWidth = 220;
+        const xGap = 42;
+        const yGap = 46;
+        const rowHeight = 118;
+        Array.from(rows.keys()).sort((a, b) => a - b).forEach((row) => {
+            const rowNodes = rows.get(row).sort((a, b) => a.offsetLeft - b.offsetLeft);
+            rowNodes.forEach((node, index) => {
+                const x = 40 + index * (tileWidth + xGap);
+                const y = 40 + row * (rowHeight + yGap);
+                node.style.left = `${x}px`;
+                node.style.top = `${y}px`;
+                node.classList.add("org-move-staged");
+                stageAction(node.dataset.nodeId ? `node:${node.dataset.nodeId}` : `person:${node.dataset.personRef}`, {
+                    type: "person",
+                    node_id: node.dataset.nodeId || "",
+                    person_ref: node.dataset.personRef || "",
+                    person_name: node.dataset.personName || "",
+                    relationship: node.dataset.relationship || "with",
+                    related_node_id: node.dataset.relatedNodeId || "",
+                    x_position: x,
+                    y_position: y,
+                    sort_order: index + 1
+                });
+            });
+        });
+        pane.style.minHeight = `${Math.max(680, (Math.max(...rows.keys()) + 1) * (rowHeight + yGap) + 80)}px`;
+        drawLinks();
+    }
+
     function placeLabel(label, point) {
         const x = clamp(Math.round(point.x - 40), 12, pane.scrollWidth - 180);
         const y = clamp(Math.round(point.y - 18), 12, pane.scrollHeight - 60);
@@ -529,6 +601,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     document.querySelectorAll(".org-chart-draggable, .org-canvas-label").forEach(attachDragHandler);
     addLabelButton?.addEventListener("click", addLabel);
+    arrangeButton?.addEventListener("click", arrangeChart);
     labelInput?.addEventListener("keydown", function (event) {
         if (event.key === "Enter") {
             event.preventDefault();

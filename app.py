@@ -42,21 +42,25 @@ RELEASE_NOTES = [
         "title": "Execution Insights restoration and weekly strategic guidance",
         "new": [
             "Added Weekly Wrap Up guidance, refreshed each Friday from the past week's execution and success signals.",
-            "Added Week Ahead Focus guidance, refreshed each Monday to direct deliberate PG focus for the week ahead.",
+            "Added Next 24 Hours guidance, refreshed daily from midnight to direct deliberate PG focus for the next day.",
         ],
         "enhanced": [
             "Rebuilt Execution Insights so current accounts, contacts, outreach, overdue work, outcomes and campaign learning generate practical PG guidance.",
             "Hardened dashboard insight generation so one learning query cannot blank the full Insights Dashboard.",
             "Enhanced the org chart with fixed-size snap tiles, relationship lines, staged tray removal and print/PDF or PNG export controls.",
+            "Enhanced the org chart with an Arrange Chart control for cleaner hierarchy pillars and readable row alignment.",
             "Enhanced Outreach Tasks so the activity title is the first column and opens the outreach form directly.",
             "Enhanced the Outreach Tasks table to fit the page more cleanly, with due date and assignment moved to the end columns and a sticky bulk action bar.",
+            "Enhanced Weekly Wrap Up and Next 24 Hours guidance into conversational paragraphs instead of bullet lists.",
         ],
         "fixed": [
             "Fixed the Severity 1 dashboard regression where Execution Insights could be replaced by the dashboard refresh fallback message.",
-            "Fixed bulk Outreach delete handling so stale cleanup records do not produce an internal server error.",
+            "Fixed bulk Outreach delete and table due-date update handling so stale cleanup or logging records do not produce an internal server error.",
             "Fixed Release Notes 2.1.3 formatting so it renders in the correct release structure.",
             "Fixed Outreach add and edit forms so only contacts for the selected account are rendered into the page.",
-            "Renamed Weekly Ahead Focus to Week Ahead Focus and kept Weekly Wrap Up closed until opened.",
+            "Fixed Activity Type dropdowns on Outreach create and amend forms so dynamic partner values such as Partner: Capgemini (GOSI) no longer appear.",
+            "Changed Activity Outcome from No Response Yet to No Response while preserving compatibility with existing records.",
+            "Renamed Week Ahead Focus to Next 24 Hours, changed it to a daily refresh and kept Weekly Wrap Up closed until opened.",
         ],
     },
     {
@@ -381,7 +385,7 @@ USER_GUIDE_SECTIONS = [
             "Use PG Success This Week to track Discovery Booked, NBM Booked, Exec Meeting Booked and legacy Meeting Booked outcomes.",
             "Use the pipeline target card to see total PG target ACV across your accounts.",
             "Open Weekly Wrap Up below the metrics to review the latest Friday-generated success and risk summary.",
-            "Open Week Ahead Focus below the metrics to review the latest Monday-generated strategic focus for the week ahead.",
+            "Open Next 24 Hours below the metrics to review the daily strategic focus for the immediate work window.",
             "Work active outreach tasks directly from the dashboard task table.",
             "Use Execution Insights to decide which account, campaign or sales play needs attention next.",
             "Update task status and due dates as work progresses so the dashboard stays accurate.",
@@ -392,7 +396,7 @@ USER_GUIDE_SECTIONS = [
             "AI Insights are recalculated on every dashboard refresh from current account, contact, partner, outreach, outcome and due-date data.",
             "Insights prioritise executive coverage and PG conversion. NBM Booked is treated as the strongest success signal, followed by Discovery Booked and executive meeting outcomes.",
             "Weekly Wrap Up is refreshed each Friday from midday and overwrites the previous wrap-up.",
-            "Week Ahead Focus is refreshed each Monday from 06:00 and overwrites the previous focus guidance.",
+            "Next 24 Hours is refreshed daily from midnight and overwrites the previous focus guidance.",
             "Overdue logic is time-aware. A blank due time is treated as end of day.",
             "Pipeline generated value should be treated as a source-system metric when it belongs in SFDC rather than PipeFlow.",
         ],
@@ -902,7 +906,7 @@ PAGE_INSTRUCTIONS = {
         "title": "Edit Outreach Guidance",
         "items": [
             "Add an Activity Update before completing or closing a task.",
-            "Complete Only closes the current task without creating a follow-on.",
+            "Save applies all selected values on the Outreach amend form.",
             "Complete and Create Follow-on saves the current task as completed, then opens a new outreach form for the next step.",
         ],
     },
@@ -1021,7 +1025,7 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "Release notes show latest to earliest.",
             "Open a release to review New, Enhanced and Fixed changes.",
-            "Version 2.1.3 restores Execution Insights and adds Weekly Wrap Up and Week Ahead Focus guidance to the Insights Dashboard.",
+            "Version 2.1.3 restores Execution Insights and adds Weekly Wrap Up and Next 24 Hours guidance to the Insights Dashboard.",
         ],
     },
     "user_guide": {
@@ -2519,6 +2523,11 @@ def is_closed_task_status(status):
     return (status or "").strip() in CLOSED_TASK_STATUSES
 
 
+def normalise_outreach_outcome(outcome):
+    outcome = (outcome or "").strip()
+    return "No Response" if outcome == "No Response Yet" else outcome
+
+
 def current_app_datetime():
     return datetime.now(APP_TIMEZONE).replace(tzinfo=None)
 
@@ -2882,10 +2891,12 @@ def format_dashboard_guidance(title, lead, bullets):
     cleaned_bullets = [str(item).strip() for item in bullets if str(item or "").strip()]
     if not cleaned_bullets:
         cleaned_bullets = ["Keep account, contact, outreach and outcome data current so PipeFlow can sharpen its recommendations."]
+    body = " ".join([str(lead or "").strip(), *cleaned_bullets]).strip()
     return {
         "title": title,
         "lead": lead,
         "bullets": cleaned_bullets[:6],
+        "body": body,
     }
 
 
@@ -2908,38 +2919,38 @@ def generate_weekly_wrap_up(connection, week_start, week_end, metric_values, exe
     success_count = metric_values.get("this_week_meetings_booked", 0)
     success_accounts = compact_join([row["account_name"] for row in week_successes if row["account_name"]], 3)
     bullets = [
-        f"{success_count} PG success outcome(s) were recorded this week, with NBM and Discovery bookings treated as the strongest success signals.",
-        f"{closed_count} outreach task(s) were closed this week, creating the cleanest evidence of execution progress.",
+        f"This week has produced {success_count} PG success outcome(s), with NBM and Discovery bookings carrying the most weight.",
+        f"{closed_count} outreach task(s) were closed, which gives the week a useful execution baseline.",
     ]
     if success_accounts:
-        bullets.append(f"Success was visible around {success_accounts}; review the route, contact level and sales play used there before scaling.")
+        bullets.append(f"Progress was most visible around {success_accounts}, so the best next learning is to review the route, contact level and sales play used there before scaling it.")
     if overdue_count:
-        bullets.append(f"{overdue_count} overdue action(s) remain and should be cleared before next week's campaign build-out.")
+        bullets.append(f"There are still {overdue_count} overdue action(s), so the week has not fully converted effort into clean momentum yet.")
     else:
-        bullets.append("No overdue actions are showing in the command centre, so focus can move to quality of route and outcome conversion.")
+        bullets.append("No overdue actions are showing in the command centre, so focus can move from recovery into improving route quality and conversion.")
     for insight in execution_insights[:2]:
         bullets.append(f"{insight.get('category', 'Insight')}: {insight.get('action', '')}")
     return format_dashboard_guidance(
         "Weekly Wrap Up",
-        "Key success areas and execution signals from the past week.",
+        "Here is the weekly wrap-up.",
         bullets,
     )
 
 
-def generate_weekly_ahead_focus(connection, week_start, week_end, metric_values, execution_insights):
-    next_week_end = week_start + timedelta(days=6)
+def generate_next_24_hours_focus(connection, today, metric_values, execution_insights):
+    tomorrow = today + timedelta(days=1)
     upcoming_count = dashboard_scalar(connection, f"""
         SELECT COUNT(*)
         FROM outreach
         WHERE next_action_date >= ?
           AND next_action_date <= ?
           AND {open_task_sql("outreach")}
-    """, (week_start.isoformat(), next_week_end.isoformat(), *open_task_params()), 0)
+    """, (today.isoformat(), tomorrow.isoformat(), *open_task_params()), 0)
     overdue_count = metric_values.get("this_week_overdue", 0)
     untouched_count = metric_values.get("this_week_untouched_accounts", 0)
     bullets = [
-        "Spend the first execution block on accounts with executive coverage and a direct Discovery or NBM ask.",
-        f"{upcoming_count} open action(s) are scheduled for the week ahead; prioritise the highest-value account actions first.",
+        "Spend the next working window on the accounts where an executive route and a direct Discovery or NBM ask are already available.",
+        f"There are {upcoming_count} open action(s) due in the next 24 hours, so start with the highest-value account action rather than the easiest admin task.",
     ]
     if overdue_count:
         bullets.append(f"Clear {overdue_count} overdue action(s) before adding new campaign volume so stale work does not dilute focus.")
@@ -2948,8 +2959,8 @@ def generate_weekly_ahead_focus(connection, week_start, week_end, metric_values,
     for insight in execution_insights[:3]:
         bullets.append(f"{insight.get('category', 'Focus')}: {insight.get('action', '')}")
     return format_dashboard_guidance(
-        "Week Ahead Focus",
-        "Strategic focus for where to spend deliberate PG time in the week ahead.",
+        "Next 24 Hours",
+        "Here is the focus for the next 24 hours.",
         bullets,
     )
 
@@ -2960,13 +2971,14 @@ def load_dashboard_weekly_guidance(connection, metric_values, execution_insights
     current_week_start = today - timedelta(days=today.weekday())
     current_week_end = current_week_start + timedelta(days=6)
     week_key = dashboard_guidance_week_key(today)
+    day_key = today.isoformat()
     wrap_key = dashboard_setting(connection, "weekly_wrap_up_key", "")
     focus_key = dashboard_setting(connection, "weekly_ahead_focus_key", "")
     wrap_content = dashboard_setting(connection, "weekly_wrap_up_content", "")
     focus_content = dashboard_setting(connection, "weekly_ahead_focus_content", "")
 
     should_refresh_wrap = not wrap_content or wrap_key != week_key or (today.weekday() == 4 and now.time() >= time(12, 0))
-    should_refresh_focus = not focus_content or focus_key != week_key or (today.weekday() == 0 and now.time() >= time(6, 0))
+    should_refresh_focus = not focus_content or focus_key != day_key
 
     if should_refresh_wrap:
         generated = generate_weekly_wrap_up(connection, current_week_start, current_week_end, metric_values, execution_insights)
@@ -2975,9 +2987,9 @@ def load_dashboard_weekly_guidance(connection, metric_values, execution_insights
         save_dashboard_setting(connection, "weekly_wrap_up_content", wrap_content)
 
     if should_refresh_focus:
-        generated = generate_weekly_ahead_focus(connection, current_week_start, current_week_end, metric_values, execution_insights)
+        generated = generate_next_24_hours_focus(connection, today, metric_values, execution_insights)
         focus_content = json.dumps(generated)
-        save_dashboard_setting(connection, "weekly_ahead_focus_key", week_key)
+        save_dashboard_setting(connection, "weekly_ahead_focus_key", day_key)
         save_dashboard_setting(connection, "weekly_ahead_focus_content", focus_content)
 
     connection.commit()
@@ -2993,7 +3005,7 @@ def load_dashboard_weekly_guidance(connection, metric_values, execution_insights
 
     return {
         "weekly_wrap_up": parse_guidance(wrap_content, "Weekly Wrap Up"),
-        "weekly_ahead_focus": parse_guidance(focus_content, "Week Ahead Focus"),
+        "weekly_ahead_focus": parse_guidance(focus_content, "Next 24 Hours"),
     }
 
 
@@ -3249,7 +3261,7 @@ def build_learning_insights(connection):
           AND (
                 outcome IS NULL
              OR outcome = ''
-             OR outcome = 'No Response Yet'
+             OR outcome IN ('No Response', 'No Response Yet')
         )
     """).fetchone()["total"]
 
@@ -3377,7 +3389,7 @@ def render_dashboard_fallback(connection=None):
                 ["Keep account, contact, outreach and outcome data current so PipeFlow can sharpen execution guidance."],
             ),
             "weekly_ahead_focus": format_dashboard_guidance(
-                "Week Ahead Focus",
+                "Next 24 Hours",
                 "Strategic focus for where to spend deliberate PG time in the week ahead.",
                 ["Prioritise executive coverage, overdue action clearance and Discovery or NBM asks."],
             ),
@@ -3940,7 +3952,7 @@ def build_dashboard_response(connection):
                 ["Review this week's successes, overdue work and account coverage to plan the next PG move."],
             ),
             "weekly_ahead_focus": format_dashboard_guidance(
-                "Week Ahead Focus",
+                "Next 24 Hours",
                 "Strategic focus for where to spend deliberate PG time in the week ahead.",
                 ["Focus on executive routes, Discovery Booked outcomes and NBM Booked progression."],
             ),
@@ -7198,7 +7210,7 @@ def add_outreach():
                 request.form.get("activity_time"),
                 request.form.get("subject"),
                 request.form.get("notes", ""),
-                request.form.get("outcome"),
+                normalise_outreach_outcome(request.form.get("outcome")),
                 request.form.get("next_action"),
                 request.form.get("next_action_date"),
                 request.form.get("next_action_time"),
@@ -7219,7 +7231,7 @@ def add_outreach():
                 "activity_date": request.form.get("activity_date"),
                 "activity_time": request.form.get("activity_time"),
                 "subject": request.form.get("subject"),
-                "outcome": request.form.get("outcome"),
+                "outcome": normalise_outreach_outcome(request.form.get("outcome")),
                 "next_action": request.form.get("next_action"),
                 "next_action_date": request.form.get("next_action_date"),
                 "next_action_time": request.form.get("next_action_time"),
@@ -7464,7 +7476,7 @@ def campaign_builder():
                                 step["time"],
                                 subject,
                                 notes,
-                                "No Response Yet",
+                                "No Response",
                                 "",
                                 action_date.isoformat(),
                                 step["time"],
@@ -7624,8 +7636,14 @@ def bulk_delete_outreach():
     if outreach_ids:
         initialise_database(force=True)
         connection = get_db_connection()
-        deleted_count = delete_outreach_records(connection, outreach_ids)
-        connection.commit()
+        try:
+            deleted_count = delete_outreach_records(connection, outreach_ids)
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            traceback.print_exc()
+            connection.close()
+            return redirect_with_query(return_to, error="Selected outreach records could not be deleted. Refresh the table and try again.")
         connection.close()
     if deleted_count:
         return redirect_with_query(return_to, message=f"Deleted {deleted_count} outreach record(s).")
@@ -7658,14 +7676,20 @@ def bulk_outreach_action():
         next_action_date = request.form.get("bulk_next_action_date", "")
         next_action_time = request.form.get("bulk_next_action_time", "")
         connection = get_db_connection()
-        updated_count = update_outreach_due_date_records(
-            connection,
-            outreach_ids,
-            next_action_date,
-            next_action_time,
-            "Bulk due date update from Outreach table",
-        )
-        connection.commit()
+        try:
+            updated_count = update_outreach_due_date_records(
+                connection,
+                outreach_ids,
+                next_action_date,
+                next_action_time,
+                "Bulk due date update from Outreach table",
+            )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            traceback.print_exc()
+            connection.close()
+            return redirect_with_query(return_to, error="Selected outreach due dates could not be updated. Refresh the table and try again.")
         connection.close()
         if updated_count:
             return redirect_with_query(return_to, message=f"Updated the due date for {updated_count} outreach task(s).")
@@ -7702,14 +7726,17 @@ def update_outreach_due_date_records(connection, outreach_ids, next_action_date,
             (next_action_date, next_action_time, outreach_id),
         )
         if changes:
-            audit_record_update(connection, "outreach", outreach_id, outreach_item, new_values, labels)
-            add_timeline_entry(
-                connection,
-                "outreach",
-                outreach_id,
-                "Task Updated",
-                f"{actor_label}: " + "; ".join(changes),
-            )
+            try:
+                audit_record_update(connection, "outreach", outreach_id, outreach_item, new_values, labels)
+                add_timeline_entry(
+                    connection,
+                    "outreach",
+                    outreach_id,
+                    "Task Updated",
+                    f"{actor_label}: " + "; ".join(changes),
+                )
+            except Exception:
+                traceback.print_exc()
         updated_count += 1
     return updated_count
 
@@ -7720,14 +7747,20 @@ def update_outreach_due_date(outreach_id):
     next_action_date = request.form.get("next_action_date", "")
     next_action_time = request.form.get("next_action_time", "")
     connection = get_db_connection()
-    updated_count = update_outreach_due_date_records(
-        connection,
-        [outreach_id],
-        next_action_date,
-        next_action_time,
-        "Due date updated from Outreach table",
-    )
-    connection.commit()
+    try:
+        updated_count = update_outreach_due_date_records(
+            connection,
+            [outreach_id],
+            next_action_date,
+            next_action_time,
+            "Due date updated from Outreach table",
+        )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        traceback.print_exc()
+        connection.close()
+        return redirect_with_query(return_to, error="Activity due date could not be updated. Refresh the table and try again.")
     connection.close()
     if updated_count:
         return redirect_with_query(return_to, message="Activity due date updated.")
@@ -7743,14 +7776,20 @@ def bulk_update_outreach_due_date():
     next_action_date = request.form.get("bulk_next_action_date", "")
     next_action_time = request.form.get("bulk_next_action_time", "")
     connection = get_db_connection()
-    updated_count = update_outreach_due_date_records(
-        connection,
-        outreach_ids,
-        next_action_date,
-        next_action_time,
-        "Bulk due date update from Outreach table",
-    )
-    connection.commit()
+    try:
+        updated_count = update_outreach_due_date_records(
+            connection,
+            outreach_ids,
+            next_action_date,
+            next_action_time,
+            "Bulk due date update from Outreach table",
+        )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        traceback.print_exc()
+        connection.close()
+        return redirect_with_query(return_to, error="Selected outreach due dates could not be updated. Refresh the table and try again.")
     connection.close()
     if updated_count:
         return redirect_with_query(return_to, message=f"Updated the due date for {updated_count} outreach task(s).")
@@ -7822,7 +7861,7 @@ def edit_outreach(outreach_id):
             "activity_time": request.form.get("activity_time"),
             "subject": request.form.get("subject"),
             "notes": outreach_item["notes"] or "",
-            "outcome": request.form.get("outcome"),
+            "outcome": normalise_outreach_outcome(request.form.get("outcome")),
             "next_action": request.form.get("next_action"),
             "next_action_date": request.form.get("next_action_date"),
             "next_action_time": request.form.get("next_action_time"),
@@ -8691,7 +8730,7 @@ def update_task_from_tasks(outreach_id):
         return redirect(return_target)
 
     new_values = {
-        "outcome": request.form.get("outcome"),
+        "outcome": normalise_outreach_outcome(request.form.get("outcome")),
         "task_status": request.form.get("task_status", "Not Started"),
         "next_action": request.form.get("next_action"),
         "next_action_date": request.form.get("next_action_date"),
@@ -8762,7 +8801,7 @@ def complete_task_from_tasks(outreach_id):
         connection.close()
         return redirect(return_target)
 
-    outcome = request.form.get("outcome") or outreach_item["outcome"] or "Follow-up Required"
+    outcome = normalise_outreach_outcome(request.form.get("outcome")) or outreach_item["outcome"] or "Follow-up Required"
     connection.execute(
         """
         UPDATE outreach
@@ -9430,7 +9469,7 @@ def build_pg_bible_report_from_db(connection):
         is_pipeline_outcome = row["outcome"] in (*PG_SUCCESS_OUTCOMES, "Positive Response", "Referral Made")
         if row["activity_type"] == "VITO":
             totals["vitos_sent"] += 1
-            if row["outcome"] != "No Response Yet":
+            if normalise_outreach_outcome(row["outcome"]) != "No Response":
                 totals["vitos_chased"] += 1
         if is_discovery_booked or is_pg_success:
             totals["discovery_booked"] += 1
