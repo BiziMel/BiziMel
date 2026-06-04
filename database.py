@@ -301,6 +301,22 @@ def initialise_database(force=False):
             related_node_id INTEGER,
             visual_level INTEGER DEFAULT 0,
             sort_order INTEGER DEFAULT 0,
+            x_position INTEGER DEFAULT 0,
+            y_position INTEGER DEFAULT 0,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(chart_id) REFERENCES account_org_charts(id)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS account_org_chart_labels (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chart_id INTEGER NOT NULL,
+            account_id INTEGER NOT NULL,
+            label_text TEXT NOT NULL,
+            x_position INTEGER DEFAULT 0,
+            y_position INTEGER DEFAULT 0,
             date_created TEXT DEFAULT CURRENT_TIMESTAMP,
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(chart_id) REFERENCES account_org_charts(id)
@@ -389,8 +405,17 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "account_org_chart_people", "related_node_id", "INTEGER")
     add_column_if_missing(cursor, "account_org_chart_people", "visual_level", "INTEGER DEFAULT 0")
     add_column_if_missing(cursor, "account_org_chart_people", "sort_order", "INTEGER DEFAULT 0")
+    add_column_if_missing(cursor, "account_org_chart_people", "x_position", "INTEGER DEFAULT 0")
+    add_column_if_missing(cursor, "account_org_chart_people", "y_position", "INTEGER DEFAULT 0")
     add_column_if_missing(cursor, "account_org_chart_people", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "account_org_chart_people", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "account_org_chart_labels", "chart_id", "INTEGER")
+    add_column_if_missing(cursor, "account_org_chart_labels", "account_id", "INTEGER")
+    add_column_if_missing(cursor, "account_org_chart_labels", "label_text", "TEXT")
+    add_column_if_missing(cursor, "account_org_chart_labels", "x_position", "INTEGER DEFAULT 0")
+    add_column_if_missing(cursor, "account_org_chart_labels", "y_position", "INTEGER DEFAULT 0")
+    add_column_if_missing(cursor, "account_org_chart_labels", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "account_org_chart_labels", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
 
     # Safe migrations for accounts
     add_column_if_missing(cursor, "accounts", "team_id", "INTEGER DEFAULT 1")

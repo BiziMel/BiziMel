@@ -20,9 +20,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection
 
 
-APP_VERSION = "2.1.1"
-APP_RELEASE_DATE = "2026-06-03"
-APP_BUILD = "2026-06-03-v2.1.1-enterprise-org-campaign-contact-r1"
+APP_VERSION = "2.1.2"
+APP_RELEASE_DATE = "2026-06-04"
+APP_BUILD = "2026-06-04-v2.1.2-enterprise-dashboard-org-pg-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -36,6 +36,23 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.1.2",
+        "release_date": "2026-06-04",
+        "title": "Enterprise dashboard restoration, single-pane org chart and PG contact activity rules",
+        "new": [],
+        "enhanced": [
+            "Enhanced the account org chart into a single-pane drag-and-drop canvas with border-based relationship placement and organisation labels.",
+            "Enhanced Outreach contact selection styling so multi-contact checkboxes and names are aligned and easier to scan.",
+            "Enhanced PG Progress and PG Bible outputs so contacts with no open outreach and no activity in more than 30 days are hidden until new activity is created.",
+            "Enhanced PG Progress and PG Bible next action fields so contacts with no open activity show No next action set.",
+        ],
+        "fixed": [
+            "Fixed the Insights Dashboard fallback path so command-centre metrics, outcome breakdown and execution insights continue to populate if one dashboard query fails.",
+            "Fixed account table Org Chart labelling and added a clearer visual separation between Org Chart and Website links.",
+            "Fixed org chart profile tiles to remove source/contact-type labels and show only name, role and organisation/business unit when populated.",
+        ],
+    },
     {
         "version": "2.1.1",
         "release_date": "2026-06-03",
@@ -370,11 +387,16 @@ USER_GUIDE_SECTIONS = [
             "Enter Pipeline Target USD ACV so the Dashboard can calculate total PG target value.",
             "Review or reassign the Account Owner on the edit account form when ownership changes.",
             "Open an account record to review contacts, partner involvement, outreach history and timeline entries.",
+            "Use Org Chart from the account table or account record to build a single-pane stakeholder map for that account.",
+            "Drag each account contact onto the org chart pane once. Drop on the top, bottom, left or right border of another tile to create the hierarchy and draw the relationship arrow.",
+            "Add organisation or business-unit labels directly on the org chart pane when a chart needs free-text grouping.",
             "Use Account Sharing on the account record to review and revoke access if you own the account.",
         ],
         "tips": [
             "Use business organisation to distinguish large accounts with multiple internal groups.",
             "Keep PG Bible order numeric and unique for your most important accounts.",
+            "Org chart tiles show the contact photo, name, role and organisation or business unit when populated.",
+            "The org chart only offers contacts associated to the selected account, and each contact can appear on the chart once.",
             "Changing ownership is stronger than sharing because ownership rights move to the new owner.",
         ],
     },
@@ -391,11 +413,14 @@ USER_GUIDE_SECTIONS = [
             "Add contacts from the Contacts page or from an account context.",
             "Select the account before entering stakeholder details.",
             "Capture job title, organisation, relationship, responsibilities and personal context where known.",
+            "Upload or replace the contact photo from the contact edit form when a current profile image is available.",
+            "Print a contact from the contact record when you need a visual contact sheet; blank fields are excluded from the print output.",
             "Use contact data to make campaign recommendations more accurate over time.",
             "Keep contact records current when a stakeholder changes role, leaves or becomes more important to the sales play.",
         ],
         "tips": [
             "Accounts must have at least one contact before Campaign Builder can generate a campaign.",
+            "BMC Relationship includes Lead for stakeholders who are leading the account, opportunity or sales motion.",
             "Richer contact notes improve future sales play recommendations.",
             "Do not store sensitive personal data that is not relevant to legitimate business outreach.",
         ],
@@ -413,6 +438,7 @@ USER_GUIDE_SECTIONS = [
         ],
         "steps": [
             "Use Add Outreach for one-off activity or Campaign Builder for generated sequences.",
+            "Select the account first so the Contacts dropdown only shows customer and partner contacts associated to that account.",
             "Use the Share Full Account panel to copy an account package to one or more users and record their access.",
             "Group outreach by account and campaign to understand execution context.",
             "Use the Assigned To dropdown in each row and click Save Assignment to commit task ownership.",
@@ -422,6 +448,7 @@ USER_GUIDE_SECTIONS = [
         ],
         "tips": [
             "The due date is the Activity Due Date, based on the next action date.",
+            "The Contacts dropdown supports multiple contacts; the first selected contact remains the primary report contact while all selected recipients are retained against the outreach task.",
             "Due-date colouring is time-aware: future work is green, work due today is amber, and overdue open work is red after the due date and time have passed.",
             "Tasks can only be assigned to users who have access to the related account.",
             "Closed, completed and cancelled outreach is hidden unless you explicitly filter for it.",
@@ -449,6 +476,9 @@ USER_GUIDE_SECTIONS = [
         "tips": [
             "Generated campaigns avoid weekends and your configured non-working dates.",
             "Tasks are placed inside your working hours and avoid duplicate time slots where possible.",
+            "Generated campaign tasks will not start earlier than the campaign submit time.",
+            "The first email-style touch per contact is VITO. Later email-style tasks are generated as Email or Follow-up activity based on learned success patterns so the sequence is less repetitive.",
+            "Campaign learning favours historic success signals, with NBM Booked carrying the strongest weighting and Discovery Booked also treated as a key PG success outcome.",
             "If no account appears, add at least one contact to the account first.",
         ],
     },
@@ -520,6 +550,8 @@ USER_GUIDE_SECTIONS = [
         "tips": [
             "Reports reflect the same fields used across account, contact, outreach and task views.",
             "PG Bible uses account target and ordering fields configured in the account form.",
+            "PG Progress and PG Bible hide contacts with no active engagement for more than 30 days when they also have no open outreach.",
+            "If a contact has no open activity but remains visible, the next activity field shows No next action set.",
             "Task Reports include SLA by assignee so timeliness is measured against the person currently assigned.",
             "Task Report overdue counts use the same time-aware open-task rule as the Dashboard and AI Insights.",
         ],
@@ -962,7 +994,7 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "Release notes show latest to earliest.",
             "Open a release to review New, Enhanced and Fixed changes.",
-            "Version 2.1.1 includes enterprise-only packaging, account-scoped outreach contacts, campaign scheduling fixes and refreshed command-centre safeguards.",
+            "Version 2.1.2 restores the Insights Dashboard, adds the single-pane org chart builder and updates PG Progress and PG Bible activity rules.",
         ],
     },
     "user_guide": {
@@ -2965,12 +2997,87 @@ def home():
     except Exception as exc:
         print(f"Dashboard failed: {exc!r}", file=sys.stderr)
         traceback.print_exc()
-        return render_dashboard_fallback()
+        return render_dashboard_fallback(connection)
     finally:
         connection.close()
 
 
-def render_dashboard_fallback():
+def dashboard_metric_fallback_values(connection):
+    values = {
+        "this_week_due": 0,
+        "this_week_completed": 0,
+        "this_week_overdue": 0,
+        "this_week_untouched_accounts": 0,
+        "this_week_meetings_booked": 0,
+        "total_accounts": 0,
+        "total_contacts": 0,
+        "total_outreach": 0,
+        "total_pg_target": 0,
+        "meetings_booked": 0,
+        "follow_ups_due": 0,
+    }
+    try:
+        now = current_app_datetime()
+        today = now.date()
+        week_start = today - timedelta(days=today.weekday())
+        week_end = week_start + timedelta(days=6)
+        values["total_accounts"] = connection.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
+        values["total_contacts"] = connection.execute("SELECT COUNT(*) FROM contacts").fetchone()[0]
+        values["total_outreach"] = connection.execute("SELECT COUNT(*) FROM outreach").fetchone()[0]
+        values["total_pg_target"] = connection.execute("SELECT COALESCE(SUM(pipeline_target), 0) FROM accounts").fetchone()[0]
+        rows = connection.execute("SELECT * FROM outreach").fetchall()
+        for row in rows:
+            next_date = None
+            activity_date = None
+            try:
+                next_date = datetime.strptime(str(row["next_action_date"]), "%Y-%m-%d").date() if row["next_action_date"] else None
+            except ValueError:
+                next_date = None
+            try:
+                activity_date = datetime.strptime(str(row["activity_date"]), "%Y-%m-%d").date() if row["activity_date"] else None
+            except ValueError:
+                activity_date = None
+            closed = is_closed_task_status(row["task_status"])
+            if next_date and week_start <= next_date <= week_end and not closed:
+                values["this_week_due"] += 1
+            if is_overdue_task(row["next_action_date"], row["next_action_time"], row["task_status"], now):
+                values["this_week_overdue"] += 1
+            if closed:
+                try:
+                    updated_date = datetime.strptime(str(row["last_updated"] or "")[:10], "%Y-%m-%d").date()
+                except ValueError:
+                    updated_date = None
+                if updated_date and week_start <= updated_date <= week_end:
+                    values["this_week_completed"] += 1
+            if activity_date and week_start <= activity_date <= week_end and is_pg_success_outcome(row["outcome"], row["activity_type"]):
+                values["this_week_meetings_booked"] += 1
+            if next_date and next_date <= today + timedelta(days=7) and not closed:
+                values["follow_ups_due"] += 1
+            if is_pg_success_outcome(row["outcome"], row["activity_type"]):
+                values["meetings_booked"] += 1
+        values["this_week_untouched_accounts"] = connection.execute(f"""
+            SELECT COUNT(*)
+            FROM accounts
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM outreach
+                WHERE outreach.account_id = accounts.id
+                  AND {open_task_sql("outreach")}
+                  AND (
+                        NULLIF(TRIM(COALESCE(outreach.sales_play, '')), '') IS NOT NULL
+                     OR NULLIF(TRIM(COALESCE(outreach.next_action, '')), '') IS NOT NULL
+                  )
+            )
+        """, open_task_params()).fetchone()[0]
+    except Exception:
+        traceback.print_exc()
+    return values
+
+
+def render_dashboard_fallback(connection=None):
+    metric_values = dashboard_metric_fallback_values(connection) if connection else {}
+    now = current_app_datetime()
+    week_start = now.date() - timedelta(days=now.date().weekday())
     fallback_insight = {
         "source": "AI Insight",
         "category": "Dashboard Check",
@@ -2982,19 +3089,19 @@ def render_dashboard_fallback():
     }
     return render_template(
         "index.html",
-        this_week_due=0,
-        this_week_completed=0,
-        this_week_overdue=0,
-        this_week_untouched_accounts=0,
-        this_week_meetings_booked=0,
-        this_week_start="",
-        this_week_end="",
-        total_accounts=0,
-        total_contacts=0,
-        total_outreach=0,
-        total_pg_target=0,
-        meetings_booked=0,
-        follow_ups_due=0,
+        this_week_due=metric_values.get("this_week_due", 0),
+        this_week_completed=metric_values.get("this_week_completed", 0),
+        this_week_overdue=metric_values.get("this_week_overdue", 0),
+        this_week_untouched_accounts=metric_values.get("this_week_untouched_accounts", 0),
+        this_week_meetings_booked=metric_values.get("this_week_meetings_booked", 0),
+        this_week_start=week_start.isoformat(),
+        this_week_end=(week_start + timedelta(days=6)).isoformat(),
+        total_accounts=metric_values.get("total_accounts", 0),
+        total_contacts=metric_values.get("total_contacts", 0),
+        total_outreach=metric_values.get("total_outreach", 0),
+        total_pg_target=metric_values.get("total_pg_target", 0),
+        meetings_booked=metric_values.get("meetings_booked", 0),
+        follow_ups_due=metric_values.get("follow_ups_due", 0),
         latest_outreach=[],
         outreach_by_account=[],
         outcome_breakdown=[],
@@ -3566,6 +3673,27 @@ def save_dashboard_setting(connection, key, value):
         )
 
 
+def contact_has_recent_or_open_activity(connection, contact_id, cutoff_date):
+    row = connection.execute(f"""
+        SELECT
+            MAX(NULLIF(activity_date, '')) AS latest_activity_date,
+            SUM(CASE WHEN {open_task_sql("outreach")} THEN 1 ELSE 0 END) AS open_count
+        FROM outreach
+        WHERE contact_id = ?
+    """, (*open_task_params(), contact_id)).fetchone()
+    if not row:
+        return False
+    if (row["open_count"] or 0) > 0:
+        return True
+    latest = row["latest_activity_date"]
+    if not latest:
+        return False
+    try:
+        return datetime.strptime(str(latest)[:10], "%Y-%m-%d").date() >= cutoff_date
+    except ValueError:
+        return False
+
+
 def money_value(value):
     try:
         return float(value or 0)
@@ -3867,6 +3995,7 @@ def pg_dashboard_context(connection):
     seven_days_ago = (datetime.now() - timedelta(days=7)).date().isoformat()
     today_key = datetime.now().date().isoformat()
     seven_days_forward = (datetime.now() + timedelta(days=7)).date().isoformat()
+    stale_contact_cutoff = (datetime.now() - timedelta(days=30)).date()
     for account in accounts:
         account_id = account["id"]
         pg_target_number = account["pg_bible_order"] or ""
@@ -3915,13 +4044,7 @@ def pg_dashboard_context(connection):
 
         for contact in contacts:
             contact_id = contact["id"]
-            latest_contact_activity = connection.execute("""
-                SELECT MAX(COALESCE(last_updated, date_created)) AS latest_activity
-                FROM outreach
-                WHERE account_id = ?
-                  AND contact_id = ?
-            """, (account_id, contact_id)).fetchone()["latest_activity"]
-            if latest_contact_activity and str(latest_contact_activity)[:10] < (datetime.now() - timedelta(days=14)).date().isoformat():
+            if not contact_has_recent_or_open_activity(connection, contact_id, stale_contact_cutoff):
                 continue
             scheduled_action_rows = connection.execute("""
                 SELECT subject, next_action_date, next_action_time
@@ -3988,7 +4111,7 @@ def pg_dashboard_context(connection):
                 "exec_first": action_update["exec_first"] if action_update and "exec_first" in action_update.keys() else "",
                 "nbm_completed": action_update["nbm_completed"] if action_update and "nbm_completed" in action_update.keys() else "",
                 "last_7_days_activity_entries": last_7_days_activity_entries,
-                "next_7_days_actions": next_7_days_actions,
+                "next_7_days_actions": next_7_days_actions or [{"subject": "No next action set", "due": ""}],
             })
 
         partner_activity_rows = connection.execute("""
@@ -5489,11 +5612,23 @@ def parse_optional_int(value):
         return None
 
 
-def save_org_chart_node_position(connection, chart_id, node_id, relationship, related_node_id, visual_level=None, sort_order=None):
+def save_org_chart_node_position(
+    connection,
+    chart_id,
+    node_id,
+    relationship,
+    related_node_id,
+    visual_level=None,
+    sort_order=None,
+    x_position=None,
+    y_position=None,
+):
     relationship = normalise_org_chart_relationship(relationship)
     related_node_id_int = parse_optional_int(related_node_id)
     visual_level_int = parse_optional_int(visual_level)
     sort_order_int = parse_optional_int(sort_order)
+    x_position_int = parse_optional_int(x_position)
+    y_position_int = parse_optional_int(y_position)
     if related_node_id_int == node_id:
         relationship = "with"
         related_node_id_int = None
@@ -5514,10 +5649,22 @@ def save_org_chart_node_position(connection, chart_id, node_id, relationship, re
             related_node_id = ?,
             visual_level = ?,
             sort_order = COALESCE(?, sort_order),
+            x_position = COALESCE(?, x_position),
+            y_position = COALESCE(?, y_position),
             last_updated = CURRENT_TIMESTAMP
         WHERE chart_id = ?
           AND id = ?
-    """, (manager_node_id, relationship, related_node_id_int, visual_level_int, sort_order_int, chart_id, node_id))
+    """, (
+        manager_node_id,
+        relationship,
+        related_node_id_int,
+        visual_level_int,
+        sort_order_int,
+        x_position_int,
+        y_position_int,
+        chart_id,
+        node_id,
+    ))
     if relationship == "above" and related_node_id_int:
         apply_org_chart_above_relationship(connection, chart_id, node_id, related_node_id_int)
     return {
@@ -5526,6 +5673,8 @@ def save_org_chart_node_position(connection, chart_id, node_id, relationship, re
         "related_node_id": related_node_id_int,
         "visual_level": visual_level_int,
         "sort_order": sort_order_int,
+        "x_position": x_position_int,
+        "y_position": y_position_int,
     }
 
 
@@ -5674,6 +5823,8 @@ def org_chart_context(connection, account, chart_id=None):
                 "related_node_id": row["related_node_id"] if "related_node_id" in row.keys() else None,
                 "visual_level": row["visual_level"] if "visual_level" in row.keys() else 0,
                 "sort_order": row["sort_order"] if "sort_order" in row.keys() else None,
+                "x_position": row["x_position"] if "x_position" in row.keys() else 0,
+                "y_position": row["y_position"] if "y_position" in row.keys() else 0,
                 "name": person["name"],
                 "title": person["title"],
                 "photo": person["photo"],
@@ -5699,6 +5850,14 @@ def org_chart_context(connection, account, chart_id=None):
         for people in roots_by_group.values():
             sort_org_chart_nodes(people)
         sort_org_chart_nodes(unmapped)
+    chart_labels = []
+    if active_chart:
+        chart_labels = connection.execute("""
+            SELECT *
+            FROM account_org_chart_labels
+            WHERE chart_id = ?
+            ORDER BY id
+        """, (active_chart["id"],)).fetchall()
     visible_levels = org_chart_visible_levels(chart_nodes)
     chart_roots = []
     for people in roots_by_group.values():
@@ -5723,6 +5882,7 @@ def org_chart_context(connection, account, chart_id=None):
         "roots_by_group": roots_by_group,
         "roots_by_group_levels": roots_by_group_levels,
         "chart_roots": chart_roots,
+        "chart_labels": chart_labels,
         "visible_levels": visible_levels,
         "unmapped": unmapped,
     }
@@ -5806,6 +5966,7 @@ def delete_account_org_chart(account_id, chart_id):
     """, (account_id, chart_id)).fetchone()
     if chart:
         audit_record_delete(connection, "account_org_chart", chart_id, chart["chart_name"])
+        connection.execute("DELETE FROM account_org_chart_labels WHERE chart_id = ?", (chart_id,))
         connection.execute("DELETE FROM account_org_chart_people WHERE chart_id = ?", (chart_id,))
         connection.execute("DELETE FROM account_org_charts WHERE id = ?", (chart_id,))
         connection.commit()
@@ -5839,6 +6000,42 @@ def save_account_org_chart_layout(account_id, chart_id):
         for action in actions:
             if not isinstance(action, dict):
                 continue
+            if action.get("type") == "label":
+                label_text = (action.get("label_text") or "").strip()
+                if not label_text:
+                    continue
+                x_position = parse_optional_int(action.get("x_position")) or 40
+                y_position = parse_optional_int(action.get("y_position")) or 40
+                label_id = parse_optional_int(action.get("label_id"))
+                if label_id:
+                    connection.execute("""
+                        UPDATE account_org_chart_labels
+                        SET label_text = ?,
+                            x_position = ?,
+                            y_position = ?,
+                            last_updated = CURRENT_TIMESTAMP
+                        WHERE chart_id = ?
+                          AND account_id = ?
+                          AND id = ?
+                    """, (label_text, x_position, y_position, chart_id, account_id, label_id))
+                else:
+                    cursor = connection.execute("""
+                        INSERT INTO account_org_chart_labels (
+                            chart_id,
+                            account_id,
+                            label_text,
+                            x_position,
+                            y_position
+                        )
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (chart_id, account_id, label_text, x_position, y_position))
+                    audit_record_create(connection, "account_org_chart_label", cursor.lastrowid, {
+                        "account_id": account_id,
+                        "chart_id": chart_id,
+                        "label_text": label_text,
+                    })
+                saved_count += 1
+                continue
             relationship = normalise_org_chart_relationship(action.get("relationship"))
             related_node_id = action.get("related_node_id") or None
             manager_node_id = action.get("manager_node_id") or None
@@ -5847,6 +6044,8 @@ def save_account_org_chart_layout(account_id, chart_id):
                 related_node_id = manager_node_id
             visual_level = action.get("visual_level")
             sort_order = action.get("sort_order")
+            x_position = action.get("x_position")
+            y_position = action.get("y_position")
             node_id = action.get("node_id")
             if node_id:
                 try:
@@ -5863,7 +6062,17 @@ def save_account_org_chart_layout(account_id, chart_id):
                 if not node:
                     continue
                 old_values = dict(node)
-                new_values = save_org_chart_node_position(connection, chart_id, node_id, relationship, related_node_id, visual_level, sort_order)
+                new_values = save_org_chart_node_position(
+                    connection,
+                    chart_id,
+                    node_id,
+                    relationship,
+                    related_node_id,
+                    visual_level,
+                    sort_order,
+                    x_position,
+                    y_position,
+                )
                 audit_record_update(
                     connection,
                     "account_org_chart_person",
@@ -5876,6 +6085,8 @@ def save_account_org_chart_layout(account_id, chart_id):
                         "related_node_id": "Related person",
                         "visual_level": "Visual row",
                         "sort_order": "Row order",
+                        "x_position": "Canvas x",
+                        "y_position": "Canvas y",
                     }
                 )
                 saved_count += 1
@@ -5887,7 +6098,17 @@ def save_account_org_chart_layout(account_id, chart_id):
             existing_node = org_chart_existing_person_node(connection, chart_id, person_type, contact_id, partner_contact_id)
             if existing_node:
                 old_values = dict(existing_node)
-                new_values = save_org_chart_node_position(connection, chart_id, existing_node["id"], relationship, related_node_id, visual_level, sort_order)
+                new_values = save_org_chart_node_position(
+                    connection,
+                    chart_id,
+                    existing_node["id"],
+                    relationship,
+                    related_node_id,
+                    visual_level,
+                    sort_order,
+                    x_position,
+                    y_position,
+                )
                 audit_record_update(
                     connection,
                     "account_org_chart_person",
@@ -5900,6 +6121,8 @@ def save_account_org_chart_layout(account_id, chart_id):
                         "related_node_id": "Related person",
                         "visual_level": "Visual row",
                         "sort_order": "Row order",
+                        "x_position": "Canvas x",
+                        "y_position": "Canvas y",
                     }
                 )
                 saved_count += 1
@@ -5907,6 +6130,8 @@ def save_account_org_chart_layout(account_id, chart_id):
 
             visual_level_int = parse_optional_int(visual_level)
             sort_order_int = parse_optional_int(sort_order)
+            x_position_int = parse_optional_int(x_position) or 40
+            y_position_int = parse_optional_int(y_position) or 40
             if visual_level_int is not None:
                 manager_node_id = None
                 relationship = "with"
@@ -5925,9 +6150,11 @@ def save_account_org_chart_layout(account_id, chart_id):
                     relationship_type,
                     related_node_id,
                     visual_level,
-                    sort_order
+                    sort_order,
+                    x_position,
+                    y_position
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 chart_id,
                 account_id,
@@ -5939,6 +6166,8 @@ def save_account_org_chart_layout(account_id, chart_id):
                 related_node_id,
                 visual_level_int,
                 sort_order_int or 0,
+                x_position_int,
+                y_position_int,
             ))
             new_node_id = cursor.lastrowid
             if relationship == "above":
@@ -8753,7 +8982,10 @@ def build_pg_bible_report_from_db(connection):
     """).fetchall()
 
     action_items = []
+    stale_contact_cutoff = (datetime.now() - timedelta(days=30)).date()
     for contact in contacts:
+        if not contact_has_recent_or_open_activity(connection, contact["id"], stale_contact_cutoff):
+            continue
         latest_outreach = connection.execute("""
             SELECT *
             FROM outreach
@@ -8761,6 +8993,18 @@ def build_pg_bible_report_from_db(connection):
             ORDER BY activity_date DESC, activity_time DESC
             LIMIT 1
         """, (contact["id"],)).fetchone()
+        open_outreach = connection.execute(f"""
+            SELECT *
+            FROM outreach
+            WHERE contact_id = ?
+              AND {open_task_sql("outreach")}
+            ORDER BY next_action_date ASC, next_action_time ASC, id DESC
+            LIMIT 1
+        """, (contact["id"], *open_task_params())).fetchone()
+        next_action_text = (
+            (open_outreach["next_action"] or open_outreach["subject"] or "").strip()
+            if open_outreach else ""
+        ) or "No next action set"
 
         meeting_count = connection.execute("""
             SELECT COUNT(*)
@@ -8780,7 +9024,7 @@ def build_pg_bible_report_from_db(connection):
                 part for part in [contact["name"], contact["job_title"]] if part
             ),
             discovery_completed="Yes" if meeting_count else "",
-            discovery_next_action=latest_outreach["next_action"] if latest_outreach else "",
+            discovery_next_action=next_action_text,
             nbm_booked_date=latest_outreach["activity_date"] if latest_outreach and meeting_count else "",
             nbm_booked_name_title=", ".join(
                 part for part in [contact["name"], contact["job_title"]] if part
@@ -8789,7 +9033,7 @@ def build_pg_bible_report_from_db(connection):
             exec_first="Yes" if contact["category"] == "Executive" else "",
             prep_with_manager="",
             nbm_completed="Yes" if meeting_count else "",
-            nbm_next_action=latest_outreach["next_action"] if latest_outreach else "",
+            nbm_next_action=next_action_text,
             vo_value=contact["pipeline_target"] or 0 if meeting_count else 0,
         ))
 

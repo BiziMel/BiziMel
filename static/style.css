@@ -1092,6 +1092,14 @@ a:hover {
     text-underline-offset: 2px;
 }
 
+.account-link-separator {
+    display: inline-block;
+    width: 1px;
+    height: 14px;
+    margin: 0 2px;
+    background: #cbd5e1;
+}
+
 .account-health-stack {
     display: flex;
     flex-wrap: wrap;
@@ -4397,7 +4405,7 @@ body {
 
 .org-builder-layout {
     display: grid;
-    grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+    grid-template-columns: minmax(190px, 260px) minmax(0, 1fr);
     gap: 16px;
     align-items: start;
 }
@@ -4484,9 +4492,9 @@ body {
 }
 
 .org-layout-save-form {
-    display: grid;
-    gap: 10px;
-    margin-top: 16px;
+    display: flex;
+    justify-content: flex-end;
+    margin: 0;
 }
 
 .org-layout-save-row {
@@ -4677,6 +4685,128 @@ body {
     margin-top: -4px;
 }
 
+.org-label-controls {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) auto;
+    gap: 10px;
+}
+
+.org-single-pane {
+    position: relative;
+    min-height: 680px;
+    width: 100%;
+    overflow: auto;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background:
+        linear-gradient(#f8fafc 31px, transparent 31px),
+        linear-gradient(90deg, #f8fafc 31px, transparent 31px),
+        #ffffff;
+    background-size: 32px 32px;
+}
+
+.org-link-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    min-width: 1200px;
+    min-height: 760px;
+    pointer-events: none;
+    overflow: visible;
+}
+
+.org-link-layer line {
+    stroke: #2563eb;
+    stroke-width: 2;
+    stroke-linecap: round;
+}
+
+.org-link-layer marker path {
+    fill: #2563eb;
+}
+
+.org-canvas-node {
+    position: absolute;
+    z-index: 2;
+    display: grid;
+    gap: 6px;
+    width: 220px;
+    min-height: 108px;
+    padding: 10px;
+    border: 2px solid #cbd5e1;
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+    cursor: grab;
+    transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.org-canvas-node .org-person-view {
+    grid-template-columns: 54px minmax(0, 1fr);
+    justify-items: start;
+    align-items: center;
+    text-align: left;
+}
+
+.org-canvas-node .org-person-image {
+    grid-row: span 3;
+    width: 48px;
+    height: 48px;
+}
+
+.org-canvas-node strong,
+.org-canvas-node span,
+.org-canvas-node small {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+.org-canvas-node small {
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.org-canvas-node .org-person-delete-form {
+    justify-self: end;
+    margin: 0;
+}
+
+.org-border-target {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
+}
+
+.org-border-target::after {
+    content: attr(data-border-zone);
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    padding: 3px 6px;
+    border-radius: 6px;
+    background: #1d4ed8;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.org-canvas-label {
+    position: absolute;
+    z-index: 3;
+    max-width: 260px;
+    padding: 7px 10px;
+    border: 1px solid #94a3b8;
+    border-radius: 8px;
+    background: #f8fafc;
+    color: #0f172a;
+    font-size: 12px;
+    font-weight: 800;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+    cursor: grab;
+    overflow-wrap: anywhere;
+}
+
 @media (max-width: 900px) {
     .org-builder-layout {
         grid-template-columns: 1fr;
@@ -4684,6 +4814,14 @@ body {
 
     .org-people-tray {
         grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+    }
+
+    .org-label-controls {
+        grid-template-columns: 1fr;
+    }
+
+    .org-single-pane {
+        min-height: 540px;
     }
 }
 
@@ -4781,14 +4919,15 @@ body {
     border: 1px solid #cbd5e1;
     border-radius: 8px;
     box-shadow: 0 16px 30px rgba(15, 23, 42, 0.18);
-    padding: 6px;
+    padding: 8px;
 }
 
 .checkbox-select-option {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 8px;
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    align-items: start;
+    gap: 10px;
+    padding: 9px 10px;
     border-radius: 6px;
     cursor: pointer;
     font-size: 13px;
@@ -4800,7 +4939,15 @@ body {
 }
 
 .checkbox-select-option input {
-    margin-top: 2px;
+    width: 16px;
+    height: 16px;
+    margin: 1px 0 0;
+}
+
+.checkbox-select-option span {
+    display: block;
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .checkbox-select-empty {

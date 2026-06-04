@@ -157,10 +157,12 @@
                         <div class="account-meta-stack">
                             {% if account["business_unit"] %}<span>{{ account["business_unit"] }}</span>{% endif %}
                             <span>{{ account["industry"] or "Industry not set" }}</span>
+                            <span class="account-link-separator"></span>
                             <a href="{{ url_for('account_org_chart', account_id=account['id']) }}" class="account-text-link">
-                                Build Org Chart
+                                Org Chart
                             </a>
                             {% if account["website"] %}
+                                <span class="account-link-separator"></span>
                                 <a href="{{ account['website'] }}" target="_blank" class="account-text-link">Website</a>
                             {% endif %}
                         </div>

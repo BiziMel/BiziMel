@@ -2,47 +2,12 @@
 
 {% block title %}Org Chart | PipeFlow{% endblock %}
 
-{% macro person_tile(node, active_chart, account) %}
-    <li class="org-tree-node" data-node-id="{{ node.id }}" data-visual-level="{{ node.visual_level or 0 }}">
-        <div class="org-person-card org-chart-draggable"
-             draggable="true"
-             data-drag-type="node"
-             data-node-id="{{ node.id }}"
-             data-person-name="{{ node.name }}"
-             data-manager-drop-target="true">
-            <a href="{{ node.link }}" class="org-person-view">
-                <span class="org-person-image">
-                    {% if node.photo %}
-                        <img src="{{ node.photo }}" alt="{{ node.name }}">
-                    {% endif %}
-                </span>
-                <strong>{{ node.name }}</strong>
-                <span>{{ node.title or "Job title not set" }}</span>
-            </a>
-            <span class="org-drag-hint">Drag</span>
-        </div>
-
-        <form method="POST"
-              action="{{ url_for('delete_account_org_chart_person', account_id=account.id, chart_id=active_chart.id, node_id=node.id) }}"
-              onsubmit="return confirm('Remove this person from the org chart?');"
-              class="org-person-delete-form">
-            <button type="submit" class="btn btn-danger btn-small">Remove</button>
-        </form>
-
-        <ul class="org-tree-children org-manager-drop-zone" data-manager-node-id="{{ node.id }}">
-            {% for child in node.children %}
-                {{ person_tile(child, active_chart, account) }}
-            {% endfor %}
-        </ul>
-    </li>
-{% endmacro %}
-
 {% block content %}
 
 <div class="page-header">
     <div>
         <h1>{{ account.account_name }} Org Chart</h1>
-        <p>Drag people into the rows where they belong. Same row means peers; rows above and below show hierarchy.</p>
+        <p>Drag account contacts into one pane, then drop tiles onto tile borders to create the hierarchy.</p>
     </div>
     <div class="button-group">
         <a href="{{ url_for('view_account', account_id=account.id) }}" class="btn btn-secondary">Back to Account</a>
@@ -58,7 +23,7 @@
         <div class="section-header">
             <div>
                 <h2>Create Org Chart</h2>
-                <p>Create the chart, then drag customer and partner tiles into the canvas.</p>
+                <p>Create the chart, then drag account contacts into the pane.</p>
             </div>
         </div>
         <form method="POST" action="{{ url_for('create_account_org_chart', account_id=account.id) }}" class="pipeflow-form">
@@ -85,7 +50,7 @@
         <div class="section-header">
             <div>
                 <h2>Org Chart Builder</h2>
-                <p>Drop a tile onto a person to link them as working for that person. Drop into a row to place peers beside each other.</p>
+                <p>Drop onto the top, bottom, left or right border of another tile to place and link people.</p>
             </div>
         </div>
 
@@ -133,31 +98,38 @@
 
         <div class="org-builder-layout">
             <aside class="org-builder-tray">
-                <h3>People</h3>
-                <p>Drag these tiles into the chart.</p>
+                <h3>Account Contacts</h3>
+                <p>Each account contact can be added once.</p>
                 {% if available_people %}
-                    <div class="org-people-tray" aria-label="Available people">
+                    <div class="org-people-tray" aria-label="Available account contacts">
                         {% for person in available_people %}
                             <div class="org-tray-person org-chart-draggable"
                                  draggable="true"
                                  data-drag-type="person"
                                  data-person-ref="{{ person.value }}"
-                                 data-person-name="{{ person.name }}">
+                                 data-person-name="{{ person.name }}"
+                                 data-person-title="{{ person.title or '' }}"
+                                 data-person-group="{{ person.group_name or '' }}"
+                                 data-person-photo="{{ person.photo or '' }}">
                                 <span class="org-person-image">
                                     {% if person.photo %}
                                         <img src="{{ person.photo }}" alt="{{ person.name }}">
                                     {% endif %}
                                 </span>
                                 <strong>{{ person.name }}</strong>
-                                <span>{{ person.title or person.source }}</span>
-                                <small>{{ person.source }}</small>
+                                {% if person.title %}
+                                    <span>{{ person.title }}</span>
+                                {% endif %}
+                                {% if person.group_name %}
+                                    <small>{{ person.group_name }}</small>
+                                {% endif %}
                             </div>
                         {% endfor %}
                     </div>
                 {% else %}
                     <div class="empty-state compact-empty-state">
-                        <h3>All people are already in this chart</h3>
-                        <p>Drag existing tiles around the canvas to change the structure.</p>
+                        <h3>All account contacts are already in this chart</h3>
+                        <p>Move existing tiles in the pane to change the structure.</p>
                     </div>
                 {% endif %}
             </aside>
@@ -166,7 +138,7 @@
                 <div class="org-canvas-header">
                     <div>
                         <h3>{{ active_chart.chart_name }}</h3>
-                        <p>Drop onto a person to create a reporting link, or drop into a row to place peers left and right.</p>
+                        <p>Standalone drops stay as independent pillars until linked to another tile.</p>
                     </div>
                     <form method="POST"
                           action="{{ url_for('save_account_org_chart_layout', account_id=account.id, chart_id=active_chart.id) }}"
@@ -177,38 +149,62 @@
                     </form>
                 </div>
 
-                <div class="org-pending-list" id="orgChartPendingList" aria-live="polite"></div>
-                <p class="field-help" id="orgChartPendingSummary">No staged moves yet.</p>
+                <div class="org-label-controls">
+                    <input type="text" id="orgLabelText" placeholder="Organisation or business unit label">
+                    <button type="button" class="btn btn-secondary" id="orgAddLabelButton">Add Label</button>
+                </div>
 
-                {% if roots_by_group_levels %}
-                    {% for group_name, group in roots_by_group_levels.items() %}
-                        <div class="org-chart-board">
-                            <h3>{{ group_name }}</h3>
-                            {% for level_row in group.levels %}
-                                <div class="org-level-row"
-                                     data-visual-level="{{ level_row.level }}">
-                                    <div class="org-level-label">{{ level_row.label }}</div>
-                                    <ul class="org-tree org-row-drop-zone" data-visual-level="{{ level_row.level }}">
-                                        {% for person in level_row.people %}
-                                            {{ person_tile(person, active_chart, account) }}
-                                        {% endfor %}
-                                    </ul>
-                                </div>
-                            {% endfor %}
+                <div class="org-pending-list" id="orgChartPendingList" aria-live="polite"></div>
+                <p class="field-help" id="orgChartPendingSummary">No staged changes yet.</p>
+
+                <div class="org-single-pane" id="orgChartPane" aria-label="Org chart canvas">
+                    <svg class="org-link-layer" id="orgLinkLayer" aria-hidden="true"></svg>
+
+                    {% for label in chart_labels %}
+                        <div class="org-canvas-label"
+                             draggable="true"
+                             data-drag-type="label"
+                             data-label-id="{{ label.id }}"
+                             data-label-text="{{ label.label_text }}"
+                             style="left: {{ label.x_position or 40 }}px; top: {{ label.y_position or 40 }}px;">
+                            {{ label.label_text }}
                         </div>
                     {% endfor %}
-                {% else %}
-                    <div class="org-chart-board">
-                        <h3>Organisation Chart</h3>
-                        {% for level in visible_levels %}
-                            <div class="org-level-row"
-                                 data-visual-level="{{ level.level }}">
-                                <div class="org-level-label">{{ level.label }}</div>
-                                <ul class="org-tree org-row-drop-zone" data-visual-level="{{ level.level }}"></ul>
-                            </div>
-                        {% endfor %}
-                    </div>
-                {% endif %}
+
+                    {% for node in chart_nodes %}
+                        <div class="org-canvas-node org-chart-draggable"
+                             draggable="true"
+                             data-drag-type="node"
+                             data-node-id="{{ node.id }}"
+                             data-person-name="{{ node.name }}"
+                             data-person-title="{{ node.title or '' }}"
+                             data-person-group="{{ node.group_name or '' }}"
+                             data-related-node-id="{{ node.related_node_id or node.manager_node_id or '' }}"
+                             data-relationship="{{ node.relationship_type or 'with' }}"
+                             style="left: {{ node.x_position or (60 + (loop.index0 % 4) * 240) }}px; top: {{ node.y_position or (70 + (loop.index0 // 4) * 150) }}px;">
+                            <a href="{{ node.link }}" class="org-person-view">
+                                <span class="org-person-image">
+                                    {% if node.photo %}
+                                        <img src="{{ node.photo }}" alt="{{ node.name }}">
+                                    {% endif %}
+                                </span>
+                                <strong>{{ node.name }}</strong>
+                                {% if node.title %}
+                                    <span>{{ node.title }}</span>
+                                {% endif %}
+                                {% if node.group_name %}
+                                    <small>{{ node.group_name }}</small>
+                                {% endif %}
+                            </a>
+                            <form method="POST"
+                                  action="{{ url_for('delete_account_org_chart_person', account_id=account.id, chart_id=active_chart.id, node_id=node.id) }}"
+                                  onsubmit="return confirm('Remove this person from the org chart?');"
+                                  class="org-person-delete-form">
+                                <button type="submit" class="btn btn-danger btn-small">Remove</button>
+                            </form>
+                        </div>
+                    {% endfor %}
+                </div>
             </div>
         </div>
     </section>
@@ -216,245 +212,317 @@
 
 <script>
 document.addEventListener("DOMContentLoaded", function () {
-    const stagedMoves = new Map();
-    let draggedItem = null;
-    const saveForm = document.getElementById("orgChartLayoutForm");
+    const pane = document.getElementById("orgChartPane");
+    const linkLayer = document.getElementById("orgLinkLayer");
     const actionsInput = document.getElementById("orgChartLayoutActions");
     const saveButton = document.getElementById("orgChartSaveButton");
     const pendingSummary = document.getElementById("orgChartPendingSummary");
     const pendingList = document.getElementById("orgChartPendingList");
+    const labelInput = document.getElementById("orgLabelText");
+    const addLabelButton = document.getElementById("orgAddLabelButton");
+    const stagedActions = new Map();
+    let draggedItem = null;
 
-    function createPreviewTile(item) {
-        const wrapper = document.createElement("li");
-        wrapper.className = "org-tree-node org-move-staged";
-        wrapper.dataset.previewPersonRef = item.person_ref || "";
-        const card = document.createElement("div");
-        card.className = "org-person-card org-chart-draggable";
-        card.draggable = true;
-        card.dataset.dragType = item.type;
-        card.dataset.personRef = item.person_ref || "";
-        card.dataset.personName = item.name;
-        card.innerHTML = `<span class="org-person-image"></span><strong></strong><span>New placement</span><span class="org-drag-hint">Drag</span>`;
-        card.querySelector("strong").textContent = item.name;
-        wrapper.appendChild(card);
-        attachDragHandler(card);
-        return wrapper;
+    if (!pane) {
+        return;
+    }
+
+    function panePoint(event) {
+        const rect = pane.getBoundingClientRect();
+        return {
+            x: event.clientX - rect.left + pane.scrollLeft,
+            y: event.clientY - rect.top + pane.scrollTop
+        };
+    }
+
+    function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    function tileHtml(item) {
+        const photo = item.photo ? `<img src="${item.photo}" alt="">` : "";
+        const title = item.title ? `<span>${item.title}</span>` : "";
+        const group = item.group ? `<small>${item.group}</small>` : "";
+        return `
+            <span class="org-person-image">${photo}</span>
+            <strong>${item.name}</strong>
+            ${title}
+            ${group}
+        `;
+    }
+
+    function stageAction(key, action) {
+        stagedActions.set(key, action);
+        updatePendingDisplay();
     }
 
     function updatePendingDisplay() {
-        const moves = Array.from(stagedMoves.values());
-        if (actionsInput) {
-            actionsInput.value = JSON.stringify(moves);
-        }
-        if (saveButton) {
-            saveButton.disabled = moves.length === 0;
-        }
-        if (pendingSummary) {
-            pendingSummary.textContent = moves.length
-                ? `${moves.length} staged move${moves.length === 1 ? "" : "s"} ready to save.`
-                : "No staged moves yet.";
-        }
-        if (!pendingList) {
-            return;
-        }
+        const actions = Array.from(stagedActions.values());
+        actionsInput.value = JSON.stringify(actions);
+        saveButton.disabled = actions.length === 0;
+        pendingSummary.textContent = actions.length
+            ? `${actions.length} staged change${actions.length === 1 ? "" : "s"} ready to save.`
+            : "No staged changes yet.";
         pendingList.innerHTML = "";
-        moves.forEach(function (move) {
-            const item = document.createElement("div");
+        actions.forEach(function (action) {
+            const item = document.createElement("span");
             item.className = "org-pending-item";
-            item.textContent = `${move.name} to ${move.row_label}`;
+            item.textContent = action.type === "label"
+                ? `Label: ${action.label_text}`
+                : `${action.person_name || "Person"} placed`;
             pendingList.appendChild(item);
         });
+        drawLinks();
     }
 
-    function insertTileAtPointer(row, tile, xPosition) {
-        const existingTiles = Array.from(row.querySelectorAll(":scope > .org-tree-node"))
-            .filter(function (node) { return node !== tile; });
-        let inserted = false;
-        for (const existing of existingTiles) {
-            const rect = existing.getBoundingClientRect();
-            if (xPosition < rect.left + rect.width / 2) {
-                row.insertBefore(tile, existing);
-                inserted = true;
-                break;
-            }
-        }
-        if (!inserted) {
-            row.appendChild(tile);
-        }
-    }
-
-    function childRowForTile(tileWrapper) {
-        let childRow = tileWrapper.querySelector(":scope > .org-manager-drop-zone");
-        if (!childRow) {
-            childRow = document.createElement("ul");
-            childRow.className = "org-tree-children org-manager-drop-zone";
-            childRow.dataset.managerNodeId = tileWrapper.dataset.nodeId || "";
-            tileWrapper.appendChild(childRow);
-        }
-        return childRow;
-    }
-
-    function attachDragHandler(tile) {
-        tile.addEventListener("dragstart", function (event) {
+    function attachDragHandler(element) {
+        element.addEventListener("dragstart", function (event) {
             draggedItem = {
-                type: tile.dataset.dragType,
-                node_id: tile.dataset.nodeId || "",
-                person_ref: tile.dataset.personRef || "",
-                name: tile.dataset.personName || "Selected person"
+                type: element.dataset.dragType,
+                node_id: element.dataset.nodeId || "",
+                person_ref: element.dataset.personRef || "",
+                label_id: element.dataset.labelId || "",
+                label_text: element.dataset.labelText || element.textContent.trim(),
+                name: element.dataset.personName || "",
+                title: element.dataset.personTitle || "",
+                group: element.dataset.personGroup || "",
+                photo: element.dataset.personPhoto || "",
+                element: element
             };
+            element.classList.add("org-dragging");
             event.dataTransfer.effectAllowed = "move";
-            event.dataTransfer.setData("text/plain", JSON.stringify(draggedItem));
-            tile.classList.add("org-dragging");
+            event.dataTransfer.setData("text/plain", draggedItem.name || draggedItem.label_text || "org-chart-item");
         });
-        tile.addEventListener("dragend", function () {
-            tile.classList.remove("org-dragging");
+        element.addEventListener("dragend", function () {
+            element.classList.remove("org-dragging");
+            document.querySelectorAll(".org-border-target").forEach(function (target) {
+                target.classList.remove("org-border-target");
+                target.removeAttribute("data-border-zone");
+            });
         });
     }
 
-    document.querySelectorAll(".org-chart-draggable").forEach(attachDragHandler);
+    function createCanvasNode(item) {
+        const node = document.createElement("div");
+        node.className = "org-canvas-node org-chart-draggable org-move-staged";
+        node.draggable = true;
+        node.dataset.dragType = "node";
+        node.dataset.personRef = item.person_ref;
+        node.dataset.personName = item.name;
+        node.dataset.personTitle = item.title;
+        node.dataset.personGroup = item.group;
+        node.dataset.relatedNodeId = "";
+        node.dataset.relationship = "with";
+        node.innerHTML = `<div class="org-person-view">${tileHtml(item)}</div>`;
+        pane.appendChild(node);
+        attachDragHandler(node);
+        return node;
+    }
 
-    document.querySelectorAll("[data-manager-drop-target='true']").forEach(function (card) {
-        card.addEventListener("dragover", function (event) {
-            event.preventDefault();
-            card.classList.add("org-manager-drop-active");
-        });
-        card.addEventListener("dragleave", function () {
-            card.classList.remove("org-manager-drop-active");
-        });
-        card.addEventListener("drop", function (event) {
-            event.preventDefault();
-            event.stopPropagation();
-            card.classList.remove("org-manager-drop-active");
-            let item = draggedItem;
-            if (!item) {
-                try {
-                    item = JSON.parse(event.dataTransfer.getData("text/plain"));
-                } catch (error) {
-                    item = null;
-                }
-            }
-            if (!item) {
-                return;
-            }
-            const managerNodeId = card.dataset.nodeId || "";
-            if (item.type === "node" && item.node_id === managerNodeId) {
-                return;
-            }
-            const managerWrapper = card.closest(".org-tree-node");
-            const childRow = childRowForTile(managerWrapper);
-            let tileWrapper = null;
-            if (item.type === "node") {
-                tileWrapper = document.querySelector(`[data-node-id="${item.node_id}"]`);
-            } else {
-                tileWrapper = document.querySelector(`[data-preview-person-ref="${item.person_ref}"]`);
-                if (!tileWrapper) {
-                    tileWrapper = createPreviewTile(item);
-                }
-                const trayTile = document.querySelector(`[data-person-ref="${item.person_ref}"].org-tray-person`);
-                if (trayTile) {
-                    trayTile.classList.add("org-move-staged");
-                }
-            }
-            if (!tileWrapper) {
-                return;
-            }
-            childRow.appendChild(tileWrapper);
-            tileWrapper.classList.add("org-move-staged");
-            const childCount = Array.from(childRow.querySelectorAll(":scope > .org-tree-node")).length;
-            const move = {
-                relationship: "under",
-                related_node_id: managerNodeId,
-                manager_node_id: managerNodeId,
-                sort_order: childCount,
-                row_label: `under ${card.dataset.personName || "selected person"}`,
-                name: item.name
-            };
-            let key;
-            if (item.type === "node") {
-                key = `node:${item.node_id}`;
-                move.node_id = item.node_id;
-            } else {
-                key = `person:${item.person_ref}`;
-                move.person_ref = item.person_ref;
-            }
-            stagedMoves.set(key, move);
-            updatePendingDisplay();
-        });
-    });
+    function borderZone(target, event) {
+        const rect = target.getBoundingClientRect();
+        const threshold = 28;
+        const top = event.clientY - rect.top;
+        const left = event.clientX - rect.left;
+        if (top <= threshold) return "top";
+        if (rect.height - top <= threshold) return "bottom";
+        if (left <= threshold) return "left";
+        if (rect.width - left <= threshold) return "right";
+        return "";
+    }
 
-    document.querySelectorAll(".org-row-drop-zone").forEach(function (row) {
-        row.addEventListener("dragover", function (event) {
-            event.preventDefault();
-            row.classList.add("org-drop-zone-active");
-        });
-        row.addEventListener("dragleave", function () {
-            row.classList.remove("org-drop-zone-active");
-        });
-        row.addEventListener("drop", function (event) {
-            event.preventDefault();
-            row.classList.remove("org-drop-zone-active");
-            let item = draggedItem;
-            if (!item) {
-                try {
-                    item = JSON.parse(event.dataTransfer.getData("text/plain"));
-                } catch (error) {
-                    item = null;
-                }
-            }
-            if (!item) {
-                return;
-            }
-
-            let tileWrapper = null;
-            if (item.type === "node") {
-                tileWrapper = document.querySelector(`[data-node-id="${item.node_id}"]`);
-            } else {
-                tileWrapper = document.querySelector(`[data-preview-person-ref="${item.person_ref}"]`);
-                if (!tileWrapper) {
-                    tileWrapper = createPreviewTile(item);
-                }
-                const trayTile = document.querySelector(`[data-person-ref="${item.person_ref}"].org-tray-person`);
-                if (trayTile) {
-                    trayTile.classList.add("org-move-staged");
-                }
-            }
-            if (!tileWrapper) {
-                return;
-            }
-
-            insertTileAtPointer(row, tileWrapper, event.clientX);
-            tileWrapper.classList.add("org-move-staged");
-
-            const visualLevel = row.dataset.visualLevel || "0";
-            const rowTiles = Array.from(row.querySelectorAll(":scope > .org-tree-node"));
-            const sortOrder = rowTiles.indexOf(tileWrapper) + 1;
-            const rowLabel = row.closest(".org-level-row")?.querySelector(".org-level-label")?.textContent || "selected row";
-            const move = {
+    function placementForDrop(point, target, zone) {
+        const width = 220;
+        const height = 108;
+        if (!target || !zone) {
+            return {
                 relationship: "with",
                 related_node_id: "",
-                visual_level: visualLevel,
-                sort_order: sortOrder,
-                row_label: rowLabel,
-                name: item.name
+                x: clamp(Math.round(point.x - width / 2), 12, pane.scrollWidth - width - 12),
+                y: clamp(Math.round(point.y - height / 2), 12, pane.scrollHeight - height - 12)
             };
-            let key;
-            if (item.type === "node") {
-                key = `node:${item.node_id}`;
-                move.node_id = item.node_id;
-            } else {
-                key = `person:${item.person_ref}`;
-                move.person_ref = item.person_ref;
-            }
-            stagedMoves.set(key, move);
-            updatePendingDisplay();
-        });
-    });
+        }
+        const left = target.offsetLeft;
+        const top = target.offsetTop;
+        const targetWidth = target.offsetWidth;
+        const targetHeight = target.offsetHeight;
+        const relatedNodeId = target.dataset.nodeId || "";
+        const placements = {
+            top: { relationship: "above", x: left, y: top - 150 },
+            bottom: { relationship: "under", x: left, y: top + targetHeight + 42 },
+            left: { relationship: "with", x: left - width - 34, y: top },
+            right: { relationship: "with", x: left + targetWidth + 34, y: top }
+        };
+        const placement = placements[zone] || placements.right;
+        return {
+            relationship: placement.relationship,
+            related_node_id: relatedNodeId,
+            x: clamp(Math.round(placement.x), 12, pane.scrollWidth - width - 12),
+            y: clamp(Math.round(placement.y), 12, pane.scrollHeight - height - 12)
+        };
+    }
 
-    if (saveForm) {
-        saveForm.addEventListener("submit", function () {
-            updatePendingDisplay();
+    function placeNode(node, placement, item) {
+        node.style.left = `${placement.x}px`;
+        node.style.top = `${placement.y}px`;
+        node.dataset.relatedNodeId = placement.related_node_id || "";
+        node.dataset.relationship = placement.relationship || "with";
+        node.classList.add("org-move-staged");
+
+        const key = node.dataset.nodeId ? `node:${node.dataset.nodeId}` : `person:${item.person_ref}`;
+        stageAction(key, {
+            type: "person",
+            node_id: node.dataset.nodeId || "",
+            person_ref: item.person_ref || "",
+            person_name: item.name || node.dataset.personName || "",
+            relationship: placement.relationship,
+            related_node_id: placement.related_node_id,
+            x_position: placement.x,
+            y_position: placement.y,
+            sort_order: stagedActions.size + 1
         });
     }
+
+    function placeLabel(label, point) {
+        const x = clamp(Math.round(point.x - 40), 12, pane.scrollWidth - 180);
+        const y = clamp(Math.round(point.y - 18), 12, pane.scrollHeight - 60);
+        label.style.left = `${x}px`;
+        label.style.top = `${y}px`;
+        label.classList.add("org-move-staged");
+        stageAction(`label:${label.dataset.labelId || label.dataset.labelText}`, {
+            type: "label",
+            label_id: label.dataset.labelId || "",
+            label_text: label.dataset.labelText || label.textContent.trim(),
+            x_position: x,
+            y_position: y
+        });
+    }
+
+    pane.addEventListener("dragover", function (event) {
+        event.preventDefault();
+        const target = event.target.closest(".org-canvas-node");
+        document.querySelectorAll(".org-border-target").forEach(function (item) {
+            if (item !== target) {
+                item.classList.remove("org-border-target");
+                item.removeAttribute("data-border-zone");
+            }
+        });
+        if (target && draggedItem && target.dataset.nodeId !== draggedItem.node_id) {
+            const zone = borderZone(target, event);
+            if (zone) {
+                target.classList.add("org-border-target");
+                target.dataset.borderZone = zone;
+            } else {
+                target.classList.remove("org-border-target");
+                target.removeAttribute("data-border-zone");
+            }
+        }
+    });
+
+    pane.addEventListener("drop", function (event) {
+        event.preventDefault();
+        if (!draggedItem) {
+            return;
+        }
+        const point = panePoint(event);
+        if (draggedItem.type === "label") {
+            placeLabel(draggedItem.element, point);
+            draggedItem = null;
+            return;
+        }
+
+        let target = event.target.closest(".org-canvas-node");
+        if (target && target.dataset.nodeId === draggedItem.node_id) {
+            target = null;
+        }
+        const zone = target ? borderZone(target, event) : "";
+        const placement = placementForDrop(point, target, zone);
+        let node = draggedItem.element;
+        if (draggedItem.type === "person") {
+            node = createCanvasNode(draggedItem);
+            draggedItem.element.classList.add("org-move-staged");
+        }
+        placeNode(node, placement, draggedItem);
+        draggedItem = null;
+    });
+
+    function addLabel() {
+        const labelText = (labelInput.value || "").trim();
+        if (!labelText) {
+            return;
+        }
+        const label = document.createElement("div");
+        label.className = "org-canvas-label org-move-staged";
+        label.draggable = true;
+        label.dataset.dragType = "label";
+        label.dataset.labelText = labelText;
+        label.textContent = labelText;
+        pane.appendChild(label);
+        attachDragHandler(label);
+        placeLabel(label, { x: pane.scrollLeft + 140, y: pane.scrollTop + 90 });
+        labelInput.value = "";
+    }
+
+    function centerOf(element) {
+        return {
+            x: element.offsetLeft + element.offsetWidth / 2,
+            y: element.offsetTop + element.offsetHeight / 2
+        };
+    }
+
+    function drawLinks() {
+        linkLayer.innerHTML = "";
+        const width = Math.max(pane.scrollWidth, pane.clientWidth);
+        const height = Math.max(pane.scrollHeight, pane.clientHeight);
+        linkLayer.setAttribute("viewBox", `0 0 ${width} ${height}`);
+        linkLayer.setAttribute("width", width);
+        linkLayer.setAttribute("height", height);
+
+        const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+        const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+        marker.setAttribute("id", "orgArrowHead");
+        marker.setAttribute("markerWidth", "8");
+        marker.setAttribute("markerHeight", "8");
+        marker.setAttribute("refX", "6");
+        marker.setAttribute("refY", "3");
+        marker.setAttribute("orient", "auto");
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", "M0,0 L0,6 L7,3 z");
+        marker.appendChild(path);
+        defs.appendChild(marker);
+        linkLayer.appendChild(defs);
+
+        pane.querySelectorAll(".org-canvas-node").forEach(function (node) {
+            const relatedId = node.dataset.relatedNodeId;
+            if (!relatedId) {
+                return;
+            }
+            const related = pane.querySelector(`.org-canvas-node[data-node-id="${relatedId}"]`);
+            if (!related) {
+                return;
+            }
+            const start = centerOf(related);
+            const end = centerOf(node);
+            const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            line.setAttribute("x1", start.x);
+            line.setAttribute("y1", start.y);
+            line.setAttribute("x2", end.x);
+            line.setAttribute("y2", end.y);
+            line.setAttribute("marker-end", "url(#orgArrowHead)");
+            linkLayer.appendChild(line);
+        });
+    }
+
+    document.querySelectorAll(".org-chart-draggable, .org-canvas-label").forEach(attachDragHandler);
+    addLabelButton?.addEventListener("click", addLabel);
+    labelInput?.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            addLabel();
+        }
+    });
+    window.addEventListener("resize", drawLinks);
+    drawLinks();
 });
 </script>
 
