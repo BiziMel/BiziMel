@@ -14,7 +14,7 @@
 
 <div class="admin-subnav-card">
     <div>
-        <strong>Application Admin Only</strong>
+        <strong>Tenant Administration</strong>
         <p>Tenants define the company boundary used for user administration, sharing and assignment visibility.</p>
     </div>
     <div class="admin-subnav-actions">
@@ -32,6 +32,7 @@
     <div class="alert-error">{{ error }}</div>
 {% endif %}
 
+{% if can_create_tenant %}
 <section class="card tenant-form-card">
     <div class="section-header">
         <div>
@@ -58,6 +59,7 @@
         </div>
     </form>
 </section>
+{% endif %}
 
 <section class="card">
     <div class="section-header">
@@ -82,9 +84,34 @@
                 {% for tenant in tenants %}
                     <tr>
                         <td>{{ tenant["company_name"] }}</td>
-                        <td>{{ tenant["country"] }}</td>
-                        <td>{{ tenant["company_contact"] }}</td>
-                        <td>{{ "Active" if tenant["is_active"] else "Inactive" }}</td>
+                        <td colspan="3">
+                            {% if can_edit_tenants %}
+                                <form method="POST"
+                                      action="{{ url_for('admin_update_tenant', tenant_id=tenant['id']) }}"
+                                      class="tenant-inline-edit-form">
+                                    <input type="hidden" name="company_name" value="{{ tenant['company_name'] }}">
+                                    <label>
+                                        <span class="table-field-label">Country</span>
+                                        <input type="text" name="country" value="{{ tenant['country'] }}" required>
+                                    </label>
+                                    <label>
+                                        <span class="table-field-label">Primary contact</span>
+                                        <input type="text" name="company_contact" value="{{ tenant['company_contact'] }}" required>
+                                    </label>
+                                    <label class="checkbox-label tenant-status-toggle">
+                                        <input type="checkbox" name="is_active" value="1" {% if tenant["is_active"] %}checked{% endif %}>
+                                        Active
+                                    </label>
+                                    <button type="submit" class="btn btn-primary btn-small">Save</button>
+                                </form>
+                            {% else %}
+                                <div class="tenant-readonly-row">
+                                    <span>{{ tenant["country"] }}</span>
+                                    <span>{{ tenant["company_contact"] }}</span>
+                                    <span>{{ "Active" if tenant["is_active"] else "Inactive" }}</span>
+                                </div>
+                            {% endif %}
+                        </td>
                         <td>{{ tenant["date_created"] }}</td>
                     </tr>
                 {% else %}

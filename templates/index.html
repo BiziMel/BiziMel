@@ -15,7 +15,7 @@
     <section class="dashboard-broadcast-ticker" aria-label="Broadcast messages">
         <div class="dashboard-broadcast-label">Broadcast</div>
         <div class="dashboard-broadcast-window">
-            <div class="dashboard-broadcast-track">
+            <div class="dashboard-broadcast-track" style="--broadcast-count: {{ broadcast_messages|length }};">
                 {% for broadcast in broadcast_messages %}
                     <span class="dashboard-broadcast-item broadcast-{{ broadcast['severity'] }}">
                         <strong>{{ broadcast['title'] }}</strong>
@@ -37,19 +37,19 @@
             </div>
 
             <div class="dashboard-command-metric-grid">
-                <a href="{{ url_for('outreach') }}" class="metric-card-link">
+                <a href="{{ url_for('outreach', task_status='All Open', due_start=this_week_start, due_end=this_week_end) }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
                         <h3>Due This Week</h3>
                         <p class="metric-number">{{ this_week_due|default(0, true) }}</p>
                     </div>
                 </a>
-                <a href="{{ url_for('reports') }}" class="metric-card-link">
+                <a href="{{ url_for('outreach', task_status='All Closed', updated_start=this_week_start, updated_end=this_week_end) }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
                         <h3>Closed This Week</h3>
                         <p class="metric-number">{{ this_week_completed|default(0, true) }}</p>
                     </div>
                 </a>
-                <a href="{{ url_for('outreach') }}" class="metric-card-link">
+                <a href="{{ url_for('outreach', task_status='All Open', overdue='1') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card command-risk-card">
                         <h3>Overdue Actions</h3>
                         <p class="metric-number">{{ this_week_overdue|default(0, true) }}</p>
@@ -62,7 +62,7 @@
                         <p class="metric-subtext">No active campaign or outreach tasks</p>
                     </div>
                 </a>
-                <a href="{{ url_for('outreach') }}" class="metric-card-link">
+                <a href="{{ url_for('outreach', task_status='All', activity_start=this_week_start, activity_end=this_week_end, pg_success='1') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
                         <h3>PG Success This Week</h3>
                         <p class="metric-number">{{ this_week_meetings_booked|default(0, true) }}</p>
@@ -87,13 +87,13 @@
                         <p class="metric-number">{{ total_contacts|default(0, true) }}</p>
                     </div>
                 </a>
-                <a href="{{ url_for('outreach') }}" class="metric-card-link">
+                <a href="{{ url_for('outreach', task_status='All') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
                         <h3>Total Outreach</h3>
                         <p class="metric-number">{{ total_outreach|default(0, true) }}</p>
                     </div>
                 </a>
-                <a href="{{ url_for('outreach') }}" class="metric-card-link">
+                <a href="{{ url_for('outreach', task_status='All Open', followup_due='1') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
                         <h3>Follow-ups Due</h3>
                         <p class="metric-number">{{ follow_ups_due|default(0, true) }}</p>

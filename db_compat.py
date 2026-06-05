@@ -1,6 +1,7 @@
 import os
 import re
 import sqlite3
+import time
 from pathlib import Path
 
 try:
@@ -96,6 +97,41 @@ def insert_table_name(sql):
     return None
 
 
+def transient_database_error(exc):
+    text = str(exc).lower()
+    return any(
+        marker in text
+        for marker in (
+            "database is locked",
+            "database table is locked",
+            "could not serialize access",
+            "deadlock detected",
+            "connection reset",
+            "terminating connection",
+        )
+    )
+
+
+def execute_with_retry(operation, rollback=None, attempts=3):
+    delay = 0.08
+    last_error = None
+    for attempt in range(attempts):
+        try:
+            return operation()
+        except Exception as exc:
+            last_error = exc
+            if not transient_database_error(exc) or attempt == attempts - 1:
+                raise
+            if rollback:
+                try:
+                    rollback()
+                except Exception:
+                    pass
+            time.sleep(delay)
+            delay *= 2
+    raise last_error
+
+
 class HybridRow:
     def __init__(self, data):
         self.data = dict(data)
@@ -168,7 +204,10 @@ class PgConnectionAdapter:
             translated = translated.rstrip().rstrip(";") + " RETURNING id"
             auto_returning = True
 
-        cursor = self.connection.execute(translated, params)
+        cursor = execute_with_retry(
+            lambda: self.connection.execute(translated, params),
+            rollback=self.connection.rollback,
+        )
         lastrowid = None
         if auto_returning and cursor.description:
             row = cursor.fetchone()
@@ -195,7 +234,7 @@ class SQLiteConnectionAdapter:
         self.connection = connection
 
     def execute(self, sql, params=None):
-        return self.connection.execute(sql, tuple(params or ()))
+        return execute_with_retry(lambda: self.connection.execute(sql, tuple(params or ())))
 
     def cursor(self):
         return self.connection.cursor()

@@ -318,6 +318,37 @@ def create_tenant(company_name: str, country: str, company_contact: str):
         connection.close()
 
 
+def update_tenant(tenant_id: int, country: str, company_contact: str, is_active: bool, actor=None):
+    country = (country or "").strip()
+    company_contact = (company_contact or "").strip()
+    if not country or not company_contact:
+        return "Country and primary company contact are required."
+    connection = get_auth_connection()
+    tenant = connection.execute("SELECT * FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
+    if not tenant:
+        connection.close()
+        return "Tenant could not be found."
+    if actor and not is_application_admin(actor):
+        actor_company = actor["company"] if "company" in actor.keys() else ""
+        if normalise_company_name(actor_company).lower() != normalise_company_name(tenant["company_name"]).lower():
+            connection.close()
+            return "You can only update your own company tenant."
+    connection.execute(
+        """
+        UPDATE tenants
+        SET country = ?,
+            company_contact = ?,
+            is_active = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (country, company_contact, 1 if is_active else 0, tenant_id),
+    )
+    connection.commit()
+    connection.close()
+    return ""
+
+
 def get_tenant_by_name(company_name: str):
     company_name = normalise_company_name(company_name)
     connection = get_auth_connection()

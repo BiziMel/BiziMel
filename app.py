@@ -14,15 +14,15 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session, abort
 from werkzeug.utils import secure_filename
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, user_count
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection
 
 
-APP_VERSION = "2.1.5"
+APP_VERSION = "2.1.6"
 APP_RELEASE_DATE = "2026-06-05"
-APP_BUILD = "2026-06-05-v2.1.5-enterprise-outreach-org-insights-r1"
+APP_BUILD = "2026-06-05-v2.1.6-enterprise-dashboard-admin-resilience-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -36,6 +36,25 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.1.6",
+        "release_date": "2026-06-05",
+        "title": "Dashboard drill-through, tenant administration and resilience improvements",
+        "new": [],
+        "enhanced": [
+            "Enhanced Admin tenancy so Application Admins and Company Admins can maintain tenant status and primary contact details.",
+            "Enhanced Weekly Wrap Up and Next 24 Hours guidance so each shows the applicable date or date range.",
+            "Enhanced Insights Dashboard metrics so cards open the matching filtered data view.",
+            "Enhanced database execution resilience with transient retry handling and reduced dashboard write commits.",
+            "Enhanced Reports latest outreach so it shows all outreach from the user's current working week.",
+        ],
+        "fixed": [
+            "Fixed the dashboard broadcast ticker to scroll upward one full message at a time.",
+            "Fixed Outreach task row colouring so rows stay white until due date/time has expired, then turn red.",
+            "Fixed org chart relationship rendering so linked tiles draw visible connector lines in every border direction.",
+            "Fixed org chart tile initials, tile text fit and export/print framing.",
+        ],
+    },
     {
         "version": "2.1.5",
         "release_date": "2026-06-05",
@@ -1047,7 +1066,7 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "Release notes show latest to earliest.",
             "Open a release to review New, Enhanced and Fixed changes.",
-            "Version 2.1.5 hardens Outreach delete and lifecycle handling, improves org chart readability and adds richer Execution Insights guidance.",
+            "Version 2.1.6 adds tenant maintenance, dashboard metric drill-through, upward broadcasts, simpler overdue task colouring and resilience improvements.",
         ],
     },
     "user_guide": {
@@ -1386,12 +1405,12 @@ def admin_permissions():
 @app.route("/admin/tenants", methods=("GET", "POST"))
 @admin_required
 def admin_tenants():
-    guard = require_application_admin_redirect()
-    if guard:
-        return guard
+    actor = current_user()
     message = request.args.get("message", "")
     error = request.args.get("error", "")
     if request.method == "POST":
+        if not is_application_admin(actor):
+            return redirect(url_for("admin_tenants", error="Only application administrators can create new tenants."))
         error = create_tenant(
             request.form.get("company_name", ""),
             request.form.get("country", ""),
@@ -1408,10 +1427,35 @@ def admin_tenants():
             return redirect(url_for("admin_tenants", message="Tenant created."))
     return render_template(
         "admin_tenants.html",
-        tenants=list_tenants(active_only=False),
+        tenants=list_tenants(actor=actor, active_only=False),
+        can_create_tenant=is_application_admin(actor),
+        can_edit_tenants=is_application_admin(actor) or is_company_admin(actor),
         message=message,
         error=error,
     )
+
+
+@app.route("/admin/tenants/<int:tenant_id>/update", methods=("POST",))
+@admin_required
+def admin_update_tenant(tenant_id):
+    actor = current_user()
+    error = update_tenant(
+        tenant_id,
+        request.form.get("country", ""),
+        request.form.get("company_contact", ""),
+        bool(request.form.get("is_active")),
+        actor=actor,
+    )
+    if error:
+        return redirect(url_for("admin_tenants", error=error))
+    log_admin_audit(
+        actor,
+        "Tenant updated",
+        "Tenant",
+        request.form.get("company_name", f"Tenant {tenant_id}"),
+        f"Country: {request.form.get('country', '')}; Company contact: {request.form.get('company_contact', '')}; Active: {bool(request.form.get('is_active'))}."
+    )
+    return redirect(url_for("admin_tenants", message="Tenant updated."))
 
 
 @app.route("/admin/users/create", methods=("POST",))
@@ -3101,6 +3145,7 @@ def generate_next_24_hours_focus(connection, today, metric_values, execution_ins
           )
     """, default=0)
     bullets = [
+        f"The focus date is {display_date(today)}.",
         f"Spend the next working window on activity that can create a Discovery meeting or, better, an NBM meeting; the current success baseline is {success_summary}.",
         f"There are {upcoming_count} open action(s) due in the next 24 hours and {executive_count} active executive-route contact(s), so start where a senior route already exists.",
     ]
@@ -3114,7 +3159,7 @@ def generate_next_24_hours_focus(connection, today, metric_values, execution_ins
         bullets.append(f"{insight.get('category', 'Focus')}: {insight.get('action', '')}")
     return format_dashboard_guidance(
         "Next 24 Hours",
-        "Here is the focus for the next 24 hours.",
+        f"Here is the focus for {display_date(today)}.",
         bullets,
     )
 
@@ -3133,20 +3178,24 @@ def load_dashboard_weekly_guidance(connection, metric_values, execution_insights
 
     should_refresh_wrap = not wrap_content or (today.weekday() == 4 and now.time() >= time(15, 0) and wrap_key != week_key)
     should_refresh_focus = not focus_content or focus_key != day_key
+    settings_changed = False
 
     if should_refresh_wrap:
         generated = generate_weekly_wrap_up(connection, period_start, period_end, metric_values, execution_insights)
         wrap_content = json.dumps(generated)
         save_dashboard_setting(connection, "weekly_wrap_up_key", week_key)
         save_dashboard_setting(connection, "weekly_wrap_up_content", wrap_content)
+        settings_changed = True
 
     if should_refresh_focus:
         generated = generate_next_24_hours_focus(connection, today, metric_values, execution_insights)
         focus_content = json.dumps(generated)
         save_dashboard_setting(connection, "weekly_ahead_focus_key", day_key)
         save_dashboard_setting(connection, "weekly_ahead_focus_content", focus_content)
+        settings_changed = True
 
-    connection.commit()
+    if settings_changed:
+        connection.commit()
 
     def parse_guidance(payload, fallback_title):
         try:
@@ -3506,8 +3555,8 @@ def build_learning_insights(connection):
 @app.route("/")
 def home():
     connection = get_db_connection()
-    close_expired_completed_outreach(connection)
-    connection.commit()
+    if close_expired_completed_outreach(connection):
+        connection.commit()
     try:
         return build_dashboard_response(connection)
     except Exception as exc:
@@ -4295,24 +4344,21 @@ def parse_due_time(value):
 
 def due_rag_class(next_action_date, next_action_time, task_status):
     if is_closed_task_status(task_status):
-        return "rag-closed"
+        return ""
     if not next_action_date:
-        return "rag-green"
+        return ""
     try:
         due_date = datetime.strptime(next_action_date, "%Y-%m-%d").date()
         due_time_value = parse_due_time(next_action_time)
         if due_time_value is None:
-            return "rag-green"
+            return ""
         due_at = datetime.combine(due_date, due_time_value, tzinfo=APP_TIMEZONE)
     except (TypeError, ValueError):
-        return "rag-green"
+        return ""
     now = datetime.now(APP_TIMEZONE)
-    today = now.date()
     if now >= due_at + timedelta(seconds=1):
         return "rag-red"
-    if due_date == today:
-        return "rag-amber"
-    return "rag-green"
+    return ""
 
 
 def contact_matches_account(connection, account_id, contact_id):
@@ -6387,6 +6433,7 @@ def org_chart_context(connection, account, chart_id=None):
                 continue
             node = {
                 "id": row["id"],
+                "person_ref": key,
                 "manager_node_id": row["manager_node_id"],
                 "relationship_type": row["relationship_type"] if "relationship_type" in row.keys() else "with",
                 "related_node_id": row["related_node_id"] if "related_node_id" in row.keys() else None,
@@ -7257,14 +7304,23 @@ def outreach():
     sales_play_filter = request.args.get("sales_play")
     account_filter = request.args.get("account_id")
     outcome_filter = request.args.get("outcome")
+    due_start_filter = request.args.get("due_start", "")
+    due_end_filter = request.args.get("due_end", "")
+    activity_start_filter = request.args.get("activity_start", "")
+    activity_end_filter = request.args.get("activity_end", "")
+    updated_start_filter = request.args.get("updated_start", "")
+    updated_end_filter = request.args.get("updated_end", "")
+    overdue_filter = request.args.get("overdue", "")
+    followup_due_filter = request.args.get("followup_due", "")
+    pg_success_filter = request.args.get("pg_success", "")
     selected_statuses = request.args.getlist("task_status")
     if not selected_statuses:
         selected_statuses = ["All Open"]
     closed_statuses = ["Closed", "Completed", "Cancelled"]
 
     connection = get_db_connection()
-    close_expired_completed_outreach(connection)
-    connection.commit()
+    if close_expired_completed_outreach(connection):
+        connection.commit()
 
     query = """
         SELECT
@@ -7307,6 +7363,53 @@ def outreach():
     if outcome_filter:
         query += " AND outreach.outcome = ?"
         params.append(outcome_filter)
+
+    if due_start_filter:
+        query += " AND outreach.next_action_date >= ?"
+        params.append(due_start_filter)
+
+    if due_end_filter:
+        query += " AND outreach.next_action_date <= ?"
+        params.append(due_end_filter)
+
+    if activity_start_filter:
+        query += " AND outreach.activity_date >= ?"
+        params.append(activity_start_filter)
+
+    if activity_end_filter:
+        query += " AND outreach.activity_date <= ?"
+        params.append(activity_end_filter)
+
+    if updated_start_filter:
+        query += " AND date(outreach.last_updated) >= date(?)"
+        params.append(updated_start_filter)
+
+    if updated_end_filter:
+        query += " AND date(outreach.last_updated) <= date(?)"
+        params.append(updated_end_filter)
+
+    if overdue_filter:
+        query += f" AND {overdue_task_sql('outreach')}"
+        params.extend(overdue_task_params())
+
+    if followup_due_filter:
+        followup_until = request.args.get("followup_until") or (current_app_datetime().date() + timedelta(days=7)).isoformat()
+        query += f"""
+            AND outreach.next_action_date IS NOT NULL
+            AND outreach.next_action_date != ''
+            AND date(outreach.next_action_date) <= date(?)
+            AND {open_task_sql('outreach')}
+        """
+        params.append(followup_until)
+        params.extend(open_task_params())
+
+    if pg_success_filter:
+        query += """
+            AND (
+                  outreach.outcome IN ('Discovery Booked', 'NBM Booked', 'Exec Meeting Booked', 'Meeting Booked')
+               OR outreach.activity_type = 'Meeting'
+            )
+        """
 
     if "All" in selected_statuses:
         pass
@@ -10296,7 +10399,14 @@ def outreach_reports():
         {"activity_type": activity_type, "count": count}
         for activity_type, count in sorted(type_totals.items(), key=lambda item: (-item[1], item[0]))
     ]
-    latest_outreach = filtered_outreach[:10]
+    report_today = current_app_datetime().date()
+    working_week_start = report_today - timedelta(days=report_today.weekday())
+    working_week_end = working_week_start + timedelta(days=6)
+    latest_outreach = [
+        item for item in filtered_outreach
+        if (activity_date := parse_report_date(item["activity_date"]))
+        and working_week_start <= activity_date <= working_week_end
+    ]
 
     monthly_trends = []
     for month, totals in sorted(monthly_totals.items()):
@@ -10326,6 +10436,8 @@ def outreach_reports():
         selected_account=selected_account,
         selected_activity_type=selected_activity_type,
         selected_outcome=selected_outcome,
+        working_week_start=working_week_start.isoformat(),
+        working_week_end=working_week_end.isoformat(),
         outcome_chart_labels=[item["outcome"] for item in outcome_breakdown],
         outcome_chart_data=[item["count"] for item in outcome_breakdown],
         activity_type_chart_labels=[item["activity_type"] for item in outreach_by_type],

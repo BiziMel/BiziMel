@@ -181,6 +181,7 @@
                              draggable="true"
                              data-drag-type="node"
                              data-node-id="{{ node.id }}"
+                             data-person-ref="{{ node.person_ref }}"
                              data-person-name="{{ node.name }}"
                              data-person-title="{{ node.title or '' }}"
                              data-person-group="{{ node.group_name or '' }}"
@@ -331,6 +332,18 @@ document.addEventListener("DOMContentLoaded", function () {
         return node;
     }
 
+    function nodeLinkId(node) {
+        return node.dataset.nodeId || node.dataset.localId || "";
+    }
+
+    function hideTrayPerson(personRef) {
+        if (!personRef) return;
+        document.querySelectorAll(`.org-tray-person[data-person-ref="${personRef}"]`).forEach((item) => {
+            item.hidden = true;
+            item.setAttribute("aria-hidden", "true");
+        });
+    }
+
     function borderZone(target, event) {
         const rect = target.getBoundingClientRect();
         const threshold = 28;
@@ -363,6 +376,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const targetWidth = target.offsetWidth;
         const targetHeight = target.offsetHeight;
         const relatedNodeId = target.dataset.nodeId || "";
+        const relatedLocalId = target.dataset.localId || "";
         const placements = {
             top: { relationship: "above", x: left, y: top - 150 },
             bottom: { relationship: "under", x: left, y: top + targetHeight + 42 },
@@ -373,6 +387,7 @@ document.addEventListener("DOMContentLoaded", function () {
         return {
             relationship: placement.relationship,
             related_node_id: relatedNodeId,
+            related_local_id: relatedLocalId,
             x: clamp(snap(placement.x), 12, pane.scrollWidth - width - 12),
             y: clamp(snap(placement.y), 12, pane.scrollHeight - height - 12)
         };
@@ -382,6 +397,7 @@ document.addEventListener("DOMContentLoaded", function () {
         node.style.left = `${placement.x}px`;
         node.style.top = `${placement.y}px`;
         node.dataset.relatedNodeId = placement.related_node_id || "";
+        node.dataset.relatedLocalId = placement.related_local_id || "";
         node.dataset.relationship = placement.relationship || "with";
         node.classList.add("org-move-staged");
 
@@ -532,8 +548,7 @@ document.addEventListener("DOMContentLoaded", function () {
         let node = draggedItem.element;
         if (draggedItem.type === "person") {
             node = createCanvasNode(draggedItem);
-            draggedItem.element.hidden = true;
-            draggedItem.element.setAttribute("aria-hidden", "true");
+            hideTrayPerson(draggedItem.person_ref);
         }
         placeNode(node, placement, draggedItem);
         draggedItem = null;
@@ -556,11 +571,24 @@ document.addEventListener("DOMContentLoaded", function () {
         labelInput.value = "";
     }
 
-    function centerOf(element) {
-        return {
-            x: element.offsetLeft + element.offsetWidth / 2,
-            y: element.offsetTop + element.offsetHeight / 2
-        };
+    function connectionPoint(element, relationship, endpoint) {
+        const left = element.offsetLeft;
+        const top = element.offsetTop;
+        const width = element.offsetWidth;
+        const height = element.offsetHeight;
+        if (relationship === "above") {
+            return endpoint === "from"
+                ? { x: left + width / 2, y: top }
+                : { x: left + width / 2, y: top + height };
+        }
+        if (relationship === "under") {
+            return endpoint === "from"
+                ? { x: left + width / 2, y: top + height }
+                : { x: left + width / 2, y: top };
+        }
+        return endpoint === "from"
+            ? { x: left + width, y: top + height / 2 }
+            : { x: left, y: top + height / 2 };
     }
 
     function drawLinks() {
@@ -586,16 +614,17 @@ document.addEventListener("DOMContentLoaded", function () {
         linkLayer.appendChild(defs);
 
         pane.querySelectorAll(".org-canvas-node").forEach(function (node) {
-            const relatedId = node.dataset.relatedNodeId;
+            const relatedId = node.dataset.relatedNodeId || node.dataset.relatedLocalId;
             if (!relatedId) {
                 return;
             }
-            const related = pane.querySelector(`.org-canvas-node[data-node-id="${relatedId}"]`);
+            const related = pane.querySelector(`.org-canvas-node[data-node-id="${relatedId}"], .org-canvas-node[data-local-id="${relatedId}"]`);
             if (!related) {
                 return;
             }
-            const start = centerOf(related);
-            const end = centerOf(node);
+            const relationship = node.dataset.relationship || "with";
+            const start = connectionPoint(related, relationship, "from");
+            const end = connectionPoint(node, relationship, "to");
             const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
             line.setAttribute("x1", start.x);
             line.setAttribute("y1", start.y);
@@ -607,6 +636,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     document.querySelectorAll(".org-chart-draggable, .org-canvas-label").forEach(attachDragHandler);
+    pane.querySelectorAll(".org-canvas-node[data-person-ref]").forEach((node) => hideTrayPerson(node.dataset.personRef));
     addLabelButton?.addEventListener("click", addLabel);
     arrangeButton?.addEventListener("click", arrangeChart);
     labelInput?.addEventListener("keydown", function (event) {
@@ -632,18 +662,22 @@ document.addEventListener("DOMContentLoaded", function () {
         const ctx = exportCanvas.getContext("2d");
         ctx.fillStyle = "#f8fafc";
         ctx.fillRect(0, 0, width, height);
+        ctx.strokeStyle = "#94a3b8";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(18, 18, width - 36, height - 36);
         ctx.fillStyle = "#0f172a";
         ctx.font = "700 22px Arial";
         ctx.fillText({{ active_chart.chart_name|tojson }}, 32, 42);
         ctx.strokeStyle = "#2563eb";
         ctx.lineWidth = 2;
         nodes.forEach(function (node) {
-            const relatedId = node.dataset.relatedNodeId;
+            const relatedId = node.dataset.relatedNodeId || node.dataset.relatedLocalId;
             if (!relatedId) return;
-            const related = pane.querySelector(`.org-canvas-node[data-node-id="${relatedId}"]`);
+            const related = pane.querySelector(`.org-canvas-node[data-node-id="${relatedId}"], .org-canvas-node[data-local-id="${relatedId}"]`);
             if (!related) return;
-            const start = centerOf(related);
-            const end = centerOf(node);
+            const relationship = node.dataset.relationship || "with";
+            const start = connectionPoint(related, relationship, "from");
+            const end = connectionPoint(node, relationship, "to");
             ctx.beginPath();
             ctx.moveTo(start.x, start.y);
             ctx.lineTo(end.x, end.y);
