@@ -318,6 +318,7 @@ document.addEventListener("DOMContentLoaded", function () {
         node.className = "org-canvas-node org-chart-draggable org-move-staged";
         node.draggable = true;
         node.dataset.dragType = "node";
+        node.dataset.localId = `new-${Date.now()}-${Math.random().toString(16).slice(2)}`;
         node.dataset.personRef = item.person_ref;
         node.dataset.personName = item.name;
         node.dataset.personTitle = item.title;
@@ -343,8 +344,8 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function placementForDrop(point, target, zone) {
-        const width = 220;
-        const height = 108;
+        const width = parseInt(getComputedStyle(pane).getPropertyValue("--org-tile-width"), 10) || 220;
+        const height = parseInt(getComputedStyle(pane).getPropertyValue("--org-tile-height"), 10) || 118;
         const grid = 20;
         function snap(value) {
             return Math.round(value / grid) * grid;
@@ -412,6 +413,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!nodes.length) {
             return;
         }
+        const paneWidth = Math.max(760, pane.clientWidth || 960);
         const byId = new Map(nodes.filter((node) => node.dataset.nodeId).map((node) => [node.dataset.nodeId, node]));
         const levels = new Map();
         nodes.forEach((node) => {
@@ -439,15 +441,20 @@ document.addEventListener("DOMContentLoaded", function () {
             if (!rows.has(row)) rows.set(row, []);
             rows.get(row).push(node);
         });
-        const tileWidth = 220;
-        const xGap = 42;
-        const yGap = 46;
-        const rowHeight = 118;
+        const largestRowCount = Math.max(...Array.from(rows.values()).map((rowNodes) => rowNodes.length), 1);
+        const xGap = 34;
+        const yGap = 44;
+        const tileWidth = clamp(Math.floor((paneWidth - 96 - ((largestRowCount - 1) * xGap)) / largestRowCount), 170, 220);
+        const rowHeight = tileWidth < 190 ? 106 : 118;
+        pane.style.setProperty("--org-tile-width", `${tileWidth}px`);
+        pane.style.setProperty("--org-tile-height", `${rowHeight}px`);
         Array.from(rows.keys()).sort((a, b) => a - b).forEach((row) => {
             const rowNodes = rows.get(row).sort((a, b) => a.offsetLeft - b.offsetLeft);
+            const rowWidth = rowNodes.length * tileWidth + Math.max(0, rowNodes.length - 1) * xGap;
+            const startX = Math.max(32, Math.floor((paneWidth - rowWidth) / 2));
             rowNodes.forEach((node, index) => {
-                const x = 40 + index * (tileWidth + xGap);
-                const y = 40 + row * (rowHeight + yGap);
+                const x = startX + index * (tileWidth + xGap);
+                const y = 44 + row * (rowHeight + yGap);
                 node.style.left = `${x}px`;
                 node.style.top = `${y}px`;
                 node.classList.add("org-move-staged");
@@ -464,7 +471,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 });
             });
         });
-        pane.style.minHeight = `${Math.max(680, (Math.max(...rows.keys()) + 1) * (rowHeight + yGap) + 80)}px`;
+        pane.style.minHeight = `${Math.max(680, (Math.max(...rows.keys()) + 1) * (rowHeight + yGap) + 100)}px`;
         drawLinks();
     }
 
@@ -623,8 +630,11 @@ document.addEventListener("DOMContentLoaded", function () {
         exportCanvas.width = width;
         exportCanvas.height = height;
         const ctx = exportCanvas.getContext("2d");
-        ctx.fillStyle = "#ffffff";
+        ctx.fillStyle = "#f8fafc";
         ctx.fillRect(0, 0, width, height);
+        ctx.fillStyle = "#0f172a";
+        ctx.font = "700 22px Arial";
+        ctx.fillText({{ active_chart.chart_name|tojson }}, 32, 42);
         ctx.strokeStyle = "#2563eb";
         ctx.lineWidth = 2;
         nodes.forEach(function (node) {
@@ -640,25 +650,61 @@ document.addEventListener("DOMContentLoaded", function () {
             ctx.stroke();
         });
         labels.forEach(function (label) {
-            ctx.fillStyle = "#f8fafc";
+            ctx.fillStyle = "#e0f2fe";
             ctx.strokeStyle = "#94a3b8";
-            ctx.fillRect(label.offsetLeft, label.offsetTop, label.offsetWidth, label.offsetHeight);
-            ctx.strokeRect(label.offsetLeft, label.offsetTop, label.offsetWidth, label.offsetHeight);
+            ctx.beginPath();
+            ctx.roundRect(label.offsetLeft, label.offsetTop, label.offsetWidth, label.offsetHeight, 8);
+            ctx.fill();
+            ctx.stroke();
             ctx.fillStyle = "#0f172a";
             ctx.font = "700 13px Arial";
             ctx.fillText(label.textContent.trim(), label.offsetLeft + 10, label.offsetTop + 22);
         });
+        function textLines(text, maxChars) {
+            const words = String(text || "").split(/\s+/).filter(Boolean);
+            const lines = [];
+            let line = "";
+            words.forEach((word) => {
+                const next = line ? `${line} ${word}` : word;
+                if (next.length > maxChars && line) {
+                    lines.push(line);
+                    line = word;
+                } else {
+                    line = next;
+                }
+            });
+            if (line) lines.push(line);
+            return lines.slice(0, 2);
+        }
         nodes.forEach(function (node) {
             ctx.fillStyle = "#ffffff";
             ctx.strokeStyle = "#cbd5e1";
-            ctx.fillRect(node.offsetLeft, node.offsetTop, node.offsetWidth, node.offsetHeight);
-            ctx.strokeRect(node.offsetLeft, node.offsetTop, node.offsetWidth, node.offsetHeight);
+            ctx.beginPath();
+            ctx.roundRect(node.offsetLeft, node.offsetTop, node.offsetWidth, node.offsetHeight, 10);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = "#e0f2fe";
+            ctx.beginPath();
+            ctx.arc(node.offsetLeft + 34, node.offsetTop + 38, 20, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = "#0369a1";
+            ctx.font = "700 13px Arial";
+            const initials = (node.dataset.personName || "?").trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join("").toUpperCase();
+            ctx.fillText(initials || "?", node.offsetLeft + 24, node.offsetTop + 43);
             ctx.fillStyle = "#0f172a";
             ctx.font = "700 14px Arial";
-            ctx.fillText(node.dataset.personName || "Contact", node.offsetLeft + 14, node.offsetTop + 28);
+            textLines(node.dataset.personName || "Contact", 24).forEach((line, index) => {
+                ctx.fillText(line, node.offsetLeft + 64, node.offsetTop + 28 + index * 16);
+            });
             ctx.font = "12px Arial";
-            ctx.fillText(node.dataset.personTitle || "", node.offsetLeft + 14, node.offsetTop + 48);
-            ctx.fillText(node.dataset.personGroup || "", node.offsetLeft + 14, node.offsetTop + 66);
+            ctx.fillStyle = "#334155";
+            textLines(node.dataset.personTitle || "", 26).slice(0, 1).forEach((line) => {
+                ctx.fillText(line, node.offsetLeft + 64, node.offsetTop + 66);
+            });
+            ctx.fillStyle = "#64748b";
+            textLines(node.dataset.personGroup || "", 26).slice(0, 1).forEach((line) => {
+                ctx.fillText(line, node.offsetLeft + 64, node.offsetTop + 84);
+            });
         });
         const link = document.createElement("a");
         link.download = "pipeflow-org-chart.png";

@@ -184,6 +184,7 @@ def initialise_database(force=False):
             next_action_date TEXT,
             next_action_time TEXT,
             task_status TEXT DEFAULT 'Not Started',
+            completed_at TEXT,
             assigned_to TEXT,
             date_created TEXT DEFAULT CURRENT_TIMESTAMP,
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -476,6 +477,7 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "outreach", "activity_time", "TEXT")
     add_column_if_missing(cursor, "outreach", "next_action_time", "TEXT")
     add_column_if_missing(cursor, "outreach", "task_status", "TEXT DEFAULT 'Not Started'")
+    add_column_if_missing(cursor, "outreach", "completed_at", "TEXT")
     add_column_if_missing(cursor, "outreach", "assigned_to", "TEXT")
     add_column_if_missing(cursor, "outreach_recipients", "partner_contact_id", "INTEGER")
     add_column_if_missing(cursor, "outreach_recipients", "sort_order", "INTEGER DEFAULT 0")

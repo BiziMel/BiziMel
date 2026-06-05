@@ -16,12 +16,14 @@
 </div>
 
 <div class="form-card">
-    {% set task_locked = outreach_item.task_status in ['Closed', 'Completed', 'Cancelled'] %}
+    {% set task_locked = task_locked|default(false) %}
     {% if error %}
         <div class="alert-error">{{ error }}</div>
     {% endif %}
     {% if task_locked %}
-        <div class="alert-error">This task is {{ outreach_item.task_status }} and can no longer be modified or reassigned.</div>
+        <div class="alert-error">{{ task_lock_message or "This task can only be viewed and reported." }}</div>
+    {% elif outreach_item.task_status == "Completed" %}
+        <div class="alert-success">This task is Completed and can still be reopened or updated during the 10-day reopen window.</div>
     {% endif %}
 
     <form method="POST" class="pipeflow-form">

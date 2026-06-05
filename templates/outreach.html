@@ -150,7 +150,6 @@
                 <colgroup>
                     <col class="bulk-select-col">
                     <col class="outreach-title-col">
-                    <col class="outreach-start-col">
                     <col class="outreach-account-col">
                     <col class="outreach-campaign-col">
                     <col class="outreach-due-col">
@@ -160,7 +159,6 @@
                     <tr>
                         <th class="bulk-select-col">Select</th>
                         <th>Activity</th>
-                        <th>Activity Start Date</th>
                         <th>Account / Contact</th>
                         <th>Sales Play / Initiative</th>
                         <th data-default-sort="asc">Activity Due Date</th>
@@ -170,7 +168,7 @@
 
                 <tbody>
                     {% for item in outreach_records %}
-                        {% set task_locked = item.task_status in ['Closed', 'Completed', 'Cancelled'] %}
+                        {% set task_locked = not item.can_modify %}
                         <tr class="outreach-main-row {{ item.due_rag_class }}">
                             <td class="bulk-select-col">
                                 <input type="checkbox" name="selected_ids" value="{{ item.id }}" form="bulk-outreach-form" aria-label="Select outreach {{ item.subject or item.id }}">
@@ -181,18 +179,6 @@
                                 </a>
                                 <br>
                                 <span class="muted">{{ item.activity_type or "No activity type" }}</span>
-                            </td>
-                            <td>
-                                <div class="outreach-start-date-block">
-                                    <strong>
-                                        {% if item.activity_date %}
-                                            {{ item.activity_date[8:10] }}-{{ item.activity_date[5:7] }}-{{ item.activity_date[0:4] }}
-                                        {% else %}
-                                            No start date
-                                        {% endif %}
-                                    </strong>
-                                    <span>{{ item.activity_time or "No start time" }}</span>
-                                </div>
                             </td>
                             <td>
                                 <strong>{{ item.account_name or "No account" }}</strong>

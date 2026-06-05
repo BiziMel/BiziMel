@@ -8,7 +8,7 @@ import traceback
 import json
 import secrets
 import hashlib
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -20,9 +20,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection
 
 
-APP_VERSION = "2.1.3"
-APP_RELEASE_DATE = "2026-06-04"
-APP_BUILD = "2026-06-04-v2.1.3-enterprise-execution-insights-r1"
+APP_VERSION = "2.1.5"
+APP_RELEASE_DATE = "2026-06-05"
+APP_BUILD = "2026-06-05-v2.1.5-enterprise-outreach-org-insights-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -36,6 +36,27 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.1.5",
+        "release_date": "2026-06-05",
+        "title": "Outreach lifecycle hardening, org chart readability and richer execution guidance",
+        "new": [
+            "Added the 10-day Completed outreach reopen window before records are automatically moved to the system-only Closed status.",
+            "Added system closure handling so Closed records can be viewed and reported but cannot be modified or manually selected from status dropdowns.",
+        ],
+        "enhanced": [
+            "Enhanced Weekly Wrap Up into a conversational paragraph with the covered date range and a Friday 15:00 refresh point.",
+            "Enhanced Next 24 Hours focus with Discovery, NBM, executive-route and Lead-to-contact conversion signals.",
+            "Enhanced Execution Insights with activity outcome, activity type, age-open and comment-quality guidance by account and contact engagement.",
+            "Enhanced org chart arrangement, tile sizing and export/print output for cleaner hierarchy pillars and readable tiles.",
+        ],
+        "fixed": [
+            "Fixed bulk Outreach delete handling so dependent cleanup does not leave PostgreSQL transactions in an aborted state.",
+            "Fixed org chart tray behaviour so a contact appears either in the available list or on the chart pane, not both.",
+            "Fixed org chart relationship lines for side-by-side and border-linked tiles.",
+            "Removed Activity Start Date from the Outreach table because the full activity detail remains available inside the record.",
+        ],
+    },
     {
         "version": "2.1.3",
         "release_date": "2026-06-04",
@@ -392,10 +413,10 @@ USER_GUIDE_SECTIONS = [
         ],
         "tips": [
             "Untouched accounts are accounts with no active campaign or outreach tasks.",
-            "Closed, completed and cancelled work is removed from active execution views, overdue counts and AI Insights.",
+            "Completed, Closed and Cancelled work is removed from active execution views, overdue counts and AI Insights; Completed work can still be reopened for 10 days.",
             "AI Insights are recalculated on every dashboard refresh from current account, contact, partner, outreach, outcome and due-date data.",
             "Insights prioritise executive coverage and PG conversion. NBM Booked is treated as the strongest success signal, followed by Discovery Booked and executive meeting outcomes.",
-            "Weekly Wrap Up is refreshed each Friday from midday and overwrites the previous wrap-up.",
+            "Weekly Wrap Up is refreshed each Friday from 15:00 and covers the previous 7 days.",
             "Next 24 Hours is refreshed daily from midnight and overwrites the previous focus guidance.",
             "Overdue logic is time-aware. A blank due time is treated as end of day.",
             "Pipeline generated value should be treated as a source-system metric when it belongs in SFDC rather than PipeFlow.",
@@ -482,7 +503,7 @@ USER_GUIDE_SECTIONS = [
             "The Contacts dropdown supports multiple contacts; the first selected contact remains the primary report contact while all selected recipients are retained against the outreach task.",
             "Due-date colouring is time-aware: future work is green, work due today is amber, and overdue open work is red after the due date and time have passed.",
             "Tasks can only be assigned to users who have access to the related account.",
-            "Closed, completed and cancelled outreach is hidden unless you explicitly filter for it.",
+            "Completed, Closed and Cancelled outreach is hidden unless you explicitly filter for it. Completed records can be reopened for 10 days before the system moves them to Closed.",
             "If a user is missing from the assignment dropdown, check that the account has been shared with them first and that they belong to the same company tenant.",
         ],
     },
@@ -810,6 +831,7 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "Only account owners can share accounts, revoke account sharing or see account sharing assignments.",
             "Use the filters to focus active work. All Open excludes Completed, Closed and Cancelled records.",
+            "Completed records can be reopened and updated for 10 days from completion. After that, PipeFlow moves them to the system-only Closed status.",
             "Use Save Assignment after changing the assignee. The selected user must already have access to the account.",
             "Open the task to complete it, add a mandatory Activity Update or create a follow-on task.",
         ],
@@ -898,7 +920,7 @@ PAGE_INSTRUCTIONS = {
         "title": "Add Outreach Guidance",
         "items": [
             "Use one record per outreach task or next action.",
-            "Activity Start Date is when the work begins. Activity Due Date is when the next action must be completed.",
+            "Activity Start Date is maintained inside the activity record. Activity Due Date is shown on the Outreach table because it drives next-action execution.",
             "Leave Activity Update blank until there is a real update to record.",
         ],
     },
@@ -1025,7 +1047,7 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "Release notes show latest to earliest.",
             "Open a release to review New, Enhanced and Fixed changes.",
-            "Version 2.1.3 restores Execution Insights and adds Weekly Wrap Up and Next 24 Hours guidance to the Insights Dashboard.",
+            "Version 2.1.5 hardens Outreach delete and lifecycle handling, improves org chart readability and adds richer Execution Insights guidance.",
         ],
     },
     "user_guide": {
@@ -1058,7 +1080,7 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "Tasks are managed through the dashboard and Outreach Tasks page.",
             "Use status and due date updates to keep accountability current.",
-            "Closed, Completed and Cancelled work is hidden from active views by default.",
+            "Completed, Closed and Cancelled work is hidden from active views by default; Closed is system-only after the 10-day Completed reopen window expires.",
         ],
     },
     "login": {
@@ -1902,18 +1924,15 @@ def delete_outreach_records(connection, outreach_ids):
         outreach = connection.execute("SELECT subject FROM outreach WHERE id = ?", (outreach_id,)).fetchone()
         if not outreach:
             continue
-        try:
-            audit_record_delete(connection, "outreach", outreach_id, outreach["subject"] if outreach else "")
-        except Exception:
-            traceback.print_exc()
-        for cleanup_sql in (
+        audit_record_delete(connection, "outreach", outreach_id, outreach["subject"] if outreach else "")
+        connection.execute(
             "DELETE FROM timeline_entries WHERE related_type = 'outreach' AND related_id = ?",
+            (outreach_id,),
+        )
+        connection.execute(
             "DELETE FROM outreach_recipients WHERE outreach_id = ?",
-        ):
-            try:
-                connection.execute(cleanup_sql, (outreach_id,))
-            except Exception:
-                traceback.print_exc()
+            (outreach_id,),
+        )
         connection.execute("DELETE FROM outreach WHERE id = ?", (outreach_id,))
         deleted_count += 1
     return deleted_count
@@ -2512,15 +2531,113 @@ NEGATIVE_OUTCOMES = (
     "Not Relevant",
 )
 
-CLOSED_TASK_STATUSES = (
+SYSTEM_LOCKED_TASK_STATUSES = (
+    "Closed",
+    "Cancelled",
+)
+
+INACTIVE_TASK_STATUSES = (
     "Closed",
     "Completed",
     "Cancelled",
 )
 
+COMPLETED_REOPEN_DAYS = 10
+
 
 def is_closed_task_status(status):
-    return (status or "").strip() in CLOSED_TASK_STATUSES
+    return (status or "").strip() in INACTIVE_TASK_STATUSES
+
+
+def is_system_locked_task_status(status):
+    return (status or "").strip() in SYSTEM_LOCKED_TASK_STATUSES
+
+
+def normalise_task_status(status, allow_closed=False):
+    status = (status or "Not Started").strip()
+    allowed = set(DROPDOWN_VALUES["task_statuses"])
+    if allow_closed:
+        allowed.add("Closed")
+    if status == "Closed" and not allow_closed:
+        return "Completed"
+    return status if status in allowed else "Not Started"
+
+
+def parse_app_datetime(value):
+    if not value:
+        return None
+    text = str(value).strip()
+    for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text[:26] if "%f" in fmt else text[:19] if fmt.endswith("%S") else text[:10], fmt)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def completed_reopen_deadline(outreach_item):
+    if not outreach_item or (outreach_item["task_status"] or "") != "Completed":
+        return None
+    completed_at = outreach_item["completed_at"] if "completed_at" in outreach_item.keys() else ""
+    if not completed_at:
+        completed_at = outreach_item["last_updated"] if "last_updated" in outreach_item.keys() else ""
+    completed_dt = parse_app_datetime(completed_at)
+    return completed_dt + timedelta(days=COMPLETED_REOPEN_DAYS) if completed_dt else None
+
+
+def task_can_be_modified(outreach_item, now=None):
+    if not outreach_item:
+        return False
+    status = (outreach_item["task_status"] or "").strip()
+    if is_system_locked_task_status(status):
+        return False
+    if status != "Completed":
+        return True
+    deadline = completed_reopen_deadline(outreach_item)
+    return bool(deadline and (now or current_app_datetime()) < deadline)
+
+
+def task_lock_message(outreach_item):
+    status = (outreach_item["task_status"] or "").strip() if outreach_item else "Closed"
+    if status == "Completed":
+        return "This task is Completed and its 10-day reopen window has expired, so it can only be viewed and reported."
+    if status == "Closed":
+        return "This task is Closed by the system and can only be viewed and reported."
+    if status == "Cancelled":
+        return "This task is Cancelled and can no longer be modified or reassigned."
+    return f"This task is {status} and can no longer be modified or reassigned."
+
+
+def completed_status_timestamp(existing_record, new_status):
+    current_status = (existing_record["task_status"] or "").strip() if existing_record else ""
+    existing_completed_at = existing_record["completed_at"] if existing_record and "completed_at" in existing_record.keys() else ""
+    if new_status == "Completed":
+        return existing_completed_at or app_datetime_key()
+    if current_status == "Completed" and new_status != "Completed":
+        return ""
+    return existing_completed_at or ""
+
+
+def close_expired_completed_outreach(connection, now=None):
+    now = now or current_app_datetime()
+    expired = []
+    rows = connection.execute("""
+        SELECT *
+        FROM outreach
+        WHERE COALESCE(task_status, '') = 'Completed'
+    """).fetchall()
+    for row in rows:
+        deadline = completed_reopen_deadline(row)
+        if deadline and deadline <= now:
+            expired.append(row)
+    for row in expired:
+        connection.execute("""
+            UPDATE outreach
+            SET task_status = 'Closed',
+                last_updated = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (row["id"],))
+    return len(expired)
 
 
 def normalise_outreach_outcome(outcome):
@@ -2558,12 +2675,12 @@ def is_overdue_task(next_action_date, next_action_time, task_status, now=None):
 
 
 def open_task_sql(alias="outreach"):
-    placeholders = ",".join("?" for _ in CLOSED_TASK_STATUSES)
+    placeholders = ",".join("?" for _ in INACTIVE_TASK_STATUSES)
     return f"COALESCE({alias}.task_status, '') NOT IN ({placeholders})"
 
 
 def open_task_params():
-    return tuple(CLOSED_TASK_STATUSES)
+    return tuple(INACTIVE_TASK_STATUSES)
 
 
 def overdue_task_sql(alias="outreach"):
@@ -2887,6 +3004,13 @@ def dashboard_guidance_week_key(today):
     return today.strftime("%Y-W%W")
 
 
+def display_date(value):
+    if isinstance(value, date):
+        return value.strftime("%d %b %Y")
+    parsed = parse_app_datetime(value)
+    return parsed.strftime("%d %b %Y") if parsed else str(value or "")
+
+
 def format_dashboard_guidance(title, lead, bullets):
     cleaned_bullets = [str(item).strip() for item in bullets if str(item or "").strip()]
     if not cleaned_bullets:
@@ -2900,7 +3024,7 @@ def format_dashboard_guidance(title, lead, bullets):
     }
 
 
-def generate_weekly_wrap_up(connection, week_start, week_end, metric_values, execution_insights):
+def generate_weekly_wrap_up(connection, period_start, period_end, metric_values, execution_insights):
     week_successes = dashboard_rows(connection, """
         SELECT accounts.account_name, outreach.sales_play, outreach.outcome, outreach.activity_type
         FROM outreach
@@ -2913,26 +3037,26 @@ def generate_weekly_wrap_up(connection, week_start, week_end, metric_values, exe
           )
         ORDER BY outreach.activity_date DESC, outreach.id DESC
         LIMIT 5
-    """, (week_start.isoformat(), week_end.isoformat()))
+    """, (period_start.isoformat(), period_end.isoformat()))
     closed_count = metric_values.get("this_week_completed", 0)
     overdue_count = metric_values.get("this_week_overdue", 0)
     success_count = metric_values.get("this_week_meetings_booked", 0)
     success_accounts = compact_join([row["account_name"] for row in week_successes if row["account_name"]], 3)
+    period_label = f"{display_date(period_start)} to {display_date(period_end)}"
     bullets = [
-        f"This week has produced {success_count} PG success outcome(s), with NBM and Discovery bookings carrying the most weight.",
-        f"{closed_count} outreach task(s) were closed, which gives the week a useful execution baseline.",
+        f"Between {period_label}, PipeFlow can see {success_count} Discovery, NBM or executive meeting success outcome(s), and {closed_count} outreach task(s) were completed or closed.",
     ]
     if success_accounts:
-        bullets.append(f"Progress was most visible around {success_accounts}, so the best next learning is to review the route, contact level and sales play used there before scaling it.")
+        bullets.append(f"The clearest progress came through {success_accounts}; that is where the route, stakeholder level and sales play deserve a quick look before you repeat the pattern elsewhere.")
     if overdue_count:
-        bullets.append(f"There are still {overdue_count} overdue action(s), so the week has not fully converted effort into clean momentum yet.")
+        bullets.append(f"There are still {overdue_count} overdue action(s), so the week has had useful movement but not all of it has converted into clean forward momentum yet.")
     else:
-        bullets.append("No overdue actions are showing in the command centre, so focus can move from recovery into improving route quality and conversion.")
+        bullets.append("There are no overdue actions showing in the command centre, which means the next improvement is less about recovery and more about choosing the right executive route.")
     for insight in execution_insights[:2]:
-        bullets.append(f"{insight.get('category', 'Insight')}: {insight.get('action', '')}")
+        bullets.append(f"I would also pay attention to this: {insight.get('action', '')}")
     return format_dashboard_guidance(
         "Weekly Wrap Up",
-        "Here is the weekly wrap-up.",
+        f"Here is the weekly wrap-up for {period_label}.",
         bullets,
     )
 
@@ -2948,10 +3072,40 @@ def generate_next_24_hours_focus(connection, today, metric_values, execution_ins
     """, (today.isoformat(), tomorrow.isoformat(), *open_task_params()), 0)
     overdue_count = metric_values.get("this_week_overdue", 0)
     untouched_count = metric_values.get("this_week_untouched_accounts", 0)
+    success_rows = dashboard_rows(connection, """
+        SELECT outcome, COUNT(*) AS total
+        FROM outreach
+        WHERE outcome IN ('NBM Booked', 'Discovery Booked', 'Exec Meeting Booked', 'Meeting Booked')
+        GROUP BY outcome
+    """)
+    success_summary = ", ".join(f"{row['total']} {row['outcome']}" for row in success_rows) or "no booked meeting outcomes yet"
+    lead_count = dashboard_scalar(connection, """
+        SELECT COUNT(*)
+        FROM contacts
+        WHERE COALESCE(bmc_relationship, '') = 'Lead'
+          AND COALESCE(status, 'Active') = 'Active'
+    """, default=0)
+    executive_count = dashboard_scalar(connection, """
+        SELECT COUNT(*)
+        FROM contacts
+        WHERE COALESCE(status, 'Active') = 'Active'
+          AND (
+                COALESCE(category, '') = 'Executive'
+             OR COALESCE(bmc_relationship, '') IN ('Executive Buyer', 'Executive Assistant')
+             OR lower(COALESCE(job_title, '')) LIKE '%chief%'
+             OR lower(COALESCE(job_title, '')) LIKE '%vp%'
+             OR lower(COALESCE(job_title, '')) LIKE '%vice president%'
+             OR lower(COALESCE(job_title, '')) LIKE '%executive%'
+             OR lower(COALESCE(job_title, '')) LIKE '%director%'
+             OR lower(COALESCE(job_title, '')) LIKE '%head of%'
+          )
+    """, default=0)
     bullets = [
-        "Spend the next working window on the accounts where an executive route and a direct Discovery or NBM ask are already available.",
-        f"There are {upcoming_count} open action(s) due in the next 24 hours, so start with the highest-value account action rather than the easiest admin task.",
+        f"Spend the next working window on activity that can create a Discovery meeting or, better, an NBM meeting; the current success baseline is {success_summary}.",
+        f"There are {upcoming_count} open action(s) due in the next 24 hours and {executive_count} active executive-route contact(s), so start where a senior route already exists.",
     ]
+    if lead_count:
+        bullets.append(f"{lead_count} active contact(s) are still marked Lead; convert the real relationships out of Lead status before treating them as opportunity-progress contacts.")
     if overdue_count:
         bullets.append(f"Clear {overdue_count} overdue action(s) before adding new campaign volume so stale work does not dilute focus.")
     if untouched_count:
@@ -2968,20 +3122,20 @@ def generate_next_24_hours_focus(connection, today, metric_values, execution_ins
 def load_dashboard_weekly_guidance(connection, metric_values, execution_insights):
     now = current_app_datetime()
     today = now.date()
-    current_week_start = today - timedelta(days=today.weekday())
-    current_week_end = current_week_start + timedelta(days=6)
-    week_key = dashboard_guidance_week_key(today)
+    period_end = today
+    period_start = period_end - timedelta(days=6)
+    week_key = f"friday-1500-{today.isoformat()}" if today.weekday() == 4 else dashboard_guidance_week_key(today)
     day_key = today.isoformat()
     wrap_key = dashboard_setting(connection, "weekly_wrap_up_key", "")
     focus_key = dashboard_setting(connection, "weekly_ahead_focus_key", "")
     wrap_content = dashboard_setting(connection, "weekly_wrap_up_content", "")
     focus_content = dashboard_setting(connection, "weekly_ahead_focus_content", "")
 
-    should_refresh_wrap = not wrap_content or wrap_key != week_key or (today.weekday() == 4 and now.time() >= time(12, 0))
+    should_refresh_wrap = not wrap_content or (today.weekday() == 4 and now.time() >= time(15, 0) and wrap_key != week_key)
     should_refresh_focus = not focus_content or focus_key != day_key
 
     if should_refresh_wrap:
-        generated = generate_weekly_wrap_up(connection, current_week_start, current_week_end, metric_values, execution_insights)
+        generated = generate_weekly_wrap_up(connection, period_start, period_end, metric_values, execution_insights)
         wrap_content = json.dumps(generated)
         save_dashboard_setting(connection, "weekly_wrap_up_key", week_key)
         save_dashboard_setting(connection, "weekly_wrap_up_content", wrap_content)
@@ -3253,6 +3407,70 @@ def build_learning_insights(connection):
             "link": url_for("outreach")
         })
 
+    stale_open_rows = connection.execute("""
+        SELECT
+            accounts.id AS account_id,
+            accounts.account_name,
+            COALESCE(contacts.name, partner_contacts.name) AS contact_name,
+            outreach.activity_type,
+            outreach.next_action_date,
+            outreach.last_updated,
+            outreach.notes,
+            outreach.next_action,
+            CAST(julianday('now') - julianday(COALESCE(NULLIF(outreach.next_action_date, ''), outreach.last_updated, outreach.date_created)) AS INTEGER) AS age_days
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
+        LEFT JOIN partner_contacts ON outreach.partner_contact_id = partner_contacts.id
+        WHERE COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
+        ORDER BY age_days DESC, outreach.last_updated ASC
+        LIMIT 1
+    """).fetchall()
+    if stale_open_rows:
+        stale = stale_open_rows[0]
+        notes_text = " ".join([stale["notes"] or "", stale["next_action"] or ""]).strip()
+        comment_guidance = (
+            "The comments are thin, so add what happened, what was learned and the next ask."
+            if len(notes_text) < 40
+            else "The comments have enough context to decide the next move, so use them to make the next ask specific."
+        )
+        insights.append({
+            "signal": "Open Work",
+            "title": f"{stale['account_name'] or 'An account'} has the oldest open outreach thread",
+            "message": (
+                f"{stale['contact_name'] or 'The contact'} has a {stale['activity_type'] or 'touchpoint'} "
+                f"that has been open for about {stale['age_days'] or 0} day(s). {comment_guidance}"
+            ),
+            "action": "Update the activity with a clear outcome, then either move it to a Discovery/NBM ask or close the loop with a follow-on.",
+            "link": url_for("view_account", account_id=stale["account_id"]) if stale["account_id"] else url_for("outreach")
+        })
+
+    activity_mix_rows = connection.execute("""
+        SELECT
+            activity_type,
+            COUNT(*) AS total,
+            SUM(CASE WHEN outcome IN ('NBM Booked', 'Discovery Booked', 'Exec Meeting Booked', 'Meeting Booked') THEN 1 ELSE 0 END) AS success_total,
+            SUM(CASE WHEN outcome IN ('Negative Response', 'Not Relevant') THEN 1 ELSE 0 END) AS negative_total
+        FROM outreach
+        WHERE COALESCE(activity_type, '') != ''
+        GROUP BY activity_type
+        HAVING COUNT(*) >= 2
+        ORDER BY success_total DESC, negative_total ASC, total DESC
+        LIMIT 1
+    """).fetchall()
+    if activity_mix_rows:
+        activity = activity_mix_rows[0]
+        insights.append({
+            "signal": "Activity Type",
+            "title": f"{activity['activity_type']} has the clearest conversion signal",
+            "message": (
+                f"{activity['activity_type']} has {activity['success_total'] or 0} meeting success outcome(s) "
+                f"and {activity['negative_total'] or 0} negative outcome(s) from {activity['total'] or 0} touchpoint(s)."
+            ),
+            "action": "Use this channel where the account has an executive route, then make the ask explicitly about Discovery or NBM progress.",
+            "link": url_for("outreach")
+        })
+
     outcome_gaps = connection.execute("""
         SELECT COUNT(*) AS total
         FROM outreach
@@ -3288,6 +3506,8 @@ def build_learning_insights(connection):
 @app.route("/")
 def home():
     connection = get_db_connection()
+    close_expired_completed_outreach(connection)
+    connection.commit()
     try:
         return build_dashboard_response(connection)
     except Exception as exc:
@@ -7043,6 +7263,8 @@ def outreach():
     closed_statuses = ["Closed", "Completed", "Cancelled"]
 
     connection = get_db_connection()
+    close_expired_completed_outreach(connection)
+    connection.commit()
 
     query = """
         SELECT
@@ -7123,6 +7345,7 @@ def outreach():
             row_dict.get("next_action_time"),
             row_dict.get("task_status"),
         )
+        row_dict["can_modify"] = task_can_be_modified(row_dict)
         outreach_records.append(row_dict)
 
     accounts = connection.execute(
@@ -7177,7 +7400,7 @@ def add_outreach():
 
     if request.method == "POST":
         prefill = dict(request.form)
-        requested_status = request.form.get("task_status", "Not Started")
+        requested_status = normalise_task_status(request.form.get("task_status", "Not Started"))
         recipient_values = outreach_contact_form_values(request.form)
         recipients = parse_outreach_contact_selections(recipient_values)
         contact_id, partner_contact_id = recipients[0] if recipients else (None, None)
@@ -7194,9 +7417,9 @@ def add_outreach():
                     fy, quarter, campaign, sales_play, account_id, contact_id, partner_contact_id, activity_type,
                     activity_date, activity_time, subject, notes, outcome,
                     next_action, next_action_date, next_action_time,
-                    task_status, assigned_to
+                    task_status, completed_at, assigned_to
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 request.form.get("fy"),
                 request.form.get("quarter"),
@@ -7214,7 +7437,8 @@ def add_outreach():
                 request.form.get("next_action"),
                 request.form.get("next_action_date"),
                 request.form.get("next_action_time"),
-                request.form.get("task_status", "Not Started"),
+                requested_status,
+                app_datetime_key() if requested_status == "Completed" else "",
                 request.form.get("assigned_to", "")
             ))
             outreach_id = cursor.lastrowid
@@ -7235,7 +7459,8 @@ def add_outreach():
                 "next_action": request.form.get("next_action"),
                 "next_action_date": request.form.get("next_action_date"),
                 "next_action_time": request.form.get("next_action_time"),
-                "task_status": request.form.get("task_status", "Not Started"),
+                "task_status": requested_status,
+                "completed_at": app_datetime_key() if requested_status == "Completed" else "",
                 "assigned_to": request.form.get("assigned_to", ""),
             })
 
@@ -7708,7 +7933,7 @@ def update_outreach_due_date_records(connection, outreach_ids, next_action_date,
             "SELECT * FROM outreach WHERE id = ?",
             (outreach_id,),
         ).fetchone()
-        if not outreach_item or is_closed_task_status(outreach_item["task_status"]):
+        if not outreach_item or not task_can_be_modified(outreach_item):
             continue
         new_values = {
             "next_action_date": next_action_date,
@@ -7726,17 +7951,14 @@ def update_outreach_due_date_records(connection, outreach_ids, next_action_date,
             (next_action_date, next_action_time, outreach_id),
         )
         if changes:
-            try:
-                audit_record_update(connection, "outreach", outreach_id, outreach_item, new_values, labels)
-                add_timeline_entry(
-                    connection,
-                    "outreach",
-                    outreach_id,
-                    "Task Updated",
-                    f"{actor_label}: " + "; ".join(changes),
-                )
-            except Exception:
-                traceback.print_exc()
+            audit_record_update(connection, "outreach", outreach_id, outreach_item, new_values, labels)
+            add_timeline_entry(
+                connection,
+                "outreach",
+                outreach_id,
+                "Task Updated",
+                f"{actor_label}: " + "; ".join(changes),
+            )
         updated_count += 1
     return updated_count
 
@@ -7764,7 +7986,7 @@ def update_outreach_due_date(outreach_id):
     connection.close()
     if updated_count:
         return redirect_with_query(return_to, message="Activity due date updated.")
-    return redirect_with_query(return_to, error="Closed, completed and cancelled tasks cannot have their due date changed.")
+    return redirect_with_query(return_to, error="This outreach task is locked and cannot have its due date changed.")
 
 
 @app.route("/outreach/bulk-due-date", methods=("POST",))
@@ -7808,6 +8030,8 @@ def edit_outreach(outreach_id):
     if not outreach_item:
         connection.close()
         return redirect(url_for("outreach", error="The selected outreach task could not be found."))
+    task_locked_value = not task_can_be_modified(outreach_item)
+    task_lock_message_value = task_lock_message(outreach_item) if task_locked_value else ""
 
     accounts = connection.execute(
         "SELECT * FROM accounts ORDER BY account_name"
@@ -7840,9 +8064,9 @@ def edit_outreach(outreach_id):
         ORDER BY start_date, end_date, id
     """).fetchall()
     if request.method == "POST":
-        if is_closed_task_status(outreach_item["task_status"]):
+        if not task_can_be_modified(outreach_item):
             connection.close()
-            return redirect(url_for("outreach", error="Closed, completed and cancelled tasks cannot be modified."))
+            return redirect(url_for("outreach", error=task_lock_message(outreach_item)))
         submit_action = request.form.get("submit_action", "save")
         sales_play_value = request.form.get("sales_play")
         recipient_values = outreach_contact_form_values(request.form)
@@ -7865,7 +8089,7 @@ def edit_outreach(outreach_id):
             "next_action": request.form.get("next_action"),
             "next_action_date": request.form.get("next_action_date"),
             "next_action_time": request.form.get("next_action_time"),
-            "task_status": request.form.get("task_status", "Not Started"),
+            "task_status": normalise_task_status(request.form.get("task_status", "Not Started")),
             "assigned_to": request.form.get("assigned_to", "")
         }
         follow_on_requested = submit_action == "complete_and_follow"
@@ -7874,6 +8098,7 @@ def edit_outreach(outreach_id):
             new_values["task_status"] = "Completed"
             new_values["next_action_date"] = ""
             new_values["next_action_time"] = ""
+        new_values["completed_at"] = completed_status_timestamp(outreach_item, new_values["task_status"])
 
         if not fy_quarter_are_valid(new_values["fy"], new_values["quarter"]):
             error = fy_quarter_required_message()
@@ -7890,7 +8115,9 @@ def edit_outreach(outreach_id):
                 partner_contacts=partner_contacts,
                 selected_contact_values=recipient_values,
                 selected_account_id=new_values["account_id"],
-                error=error
+                error=error,
+                task_locked=task_locked_value,
+                task_lock_message=task_lock_message_value
             )
 
         if not outreach_recipients_match_account(connection, new_values["account_id"], recipients):
@@ -7908,7 +8135,9 @@ def edit_outreach(outreach_id):
                 partner_contacts=partner_contacts,
                 selected_contact_values=recipient_values,
                 selected_account_id=new_values["account_id"],
-                error=error
+                error=error,
+                task_locked=task_locked_value,
+                task_lock_message=task_lock_message_value
             )
 
         if status_requires_activity_update(new_values["task_status"]) and not activity_update_is_valid(new_values["next_action"]):
@@ -7926,7 +8155,9 @@ def edit_outreach(outreach_id):
                 partner_contacts=partner_contacts,
                 selected_contact_values=recipient_values,
                 selected_account_id=new_values["account_id"],
-                error=error
+                error=error,
+                task_locked=task_locked_value,
+                task_lock_message=task_lock_message_value
             )
 
         labels = {
@@ -7947,6 +8178,7 @@ def edit_outreach(outreach_id):
             "next_action_date": "Activity due date",
             "next_action_time": "Activity due time",
             "task_status": "Task status",
+            "completed_at": "Completed at",
             "assigned_to": "Assigned to"
         }
 
@@ -7971,6 +8203,7 @@ def edit_outreach(outreach_id):
                 next_action_date = ?,
                 next_action_time = ?,
                 task_status = ?,
+                completed_at = ?,
                 assigned_to = ?,
                 last_updated = CURRENT_TIMESTAMP
             WHERE id = ?
@@ -7992,6 +8225,7 @@ def edit_outreach(outreach_id):
             new_values["next_action_date"],
             new_values["next_action_time"],
             new_values["task_status"],
+            new_values["completed_at"],
             new_values["assigned_to"],
             outreach_id
         ))
@@ -8031,7 +8265,9 @@ def edit_outreach(outreach_id):
         partner_contacts=partner_contacts,
         selected_contact_values=selected_contact_values,
         selected_account_id=selected_account_id,
-        error=error
+        error=error,
+        task_locked=task_locked_value,
+        task_lock_message=task_lock_message_value
     )
 
 
@@ -8685,9 +8921,9 @@ def reassign_team_outreach():
     connection = get_schema_connection(schema=workspace_schema) if using_postgres() else get_db_connection()
     outreach_item = connection.execute("SELECT * FROM outreach WHERE id = ?", (outreach_id,)).fetchone()
     if outreach_item:
-        if is_closed_task_status(outreach_item["task_status"]):
+        if not task_can_be_modified(outreach_item):
             connection.close()
-            return redirect(url_for("outreach", error="Closed, completed and cancelled tasks cannot be reassigned."))
+            return redirect(url_for("outreach", error=task_lock_message(outreach_item)))
         account = connection.execute("SELECT * FROM accounts WHERE id = ?", (outreach_item["account_id"],)).fetchone()
         if account and not assignee_has_account_access(connection, account, assigned_to_user_id):
             connection.close()
@@ -8725,18 +8961,19 @@ def update_task_from_tasks(outreach_id):
     if not outreach_item:
         connection.close()
         return redirect(return_target)
-    if is_closed_task_status(outreach_item["task_status"]):
+    if not task_can_be_modified(outreach_item):
         connection.close()
         return redirect(return_target)
 
     new_values = {
         "outcome": normalise_outreach_outcome(request.form.get("outcome")),
-        "task_status": request.form.get("task_status", "Not Started"),
+        "task_status": normalise_task_status(request.form.get("task_status", "Not Started")),
         "next_action": request.form.get("next_action"),
         "next_action_date": request.form.get("next_action_date"),
         "next_action_time": request.form.get("next_action_time"),
         "notes": outreach_item["notes"] or "",
     }
+    new_values["completed_at"] = completed_status_timestamp(outreach_item, new_values["task_status"])
     if status_requires_activity_update(new_values["task_status"]) and not activity_update_is_valid(new_values["next_action"]):
         connection.close()
         return redirect(return_target)
@@ -8747,6 +8984,7 @@ def update_task_from_tasks(outreach_id):
         "next_action_date": "Activity due date",
         "next_action_time": "Activity due time",
         "notes": "System metadata",
+        "completed_at": "Completed at",
     }
     changes = build_change_log(outreach_item, new_values, labels)
 
@@ -8758,6 +8996,7 @@ def update_task_from_tasks(outreach_id):
             next_action = ?,
             next_action_date = ?,
             next_action_time = ?,
+            completed_at = ?,
             last_updated = CURRENT_TIMESTAMP
         WHERE id = ?
         """,
@@ -8767,6 +9006,7 @@ def update_task_from_tasks(outreach_id):
             new_values["next_action"],
             new_values["next_action_date"],
             new_values["next_action_time"],
+            new_values["completed_at"],
             outreach_id,
         ),
     )
@@ -8801,33 +9041,41 @@ def complete_task_from_tasks(outreach_id):
         connection.close()
         return redirect(return_target)
 
+    if not task_can_be_modified(outreach_item):
+        connection.close()
+        return redirect(return_target)
+
     outcome = normalise_outreach_outcome(request.form.get("outcome")) or outreach_item["outcome"] or "Follow-up Required"
+    completed_at = completed_status_timestamp(outreach_item, "Completed")
     connection.execute(
         """
         UPDATE outreach
-        SET task_status = 'Closed',
+        SET task_status = 'Completed',
             outcome = ?,
             next_action = ?,
+            completed_at = ?,
             last_updated = CURRENT_TIMESTAMP
         WHERE id = ?
         """,
-        (outcome, activity_update, outreach_id),
+        (outcome, activity_update, completed_at, outreach_id),
     )
     audit_record_update(connection, "outreach", outreach_id, outreach_item, {
-        "task_status": "Closed",
+        "task_status": "Completed",
         "outcome": outcome,
         "next_action": activity_update,
+        "completed_at": completed_at,
     }, {
         "task_status": "Task status",
         "outcome": "Outcome",
         "next_action": "Activity update",
+        "completed_at": "Completed at",
     })
     add_timeline_entry(
         connection,
         "outreach",
         outreach_id,
-        "Task Closed",
-        f"Task marked closed from dashboard with outcome: {outcome}",
+        "Task Completed",
+        f"Task marked Completed from dashboard with outcome: {outcome}. It can be reopened for 10 days before the system moves it to Closed.",
     )
     connection.commit()
     connection.close()
