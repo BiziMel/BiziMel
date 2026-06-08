@@ -2430,7 +2430,8 @@ a:hover {
     margin: 0;
 }
 
-.tenant-inline-edit-form input[type="text"] {
+.tenant-inline-edit-form input[type="text"],
+.tenant-inline-edit-form select {
     width: 100%;
     min-height: 34px;
 }
@@ -3620,11 +3621,19 @@ body {
 }
 
 .dashboard-guidance-accordion summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
     cursor: pointer;
     padding: 12px 14px;
     color: #0f172a;
     font-size: 15px;
     font-weight: 800;
+}
+
+.guidance-refresh-form {
+    display: inline-flex;
 }
 
 .dashboard-guidance-body {
@@ -4773,10 +4782,6 @@ body {
     background: #eff6ff;
 }
 
-.org-person-delete-form {
-    margin-top: -4px;
-}
-
 .org-label-controls {
     display: grid;
     grid-template-columns: minmax(180px, 1fr) auto;
@@ -4814,10 +4819,6 @@ body {
     stroke-linecap: round;
 }
 
-.org-link-layer marker path {
-    fill: #2563eb;
-}
-
 .org-canvas-node {
     position: absolute;
     z-index: 2;
@@ -4833,6 +4834,30 @@ body {
     cursor: grab;
     transition: border-color 0.16s ease, box-shadow 0.16s ease;
     overflow: hidden;
+}
+
+.org-node-remove-button {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border: 1px solid #fecaca;
+    border-radius: 999px;
+    background: #fff5f5;
+    color: #b91c1c;
+    font-size: 13px;
+    font-weight: 900;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.org-node-remove-button:hover,
+.org-node-remove-button:focus {
+    background: #fee2e2;
+    color: #7f1d1d;
 }
 
 .org-canvas-node .org-person-view {
@@ -4901,7 +4926,9 @@ body {
 }
 
 .org-canvas-node .org-person-delete-form {
-    justify-self: end;
+    position: absolute;
+    top: 0;
+    right: 0;
     margin: 0;
 }
 

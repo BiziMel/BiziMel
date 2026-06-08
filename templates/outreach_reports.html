@@ -11,9 +11,9 @@
 
 <div class="report-card">
     <h3>Filters</h3>
+    <p>Defaults to the last 7 days. Change the date range to review older or wider outreach activity.</p>
 
     <form method="get" action="/reports/outreach" class="filter-form">
-
         <label>Start Date</label>
         <input type="date" name="start_date" value="{{ selected_start_date }}">
 
@@ -52,93 +52,62 @@
 
         <div class="button-group">
             <button type="submit" class="btn btn-primary">Apply Filters</button>
-            <a href="/reports/outreach" class="btn btn-secondary">Clear Filters</a>
+            <a href="/reports/outreach" class="btn btn-secondary">Last 7 Days</a>
         </div>
-
     </form>
 </div>
 
 <div class="dashboard-grid">
-
     <div class="dashboard-card">
         <h3>Total Outreach</h3>
         <p>{{ total_outreach }}</p>
+        <span>{{ report_range_label }}</span>
     </div>
-
     <div class="dashboard-card">
-        <h3>Meetings Booked</h3>
-        <p>{{ meetings_booked }}</p>
+        <h3>Discovery / NBM Success</h3>
+        <p>{{ pg_success_count }}</p>
+        <span>Meeting success outcomes</span>
     </div>
-
     <div class="dashboard-card">
-        <h3>PG Success Conversion</h3>
-        <p>{{ conversion_rate }}</p>
+        <h3>Open Tasks</h3>
+        <p>{{ open_tasks }}</p>
+        <span>Not completed, closed or cancelled</span>
     </div>
-
+    <div class="dashboard-card">
+        <h3>Overdue Tasks</h3>
+        <p>{{ overdue_tasks }}</p>
+        <span>Due date/time has expired</span>
+    </div>
 </div>
 
 <div class="report-grid">
-
     <div class="report-card">
         <h3>Outcome Breakdown</h3>
-        <canvas id="outcomeChart"></canvas>
-    </div>
-
-    <div class="report-card">
-        <h3>Activity Type Breakdown</h3>
-        <canvas id="activityTypeChart"></canvas>
-    </div>
-
-    <div class="report-card">
-        <h3>Monthly Outreach Trend</h3>
-        <canvas id="monthlyTrendChart"></canvas>
-    </div>
-
-    <div class="report-card">
-        <h3>Monthly PG Success Conversion</h3>
-        <canvas id="monthlyConversionChart"></canvas>
-    </div>
-
-</div>
-
-<div class="report-table-section">
-    <div class="section-header">
-        <div>
-            <h2>Outcome Breakdown</h2>
-            <p>Summary of outreach outcomes for the selected filters.</p>
+        <div class="compact-breakdown-list">
+            {% for item in outcome_breakdown %}
+                <div><span>{{ item.outcome or "Unknown" }}</span><strong>{{ item.count }}</strong></div>
+            {% else %}
+                <p>No outcome data found.</p>
+            {% endfor %}
         </div>
     </div>
-
-    <div class="table-container">
-        <table class="report-table">
-            <thead>
-                <tr>
-                    <th>Outcome</th>
-                    <th>Count</th>
-                </tr>
-            </thead>
-
-            <tbody>
-                {% for item in outcome_breakdown %}
-                    <tr>
-                        <td>{{ item["outcome"] or "Unknown" }}</td>
-                        <td>{{ item["count"] }}</td>
-                    </tr>
-                {% else %}
-                    <tr>
-                        <td colspan="2">No outcome data found.</td>
-                    </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <div class="report-card">
+        <h3>Activity Type Breakdown</h3>
+        <div class="compact-breakdown-list">
+            {% for item in outreach_by_type %}
+                <div><span>{{ item.activity_type or "Unknown" }}</span><strong>{{ item.count }}</strong></div>
+            {% else %}
+                <p>No activity type data found.</p>
+            {% endfor %}
+        </div>
     </div>
 </div>
 
 <div class="report-table-section">
     <div class="section-header">
         <div>
-            <h2>Latest Outreach</h2>
-            <p>All outreach activity for the current working week, {{ working_week_start }} to {{ working_week_end }}, within the selected filters.</p>
+            <h2>Outreach Activity</h2>
+            <p>All outreach activity in the selected range. The current working week is {{ working_week_start }} to {{ working_week_end }}.</p>
         </div>
     </div>
 
@@ -147,154 +116,41 @@
             <thead>
                 <tr>
                     <th>Date</th>
-                    <th>Due Date</th>
-                    <th>Status</th>
+                    <th>Subject</th>
                     <th>Account</th>
                     <th>Contact</th>
-                    <th>Account Tier</th>
-                    <th>Sales Play / Initiative</th>
                     <th>Type</th>
                     <th>Outcome</th>
+                    <th>Due</th>
+                    <th>Status</th>
+                    <th>Assigned To</th>
                 </tr>
             </thead>
-
             <tbody>
-                {% for item in latest_outreach %}
+                {% for item in outreach_items %}
                     <tr>
                         <td>
-                            <a href="{{ url_for('edit_outreach', outreach_id=item['id']) }}"
-                               class="record-primary-link"
-                               title="Edit outreach {{ item['activity_type'] or item['activity_date'] or item['id'] }}"
-                               aria-label="Edit outreach {{ item['activity_type'] or item['activity_date'] or item['id'] }}">
+                            <a href="{{ url_for('edit_outreach', outreach_id=item['id']) }}" class="record-primary-link">
                                 {{ item["activity_date"] or "Not set" }}
                             </a>
                         </td>
-                        <td>{{ item["next_action_date"] or "Not set" }}</td>
-                        <td>{{ item["task_status"] or "Not Started" }}</td>
+                        <td>{{ item["subject"] or item["next_action"] or "No subject" }}</td>
                         <td>{{ item["account_name"] or "Unknown" }}</td>
                         <td>{{ item["contact_name"] or "No contact" }}</td>
-                        <td>{{ "Tier " ~ item["account_tier"] if item["account_tier"] else "Not set" }}</td>
-                        <td>{{ item["sales_play"] or "Not set" }}</td>
                         <td>{{ item["activity_type"] or "Unknown" }}</td>
                         <td>{{ item["outcome"] or "Unknown" }}</td>
+                        <td>{{ item["next_action_date"] or "Not set" }}{% if item["next_action_time"] %} {{ item["next_action_time"] }}{% endif %}</td>
+                        <td>{{ item["task_status"] or "Not Started" }}</td>
+                        <td>{{ item["assigned_to"] or "Unassigned" }}</td>
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="9">No outreach found.</td>
+                        <td colspan="9">No outreach found for the selected range.</td>
                     </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
 </div>
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-<script>
-    const outcomeLabels = {{ outcome_chart_labels | tojson }};
-    const outcomeData = {{ outcome_chart_data | tojson }};
-    const activityTypeLabels = {{ activity_type_chart_labels | tojson }};
-    const activityTypeData = {{ activity_type_chart_data | tojson }};
-    const monthlyLabels = {{ monthly_chart_labels | tojson }};
-    const monthlyOutreachData = {{ monthly_outreach_data | tojson }};
-    const monthlyMeetingsData = {{ monthly_meetings_data | tojson }};
-    const monthlyConversionData = {{ monthly_conversion_data | tojson }};
-
-    new Chart(document.getElementById("outcomeChart"), {
-        type: "bar",
-        data: {
-            labels: outcomeLabels,
-            datasets: [{
-                label: "Outcomes",
-                data: outcomeData
-            }]
-        },
-        options: {
-            responsive: true,
-            plugins: {
-                legend: {
-                    display: false
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        precision: 0
-                    }
-                }
-            }
-        }
-    });
-
-    new Chart(document.getElementById("activityTypeChart"), {
-        type: "doughnut",
-        data: {
-            labels: activityTypeLabels,
-            datasets: [{
-                label: "Activity Types",
-                data: activityTypeData
-            }]
-        },
-        options: {
-            responsive: true
-        }
-    });
-
-    new Chart(document.getElementById("monthlyTrendChart"), {
-        type: "line",
-        data: {
-            labels: monthlyLabels,
-            datasets: [
-                {
-                    label: "Total Outreach",
-                    data: monthlyOutreachData,
-                    tension: 0.3
-                },
-                {
-                    label: "Meetings Booked",
-                    data: monthlyMeetingsData,
-                    tension: 0.3
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        precision: 0
-                    }
-                }
-            }
-        }
-    });
-
-    new Chart(document.getElementById("monthlyConversionChart"), {
-        type: "line",
-        data: {
-            labels: monthlyLabels,
-            datasets: [
-                {
-                    label: "Meetings Booked",
-                    data: monthlyConversionData,
-                    tension: 0.3
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        precision: 0
-                    }
-                }
-            }
-        }
-    });
-</script>
 
 {% endblock %}

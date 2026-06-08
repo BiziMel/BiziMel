@@ -28,6 +28,7 @@ from models import GoalsSummary, OwnerReport, PGBibleExportError
 
 
 SECTION_LABELS = ["PG GOALS", "PG PLAN", "PG ACTIONS", "PG RESULTS"]
+REQUIRED_SECTION_LABELS = ["PG GOALS", "PG PLAN", "PG ACTIONS"]
 INVALID_SHEET_CHARS = r"[]:*?/\\"
 MONTH_ORDER = {
     "april": 1,
@@ -135,16 +136,18 @@ class PGBibleExporter:
         reporting_date = reporting_date or date.today()
         wb = load_workbook(self.template_path, data_only=False)
 
-        if "Real example" not in wb.sheetnames:
+        if "Real example" in wb.sheetnames:
+            ws = wb["Real example"]
+        elif wb.worksheets:
+            ws = wb.worksheets[0]
+        else:
             raise PGBibleExportError(
                 "TEMPLATE_SHEET_MISSING",
-                "The template workbook is missing the Real example worksheet.",
-                ["Real example"],
+                "The template workbook is missing a writable PG Bible worksheet.",
+                ["Real example or first worksheet"],
             )
-
-        ws = wb["Real example"]
         for other in list(wb.worksheets):
-            if other.title != "Real example":
+            if other is not ws:
                 wb.remove(other)
 
         final_sheet_name = sanitize_excel_name(report.profile.profile_name)
@@ -160,12 +163,13 @@ class PGBibleExporter:
         self._clear_goals(ws)
         self._clear_table(ws, self.header_cache["PG PLAN"])
         self._clear_table(ws, self.header_cache["PG ACTIONS"])
-        self._clear_weekly_rows(ws, self.header_cache["PG RESULTS"])
+        if "PG RESULTS" in self.header_cache:
+            self._clear_weekly_rows(ws, self.header_cache["PG RESULTS"])
 
         self._write_goals(ws, report.goals)
         plan_count = self._write_plan(ws, report)
         action_count = self._write_actions(ws, report)
-        weekly_count = self._write_weekly_results(ws, report)
+        weekly_count = self._write_weekly_results(ws, report) if "PG RESULTS" in self.header_cache else 0
 
         print(f"plan rows written: {plan_count}")
         print(f"action rows written: {action_count}")
@@ -197,7 +201,8 @@ class PGBibleExporter:
         for label in SECTION_LABELS:
             matches = self._find_exact(ws, label)
             if not matches:
-                missing.append(label)
+                if label in REQUIRED_SECTION_LABELS:
+                    missing.append(label)
             elif len(matches) > 1:
                 raise PGBibleExportError("SECTION_MISSING", "A section label is ambiguous.", [label])
             else:
@@ -210,9 +215,10 @@ class PGBibleExporter:
     def _validate_tables(self, ws) -> None:
         self.header_cache["PG PLAN"] = self._discover_plan(ws)
         self.header_cache["PG ACTIONS"] = self._discover_actions(ws)
-        self.header_cache["PG RESULTS"] = self._discover_results(ws)
-        self.weekly_key = self._discover_weekly_key(ws, self.header_cache["PG RESULTS"])
-        print(f"Weekly key resolved as: {get_column_letter(self.weekly_key.column)}, data type: {self.weekly_key.data_type}")
+        if "PG RESULTS" in self.sections:
+            self.header_cache["PG RESULTS"] = self._discover_results(ws)
+            self.weekly_key = self._discover_weekly_key(ws, self.header_cache["PG RESULTS"])
+            print(f"Weekly key resolved as: {get_column_letter(self.weekly_key.column)}, data type: {self.weekly_key.data_type}")
 
     def _discover_plan(self, ws) -> TableRegion:
         return self._discover_header_block(
@@ -234,12 +240,12 @@ class PGBibleExporter:
         return self._discover_header_block(
             ws,
             "PG ACTIONS",
-            "PG RESULTS",
+            "PG RESULTS" if "PG RESULTS" in self.sections else None,
             {
                 "related_nbm_target": ["Related NBM Target"],
-                "discovery_target_name_title": ["Targeted or Booked Discovery Meeting (Name & Poistion)", "Targeted or Booked Discovery Meeting (Name & Position)"],
+                "discovery_target_name_title": ["Targeted or Booked Discovery Meeting (Name & Poistion)", "Targeted or Booked Discovery Meeting (Name & Position)", "Account / Contact"],
                 "discovery_completed": ["Completed Discovery Meeting Yes / No"],
-                "discovery_next_action": ["Discovery Meeting Next Action / Notes"],
+                "discovery_next_action": ["Discovery Meeting Next Action / Notes", "Next Action / Notes"],
                 "nbm_booked": ["NBM Booked / Date (Name & Position)"],
                 "why_buy": ["Why Buy Document Yes / No"],
                 "exec_first": ["Exec First Yes / No"],
@@ -332,9 +338,13 @@ class PGBibleExporter:
     def _write_goals(self, ws, goals: GoalsSummary) -> None:
         label_map = {
             "FY22 Starting Pipeline Position": goals.starting_pipeline,
+            "FY Current Pipeline": goals.starting_pipeline,
             "FY22 Pipeline Added": goals.pipeline_added,
+            "FY Pipeline Added": goals.pipeline_added,
             "FY22 4 Quarter Total Addressable Pipeline TARGET": goals.pipeline_target,
+            "FY 4 Quarter Total Addressable Pipeline TARGET": goals.pipeline_target,
             "FY22 4 Quarter Total Addressable Pipeline GAP": goals.pipeline_gap,
+            "FY 4 Quarter Total Addressable Pipeline GAP": goals.pipeline_gap,
         }
         for label, value in label_map.items():
             cells = self._find_exact(ws, label)
@@ -423,7 +433,16 @@ class PGBibleExporter:
         return written
 
     def _clear_goals(self, ws) -> None:
-        for label in ["FY22 Starting Pipeline Position", "FY22 Pipeline Added", "FY22 4 Quarter Total Addressable Pipeline TARGET", "FY22 4 Quarter Total Addressable Pipeline GAP"]:
+        for label in [
+            "FY22 Starting Pipeline Position",
+            "FY Current Pipeline",
+            "FY22 Pipeline Added",
+            "FY Pipeline Added",
+            "FY22 4 Quarter Total Addressable Pipeline TARGET",
+            "FY 4 Quarter Total Addressable Pipeline TARGET",
+            "FY22 4 Quarter Total Addressable Pipeline GAP",
+            "FY 4 Quarter Total Addressable Pipeline GAP",
+        ]:
             for cell in self._find_exact(ws, label):
                 target = ws.cell(cell.row, cell.column + 4)
                 if not self._is_formula(target):

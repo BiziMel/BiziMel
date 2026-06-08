@@ -159,9 +159,6 @@
                     <button type="button" class="btn btn-secondary" id="orgAddLabelButton">Add Label</button>
                 </div>
 
-                <div class="org-pending-list" id="orgChartPendingList" aria-live="polite"></div>
-                <p class="field-help" id="orgChartPendingSummary">No staged changes yet.</p>
-
                 <div class="org-single-pane" id="orgChartPane" aria-label="Org chart canvas">
                     <svg class="org-link-layer" id="orgLinkLayer" aria-hidden="true"></svg>
 
@@ -206,7 +203,7 @@
                                   action="{{ url_for('delete_account_org_chart_person', account_id=account.id, chart_id=active_chart.id, node_id=node.id) }}"
                                   onsubmit="return confirm('Remove this person from the org chart?');"
                                   class="org-person-delete-form">
-                                <button type="submit" class="btn btn-danger btn-small">Remove</button>
+                                <button type="submit" class="org-node-remove-button" aria-label="Remove {{ node.name }}" title="Remove">X</button>
                             </form>
                         </div>
                     {% endfor %}
@@ -272,18 +269,14 @@ document.addEventListener("DOMContentLoaded", function () {
         const actions = Array.from(stagedActions.values());
         actionsInput.value = JSON.stringify(actions);
         saveButton.disabled = actions.length === 0;
-        pendingSummary.textContent = actions.length
-            ? `${actions.length} staged change${actions.length === 1 ? "" : "s"} ready to save.`
-            : "No staged changes yet.";
-        pendingList.innerHTML = "";
-        actions.forEach(function (action) {
-            const item = document.createElement("span");
-            item.className = "org-pending-item";
-            item.textContent = action.type === "label"
-                ? `Label: ${action.label_text}`
-                : `${action.person_name || "Person"} placed`;
-            pendingList.appendChild(item);
-        });
+        if (pendingSummary) {
+            pendingSummary.textContent = actions.length
+                ? `${actions.length} staged change${actions.length === 1 ? "" : "s"} ready to save.`
+                : "No staged changes yet.";
+        }
+        if (pendingList) {
+            pendingList.innerHTML = "";
+        }
         drawLinks();
     }
 
@@ -413,6 +406,7 @@ document.addEventListener("DOMContentLoaded", function () {
             y_position: placement.y,
             sort_order: stagedActions.size + 1
         });
+        window.requestAnimationFrame(drawLinks);
     }
 
     function currentPlacement(node) {
@@ -599,20 +593,6 @@ document.addEventListener("DOMContentLoaded", function () {
         linkLayer.setAttribute("width", width);
         linkLayer.setAttribute("height", height);
 
-        const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-        const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
-        marker.setAttribute("id", "orgArrowHead");
-        marker.setAttribute("markerWidth", "8");
-        marker.setAttribute("markerHeight", "8");
-        marker.setAttribute("refX", "6");
-        marker.setAttribute("refY", "3");
-        marker.setAttribute("orient", "auto");
-        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        path.setAttribute("d", "M0,0 L0,6 L7,3 z");
-        marker.appendChild(path);
-        defs.appendChild(marker);
-        linkLayer.appendChild(defs);
-
         pane.querySelectorAll(".org-canvas-node").forEach(function (node) {
             const relatedId = node.dataset.relatedNodeId || node.dataset.relatedLocalId;
             if (!relatedId) {
@@ -630,7 +610,6 @@ document.addEventListener("DOMContentLoaded", function () {
             line.setAttribute("y1", start.y);
             line.setAttribute("x2", end.x);
             line.setAttribute("y2", end.y);
-            line.setAttribute("marker-end", "url(#orgArrowHead)");
             linkLayer.appendChild(line);
         });
     }

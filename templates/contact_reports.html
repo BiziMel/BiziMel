@@ -13,6 +13,25 @@
     <div class="alert-success">{{ message }}</div>
 {% endif %}
 
+<div class="dashboard-grid">
+    <div class="dashboard-card">
+        <h3>Total Contacts</h3>
+        <p>{{ contact_metrics.total_contacts }}</p>
+    </div>
+    <div class="dashboard-card">
+        <h3>Active Contacts</h3>
+        <p>{{ contact_metrics.active_contacts }}</p>
+    </div>
+    <div class="dashboard-card">
+        <h3>Executive Routes</h3>
+        <p>{{ contact_metrics.executive_contacts }}</p>
+    </div>
+    <div class="dashboard-card">
+        <h3>Lead Status</h3>
+        <p>{{ contact_metrics.lead_contacts }}</p>
+    </div>
+</div>
+
 {% if current_user and current_user["role"] == "admin" %}
 <div class="form-card compact-filter-card">
     <div class="section-header">

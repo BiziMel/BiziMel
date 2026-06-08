@@ -106,14 +106,32 @@
                 <details class="dashboard-guidance-accordion">
                     <summary>{{ weekly_wrap_up.title if weekly_wrap_up else "Weekly Wrap Up" }}</summary>
                     <div class="dashboard-guidance-body">
-                        <p>{{ weekly_wrap_up.body if weekly_wrap_up and weekly_wrap_up.body else "Keep account, contact, outreach and outcome data current so PipeFlow can sharpen execution guidance." }}</p>
+                        {% if weekly_wrap_up and weekly_wrap_up.paragraphs %}
+                            {% for paragraph in weekly_wrap_up.paragraphs %}
+                                <p>{{ paragraph }}</p>
+                            {% endfor %}
+                        {% else %}
+                            <p>Keep account, contact, outreach and outcome data current so PipeFlow can sharpen execution guidance.</p>
+                        {% endif %}
                     </div>
                 </details>
 
                 <details class="dashboard-guidance-accordion">
-                    <summary>{{ weekly_ahead_focus.title if weekly_ahead_focus else "Next 24 Hours" }}</summary>
+                    <summary>
+                        <span>{{ weekly_ahead_focus.title if weekly_ahead_focus else "Next 24 Hours" }}</span>
+                        <form method="POST" action="{{ url_for('refresh_next_24_hours') }}" class="inline-form guidance-refresh-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-secondary btn-small">Refresh</button>
+                        </form>
+                    </summary>
                     <div class="dashboard-guidance-body">
-                        <p>{{ weekly_ahead_focus.body if weekly_ahead_focus and weekly_ahead_focus.body else "Prioritise executive coverage, overdue action clearance and Discovery or NBM asks." }}</p>
+                        {% if weekly_ahead_focus and weekly_ahead_focus.paragraphs %}
+                            {% for paragraph in weekly_ahead_focus.paragraphs %}
+                                <p>{{ paragraph }}</p>
+                            {% endfor %}
+                        {% else %}
+                            <p>Prioritise executive coverage, overdue action clearance and Discovery or NBM asks.</p>
+                        {% endif %}
                     </div>
                 </details>
             </div>
@@ -154,6 +172,7 @@
                             <tr>
                                 <th>Source</th>
                                 <th>Signal</th>
+                                <th>Evidence</th>
                                 <th>What It Means</th>
                                 <th>Recommended Move</th>
                             </tr>
@@ -163,6 +182,7 @@
                                 <tr>
                                     <td><strong>{{ insight.source or "AI Insight" }}</strong></td>
                                     <td>{{ insight.category or "PG Focus" }}</td>
+                                    <td>{{ insight.evidence or insight.message or "Current account, contact and outreach data." }}</td>
                                     <td>
                                         <strong>{{ insight.title or "Review PG execution" }}</strong><br>
                                         <span class="muted">{{ insight.message or "Add executive contacts, outreach activity and Discovery or NBM outcomes so PipeFlow can generate more specific guidance." }}</span>

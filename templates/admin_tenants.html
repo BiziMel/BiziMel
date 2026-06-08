@@ -52,7 +52,13 @@
         </div>
         <div class="form-group">
             <label for="company_contact">Company contact</label>
-            <input type="text" id="company_contact" name="company_contact" placeholder="Primary company administrator" required>
+            <select id="company_contact" name="company_contact" required>
+                <option value="">Select primary contact</option>
+                {% for user in tenant_user_options %}
+                    {% set user_label = (user["full_name"] or user["email"]) ~ " (" ~ user["email"] ~ ")" %}
+                    <option value="{{ user_label }}">{{ user_label }}</option>
+                {% endfor %}
+            </select>
         </div>
         <div class="form-actions">
             <button type="submit" class="btn btn-primary">Create Tenant</button>
@@ -96,7 +102,18 @@
                                     </label>
                                     <label>
                                         <span class="table-field-label">Primary contact</span>
-                                        <input type="text" name="company_contact" value="{{ tenant['company_contact'] }}" required>
+                                        <select name="company_contact" required>
+                                            <option value="">Select primary contact</option>
+                                            {% for user in tenant_user_options %}
+                                                {% if user["company"] == tenant["company_name"] or can_create_tenant %}
+                                                    {% set user_label = (user["full_name"] or user["email"]) ~ " (" ~ user["email"] ~ ")" %}
+                                                    <option value="{{ user_label }}" {% if tenant["company_contact"] == user_label %}selected{% endif %}>{{ user_label }}</option>
+                                                {% endif %}
+                                            {% endfor %}
+                                            {% if tenant["company_contact"] %}
+                                                <option value="{{ tenant['company_contact'] }}" selected>{{ tenant["company_contact"] }}</option>
+                                            {% endif %}
+                                        </select>
                                     </label>
                                     <label class="checkbox-label tenant-status-toggle">
                                         <input type="checkbox" name="is_active" value="1" {% if tenant["is_active"] %}checked{% endif %}>

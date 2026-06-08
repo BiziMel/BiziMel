@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
-Version: 2.1.6
-Release date: 2026-06-05
-Build: 2026-06-05-v2.1.6-enterprise-dashboard-admin-resilience-r1
+Version: 2.2.0
+Release date: 2026-06-08
+Build: 2026-06-08-v2.2.0-enterprise-reports-insights-org-pg-r1
 Package purpose: Hosted enterprise deployment only.

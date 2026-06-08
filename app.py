@@ -20,9 +20,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection
 
 
-APP_VERSION = "2.1.6"
-APP_RELEASE_DATE = "2026-06-05"
-APP_BUILD = "2026-06-05-v2.1.6-enterprise-dashboard-admin-resilience-r1"
+APP_VERSION = "2.2.0"
+APP_RELEASE_DATE = "2026-06-08"
+APP_BUILD = "2026-06-08-v2.2.0-enterprise-reports-insights-org-pg-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -36,6 +36,26 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.2.0",
+        "release_date": "2026-06-08",
+        "title": "Reports simplification, richer insights, org chart cleanup and PG Bible mapping",
+        "new": [],
+        "enhanced": [
+            "Enhanced Outreach Reports into a single accurate outreach activity view that defaults to the last 7 days and supports wider date filtering.",
+            "Enhanced Account and Contact Reports with visible metric cards above the charts and detail tables.",
+            "Enhanced Execution Insights, Weekly Wrap Up and Next 24 Hours with richer account, contact, activity and PG week guidance.",
+            "Enhanced tenant administration so the primary contact is selected from users in a dropdown.",
+            "Enhanced PG Progress and PG Bible next action mapping so multi-contact outreach appears for every selected person.",
+            "Replaced the PG Bible template with the May 2026 workbook mapping.",
+        ],
+        "fixed": [
+            "Fixed org chart connectors so linked tiles render as plain relationship lines rather than arrows.",
+            "Fixed org chart tile removal so each tile has a compact X control in the top-right corner.",
+            "Removed the unnecessary moved-profile staging section from the org chart labels area.",
+            "Removed duplicate Task Reports navigation and redirects the old task report routes to Outreach Reports.",
+        ],
+    },
     {
         "version": "2.1.6",
         "release_date": "2026-06-05",
@@ -604,7 +624,7 @@ USER_GUIDE_SECTIONS = [
     {
         "slug": "reports",
         "title": "Reports and PG Bible",
-        "summary": "Review execution data and export account, contact, outreach, task and PG Bible outputs.",
+        "summary": "Review execution data and export account, contact, outreach and PG Bible outputs.",
         "navigation": [
             "Open Reports from the main navigation, then select the report type you need.",
             "Use Back to Reports from report pages to return to the report menu.",
@@ -614,17 +634,16 @@ USER_GUIDE_SECTIONS = [
             "Open Reports from the top navigation.",
             "Use Account Reports to review account coverage and target values.",
             "Use Contact Reports to review stakeholder coverage.",
-            "Use Outreach and Task Reports to review activity volume, outcomes, due dates and ownership.",
+            "Use Outreach Reports to review activity volume, outcomes, due dates and ownership. It defaults to the last 7 days and can be widened with filters.",
             "Export PG Bible when you need the formatted workbook output.",
             "Use filters before exporting when the report supports narrowing by date, account, status or assignee.",
         ],
         "tips": [
-            "Reports reflect the same fields used across account, contact, outreach and task views.",
+            "Reports reflect the same fields used across account, contact and outreach views.",
             "PG Bible uses account target and ordering fields configured in the account form.",
             "PG Progress and PG Bible hide contacts with no active engagement for more than 30 days when they also have no open outreach.",
             "If a contact has no open activity but remains visible, the next activity field shows No next action set.",
-            "Task Reports include SLA by assignee so timeliness is measured against the person currently assigned.",
-            "Task Report overdue counts use the same time-aware open-task rule as the Dashboard and AI Insights.",
+            "PG Progress and PG Bible include open next actions from multi-contact outreach for every selected contact.",
         ],
     },
     {
@@ -970,9 +989,9 @@ PAGE_INSTRUCTIONS = {
     "reports": {
         "title": "Reports Guidance",
         "items": [
-            "Use reports to review account coverage, contacts, outreach execution, task ownership and PG Bible export readiness.",
+            "Use reports to review account coverage, contacts, outreach execution and PG Bible export readiness.",
             "Exports reflect the current fields used across the application.",
-            "PG Bible export requires the template to be available on the server.",
+            "PG Bible export uses the May 2026 template mapping stored on the server.",
         ],
     },
     "account_reports": {
@@ -994,17 +1013,16 @@ PAGE_INSTRUCTIONS = {
     "outreach_reports": {
         "title": "Outreach Reports Guidance",
         "items": [
-            "Review outreach volume, outcomes, campaigns, sales plays and due dates.",
-            "Use filters to narrow reporting by account, date range, outcome or activity type.",
+            "Review all outreach activity in one table. The report opens on the last 7 days by default.",
+            "Use filters to widen the date range or narrow reporting by account, outcome or activity type.",
             "Compare Discovery Booked, NBM Booked and executive meeting outcomes to improve future campaign recommendations.",
         ],
     },
     "task_reports": {
         "title": "Task Reports Guidance",
         "items": [
-            "Use SLA by Assignee to see who owns active, overdue and closed tasks.",
-            "Task timeliness is measured against the current assignee using the same time-aware overdue rule as the Dashboard.",
-            "Filter by account, status or assignee before exporting.",
+            "Task Reports have been removed as a duplicate view.",
+            "Use Outreach Reports for task ownership, due dates, status and outcomes.",
         ],
     },
     "profile": {
@@ -1032,7 +1050,7 @@ PAGE_INSTRUCTIONS = {
             "Tenant administration is only available to Application Admin users.",
             "Create the company tenant before assigning user profiles to that company.",
             "Company Name is the tenancy boundary used by company-scoped administration, sharing and assignment controls.",
-            "Company contact records the primary company administrator or operational contact for the tenant.",
+            "Select the primary company contact from the available user list.",
         ],
     },
     "admin_users": {
@@ -1428,6 +1446,7 @@ def admin_tenants():
     return render_template(
         "admin_tenants.html",
         tenants=list_tenants(actor=actor, active_only=False),
+        tenant_user_options=list_users(actor),
         can_create_tenant=is_application_admin(actor),
         can_edit_tenants=is_application_admin(actor) or is_company_admin(actor),
         message=message,
@@ -2820,6 +2839,7 @@ def build_execution_insights(ai_insights, learning_insights):
             "title": title,
             "message": message,
             "action": action,
+            "evidence": insight.get("evidence") or message,
             "link": insight.get("link", url_for("home")),
             "priority": insight.get("severity", "medium"),
         })
@@ -2834,6 +2854,7 @@ def build_execution_insights(ai_insights, learning_insights):
             "title": title,
             "message": message,
             "action": action,
+            "evidence": insight.get("evidence") or message,
             "link": insight.get("link", url_for("campaign_builder")),
             "priority": "learning",
         })
@@ -3055,17 +3076,34 @@ def display_date(value):
     return parsed.strftime("%d %b %Y") if parsed else str(value or "")
 
 
-def format_dashboard_guidance(title, lead, bullets):
+def format_dashboard_guidance(title, lead, bullets, subtitle=""):
     cleaned_bullets = [str(item).strip() for item in bullets if str(item or "").strip()]
     if not cleaned_bullets:
         cleaned_bullets = ["Keep account, contact, outreach and outcome data current so PipeFlow can sharpen its recommendations."]
-    body = " ".join([str(lead or "").strip(), *cleaned_bullets]).strip()
+    paragraphs = [str(lead or "").strip(), *cleaned_bullets]
+    paragraphs = [paragraph for paragraph in paragraphs if paragraph]
+    body = "\n\n".join(paragraphs)
     return {
         "title": title,
+        "subtitle": subtitle,
         "lead": lead,
         "bullets": cleaned_bullets[:6],
+        "paragraphs": paragraphs[:8],
         "body": body,
     }
+
+
+def active_pg_week_broadcast():
+    try:
+        broadcasts = list_broadcast_messages(active_only=True)
+    except Exception:
+        traceback.print_exc()
+        return None
+    for broadcast in broadcasts:
+        text = f"{broadcast['title'] or ''} {broadcast['message'] or ''}".lower()
+        if "pg week" in text or "pipeline generation week" in text:
+            return broadcast
+    return None
 
 
 def generate_weekly_wrap_up(connection, period_start, period_end, metric_values, execution_insights):
@@ -3087,21 +3125,25 @@ def generate_weekly_wrap_up(connection, period_start, period_end, metric_values,
     success_count = metric_values.get("this_week_meetings_booked", 0)
     success_accounts = compact_join([row["account_name"] for row in week_successes if row["account_name"]], 3)
     period_label = f"{display_date(period_start)} to {display_date(period_end)}"
+    pg_week = active_pg_week_broadcast()
     bullets = [
         f"Between {period_label}, PipeFlow can see {success_count} Discovery, NBM or executive meeting success outcome(s), and {closed_count} outreach task(s) were completed or closed.",
     ]
     if success_accounts:
-        bullets.append(f"The clearest progress came through {success_accounts}; that is where the route, stakeholder level and sales play deserve a quick look before you repeat the pattern elsewhere.")
+        bullets.append(f"The clearest progress came through {success_accounts}. That is where the route, stakeholder level and sales play deserve a quick look before you repeat the pattern elsewhere.")
     if overdue_count:
-        bullets.append(f"There are still {overdue_count} overdue action(s), so the week has had useful movement but not all of it has converted into clean forward momentum yet.")
+        bullets.append(f"There are still {overdue_count} overdue action(s). The week has had useful movement, but not all of it has converted into clean forward momentum yet.")
     else:
         bullets.append("There are no overdue actions showing in the command centre, which means the next improvement is less about recovery and more about choosing the right executive route.")
+    if pg_week:
+        bullets.append("Because PG week is active, the best use of momentum is calls, VITOs and LinkedIn outreach at pace. The goal is not activity for its own sake; it is to schedule Discovery meetings or NBM meetings for future dates while the campaign energy is high.")
     for insight in execution_insights[:2]:
         bullets.append(f"I would also pay attention to this: {insight.get('action', '')}")
     return format_dashboard_guidance(
-        "Weekly Wrap Up",
+        f"Weekly Wrap Up - {period_label}",
         f"Here is the weekly wrap-up for {period_label}.",
         bullets,
+        subtitle=period_label,
     )
 
 
@@ -3144,11 +3186,13 @@ def generate_next_24_hours_focus(connection, today, metric_values, execution_ins
              OR lower(COALESCE(job_title, '')) LIKE '%head of%'
           )
     """, default=0)
+    pg_week = active_pg_week_broadcast()
     bullets = [
-        f"The focus date is {display_date(today)}.",
-        f"Spend the next working window on activity that can create a Discovery meeting or, better, an NBM meeting; the current success baseline is {success_summary}.",
+        f"Spend the next working window on activity that can create a Discovery meeting or, better, an NBM meeting. The current success baseline is {success_summary}.",
         f"There are {upcoming_count} open action(s) due in the next 24 hours and {executive_count} active executive-route contact(s), so start where a senior route already exists.",
     ]
+    if pg_week:
+        bullets.append("PG week is active, so work at pace: make the calls, send the VITOs, use LinkedIn to create recognition, and keep the ask clear. The win is meetings scheduled this week for a future Discovery or NBM slot.")
     if lead_count:
         bullets.append(f"{lead_count} active contact(s) are still marked Lead; convert the real relationships out of Lead status before treating them as opportunity-progress contacts.")
     if overdue_count:
@@ -3158,9 +3202,10 @@ def generate_next_24_hours_focus(connection, today, metric_values, execution_ins
     for insight in execution_insights[:3]:
         bullets.append(f"{insight.get('category', 'Focus')}: {insight.get('action', '')}")
     return format_dashboard_guidance(
-        "Next 24 Hours",
+        f"Next 24 Hours - {display_date(today)}",
         f"Here is the focus for {display_date(today)}.",
         bullets,
+        subtitle=display_date(today),
     )
 
 
@@ -3201,7 +3246,7 @@ def load_dashboard_weekly_guidance(connection, metric_values, execution_insights
         try:
             parsed = json.loads(payload or "{}")
             if isinstance(parsed, dict):
-                return format_dashboard_guidance(fallback_title, parsed.get("lead") or "", parsed.get("bullets") or [])
+                return format_dashboard_guidance(fallback_title, parsed.get("lead") or "", parsed.get("bullets") or [], parsed.get("subtitle") or "")
         except json.JSONDecodeError:
             pass
         return format_dashboard_guidance(fallback_title, "", [payload])
@@ -3563,6 +3608,27 @@ def home():
         print(f"Dashboard failed: {exc!r}", file=sys.stderr)
         traceback.print_exc()
         return render_dashboard_fallback(connection)
+    finally:
+        connection.close()
+
+
+@app.route("/insights/next-24-hours/refresh", methods=("POST",))
+def refresh_next_24_hours():
+    connection = get_db_connection()
+    try:
+        metric_values = dashboard_metric_fallback_values(connection)
+        learning_insights = build_learning_insights(connection)
+        execution_insights = build_dashboard_strategy_insights(connection, metric_values, learning_insights=learning_insights)
+        today = current_app_datetime().date()
+        generated = generate_next_24_hours_focus(connection, today, metric_values, execution_insights)
+        save_dashboard_setting(connection, "weekly_ahead_focus_key", today.isoformat())
+        save_dashboard_setting(connection, "weekly_ahead_focus_content", json.dumps(generated))
+        connection.commit()
+        return redirect(url_for("home", message="Next 24 Hours refreshed."))
+    except Exception:
+        connection.rollback()
+        traceback.print_exc()
+        return redirect(url_for("home", error="Next 24 Hours could not be refreshed."))
     finally:
         connection.close()
 
@@ -4293,7 +4359,12 @@ def contact_has_recent_or_open_activity(connection, contact_id, cutoff_date):
             SUM(CASE WHEN {open_task_sql("outreach")} THEN 1 ELSE 0 END) AS open_count
         FROM outreach
         WHERE contact_id = ?
-    """, (*open_task_params(), contact_id)).fetchone()
+           OR id IN (
+                SELECT outreach_id
+                FROM outreach_recipients
+                WHERE contact_id = ?
+           )
+    """, (*open_task_params(), contact_id, contact_id)).fetchone()
     if not row:
         return False
     if (row["open_count"] or 0) > 0:
@@ -4662,27 +4733,41 @@ def pg_dashboard_context(connection):
             if not contact_has_recent_or_open_activity(connection, contact_id, stale_contact_cutoff):
                 continue
             scheduled_action_rows = connection.execute("""
-                SELECT subject, next_action_date, next_action_time
+                SELECT subject, activity_type, next_action_date, next_action_time
                 FROM outreach
                 WHERE account_id = ?
-                  AND contact_id = ?
+                  AND (
+                        contact_id = ?
+                     OR id IN (
+                            SELECT outreach_id
+                            FROM outreach_recipients
+                            WHERE contact_id = ?
+                        )
+                  )
                   AND next_action_date IS NOT NULL
                   AND next_action_date != ''
                   AND next_action_date <= ?
                   AND COALESCE(task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
                 ORDER BY next_action_date ASC, next_action_time ASC, id DESC
-            """, (account_id, contact_id, seven_days_forward)).fetchall()
+            """, (account_id, contact_id, contact_id, seven_days_forward)).fetchall()
             recent_activity_rows = connection.execute("""
                 SELECT activity_date, activity_type, subject, next_action, last_updated
                 FROM outreach
                 WHERE account_id = ?
-                  AND contact_id = ?
+                  AND (
+                        contact_id = ?
+                     OR id IN (
+                            SELECT outreach_id
+                            FROM outreach_recipients
+                            WHERE contact_id = ?
+                        )
+                  )
                   AND last_updated >= ?
                   AND next_action IS NOT NULL
                   AND next_action != ''
                   AND COALESCE(task_status, '') IN ('Closed', 'Completed', 'Cancelled')
                 ORDER BY last_updated DESC, id DESC
-            """, (account_id, contact_id, seven_days_ago)).fetchall()
+            """, (account_id, contact_id, contact_id, seven_days_ago)).fetchall()
             action_update = connection.execute("""
                 SELECT *
                 FROM pg_action_contact_updates
@@ -4695,6 +4780,7 @@ def pg_dashboard_context(connection):
                 due_parts = [action_row["next_action_date"] or "", action_row["next_action_time"] or ""]
                 next_7_days_actions.append({
                     "subject": subject,
+                    "activity_type": action_row["activity_type"] or "",
                     "due": " ".join(part for part in due_parts if part),
                 })
             last_7_days_activity_entries = []
@@ -4726,7 +4812,7 @@ def pg_dashboard_context(connection):
                 "exec_first": action_update["exec_first"] if action_update and "exec_first" in action_update.keys() else "",
                 "nbm_completed": action_update["nbm_completed"] if action_update and "nbm_completed" in action_update.keys() else "",
                 "last_7_days_activity_entries": last_7_days_activity_entries,
-                "next_7_days_actions": next_7_days_actions or [{"subject": "No next action set", "due": ""}],
+                "next_7_days_actions": next_7_days_actions or [{"subject": "No next action set", "activity_type": "", "due": ""}],
             })
 
         partner_activity_rows = connection.execute("""
@@ -4788,6 +4874,7 @@ def pg_dashboard_context(connection):
                     due_parts = [row["next_action_date"] or "", row["next_action_time"] or ""]
                     partner_scheduled_actions.append({
                         "subject": row["subject"] or f"Partner activity - {partner_name}",
+                        "activity_type": row["activity_type"] or "Partner Touchpoint",
                         "due": " ".join(part for part in due_parts if part),
                     })
         if partner_activity_entries or partner_scheduled_actions:
@@ -9730,17 +9817,29 @@ def build_pg_bible_report_from_db(connection):
             SELECT *
             FROM outreach
             WHERE contact_id = ?
+               OR id IN (
+                    SELECT outreach_id
+                    FROM outreach_recipients
+                    WHERE contact_id = ?
+               )
             ORDER BY activity_date DESC, activity_time DESC
             LIMIT 1
-        """, (contact["id"],)).fetchone()
+        """, (contact["id"], contact["id"])).fetchone()
         open_outreach = connection.execute(f"""
             SELECT *
             FROM outreach
-            WHERE contact_id = ?
+            WHERE (
+                    contact_id = ?
+                 OR id IN (
+                        SELECT outreach_id
+                        FROM outreach_recipients
+                        WHERE contact_id = ?
+                    )
+            )
               AND {open_task_sql("outreach")}
             ORDER BY next_action_date ASC, next_action_time ASC, id DESC
             LIMIT 1
-        """, (contact["id"], *open_task_params())).fetchone()
+        """, (contact["id"], contact["id"], *open_task_params())).fetchone()
         next_action_text = (
             (open_outreach["next_action"] or open_outreach["subject"] or "").strip()
             if open_outreach else ""
@@ -9749,12 +9848,19 @@ def build_pg_bible_report_from_db(connection):
         meeting_count = connection.execute("""
             SELECT COUNT(*)
             FROM outreach
-            WHERE contact_id = ?
+            WHERE (
+                    contact_id = ?
+                 OR id IN (
+                        SELECT outreach_id
+                        FROM outreach_recipients
+                        WHERE contact_id = ?
+                    )
+            )
               AND (
                     outcome IN ('Discovery Booked', 'NBM Booked', 'Exec Meeting Booked', 'Meeting Booked')
                  OR activity_type = 'Meeting'
               )
-        """, (contact["id"],)).fetchone()[0]
+        """, (contact["id"], contact["id"])).fetchone()[0]
 
         action_items.append(ActionItem(
             person_name=contact["name"] or "",
@@ -9974,11 +10080,19 @@ def account_reports():
         ORDER BY account_tier
     """).fetchall()
 
+    account_metrics = {
+        "total_accounts": len(accounts),
+        "total_pipeline_target": sum(float(account["pipeline_target"] or 0) for account in accounts),
+        "pg_ordered_accounts": sum(1 for account in accounts if account["pg_bible_order"]),
+        "tiered_accounts": sum(1 for account in accounts if account["account_tier"]),
+    }
+
     connection.close()
 
     return render_template(
         "account_reports.html",
         accounts=accounts,
+        account_metrics=account_metrics,
         accounts_by_industry=accounts_by_industry,
         pipeline_by_account=pipeline_by_account,
         accounts_by_country=accounts_by_country,
@@ -10047,6 +10161,7 @@ def export_account_reports():
 
 @app.route("/reports/tasks")
 def task_reports():
+    return redirect(url_for("outreach_reports"))
     connection = get_db_connection()
 
     selected_start_date = request.args.get("start_date", "")
@@ -10205,6 +10320,7 @@ def task_reports():
 
 @app.route("/reports/tasks/export")
 def export_task_reports():
+    return redirect(url_for("export_outreach_reports"))
     connection = get_db_connection()
 
     tasks = connection.execute("""
@@ -10288,8 +10404,10 @@ def export_task_reports():
 def outreach_reports():
     connection = get_db_connection()
 
-    selected_start_date = request.args.get("start_date", "")
-    selected_end_date = request.args.get("end_date", "")
+    report_today = current_app_datetime().date()
+    default_start = report_today - timedelta(days=6)
+    selected_start_date = request.args.get("start_date", default_start.isoformat())
+    selected_end_date = request.args.get("end_date", report_today.isoformat())
     selected_account = request.args.get("account_id", "")
     selected_activity_type = request.args.get("activity_type", "")
     selected_outcome = request.args.get("outcome", "")
@@ -10328,6 +10446,9 @@ def outreach_reports():
             outreach.outcome,
             outreach.task_status,
             outreach.sales_play,
+            outreach.subject,
+            outreach.next_action,
+            outreach.assigned_to,
             outreach.fy,
             outreach.quarter,
             accounts.account_name,
@@ -10368,28 +10489,23 @@ def outreach_reports():
 
     filtered_outreach = [item for item in all_outreach if include_item(item)]
     total_outreach = len(filtered_outreach)
-    meetings_booked = sum(
+    pg_success_count = sum(
         1 for item in filtered_outreach
         if is_pg_success_outcome(item["outcome"], item["activity_type"])
     )
-    meeting_conversion_total = meetings_booked
+    open_tasks = sum(1 for item in filtered_outreach if not is_closed_task_status(item["task_status"]))
+    overdue_tasks = sum(
+        1 for item in filtered_outreach
+        if is_overdue_task(item["next_action_date"], item["next_action_time"], item["task_status"])
+    )
 
     outcome_totals = {}
     type_totals = {}
-    monthly_totals = {}
     for item in filtered_outreach:
         outcome = item["outcome"] or "Unknown"
         activity_type = item["activity_type"] or "Unknown"
         outcome_totals[outcome] = outcome_totals.get(outcome, 0) + 1
         type_totals[activity_type] = type_totals.get(activity_type, 0) + 1
-        activity_date = parse_report_date(item["activity_date"])
-        if activity_date:
-            month = activity_date.strftime("%Y-%m")
-            if month not in monthly_totals:
-                monthly_totals[month] = {"total_outreach": 0, "meetings_booked": 0}
-            monthly_totals[month]["total_outreach"] += 1
-            if is_pg_success_outcome(item["outcome"], item["activity_type"]):
-                monthly_totals[month]["meetings_booked"] += 1
 
     outcome_breakdown = [
         {"outcome": outcome, "count": count}
@@ -10399,35 +10515,24 @@ def outreach_reports():
         {"activity_type": activity_type, "count": count}
         for activity_type, count in sorted(type_totals.items(), key=lambda item: (-item[1], item[0]))
     ]
-    report_today = current_app_datetime().date()
     working_week_start = report_today - timedelta(days=report_today.weekday())
     working_week_end = working_week_start + timedelta(days=6)
-    latest_outreach = [
+    working_week_outreach = [
         item for item in filtered_outreach
         if (activity_date := parse_report_date(item["activity_date"]))
         and working_week_start <= activity_date <= working_week_end
     ]
 
-    monthly_trends = []
-    for month, totals in sorted(monthly_totals.items()):
-        total = totals["total_outreach"]
-        meetings = totals["meetings_booked"]
-        monthly_trends.append({
-            "month": month,
-            "total_outreach": total,
-            "meetings_booked": meetings,
-            "meeting_conversion": meetings,
-        })
-
     return render_template(
         "outreach_reports.html",
         total_outreach=total_outreach,
-        meetings_booked=meetings_booked,
-        conversion_rate=meeting_conversion_total,
+        pg_success_count=pg_success_count,
+        open_tasks=open_tasks,
+        overdue_tasks=overdue_tasks,
         outcome_breakdown=outcome_breakdown,
         outreach_by_type=outreach_by_type,
-        latest_outreach=latest_outreach,
-        monthly_trends=monthly_trends,
+        outreach_items=filtered_outreach,
+        working_week_outreach=working_week_outreach,
         accounts=accounts,
         activity_types=activity_types,
         outcomes=outcomes,
@@ -10438,14 +10543,7 @@ def outreach_reports():
         selected_outcome=selected_outcome,
         working_week_start=working_week_start.isoformat(),
         working_week_end=working_week_end.isoformat(),
-        outcome_chart_labels=[item["outcome"] for item in outcome_breakdown],
-        outcome_chart_data=[item["count"] for item in outcome_breakdown],
-        activity_type_chart_labels=[item["activity_type"] for item in outreach_by_type],
-        activity_type_chart_data=[item["count"] for item in outreach_by_type],
-        monthly_chart_labels=[item["month"] for item in monthly_trends],
-        monthly_outreach_data=[item["total_outreach"] for item in monthly_trends],
-        monthly_meetings_data=[item["meetings_booked"] for item in monthly_trends],
-        monthly_conversion_data=[item["meeting_conversion"] for item in monthly_trends],
+        report_range_label=f"{selected_start_date} to {selected_end_date}",
     )
 
 
@@ -10541,6 +10639,7 @@ def contact_reports():
             contacts.name,
             contacts.job_title,
             contacts.category,
+            contacts.status,
             contacts.bmc_relationship,
             contacts.email,
             accounts.account_name,
@@ -10593,11 +10692,22 @@ def contact_reports():
         ORDER BY account_tier
     """).fetchall()
 
+    contact_metrics = {
+        "total_contacts": len(contacts),
+        "active_contacts": sum(1 for contact in contacts if (contact["status"] or "Active") != "Archived"),
+        "executive_contacts": sum(
+            1 for contact in contacts
+            if is_executive_contact(contact["category"], contact["bmc_relationship"], contact["job_title"])
+        ),
+        "lead_contacts": sum(1 for contact in contacts if (contact["bmc_relationship"] or "") == "Lead"),
+    }
+
     connection.close()
 
     return render_template(
         "contact_reports.html",
         contacts=contacts,
+        contact_metrics=contact_metrics,
         contacts_by_category=contacts_by_category,
         contacts_by_relationship=contacts_by_relationship,
         contacts_by_account=contacts_by_account,

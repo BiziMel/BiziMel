@@ -104,7 +104,7 @@
                         <th>Exec First</th>
                         <th>NBM Completed</th>
                         <th>Last 7 Days Activity</th>
-                        <th>Next 7 Days Scheduled Actions</th>
+                        <th>Next Planned Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -174,10 +174,11 @@
                                     <div class="scheduled-action-list">
                                         {% for action in row.next_7_days_actions %}
                                             <div class="scheduled-action-entry">
-                                                <span>{{ action.subject }}</span>
-                                                {% if action.due %}
-                                                    <strong>{{ action.due }}</strong>
-                                                {% endif %}
+                                                <span>
+                                                    {% if action.due %}{{ action.due }} - {% endif %}
+                                                    {% if action.activity_type %}{{ action.activity_type }} - {% endif %}
+                                                    {{ action.subject }}
+                                                </span>
                                             </div>
                                         {% endfor %}
                                     </div>
