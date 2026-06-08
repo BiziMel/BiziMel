@@ -142,6 +142,8 @@ def initialise_database(force=False):
             responsibilities TEXT,
             email TEXT,
             phone TEXT,
+            office_phone TEXT,
+            mobile_phone TEXT,
             location TEXT,
             linkedin TEXT,
             bmc_relationship TEXT,
@@ -458,6 +460,8 @@ def initialise_database(force=False):
     # Safe migrations for contacts
     add_column_if_missing(cursor, "contacts", "team_id", "INTEGER DEFAULT 1")
     add_column_if_missing(cursor, "contacts", "photo", "TEXT")
+    add_column_if_missing(cursor, "contacts", "office_phone", "TEXT")
+    add_column_if_missing(cursor, "contacts", "mobile_phone", "TEXT")
     add_column_if_missing(cursor, "contacts", "status", "TEXT DEFAULT 'Active'")
     add_column_if_missing(cursor, "contacts", "archived_at", "TEXT")
     add_column_if_missing(cursor, "pg_action_contact_updates", "exec_first", "TEXT")

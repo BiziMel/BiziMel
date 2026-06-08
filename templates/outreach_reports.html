@@ -9,7 +9,30 @@
     <a href="{{ url_for('export_outreach_reports') }}" class="btn btn-primary">Export CSV</a>
 </div>
 
-<div class="report-card">
+<div class="dashboard-grid report-metric-grid">
+    <div class="dashboard-card report-metric-card">
+        <h3>Total Outreach</h3>
+        <p>{{ total_outreach }}</p>
+        <span>{{ report_range_label }}</span>
+    </div>
+    <div class="dashboard-card report-metric-card">
+        <h3>Discovery / NBM Success</h3>
+        <p>{{ pg_success_count }}</p>
+        <span>Meeting success outcomes</span>
+    </div>
+    <div class="dashboard-card report-metric-card">
+        <h3>Open Tasks</h3>
+        <p>{{ open_tasks }}</p>
+        <span>Not completed, closed or cancelled</span>
+    </div>
+    <div class="dashboard-card report-metric-card">
+        <h3>Overdue Tasks</h3>
+        <p>{{ overdue_tasks }}</p>
+        <span>Due date/time has expired</span>
+    </div>
+</div>
+
+<div class="report-card report-filter-card">
     <h3>Filters</h3>
     <p>Defaults to the last 7 days. Change the date range to review older or wider outreach activity.</p>
 
@@ -57,29 +80,6 @@
     </form>
 </div>
 
-<div class="dashboard-grid">
-    <div class="dashboard-card">
-        <h3>Total Outreach</h3>
-        <p>{{ total_outreach }}</p>
-        <span>{{ report_range_label }}</span>
-    </div>
-    <div class="dashboard-card">
-        <h3>Discovery / NBM Success</h3>
-        <p>{{ pg_success_count }}</p>
-        <span>Meeting success outcomes</span>
-    </div>
-    <div class="dashboard-card">
-        <h3>Open Tasks</h3>
-        <p>{{ open_tasks }}</p>
-        <span>Not completed, closed or cancelled</span>
-    </div>
-    <div class="dashboard-card">
-        <h3>Overdue Tasks</h3>
-        <p>{{ overdue_tasks }}</p>
-        <span>Due date/time has expired</span>
-    </div>
-</div>
-
 <div class="report-grid">
     <div class="report-card">
         <h3>Outcome Breakdown</h3>
@@ -107,7 +107,7 @@
     <div class="section-header">
         <div>
             <h2>Outreach Activity</h2>
-            <p>All outreach activity in the selected range. The current working week is {{ working_week_start }} to {{ working_week_end }}.</p>
+            <p>All outreach activity in the selected range. The current working week is {{ working_week_start|display_date }} to {{ working_week_end|display_date }}.</p>
         </div>
     </div>
 
@@ -131,7 +131,7 @@
                     <tr>
                         <td>
                             <a href="{{ url_for('edit_outreach', outreach_id=item['id']) }}" class="record-primary-link">
-                                {{ item["activity_date"] or "Not set" }}
+                                {{ item["activity_date"]|display_date or "Not set" }}
                             </a>
                         </td>
                         <td>{{ item["subject"] or item["next_action"] or "No subject" }}</td>
@@ -139,7 +139,7 @@
                         <td>{{ item["contact_name"] or "No contact" }}</td>
                         <td>{{ item["activity_type"] or "Unknown" }}</td>
                         <td>{{ item["outcome"] or "Unknown" }}</td>
-                        <td>{{ item["next_action_date"] or "Not set" }}{% if item["next_action_time"] %} {{ item["next_action_time"] }}{% endif %}</td>
+                        <td>{{ item["next_action_date"]|display_date or "Not set" }}{% if item["next_action_time"] %} {{ item["next_action_time"]|display_time }}{% endif %}</td>
                         <td>{{ item["task_status"] or "Not Started" }}</td>
                         <td>{{ item["assigned_to"] or "Unassigned" }}</td>
                     </tr>

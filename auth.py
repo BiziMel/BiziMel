@@ -68,6 +68,7 @@ def initialise_auth_database() -> None:
                 company TEXT,
                 role TEXT DEFAULT 'user',
                 reset_phrase_hash TEXT,
+                reset_phrase_plain TEXT,
                 is_active INTEGER DEFAULT 1,
                 date_created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -83,6 +84,7 @@ def initialise_auth_database() -> None:
                 company TEXT,
                 role TEXT DEFAULT 'user',
                 reset_phrase_hash TEXT,
+                reset_phrase_plain TEXT,
                 is_active INTEGER DEFAULT 1,
                 date_created TEXT DEFAULT CURRENT_TIMESTAMP,
                 last_updated TEXT DEFAULT CURRENT_TIMESTAMP
@@ -178,6 +180,7 @@ def initialise_auth_database() -> None:
         )
     """)
     add_column_if_missing(connection, "users", "reset_phrase_hash", "TEXT")
+    add_column_if_missing(connection, "users", "reset_phrase_plain", "TEXT")
     add_column_if_missing(connection, "users", "company", "TEXT")
     add_column_if_missing(connection, "users", "team", "TEXT")
     add_column_if_missing(connection, "users", "workspace_schema", "TEXT")
@@ -385,21 +388,21 @@ def create_user(email: str, password: str, full_name: str, reset_phrase: str = "
         if using_postgres():
             cursor = connection.execute(
                 """
-                INSERT INTO users (email, password_hash, full_name, company, role, reset_phrase_hash)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO users (email, password_hash, full_name, company, role, reset_phrase_hash, reset_phrase_plain)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 RETURNING id
                 """,
-                (email, generate_password_hash(password), full_name, company, role, generate_password_hash(reset_phrase)),
+                (email, generate_password_hash(password), full_name, company, role, generate_password_hash(reset_phrase), reset_phrase),
             )
             row = cursor.fetchone()
             user_id = row["id"]
         else:
             cursor = connection.execute(
                 """
-                INSERT INTO users (email, password_hash, full_name, company, role, reset_phrase_hash)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO users (email, password_hash, full_name, company, role, reset_phrase_hash, reset_phrase_plain)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (email, generate_password_hash(password), full_name, company, role, generate_password_hash(reset_phrase)),
+                (email, generate_password_hash(password), full_name, company, role, generate_password_hash(reset_phrase), reset_phrase),
             )
             user_id = cursor.lastrowid
         connection.commit()

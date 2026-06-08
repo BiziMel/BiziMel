@@ -3,57 +3,67 @@
 {% block content %}
 <h2>Add Account</h2>
 
+{% if error %}
+    <div class="alert-error">{{ error }}</div>
+{% endif %}
+
 <form method="POST">
 
     <label>Account Name</label>
-    <input type="text" name="account_name" required>
+    <input type="text" name="account_name" value="{{ prefill.account_name or '' }}" required>
 
     <label>PG Bible Order</label>
-    <input type="number" name="pg_bible_order" min="1" step="1" placeholder="Example: 1">
+    <input type="number" name="pg_bible_order" min="1" step="1" value="{{ prefill.pg_bible_order or '' }}" placeholder="Example: 1">
     <p class="field-help">Controls the account sequence in the PG Bible export. Leave blank to sort after numbered accounts.</p>
 
     <label>Account Tier</label>
     <select name="account_tier">
         <option value="">Select tier</option>
         {% for tier in dropdown_values.account_tiers %}
-            <option value="{{ tier }}">Tier {{ tier }}</option>
+            <option value="{{ tier }}" {% if prefill.account_tier == tier %}selected{% endif %}>Tier {{ tier }}</option>
         {% endfor %}
     </select>
 
     <label>Industry</label>
-    <input type="text" name="industry">
+    <input type="text" name="industry" value="{{ prefill.industry or '' }}">
 
     <label>Business Unit / Org</label>
-<input type="text" name="business_unit">
+<input type="text" name="business_unit" value="{{ prefill.business_unit or '' }}">
 
     <label>Country</label>
     <select name="country" required>
-        {% set selected_country = "" %}
+        {% set selected_country = prefill.country or "" %}
         {% include "_country_options.html" %}
     </select>
 
     <label>City</label>
-    <input type="text" name="city">
+    <input type="text" name="city" value="{{ prefill.city or '' }}">
 
     <label>Website</label>
-    <input type="url" name="website" placeholder="https://www.example.com">
+    <input type="url" name="website" value="{{ prefill.website or '' }}" placeholder="https://www.example.com">
 
     <label>Pipeline Target USD $ ACV</label>
-    <input type="number" id="pipeline_target" name="pipeline_target" step="0.01" min="0" placeholder="0.00">
+    <input type="number" id="pipeline_target" name="pipeline_target" step="0.01" min="0" value="{{ prefill.pipeline_target or '' }}" placeholder="0.00">
 
     <label>NBM Target</label>
-    <input type="number" name="nbm_target" min="1" step="1" placeholder="Example: 1">
+    <input type="number" name="nbm_target" min="1" step="1" value="{{ prefill.nbm_target or '' }}" placeholder="Example: 1">
     <p class="field-help">Used to map this account into the PG Goals dashboard plan and actions tables.</p>
 
     <label>Account Sales Play or Initiative</label>
-    <textarea name="sales_play" rows="3" placeholder="Document the sales play or initiative for this account."></textarea>
+    <textarea name="sales_play" rows="3" placeholder="Document the sales play or initiative for this account.">{{ prefill.sales_play or '' }}</textarea>
 
     <label>Account Owner</label>
-    <input type="text" value="{{ current_user.full_name if current_user else 'Current user' }}" readonly>
-    <p class="field-help">New accounts are owned by the creator by default. Ownership can be reassigned from the edit account form.</p>
+    <select name="owner_user_id">
+        {% for assignable_user in assignable_users %}
+            <option value="{{ assignable_user.id }}" {% if prefill.owner_user_id and assignable_user.id|string == prefill.owner_user_id|string %}selected{% endif %}>
+                {{ assignable_user.full_name }}{% if assignable_user.email %} ({{ assignable_user.email }}){% endif %}
+            </option>
+        {% endfor %}
+    </select>
+    <p class="field-help">Account owner is limited to users in your company tenancy.</p>
 
     <label>Notes</label>
-    <textarea name="notes"></textarea>
+    <textarea name="notes">{{ prefill.notes or '' }}</textarea>
 
     {% if custom_fields %}
         <h3>Additional Account Fields</h3>

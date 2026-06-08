@@ -9,22 +9,26 @@
     <a href="/reports/accounts/export" class="btn btn-primary">Export CSV</a>
 </div>
 
-<div class="dashboard-grid">
-    <div class="dashboard-card">
+<div class="dashboard-grid report-metric-grid">
+    <div class="dashboard-card report-metric-card">
         <h3>Total Accounts</h3>
         <p>{{ account_metrics.total_accounts }}</p>
+        <span>Accounts in this workspace</span>
     </div>
-    <div class="dashboard-card">
+    <div class="dashboard-card report-metric-card">
         <h3>Pipeline Target</h3>
         <p>${{ "{:,.0f}".format(account_metrics.total_pipeline_target or 0) }}</p>
+        <span>Total target ACV</span>
     </div>
-    <div class="dashboard-card">
+    <div class="dashboard-card report-metric-card">
         <h3>PG Ordered</h3>
         <p>{{ account_metrics.pg_ordered_accounts }}</p>
+        <span>Accounts mapped to PG Bible</span>
     </div>
-    <div class="dashboard-card">
+    <div class="dashboard-card report-metric-card">
         <h3>Tiered Accounts</h3>
         <p>{{ account_metrics.tiered_accounts }}</p>
+        <span>Accounts with a tier set</span>
     </div>
 </div>
 

@@ -3658,6 +3658,72 @@ body {
     overflow-wrap: anywhere;
 }
 
+.next-24-insights-lead {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 0 0 16px;
+    padding: 16px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.next-24-insights-lead h3 {
+    margin: 0 0 6px;
+    color: #0f172a;
+    font-size: 16px;
+}
+
+.next-24-insights-lead p {
+    margin: 0;
+    color: #334155;
+}
+
+.report-metric-grid {
+    align-items: stretch;
+}
+
+.report-metric-card {
+    position: relative;
+    min-height: 132px;
+    border-left: 5px solid #2563eb;
+    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.report-metric-card h3 {
+    color: #475569;
+    font-size: 13px;
+    text-transform: uppercase;
+}
+
+.report-metric-card p {
+    margin: 8px 0 4px;
+    color: #0f172a;
+    font-size: clamp(28px, 4vw, 42px);
+    font-weight: 900;
+    line-height: 1;
+}
+
+.report-metric-card span {
+    color: #64748b;
+    font-size: 13px;
+}
+
+.report-filter-card {
+    margin-top: 12px;
+}
+
+.secret-phrase-value {
+    padding: 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #f8fafc;
+    color: #0f172a;
+    font-weight: 800;
+}
+
 .compact-command-card {
     min-height: 102px;
     border-radius: 8px;

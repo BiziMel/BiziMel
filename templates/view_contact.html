@@ -36,7 +36,8 @@
     <p><strong>Job Title:</strong> {{ contact.job_title }}</p>
     <p><strong>Org / Dept:</strong> {{ contact.org_dept }}</p>
     <p><strong>Email:</strong> {{ contact.email }}</p>
-    <p><strong>Phone:</strong> {{ contact.phone }}</p>
+    <p><strong>Office Phone:</strong> {{ contact.office_phone or "Not set" }}</p>
+    <p><strong>Mobile Phone:</strong> {{ contact.mobile_phone or "Not set" }}</p>
     <p><strong>Location:</strong> {{ contact.location }}</p>
     <p>
         <strong>LinkedIn:</strong>

@@ -13,22 +13,26 @@
     <div class="alert-success">{{ message }}</div>
 {% endif %}
 
-<div class="dashboard-grid">
-    <div class="dashboard-card">
+<div class="dashboard-grid report-metric-grid">
+    <div class="dashboard-card report-metric-card">
         <h3>Total Contacts</h3>
         <p>{{ contact_metrics.total_contacts }}</p>
+        <span>All reportable contacts</span>
     </div>
-    <div class="dashboard-card">
+    <div class="dashboard-card report-metric-card">
         <h3>Active Contacts</h3>
         <p>{{ contact_metrics.active_contacts }}</p>
+        <span>Currently active contacts</span>
     </div>
-    <div class="dashboard-card">
+    <div class="dashboard-card report-metric-card">
         <h3>Executive Routes</h3>
         <p>{{ contact_metrics.executive_contacts }}</p>
+        <span>Executive or senior route signals</span>
     </div>
-    <div class="dashboard-card">
+    <div class="dashboard-card report-metric-card">
         <h3>Lead Status</h3>
         <p>{{ contact_metrics.lead_contacts }}</p>
+        <span>Contacts not yet validated</span>
     </div>
 </div>
 
@@ -107,6 +111,8 @@
                     <th>Status</th>
                     <th>Relationship</th>
                     <th>Email</th>
+                    <th>Office Phone</th>
+                    <th>Mobile Phone</th>
                     <th>Account</th>
                     <th>Account Tier</th>
                 </tr>
@@ -128,12 +134,14 @@
                         <td>{{ contact["status"] or "Active" }}</td>
                         <td>{{ contact["bmc_relationship"] or "Unknown" }}</td>
                         <td>{{ contact["email"] or "Not set" }}</td>
+                        <td>{{ contact["office_phone"] or "Not set" }}</td>
+                        <td>{{ contact["mobile_phone"] or "Not set" }}</td>
                         <td>{{ contact["account_name"] or "Unknown" }}</td>
                         <td>{{ "Tier " ~ contact["account_tier"] if contact["account_tier"] else "Not set" }}</td>
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="8">No contacts found.</td>
+                        <td colspan="10">No contacts found.</td>
                     </tr>
                 {% endfor %}
             </tbody>

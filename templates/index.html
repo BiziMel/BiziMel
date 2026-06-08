@@ -116,24 +116,6 @@
                     </div>
                 </details>
 
-                <details class="dashboard-guidance-accordion">
-                    <summary>
-                        <span>{{ weekly_ahead_focus.title if weekly_ahead_focus else "Next 24 Hours" }}</span>
-                        <form method="POST" action="{{ url_for('refresh_next_24_hours') }}" class="inline-form guidance-refresh-form">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit" class="btn btn-secondary btn-small">Refresh</button>
-                        </form>
-                    </summary>
-                    <div class="dashboard-guidance-body">
-                        {% if weekly_ahead_focus and weekly_ahead_focus.paragraphs %}
-                            {% for paragraph in weekly_ahead_focus.paragraphs %}
-                                <p>{{ paragraph }}</p>
-                            {% endfor %}
-                        {% else %}
-                            <p>Prioritise executive coverage, overdue action clearance and Discovery or NBM asks.</p>
-                        {% endif %}
-                    </div>
-                </details>
             </div>
 
             <div class="outcome-breakdown-strip">
@@ -162,7 +144,21 @@
                     <h2>Execution Insights</h2>
                     <p>Combined AI guidance and campaign learning for the next best sales actions.</p>
                 </div>
-                <a href="{{ url_for('campaign_builder') }}" class="btn btn-secondary">Build Campaign</a>
+            </div>
+
+            <div class="next-24-insights-lead">
+                <div>
+                    <h3>{{ weekly_ahead_focus.title if weekly_ahead_focus else "Next 24 Hours" }}</h3>
+                    {% if weekly_ahead_focus and weekly_ahead_focus.paragraphs %}
+                        <p>{{ weekly_ahead_focus.paragraphs[0] }}</p>
+                    {% else %}
+                        <p>Prioritise executive coverage, overdue action clearance and Discovery or NBM asks.</p>
+                    {% endif %}
+                </div>
+                <form method="POST" action="{{ url_for('refresh_next_24_hours') }}" class="inline-form guidance-refresh-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-secondary btn-small">Refresh</button>
+                </form>
             </div>
 
             {% if execution_insights %}

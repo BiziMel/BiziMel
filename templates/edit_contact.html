@@ -63,8 +63,11 @@
     <label for="email">Email</label>
     <input type="email" id="email" name="email" value="{{ contact.email }}">
 
-    <label for="phone">Phone</label>
-    <input type="text" id="phone" name="phone" value="{{ contact.phone }}">
+    <label for="office_phone">Office Phone</label>
+    <input type="text" id="office_phone" name="office_phone" value="{{ contact.office_phone or '' }}">
+
+    <label for="mobile_phone">Mobile Phone</label>
+    <input type="text" id="mobile_phone" name="mobile_phone" value="{{ contact.mobile_phone or '' }}">
 
     <label for="location">Location</label>
     <input type="text" id="location" name="location" value="{{ contact.location }}">

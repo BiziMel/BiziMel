@@ -148,7 +148,6 @@
                         <button type="submit" class="btn btn-primary" id="orgChartSaveButton" disabled>Save Layout</button>
                     </form>
                     <div class="org-export-actions">
-                        <button type="button" class="btn btn-secondary" id="orgArrangeButton">Arrange Chart</button>
                         <button type="button" class="btn btn-secondary" id="orgPrintPdfButton">Print PDF</button>
                         <button type="button" class="btn btn-secondary" id="orgExportPngButton">Export PNG</button>
                     </div>
@@ -224,7 +223,6 @@ document.addEventListener("DOMContentLoaded", function () {
     const pendingList = document.getElementById("orgChartPendingList");
     const labelInput = document.getElementById("orgLabelText");
     const addLabelButton = document.getElementById("orgAddLabelButton");
-    const arrangeButton = document.getElementById("orgArrangeButton");
     const printPdfButton = document.getElementById("orgPrintPdfButton");
     const exportPngButton = document.getElementById("orgExportPngButton");
     const exportCanvas = document.getElementById("orgExportCanvas");
@@ -245,6 +243,16 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function clamp(value, min, max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    function gridMetrics() {
+        const width = parseInt(getComputedStyle(pane).getPropertyValue("--org-tile-width"), 10) || 220;
+        const height = parseInt(getComputedStyle(pane).getPropertyValue("--org-tile-height"), 10) || 118;
+        return { width, height, xStep: width + 36, yStep: height + 46, originX: 32, originY: 32 };
+    }
+
+    function snapGrid(value, origin, step) {
+        return origin + Math.round((value - origin) / step) * step;
     }
 
     function tileHtml(item) {
@@ -333,6 +341,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!personRef) return;
         document.querySelectorAll(`.org-tray-person[data-person-ref="${personRef}"]`).forEach((item) => {
             item.hidden = true;
+            item.style.display = "none";
             item.setAttribute("aria-hidden", "true");
         });
     }
@@ -350,18 +359,21 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function placementForDrop(point, target, zone) {
-        const width = parseInt(getComputedStyle(pane).getPropertyValue("--org-tile-width"), 10) || 220;
-        const height = parseInt(getComputedStyle(pane).getPropertyValue("--org-tile-height"), 10) || 118;
-        const grid = 20;
-        function snap(value) {
-            return Math.round(value / grid) * grid;
+        const metrics = gridMetrics();
+        const width = metrics.width;
+        const height = metrics.height;
+        function snapX(value) {
+            return snapGrid(value, metrics.originX, metrics.xStep);
+        }
+        function snapY(value) {
+            return snapGrid(value, metrics.originY, metrics.yStep);
         }
         if (!target || !zone) {
             return {
                 relationship: "with",
                 related_node_id: "",
-                x: clamp(snap(point.x - width / 2), 12, pane.scrollWidth - width - 12),
-                y: clamp(snap(point.y - height / 2), 12, pane.scrollHeight - height - 12)
+                x: clamp(snapX(point.x - width / 2), 12, pane.scrollWidth - width - 12),
+                y: clamp(snapY(point.y - height / 2), 12, pane.scrollHeight - height - 12)
             };
         }
         const left = target.offsetLeft;
@@ -371,18 +383,18 @@ document.addEventListener("DOMContentLoaded", function () {
         const relatedNodeId = target.dataset.nodeId || "";
         const relatedLocalId = target.dataset.localId || "";
         const placements = {
-            top: { relationship: "above", x: left, y: top - 150 },
-            bottom: { relationship: "under", x: left, y: top + targetHeight + 42 },
-            left: { relationship: "with", x: left - width - 34, y: top },
-            right: { relationship: "with", x: left + targetWidth + 34, y: top }
+            top: { relationship: "above", x: left, y: top - metrics.yStep },
+            bottom: { relationship: "under", x: left, y: top + metrics.yStep },
+            left: { relationship: "with", x: left - metrics.xStep, y: top },
+            right: { relationship: "with", x: left + metrics.xStep, y: top }
         };
         const placement = placements[zone] || placements.right;
         return {
             relationship: placement.relationship,
             related_node_id: relatedNodeId,
             related_local_id: relatedLocalId,
-            x: clamp(snap(placement.x), 12, pane.scrollWidth - width - 12),
-            y: clamp(snap(placement.y), 12, pane.scrollHeight - height - 12)
+            x: clamp(snapX(placement.x), 12, pane.scrollWidth - width - 12),
+            y: clamp(snapY(placement.y), 12, pane.scrollHeight - height - 12)
         };
     }
 
@@ -398,10 +410,12 @@ document.addEventListener("DOMContentLoaded", function () {
         stageAction(key, {
             type: "person",
             node_id: node.dataset.nodeId || "",
+            local_node_id: node.dataset.localId || "",
             person_ref: item.person_ref || "",
             person_name: item.name || node.dataset.personName || "",
             relationship: placement.relationship,
             related_node_id: placement.related_node_id,
+            related_local_id: placement.related_local_id || "",
             x_position: placement.x,
             y_position: placement.y,
             sort_order: stagedActions.size + 1
@@ -416,73 +430,6 @@ document.addEventListener("DOMContentLoaded", function () {
             x: Math.round(node.offsetLeft),
             y: Math.round(node.offsetTop)
         };
-    }
-
-    function arrangeChart() {
-        const nodes = Array.from(pane.querySelectorAll(".org-canvas-node"));
-        if (!nodes.length) {
-            return;
-        }
-        const paneWidth = Math.max(760, pane.clientWidth || 960);
-        const byId = new Map(nodes.filter((node) => node.dataset.nodeId).map((node) => [node.dataset.nodeId, node]));
-        const levels = new Map();
-        nodes.forEach((node) => {
-            if (!node.dataset.relatedNodeId) {
-                levels.set(node, 0);
-            }
-        });
-        for (let pass = 0; pass < nodes.length + 2; pass += 1) {
-            nodes.forEach((node) => {
-                const related = byId.get(node.dataset.relatedNodeId);
-                if (!related || !levels.has(related)) {
-                    if (!levels.has(node)) levels.set(node, 0);
-                    return;
-                }
-                const base = levels.get(related);
-                const relationship = node.dataset.relationship || "with";
-                const level = relationship === "above" ? base - 1 : relationship === "under" ? base + 1 : base;
-                levels.set(node, level);
-            });
-        }
-        const minLevel = Math.min(...Array.from(levels.values()));
-        const rows = new Map();
-        nodes.forEach((node) => {
-            const row = levels.get(node) - minLevel;
-            if (!rows.has(row)) rows.set(row, []);
-            rows.get(row).push(node);
-        });
-        const largestRowCount = Math.max(...Array.from(rows.values()).map((rowNodes) => rowNodes.length), 1);
-        const xGap = 34;
-        const yGap = 44;
-        const tileWidth = clamp(Math.floor((paneWidth - 96 - ((largestRowCount - 1) * xGap)) / largestRowCount), 170, 220);
-        const rowHeight = tileWidth < 190 ? 106 : 118;
-        pane.style.setProperty("--org-tile-width", `${tileWidth}px`);
-        pane.style.setProperty("--org-tile-height", `${rowHeight}px`);
-        Array.from(rows.keys()).sort((a, b) => a - b).forEach((row) => {
-            const rowNodes = rows.get(row).sort((a, b) => a.offsetLeft - b.offsetLeft);
-            const rowWidth = rowNodes.length * tileWidth + Math.max(0, rowNodes.length - 1) * xGap;
-            const startX = Math.max(32, Math.floor((paneWidth - rowWidth) / 2));
-            rowNodes.forEach((node, index) => {
-                const x = startX + index * (tileWidth + xGap);
-                const y = 44 + row * (rowHeight + yGap);
-                node.style.left = `${x}px`;
-                node.style.top = `${y}px`;
-                node.classList.add("org-move-staged");
-                stageAction(node.dataset.nodeId ? `node:${node.dataset.nodeId}` : `person:${node.dataset.personRef}`, {
-                    type: "person",
-                    node_id: node.dataset.nodeId || "",
-                    person_ref: node.dataset.personRef || "",
-                    person_name: node.dataset.personName || "",
-                    relationship: node.dataset.relationship || "with",
-                    related_node_id: node.dataset.relatedNodeId || "",
-                    x_position: x,
-                    y_position: y,
-                    sort_order: index + 1
-                });
-            });
-        });
-        pane.style.minHeight = `${Math.max(680, (Math.max(...rows.keys()) + 1) * (rowHeight + yGap) + 100)}px`;
-        drawLinks();
     }
 
     function placeLabel(label, point) {
@@ -617,7 +564,6 @@ document.addEventListener("DOMContentLoaded", function () {
     document.querySelectorAll(".org-chart-draggable, .org-canvas-label").forEach(attachDragHandler);
     pane.querySelectorAll(".org-canvas-node[data-person-ref]").forEach((node) => hideTrayPerson(node.dataset.personRef));
     addLabelButton?.addEventListener("click", addLabel);
-    arrangeButton?.addEventListener("click", arrangeChart);
     labelInput?.addEventListener("keydown", function (event) {
         if (event.key === "Enter") {
             event.preventDefault();
