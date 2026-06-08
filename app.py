@@ -17,12 +17,12 @@ from werkzeug.utils import secure_filename
 from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
-from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection
+from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.2.0"
+APP_VERSION = "2.2.1"
 APP_RELEASE_DATE = "2026-06-08"
-APP_BUILD = "2026-06-08-v2.2.0-enterprise-reports-insights-org-pg-r1"
+APP_BUILD = "2026-06-08-v2.2.1-enterprise-login-reports-org-account-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -36,6 +36,30 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.2.1",
+        "release_date": "2026-06-08",
+        "title": "Login, reporting polish, org chart stability and account/contact field fixes",
+        "new": [
+            "Added separate Office and Mobile phone fields for contacts.",
+            "Added own-profile secret phrase reveal for phrases stored from this release onward.",
+        ],
+        "enhanced": [
+            "Improved Account, Contact and Outreach report metrics into clearer visual summary cards.",
+            "Moved report filters below metrics and above report tables.",
+            "Changed account owner selection to a tenancy-scoped user dropdown on account create and edit.",
+            "Merged Next 24 Hours guidance into the Execution Insights section as the lead focus paragraph.",
+            "Standardised displayed dates and times toward dd-Mmm-yyyy and 24-hour hh:mm formats across updated report and dashboard views.",
+            "Improved database commit resilience around new account creation.",
+        ],
+        "fixed": [
+            "Fixed login Bad Request handling caused by stale or missing security tokens.",
+            "Fixed the critical internal server error path when saving a new account.",
+            "Removed the org chart Arrange Chart button and retained grid-based placement without a visible grid.",
+            "Fixed org chart tray hiding and relationship line rendering for newly placed and moved tiles.",
+            "Removed the Build Campaign button from Execution Insights.",
+        ],
+    },
     {
         "version": "2.2.0",
         "release_date": "2026-06-08",
@@ -798,6 +822,58 @@ def validate_csrf_token():
         abort(400, description="Invalid or missing security token.")
 
 
+def csrf_token_is_valid():
+    expected = session.get(CSRF_SESSION_KEY)
+    submitted = request.form.get("csrf_token") or request.headers.get("X-CSRF-Token")
+    return bool(expected and submitted and secrets.compare_digest(expected, submitted))
+
+
+def format_display_date(value, month_name=True):
+    if not value:
+        return ""
+    if isinstance(value, datetime):
+        parsed = value.date()
+    elif isinstance(value, date):
+        parsed = value
+    else:
+        text = str(value).strip()
+        parsed = None
+        for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M"):
+            try:
+                parsed = datetime.strptime(text[:len(fmt)], fmt).date()
+                break
+            except ValueError:
+                continue
+        if parsed is None:
+            return text
+    return parsed.strftime("%d-%b-%Y" if month_name else "%d-%m-%Y")
+
+
+def format_display_time(value):
+    if not value:
+        return ""
+    text = str(value).strip()
+    for fmt in ("%H:%M:%S", "%H:%M"):
+        try:
+            return datetime.strptime(text[:len(fmt)], fmt).strftime("%H:%M")
+        except ValueError:
+            continue
+    return text
+
+
+def combined_contact_phone(office_phone="", mobile_phone="", legacy_phone=""):
+    parts = []
+    if office_phone:
+        parts.append(f"Office: {office_phone}")
+    if mobile_phone:
+        parts.append(f"Mobile: {mobile_phone}")
+    return "; ".join(parts) or (legacy_phone or "")
+
+
+def commit_with_retry(connection):
+    execute_with_retry(lambda: connection.commit(), rollback=lambda: connection.rollback())
+
+
 def safe_redirect_target(target, fallback_endpoint="home"):
     fallback = url_for(fallback_endpoint)
     target = (target or fallback).strip()
@@ -851,6 +927,10 @@ def inject_dropdown_values():
         "page_instructions": page_instructions_for_endpoint(request.endpoint),
         "csrf_token": csrf_token,
     }
+
+
+app.jinja_env.filters["display_date"] = format_display_date
+app.jinja_env.filters["display_time"] = format_display_time
 
 
 PAGE_INSTRUCTIONS = {
@@ -1172,12 +1252,12 @@ def page_instructions_for_endpoint(endpoint):
 
 @app.before_request
 def require_login_and_prepare_database():
-    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-        validate_csrf_token()
-
     public_endpoints = {"login", "register", "forgot_password", "reset_password", "release_notes", "user_guide", "user_guide_section", "version_health", "storage_health", "static"}
     if request.endpoint in public_endpoints:
         return None
+
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        validate_csrf_token()
 
     if not session.get("user_id"):
         return redirect(url_for("login"))
@@ -1304,7 +1384,7 @@ def login():
                 """,
                 (user["full_name"],),
             )
-            connection.commit()
+            commit_with_retry(connection)
             connection.close()
             return redirect(url_for("home"))
         error = "Email or password was not recognised."
@@ -3240,7 +3320,7 @@ def load_dashboard_weekly_guidance(connection, metric_values, execution_insights
         settings_changed = True
 
     if settings_changed:
-        connection.commit()
+        commit_with_retry(connection)
 
     def parse_guidance(payload, fallback_title):
         try:
@@ -5428,7 +5508,9 @@ def edit_partner_contact(partner_id, contact_id):
             "account_id": request.form.get("account_id") or None,
             "relationship_owner": request.form.get("relationship_owner"),
             "email": request.form.get("email"),
-            "phone": request.form.get("phone"),
+            "phone": combined_contact_phone(request.form.get("office_phone"), request.form.get("mobile_phone"), request.form.get("phone")),
+            "office_phone": request.form.get("office_phone"),
+            "mobile_phone": request.form.get("mobile_phone"),
             "location": request.form.get("location"),
             "linkedin": request.form.get("linkedin"),
             "relationship_status": request.form.get("relationship_status"),
@@ -5443,6 +5525,8 @@ def edit_partner_contact(partner_id, contact_id):
             "relationship_owner": "Relationship owner",
             "email": "Email",
             "phone": "Phone",
+            "office_phone": "Office phone",
+            "mobile_phone": "Mobile phone",
             "location": "Location",
             "linkedin": "LinkedIn",
             "relationship_status": "Partner engagement",
@@ -5459,6 +5543,8 @@ def edit_partner_contact(partner_id, contact_id):
                 relationship_owner = ?,
                 email = ?,
                 phone = ?,
+                office_phone = ?,
+                mobile_phone = ?,
                 location = ?,
                 linkedin = ?,
                 relationship_status = ?,
@@ -5475,6 +5561,8 @@ def edit_partner_contact(partner_id, contact_id):
             new_values["relationship_owner"],
             new_values["email"],
             new_values["phone"],
+            new_values["office_phone"],
+            new_values["mobile_phone"],
             new_values["location"],
             new_values["linkedin"],
             new_values["relationship_status"],
@@ -5574,50 +5662,67 @@ def add_account():
     custom_fields = account_custom_field_payload(active_only=True)
     if request.method == "POST":
         connection = get_db_connection()
-        owner = current_user_owner_payload()
-        cursor = connection.execute("""
-            INSERT INTO accounts
-            (account_name, pg_bible_order, account_tier, industry, business_unit, country, city, website, pipeline_target, nbm_target, sales_play, owner_user_id, owner_name, owner_email, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            request.form.get("account_name"),
-            request.form.get("pg_bible_order") or None,
-            request.form.get("account_tier"),
-            request.form.get("industry"),
-            request.form.get("business_unit"),
-            request.form.get("country"),
-            request.form.get("city"),
-            request.form.get("website"),
-            request.form.get("pipeline_target"),
-            request.form.get("nbm_target"),
-            request.form.get("sales_play"),
-            owner["owner_user_id"],
-            owner["owner_name"],
-            owner["owner_email"],
-            request.form.get("notes")
-        ))
-        account_id = cursor.lastrowid
-        audit_record_create(connection, "account", account_id, {
-            "account_name": request.form.get("account_name"),
-            "pg_bible_order": request.form.get("pg_bible_order") or None,
-            "account_tier": request.form.get("account_tier"),
-            "industry": request.form.get("industry"),
-            "business_unit": request.form.get("business_unit"),
-            "country": request.form.get("country"),
-            "city": request.form.get("city"),
-            "website": request.form.get("website"),
-            "pipeline_target": request.form.get("pipeline_target"),
-            "nbm_target": request.form.get("nbm_target"),
-            "sales_play": request.form.get("sales_play"),
-            "owner_name": owner["owner_name"],
-            "notes": request.form.get("notes"),
-        })
-        save_account_custom_values(connection, account_id, custom_fields, request.form)
-        connection.commit()
+        selected_owner = assignable_user_by_id(request.form.get("owner_user_id"))
+        owner = {
+            "owner_user_id": selected_owner["id"],
+            "owner_name": selected_owner["full_name"],
+            "owner_email": selected_owner["email"],
+        } if selected_owner else current_user_owner_payload()
+        try:
+            cursor = connection.execute("""
+                INSERT INTO accounts
+                (account_name, pg_bible_order, account_tier, industry, business_unit, country, city, website, pipeline_target, nbm_target, sales_play, owner_user_id, owner_name, owner_email, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                request.form.get("account_name"),
+                request.form.get("pg_bible_order") or None,
+                request.form.get("account_tier"),
+                request.form.get("industry"),
+                request.form.get("business_unit"),
+                request.form.get("country"),
+                request.form.get("city"),
+                request.form.get("website"),
+                request.form.get("pipeline_target") or None,
+                request.form.get("nbm_target"),
+                request.form.get("sales_play"),
+                owner["owner_user_id"],
+                owner["owner_name"],
+                owner["owner_email"],
+                request.form.get("notes")
+            ))
+            account_id = cursor.lastrowid
+            audit_record_create(connection, "account", account_id, {
+                "account_name": request.form.get("account_name"),
+                "pg_bible_order": request.form.get("pg_bible_order") or None,
+                "account_tier": request.form.get("account_tier"),
+                "industry": request.form.get("industry"),
+                "business_unit": request.form.get("business_unit"),
+                "country": request.form.get("country"),
+                "city": request.form.get("city"),
+                "website": request.form.get("website"),
+                "pipeline_target": request.form.get("pipeline_target"),
+                "nbm_target": request.form.get("nbm_target"),
+                "sales_play": request.form.get("sales_play"),
+                "owner_name": owner["owner_name"],
+                "notes": request.form.get("notes"),
+            })
+            save_account_custom_values(connection, account_id, custom_fields, request.form)
+            commit_with_retry(connection)
+        except Exception:
+            connection.rollback()
+            traceback.print_exc()
+            connection.close()
+            return render_template(
+                "add_account.html",
+                custom_fields=custom_fields,
+                assignable_users=list_assignable_users(),
+                error="The account could not be saved. Check the required values and try again.",
+                prefill=dict(request.form),
+            ), 500
         connection.close()
         return redirect(url_for("accounts"))
 
-    return render_template("add_account.html", custom_fields=custom_fields)
+    return render_template("add_account.html", custom_fields=custom_fields, assignable_users=list_assignable_users(), prefill={}, error="")
 
 
 @app.route("/accounts/<int:account_id>")
@@ -5824,7 +5929,7 @@ def add_account_partner(account_id):
             f"Partner involvement added: {partner_name}"
         )
 
-        connection.commit()
+        commit_with_retry(connection)
 
     connection.close()
     return redirect(url_for("view_account", account_id=account_id))
@@ -6699,6 +6804,7 @@ def save_account_org_chart_layout(account_id, chart_id):
 
     saved_count = 0
     error_message = ""
+    local_node_ids = {}
     try:
         for action in actions:
             if not isinstance(action, dict):
@@ -6741,6 +6847,9 @@ def save_account_org_chart_layout(account_id, chart_id):
                 continue
             relationship = normalise_org_chart_relationship(action.get("relationship"))
             related_node_id = action.get("related_node_id") or None
+            related_local_id = action.get("related_local_id") or ""
+            if not related_node_id and related_local_id and related_local_id in local_node_ids:
+                related_node_id = local_node_ids[related_local_id]
             manager_node_id = action.get("manager_node_id") or None
             if manager_node_id:
                 relationship = "under"
@@ -6750,6 +6859,7 @@ def save_account_org_chart_layout(account_id, chart_id):
             x_position = action.get("x_position")
             y_position = action.get("y_position")
             node_id = action.get("node_id")
+            local_node_id = action.get("local_node_id") or ""
             if node_id:
                 try:
                     node_id = int(node_id)
@@ -6873,6 +6983,8 @@ def save_account_org_chart_layout(account_id, chart_id):
                 y_position_int,
             ))
             new_node_id = cursor.lastrowid
+            if local_node_id:
+                local_node_ids[local_node_id] = new_node_id
             if relationship == "above":
                 apply_org_chart_above_relationship(connection, chart_id, new_node_id, related_node_id)
             audit_record_create(connection, "account_org_chart_person", new_node_id, {
@@ -7083,11 +7195,11 @@ def add_contact():
         cursor = connection.execute("""
             INSERT INTO contacts (
                 account_id, category, photo, name, job_title, org_dept, responsibilities,
-                email, phone, location, linkedin, bmc_relationship, characteristics,
+                email, phone, office_phone, mobile_phone, location, linkedin, bmc_relationship, characteristics,
                 background, personal_interests, personal_win, education,
                 social_media, additional_notes, status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             request.form.get("account_id"),
             request.form.get("category"),
@@ -7097,7 +7209,9 @@ def add_contact():
             request.form.get("org_dept"),
             request.form.get("responsibilities"),
             request.form.get("email"),
-            request.form.get("phone"),
+            combined_contact_phone(request.form.get("office_phone"), request.form.get("mobile_phone"), request.form.get("phone")),
+            request.form.get("office_phone"),
+            request.form.get("mobile_phone"),
             request.form.get("location"),
             request.form.get("linkedin"),
             request.form.get("bmc_relationship"),
@@ -7118,7 +7232,9 @@ def add_contact():
             "job_title": request.form.get("job_title"),
             "org_dept": request.form.get("org_dept"),
             "email": request.form.get("email"),
-            "phone": request.form.get("phone"),
+            "phone": combined_contact_phone(request.form.get("office_phone"), request.form.get("mobile_phone"), request.form.get("phone")),
+            "office_phone": request.form.get("office_phone"),
+            "mobile_phone": request.form.get("mobile_phone"),
             "photo": photo_path,
             "status": request.form.get("status") or "Active",
             "bmc_relationship": request.form.get("bmc_relationship"),
@@ -7225,7 +7341,9 @@ def edit_contact(contact_id):
             "org_dept": request.form.get("org_dept"),
             "responsibilities": request.form.get("responsibilities"),
             "email": request.form.get("email"),
-            "phone": request.form.get("phone"),
+            "phone": combined_contact_phone(request.form.get("office_phone"), request.form.get("mobile_phone"), request.form.get("phone")),
+            "office_phone": request.form.get("office_phone"),
+            "mobile_phone": request.form.get("mobile_phone"),
             "location": request.form.get("location"),
             "linkedin": request.form.get("linkedin"),
             "status": request.form.get("status") or "Active",
@@ -7249,6 +7367,8 @@ def edit_contact(contact_id):
             "responsibilities": "Responsibilities",
             "email": "Email",
             "phone": "Phone",
+            "office_phone": "Office phone",
+            "mobile_phone": "Mobile phone",
             "location": "Location",
             "linkedin": "LinkedIn",
             "status": "Status",
@@ -7275,6 +7395,8 @@ def edit_contact(contact_id):
                 responsibilities = ?,
                 email = ?,
                 phone = ?,
+                office_phone = ?,
+                mobile_phone = ?,
                 location = ?,
                 linkedin = ?,
                 status = ?,
@@ -7298,6 +7420,8 @@ def edit_contact(contact_id):
             new_values["responsibilities"],
             new_values["email"],
             new_values["phone"],
+            new_values["office_phone"],
+            new_values["mobile_phone"],
             new_values["location"],
             new_values["linkedin"],
             new_values["status"],
@@ -7322,7 +7446,7 @@ def edit_contact(contact_id):
                 "Contact updated: " + "; ".join(changes)
             )
 
-        connection.commit()
+        commit_with_retry(connection)
         connection.close()
 
         return redirect(url_for("view_contact", contact_id=contact_id))
@@ -9342,11 +9466,26 @@ def profile():
     """).fetchall()
 
     connection.close()
+    secret_phrase = ""
+    secret_phrase_available = False
+    user = current_user()
+    if user:
+        auth_connection = get_auth_connection()
+        auth_row = auth_connection.execute("""
+            SELECT reset_phrase_plain
+            FROM users
+            WHERE id = ?
+        """, (user["id"],)).fetchone()
+        auth_connection.close()
+        secret_phrase = auth_row["reset_phrase_plain"] if auth_row and "reset_phrase_plain" in auth_row.keys() and auth_row["reset_phrase_plain"] else ""
+        secret_phrase_available = bool(secret_phrase)
 
     return render_template(
         "profile.html",
         profile=profile_record,
         non_working_blocks=non_working_blocks,
+        secret_phrase=secret_phrase,
+        secret_phrase_available=secret_phrase_available,
         message=message,
         error=error
     )
@@ -10543,7 +10682,7 @@ def outreach_reports():
         selected_outcome=selected_outcome,
         working_week_start=working_week_start.isoformat(),
         working_week_end=working_week_end.isoformat(),
-        report_range_label=f"{selected_start_date} to {selected_end_date}",
+        report_range_label=f"{format_display_date(selected_start_date)} to {format_display_date(selected_end_date)}",
     )
 
 
@@ -10642,6 +10781,8 @@ def contact_reports():
             contacts.status,
             contacts.bmc_relationship,
             contacts.email,
+            contacts.office_phone,
+            contacts.mobile_phone,
             accounts.account_name,
             accounts.account_tier
         FROM contacts
@@ -10728,7 +10869,8 @@ def export_contact_reports():
             contacts.status,
             contacts.bmc_relationship,
             contacts.email,
-            contacts.phone,
+            contacts.office_phone,
+            contacts.mobile_phone,
             contacts.location,
             contacts.linkedin,
             contacts.org_dept,
@@ -10760,7 +10902,8 @@ def export_contact_reports():
         "Status",
         "BMC Relationship",
         "Email",
-        "Phone",
+        "Office Phone",
+        "Mobile Phone",
         "Location",
         "LinkedIn",
         "Org / Dept",
@@ -10784,7 +10927,8 @@ def export_contact_reports():
             contact["status"] or "Active",
             contact["bmc_relationship"],
             contact["email"],
-            contact["phone"],
+            contact["office_phone"],
+            contact["mobile_phone"],
             contact["location"],
             contact["linkedin"],
             contact["org_dept"],
