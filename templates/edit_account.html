@@ -26,7 +26,7 @@
 </div>
 
 <div class="form-card">
-<form method="POST" class="pipeflow-form">
+<form method="POST" class="pipeflow-form" enctype="multipart/form-data">
     <label>Account Name</label>
     <input type="text" name="account_name" value="{{ account['account_name'] }}" required>
 
@@ -59,6 +59,16 @@
 
     <label>Website</label>
     <input type="url" name="website" value="{{ account['website'] }}">
+
+    <label>Customer Logo</label>
+    {% if account['customer_logo'] %}
+        <div class="account-logo-preview-row">
+            <img src="{{ account['customer_logo'] }}" alt="{{ account['account_name'] }} logo" class="account-logo-preview">
+            <span class="muted">Current logo</span>
+        </div>
+    {% endif %}
+    <input type="file" name="customer_logo" accept=".jpg,.jpeg,.png,image/jpeg,image/png">
+    <p class="field-help">Upload a JPG or PNG to add or replace the customer logo.</p>
 
     <label>Pipeline Target USD $ ACV</label>
     <input type="number" name="pipeline_target" step="0.01" min="0"

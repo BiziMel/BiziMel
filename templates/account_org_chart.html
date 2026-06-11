@@ -293,6 +293,7 @@ document.addEventListener("DOMContentLoaded", function () {
             draggedItem = {
                 type: element.dataset.dragType,
                 node_id: element.dataset.nodeId || "",
+                local_id: element.dataset.localId || "",
                 person_ref: element.dataset.personRef || "",
                 label_id: element.dataset.labelId || "",
                 label_text: element.dataset.labelText || element.textContent.trim(),
@@ -303,15 +304,24 @@ document.addEventListener("DOMContentLoaded", function () {
                 element: element
             };
             element.classList.add("org-dragging");
+            if (draggedItem.type === "person") {
+                element.dataset.orgPlaced = "";
+                hideTrayPerson(draggedItem.person_ref);
+            }
             event.dataTransfer.effectAllowed = "move";
             event.dataTransfer.setData("text/plain", draggedItem.name || draggedItem.label_text || "org-chart-item");
         });
         element.addEventListener("dragend", function () {
             element.classList.remove("org-dragging");
+            if (element.dataset.dragType === "person" && element.dataset.orgPlaced !== "true") {
+                restoreTrayPerson(element.dataset.personRef || "");
+            }
+            delete element.dataset.orgPlaced;
             document.querySelectorAll(".org-border-target").forEach(function (target) {
                 target.classList.remove("org-border-target");
                 target.removeAttribute("data-border-zone");
             });
+            window.requestAnimationFrame(drawLinks);
         });
     }
 
@@ -343,6 +353,15 @@ document.addEventListener("DOMContentLoaded", function () {
             item.hidden = true;
             item.style.display = "none";
             item.setAttribute("aria-hidden", "true");
+        });
+    }
+
+    function restoreTrayPerson(personRef) {
+        if (!personRef) return;
+        document.querySelectorAll(`.org-tray-person[data-person-ref="${personRef}"]`).forEach((item) => {
+            item.hidden = false;
+            item.style.display = "";
+            item.removeAttribute("aria-hidden");
         });
     }
 
@@ -456,7 +475,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 item.removeAttribute("data-border-zone");
             }
         });
-        if (target && draggedItem && target.dataset.nodeId !== draggedItem.node_id) {
+        if (target && draggedItem && nodeLinkId(target) !== (draggedItem.node_id || draggedItem.local_id)) {
             const zone = borderZone(target, event);
             if (zone) {
                 target.classList.add("org-border-target");
@@ -481,7 +500,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         let target = event.target.closest(".org-canvas-node");
-        if (target && target.dataset.nodeId === draggedItem.node_id) {
+        if (target && nodeLinkId(target) === (draggedItem.node_id || draggedItem.local_id)) {
             target = null;
         }
         const zone = target ? borderZone(target, event) : "";
@@ -489,7 +508,7 @@ document.addEventListener("DOMContentLoaded", function () {
         let node = draggedItem.element;
         if (draggedItem.type === "person") {
             node = createCanvasNode(draggedItem);
-            hideTrayPerson(draggedItem.person_ref);
+            draggedItem.element.dataset.orgPlaced = "true";
         }
         placeNode(node, placement, draggedItem);
         draggedItem = null;
@@ -550,8 +569,12 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
             const relationship = node.dataset.relationship || "with";
-            const start = connectionPoint(related, relationship, "from");
-            const end = connectionPoint(node, relationship, "to");
+            let start = connectionPoint(related, relationship, "from");
+            let end = connectionPoint(node, relationship, "to");
+            if (relationship === "with" && node.offsetLeft < related.offsetLeft) {
+                start = { x: related.offsetLeft, y: related.offsetTop + related.offsetHeight / 2 };
+                end = { x: node.offsetLeft + node.offsetWidth, y: node.offsetTop + node.offsetHeight / 2 };
+            }
             const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
             line.setAttribute("x1", start.x);
             line.setAttribute("y1", start.y);
@@ -592,7 +615,7 @@ document.addEventListener("DOMContentLoaded", function () {
         ctx.strokeRect(18, 18, width - 36, height - 36);
         ctx.fillStyle = "#0f172a";
         ctx.font = "700 22px Arial";
-        ctx.fillText({{ active_chart.chart_name|tojson }}, 32, 42);
+        ctx.fillText({{ (active_chart.chart_name if active_chart else account.account_name ~ " Org Chart")|tojson }}, 32, 42);
         ctx.strokeStyle = "#2563eb";
         ctx.lineWidth = 2;
         nodes.forEach(function (node) {

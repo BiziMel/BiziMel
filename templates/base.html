@@ -98,6 +98,15 @@
                     field.setAttribute("data-1p-ignore", "true");
                     field.setAttribute("data-lpignore", "true");
                     field.setAttribute("data-form-type", "other");
+                    field.addEventListener("keydown", (event) => {
+                        if (event.key !== "Enter" || event.metaKey || event.ctrlKey) {
+                            return;
+                        }
+                        if (field.tagName === "TEXTAREA") {
+                            return;
+                        }
+                        event.preventDefault();
+                    });
                 });
             });
         });

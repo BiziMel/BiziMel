@@ -10,25 +10,25 @@
 </div>
 
 <div class="dashboard-grid report-metric-grid">
-    <div class="dashboard-card report-metric-card">
+    <div class="dashboard-card report-metric-card report-metric-blue">
         <h3>Total Accounts</h3>
         <p>{{ account_metrics.total_accounts }}</p>
         <span>Accounts in this workspace</span>
     </div>
-    <div class="dashboard-card report-metric-card">
+    <div class="dashboard-card report-metric-card report-metric-green">
+        <h3>With Contacts</h3>
+        <p>{{ account_metrics.accounts_with_contacts }}</p>
+        <span>Accounts with mapped relationships</span>
+    </div>
+    <div class="dashboard-card report-metric-card report-metric-amber">
+        <h3>Open Outreach</h3>
+        <p>{{ account_metrics.accounts_with_open_outreach }}</p>
+        <span>Accounts with live outreach tasks</span>
+    </div>
+    <div class="dashboard-card report-metric-card report-metric-purple">
         <h3>Pipeline Target</h3>
         <p>${{ "{:,.0f}".format(account_metrics.total_pipeline_target or 0) }}</p>
         <span>Total target ACV</span>
-    </div>
-    <div class="dashboard-card report-metric-card">
-        <h3>PG Ordered</h3>
-        <p>{{ account_metrics.pg_ordered_accounts }}</p>
-        <span>Accounts mapped to PG Bible</span>
-    </div>
-    <div class="dashboard-card report-metric-card">
-        <h3>Tiered Accounts</h3>
-        <p>{{ account_metrics.tiered_accounts }}</p>
-        <span>Accounts with a tier set</span>
     </div>
 </div>
 
@@ -87,6 +87,9 @@
                                class="record-primary-link"
                                title="Edit account {{ account['account_name'] }}"
                                aria-label="Edit account {{ account['account_name'] }}">
+                                {% if account["customer_logo"] %}
+                                    <img src="{{ account['customer_logo'] }}" alt="{{ account['account_name'] }} logo" class="account-mini-logo">
+                                {% endif %}
                                 {{ account["account_name"] }}
                             </a>
                         </td>

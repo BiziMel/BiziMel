@@ -148,12 +148,19 @@
                     </td>
 
                     <td>
-                        <a href="{{ url_for('edit_account', account_id=account['id']) }}"
-                           class="account-name-link"
-                           title="Edit account {{ account['account_name'] or 'Unknown' }}"
-                           aria-label="Edit account {{ account['account_name'] or 'Unknown' }}">
-                            {{ account["account_name"] or "Unknown" }}
-                        </a>
+                        <div class="account-name-with-logo">
+                            {% if account["customer_logo"] %}
+                                <img src="{{ account['customer_logo'] }}" alt="{{ account['account_name'] or 'Account' }} logo" class="account-table-logo">
+                            {% else %}
+                                <span class="account-table-logo account-table-logo-placeholder">{{ (account["account_name"] or "?")[:1] }}</span>
+                            {% endif %}
+                            <a href="{{ url_for('edit_account', account_id=account['id']) }}"
+                               class="account-name-link"
+                               title="Edit account {{ account['account_name'] or 'Unknown' }}"
+                               aria-label="Edit account {{ account['account_name'] or 'Unknown' }}">
+                                {{ account["account_name"] or "Unknown" }}
+                            </a>
+                        </div>
                         <div class="account-meta-stack">
                             {% if account["business_unit"] %}<span>{{ account["business_unit"] }}</span>{% endif %}
                             <span>{{ account["industry"] or "Industry not set" }}</span>

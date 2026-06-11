@@ -20,9 +20,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.2.1"
+APP_VERSION = "2.2.2"
 APP_RELEASE_DATE = "2026-06-08"
-APP_BUILD = "2026-06-08-v2.2.1-enterprise-login-reports-org-account-r1"
+APP_BUILD = "2026-06-08-v2.2.2-enterprise-insights-reports-org-logo-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -36,6 +36,28 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.2.2",
+        "release_date": "2026-06-08",
+        "title": "Insights focus, report resilience, org chart placement and account logos",
+        "new": [
+            "Added JPG and PNG customer logo upload and replacement on account records.",
+            "Show customer logos beside account names on the account page and account table.",
+        ],
+        "enhanced": [
+            "Improved Account, Contact and Outreach report summary cards with clearer visual hierarchy and live data.",
+            "Updated Daily Focus guidance to name the referenced accounts and use cleaner meeting/action pluralisation.",
+            "Added multi-contact outreach badges so the first contact is shown with a +x count for additional recipients.",
+            "Changed the user profile secret phrase reveal into a dialog that remains open until dismissed.",
+        ],
+        "fixed": [
+            "Removed Outcome Breakdown from the Insights page.",
+            "Hardened Contact Reports by forcing schema readiness before loading the report or export.",
+            "Fixed org chart drag behaviour so a dragged contact is hidden from the left tray immediately and restored only if the drag is abandoned.",
+            "Fixed org chart staged relationship comparisons for newly placed tiles so connector lines render as soon as tiles are linked.",
+            "Kept org chart snapping to an invisible row and column grid while removing the visible grid background.",
+        ],
+    },
     {
         "version": "2.2.1",
         "release_date": "2026-06-08",
@@ -902,6 +924,23 @@ def save_contact_photo(upload, existing_photo=""):
     photo_dir.mkdir(parents=True, exist_ok=True)
     upload.save(photo_dir / filename)
     return url_for("static", filename=f"contact_photos/{filename}")
+
+
+def save_account_logo(upload, existing_logo=""):
+    if not upload or not upload.filename:
+        return existing_logo or ""
+    extension = Path(upload.filename).suffix.lower()
+    if extension not in {".png", ".jpg", ".jpeg"}:
+        return existing_logo or ""
+    filename = secure_filename(f"{secrets.token_hex(12)}{extension}")
+    logo_dir = Path(resource_path("static")) / "account_logos"
+    logo_dir.mkdir(parents=True, exist_ok=True)
+    upload.save(logo_dir / filename)
+    return url_for("static", filename=f"account_logos/{filename}")
+
+
+def pluralise(count, singular, plural=None):
+    return singular if int(count or 0) == 1 else (plural or f"{singular}s")
 
 
 def rate_limit_key(prefix, identifier):
@@ -3229,6 +3268,23 @@ def generate_weekly_wrap_up(connection, period_start, period_end, metric_values,
 
 def generate_next_24_hours_focus(connection, today, metric_values, execution_insights):
     tomorrow = today + timedelta(days=1)
+    upcoming_rows = dashboard_rows(connection, f"""
+        SELECT
+            accounts.account_name,
+            outreach.activity_type,
+            outreach.outcome,
+            outreach.next_action,
+            outreach.next_action_date,
+            outreach.next_action_time,
+            COUNT(*) OVER (PARTITION BY accounts.account_name) AS account_total
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        WHERE outreach.next_action_date >= ?
+          AND outreach.next_action_date <= ?
+          AND {open_task_sql("outreach")}
+        ORDER BY outreach.next_action_date, outreach.next_action_time, accounts.account_name
+        LIMIT 8
+    """, (today.isoformat(), tomorrow.isoformat(), *open_task_params()))
     upcoming_count = dashboard_scalar(connection, f"""
         SELECT COUNT(*)
         FROM outreach
@@ -3244,7 +3300,34 @@ def generate_next_24_hours_focus(connection, today, metric_values, execution_ins
         WHERE outcome IN ('NBM Booked', 'Discovery Booked', 'Exec Meeting Booked', 'Meeting Booked')
         GROUP BY outcome
     """)
-    success_summary = ", ".join(f"{row['total']} {row['outcome']}" for row in success_rows) or "no booked meeting outcomes yet"
+    success_total = sum(int(row["total"] or 0) for row in success_rows)
+    success_summary = (
+        ", ".join(f"{row['total']} {row['outcome']}" for row in success_rows)
+        or "no booked meeting outcomes yet"
+    )
+    success_account_rows = dashboard_rows(connection, """
+        SELECT
+            accounts.account_name,
+            COUNT(*) AS total
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        WHERE outreach.outcome IN ('NBM Booked', 'Discovery Booked', 'Exec Meeting Booked', 'Meeting Booked')
+        GROUP BY accounts.account_name
+        HAVING accounts.account_name IS NOT NULL
+        ORDER BY total DESC, accounts.account_name
+        LIMIT 3
+    """)
+    success_accounts = ", ".join(row["account_name"] for row in success_account_rows if row["account_name"])
+    focus_accounts = []
+    seen_accounts = set()
+    for row in upcoming_rows:
+        account_name = row["account_name"] or "Unknown account"
+        if account_name not in seen_accounts:
+            seen_accounts.add(account_name)
+            focus_accounts.append(account_name)
+    if not focus_accounts:
+        focus_accounts = [row["account_name"] for row in success_account_rows if row["account_name"]]
+    focus_account_text = ", ".join(focus_accounts[:4]) if focus_accounts else "the accounts with the strongest executive route or overdue risk"
     lead_count = dashboard_scalar(connection, """
         SELECT COUNT(*)
         FROM contacts
@@ -3268,17 +3351,19 @@ def generate_next_24_hours_focus(connection, today, metric_values, execution_ins
     """, default=0)
     pg_week = active_pg_week_broadcast()
     bullets = [
-        f"Spend the next working window on activity that can create a Discovery meeting or, better, an NBM meeting. The current success baseline is {success_summary}.",
-        f"There are {upcoming_count} open action(s) due in the next 24 hours and {executive_count} active executive-route contact(s), so start where a senior route already exists.",
+        f"Spend the next working window on {focus_account_text}. Use activity that can create a Discovery Meeting or, better, an NBM Meeting. The current success baseline is {success_summary}, which means {success_total} booked {pluralise(success_total, 'Meeting')} recorded so far.",
+        f"There are {upcoming_count} open {pluralise(upcoming_count, 'action')} due in the next 24 hours and {executive_count} active executive-route {pluralise(executive_count, 'contact')}, so start where a senior route already exists.",
     ]
+    if success_accounts:
+        bullets.append(f"The accounts proving the pattern are {success_accounts}; reuse what worked there before adding generic volume elsewhere.")
     if pg_week:
         bullets.append("PG week is active, so work at pace: make the calls, send the VITOs, use LinkedIn to create recognition, and keep the ask clear. The win is meetings scheduled this week for a future Discovery or NBM slot.")
     if lead_count:
-        bullets.append(f"{lead_count} active contact(s) are still marked Lead; convert the real relationships out of Lead status before treating them as opportunity-progress contacts.")
+        bullets.append(f"{lead_count} active {pluralise(lead_count, 'contact')} still {pluralise(lead_count, 'is', 'are')} marked Lead; convert the real relationships out of Lead status before treating them as opportunity-progress contacts.")
     if overdue_count:
-        bullets.append(f"Clear {overdue_count} overdue action(s) before adding new campaign volume so stale work does not dilute focus.")
+        bullets.append(f"Clear {overdue_count} overdue {pluralise(overdue_count, 'action')} before adding new campaign volume so stale work does not dilute focus.")
     if untouched_count:
-        bullets.append(f"Select from {untouched_count} untouched account(s) only after confirming executive route, sales play and next action quality.")
+        bullets.append(f"Select from {untouched_count} untouched {pluralise(untouched_count, 'account')} only after confirming executive route, sales play and next action quality.")
     for insight in execution_insights[:3]:
         bullets.append(f"{insight.get('category', 'Focus')}: {insight.get('action', '')}")
     return format_dashboard_guidance(
@@ -5662,6 +5747,7 @@ def add_account():
     custom_fields = account_custom_field_payload(active_only=True)
     if request.method == "POST":
         connection = get_db_connection()
+        customer_logo = save_account_logo(request.files.get("customer_logo"))
         selected_owner = assignable_user_by_id(request.form.get("owner_user_id"))
         owner = {
             "owner_user_id": selected_owner["id"],
@@ -5671,8 +5757,8 @@ def add_account():
         try:
             cursor = connection.execute("""
                 INSERT INTO accounts
-                (account_name, pg_bible_order, account_tier, industry, business_unit, country, city, website, pipeline_target, nbm_target, sales_play, owner_user_id, owner_name, owner_email, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (account_name, pg_bible_order, account_tier, industry, business_unit, country, city, website, customer_logo, pipeline_target, nbm_target, sales_play, owner_user_id, owner_name, owner_email, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 request.form.get("account_name"),
                 request.form.get("pg_bible_order") or None,
@@ -5682,6 +5768,7 @@ def add_account():
                 request.form.get("country"),
                 request.form.get("city"),
                 request.form.get("website"),
+                customer_logo,
                 request.form.get("pipeline_target") or None,
                 request.form.get("nbm_target"),
                 request.form.get("sales_play"),
@@ -5700,6 +5787,7 @@ def add_account():
                 "country": request.form.get("country"),
                 "city": request.form.get("city"),
                 "website": request.form.get("website"),
+                "customer_logo": customer_logo,
                 "pipeline_target": request.form.get("pipeline_target"),
                 "nbm_target": request.form.get("nbm_target"),
                 "sales_play": request.form.get("sales_play"),
@@ -5734,6 +5822,9 @@ def view_account(account_id):
         "SELECT * FROM accounts WHERE id = ?",
         (account_id,)
     ).fetchone()
+    if not account:
+        connection.close()
+        return redirect(url_for("accounts", message="Account could not be found in this workspace."))
 
     account_stats = connection.execute(f"""
         SELECT
@@ -6081,6 +6172,10 @@ def edit_account(account_id):
             "country": request.form.get("country"),
             "city": request.form.get("city"),
             "website": request.form.get("website"),
+            "customer_logo": save_account_logo(
+                request.files.get("customer_logo"),
+                account["customer_logo"] if "customer_logo" in account.keys() else "",
+            ),
             "pipeline_target": request.form.get("pipeline_target"),
             "nbm_target": request.form.get("nbm_target"),
             "sales_play": request.form.get("sales_play"),
@@ -6096,6 +6191,7 @@ def edit_account(account_id):
             "country": "Country",
             "city": "City",
             "website": "Website",
+            "customer_logo": "Customer logo",
             "pipeline_target": "Pipeline target",
             "nbm_target": "NBM target",
             "sales_play": "Account sales play or initiative",
@@ -6129,6 +6225,7 @@ def edit_account(account_id):
                 country = ?,
                 city = ?,
                 website = ?,
+                customer_logo = ?,
                 pipeline_target = ?,
                 nbm_target = ?,
                 sales_play = ?,
@@ -6147,6 +6244,7 @@ def edit_account(account_id):
             new_values["country"],
             new_values["city"],
             new_values["website"],
+            new_values["customer_logo"],
             new_values["pipeline_target"],
             new_values["nbm_target"],
             new_values["sales_play"],
@@ -6698,12 +6796,18 @@ def org_chart_context(connection, account, chart_id=None):
 
 @app.route("/accounts/<int:account_id>/org-chart")
 def account_org_chart(account_id):
+    initialise_database(force=True)
     connection = get_db_connection()
-    account = connection.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
-    if not account:
+    try:
+        account = connection.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+        if not account:
+            connection.close()
+            return redirect(url_for("accounts"))
+        context = org_chart_context(connection, account, request.args.get("chart_id"))
+    except Exception:
+        traceback.print_exc()
         connection.close()
-        return redirect(url_for("accounts"))
-    context = org_chart_context(connection, account, request.args.get("chart_id"))
+        return redirect(url_for("view_account", account_id=account_id, message="Org chart could not be opened. The workspace schema was refreshed; try opening it again."))
     connection.close()
     return render_template(
         "account_org_chart.html",
@@ -7539,6 +7643,26 @@ def outreach():
             accounts.account_name,
             accounts.account_tier,
             COALESCE(contacts.name, partner_contacts.name) AS contact_name,
+            COALESCE(
+                (
+                    SELECT COALESCE(recipient_contacts.name, recipient_partner_contacts.name)
+                    FROM outreach_recipients
+                    LEFT JOIN contacts AS recipient_contacts ON outreach_recipients.contact_id = recipient_contacts.id
+                    LEFT JOIN partner_contacts AS recipient_partner_contacts ON outreach_recipients.partner_contact_id = recipient_partner_contacts.id
+                    WHERE outreach_recipients.outreach_id = outreach.id
+                    ORDER BY outreach_recipients.sort_order, outreach_recipients.id
+                    LIMIT 1
+                ),
+                COALESCE(contacts.name, partner_contacts.name)
+            ) AS display_contact_name,
+            COALESCE(
+                (
+                    SELECT COUNT(*)
+                    FROM outreach_recipients
+                    WHERE outreach_recipients.outreach_id = outreach.id
+                ),
+                CASE WHEN outreach.contact_id IS NOT NULL OR outreach.partner_contact_id IS NOT NULL THEN 1 ELSE 0 END
+            ) AS recipient_count,
             COALESCE(contacts.job_title, partner_contacts.job_title) AS contact_job_title,
             COALESCE(contacts.email, partner_contacts.email) AS contact_email,
             COALESCE(contacts.phone, partner_contacts.phone) AS contact_phone,
@@ -7660,6 +7784,7 @@ def outreach():
             row_dict.get("task_status"),
         )
         row_dict["can_modify"] = task_can_be_modified(row_dict)
+        row_dict["additional_contact_count"] = max(int(row_dict.get("recipient_count") or 0) - 1, 0)
         outreach_records.append(row_dict)
 
     accounts = connection.execute(
@@ -8902,6 +9027,7 @@ def share_full_account_to_member(source_schema, account_id, target_member, actor
                 country = ?,
                 city = ?,
                 website = ?,
+                customer_logo = ?,
                 pipeline_target = ?,
                 owner_user_id = ?,
                 owner_name = ?,
@@ -8917,6 +9043,7 @@ def share_full_account_to_member(source_schema, account_id, target_member, actor
             account["country"],
             account["city"],
             account["website"],
+            account["customer_logo"] if "customer_logo" in account.keys() else "",
             account["pipeline_target"],
             account["owner_user_id"] if "owner_user_id" in account.keys() else None,
             account["owner_name"] if "owner_name" in account.keys() else actor_name,
@@ -8928,7 +9055,7 @@ def share_full_account_to_member(source_schema, account_id, target_member, actor
         target_account_id = insert_copied_row(
             target_connection,
             "accounts",
-            ["account_name", "pg_bible_order", "account_tier", "industry", "business_unit", "country", "city", "website", "pipeline_target", "owner_user_id", "owner_name", "owner_email", "notes"],
+            ["account_name", "pg_bible_order", "account_tier", "industry", "business_unit", "country", "city", "website", "customer_logo", "pipeline_target", "owner_user_id", "owner_name", "owner_email", "notes"],
             account,
         )
 
@@ -10164,6 +10291,7 @@ def export_pg_bible():
 
 @app.route("/reports/accounts")
 def account_reports():
+    initialise_database(force=True)
     connection = get_db_connection()
 
     accounts = connection.execute("""
@@ -10171,6 +10299,7 @@ def account_reports():
             id,
             pg_bible_order,
             account_name,
+            customer_logo,
             account_tier,
             industry,
             country,
@@ -10224,6 +10353,15 @@ def account_reports():
         "total_pipeline_target": sum(float(account["pipeline_target"] or 0) for account in accounts),
         "pg_ordered_accounts": sum(1 for account in accounts if account["pg_bible_order"]),
         "tiered_accounts": sum(1 for account in accounts if account["account_tier"]),
+        "accounts_with_contacts": connection.execute(
+            "SELECT COUNT(DISTINCT account_id) FROM contacts WHERE account_id IS NOT NULL AND COALESCE(status, 'Active') != 'Archived'"
+        ).fetchone()[0],
+        "accounts_with_open_outreach": connection.execute(f"""
+            SELECT COUNT(DISTINCT account_id)
+            FROM outreach
+            WHERE account_id IS NOT NULL
+              AND {open_task_sql("outreach")}
+        """, open_task_params()).fetchone()[0],
     }
 
     connection.close()
@@ -10327,7 +10465,27 @@ def task_reports():
             outreach.sales_play,
             accounts.account_name,
             accounts.account_tier,
-            contacts.name AS contact_name
+            contacts.name AS contact_name,
+            COALESCE(
+                (
+                    SELECT COALESCE(recipient_contacts.name, recipient_partner_contacts.name)
+                    FROM outreach_recipients
+                    LEFT JOIN contacts AS recipient_contacts ON outreach_recipients.contact_id = recipient_contacts.id
+                    LEFT JOIN partner_contacts AS recipient_partner_contacts ON outreach_recipients.partner_contact_id = recipient_partner_contacts.id
+                    WHERE outreach_recipients.outreach_id = outreach.id
+                    ORDER BY outreach_recipients.sort_order, outreach_recipients.id
+                    LIMIT 1
+                ),
+                contacts.name
+            ) AS display_contact_name,
+            COALESCE(
+                (
+                    SELECT COUNT(*)
+                    FROM outreach_recipients
+                    WHERE outreach_recipients.outreach_id = outreach.id
+                ),
+                CASE WHEN outreach.contact_id IS NOT NULL THEN 1 ELSE 0 END
+            ) AS recipient_count
         FROM outreach
         LEFT JOIN accounts ON outreach.account_id = accounts.id
         LEFT JOIN contacts ON outreach.contact_id = contacts.id
@@ -10541,6 +10699,7 @@ def export_task_reports():
 
 @app.route("/reports/outreach")
 def outreach_reports():
+    initialise_database(force=True)
     connection = get_db_connection()
 
     report_today = current_app_datetime().date()
@@ -10592,7 +10751,27 @@ def outreach_reports():
             outreach.quarter,
             accounts.account_name,
             accounts.account_tier,
-            contacts.name AS contact_name
+            contacts.name AS contact_name,
+            COALESCE(
+                (
+                    SELECT COALESCE(recipient_contacts.name, recipient_partner_contacts.name)
+                    FROM outreach_recipients
+                    LEFT JOIN contacts AS recipient_contacts ON outreach_recipients.contact_id = recipient_contacts.id
+                    LEFT JOIN partner_contacts AS recipient_partner_contacts ON outreach_recipients.partner_contact_id = recipient_partner_contacts.id
+                    WHERE outreach_recipients.outreach_id = outreach.id
+                    ORDER BY outreach_recipients.sort_order, outreach_recipients.id
+                    LIMIT 1
+                ),
+                contacts.name
+            ) AS display_contact_name,
+            COALESCE(
+                (
+                    SELECT COUNT(*)
+                    FROM outreach_recipients
+                    WHERE outreach_recipients.outreach_id = outreach.id
+                ),
+                CASE WHEN outreach.contact_id IS NOT NULL THEN 1 ELSE 0 END
+            ) AS recipient_count
         FROM outreach
         LEFT JOIN accounts ON outreach.account_id = accounts.id
         LEFT JOIN contacts ON outreach.contact_id = contacts.id
@@ -10627,6 +10806,13 @@ def outreach_reports():
         return True
 
     filtered_outreach = [item for item in all_outreach if include_item(item)]
+    filtered_outreach = [
+        {
+            **dict(item),
+            "additional_contact_count": max(int(item["recipient_count"] or 0) - 1, 0),
+        }
+        for item in filtered_outreach
+    ]
     total_outreach = len(filtered_outreach)
     pg_success_count = sum(
         1 for item in filtered_outreach
@@ -10770,6 +10956,7 @@ def export_outreach_reports():
 
 @app.route("/reports/contacts")
 def contact_reports():
+    initialise_database(force=True)
     connection = get_db_connection()
 
     contacts = connection.execute("""
@@ -10859,6 +11046,7 @@ def contact_reports():
 
 @app.route("/reports/contacts/export")
 def export_contact_reports():
+    initialise_database(force=True)
     connection = get_db_connection()
 
     contacts = connection.execute("""

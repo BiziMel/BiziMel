@@ -101,12 +101,21 @@
             <p>Only your own signed-in profile can reveal this phrase.</p>
         </div>
     </div>
-    {% if secret_phrase_available %}
-        <button type="button" class="btn btn-secondary" id="revealSecretPhraseButton">Reveal Secret Phrase</button>
-        <p id="secretPhraseValue" class="secret-phrase-value" hidden>{{ secret_phrase }}</p>
-    {% else %}
-        <p class="muted-text">Your secret phrase cannot be revealed because it was created before phrase reveal storage was added. Password reset still works with the phrase you originally set.</p>
-    {% endif %}
+    <button type="button" class="btn btn-secondary" id="revealSecretPhraseButton">Reveal Secret Phrase</button>
+    <dialog id="secretPhraseDialog" class="pipeflow-dialog">
+        <div class="dialog-header">
+            <h3>Secret Phrase</h3>
+            <button type="button" class="dialog-close-button" id="closeSecretPhraseDialog" aria-label="Close secret phrase dialog">&times;</button>
+        </div>
+        {% if secret_phrase_available %}
+            <p class="secret-phrase-value">{{ secret_phrase }}</p>
+        {% else %}
+            <p class="muted-text">Your secret phrase cannot be revealed because it was created before phrase reveal storage was added. Password reset still works with the phrase you originally set.</p>
+        {% endif %}
+        <div class="form-actions">
+            <button type="button" class="btn btn-primary" id="dismissSecretPhraseDialog">Close</button>
+        </div>
+    </dialog>
 </div>
 
 <div class="form-card">
@@ -206,11 +215,28 @@
 <script>
 document.addEventListener("DOMContentLoaded", function () {
     const button = document.getElementById("revealSecretPhraseButton");
-    const phrase = document.getElementById("secretPhraseValue");
+    const dialog = document.getElementById("secretPhraseDialog");
+    const closeButtons = [
+        document.getElementById("closeSecretPhraseDialog"),
+        document.getElementById("dismissSecretPhraseDialog")
+    ];
     button?.addEventListener("click", function () {
-        if (!phrase) return;
-        phrase.hidden = !phrase.hidden;
-        button.textContent = phrase.hidden ? "Reveal Secret Phrase" : "Hide Secret Phrase";
+        if (!dialog) return;
+        if (typeof dialog.showModal === "function") {
+            dialog.showModal();
+        } else {
+            dialog.setAttribute("open", "open");
+        }
+    });
+    closeButtons.forEach(function (closeButton) {
+        closeButton?.addEventListener("click", function () {
+            if (!dialog) return;
+            if (typeof dialog.close === "function") {
+                dialog.close();
+            } else {
+                dialog.removeAttribute("open");
+            }
+        });
     });
 });
 </script>

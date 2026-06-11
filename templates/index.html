@@ -117,25 +117,6 @@
                 </details>
 
             </div>
-
-            <div class="outcome-breakdown-strip">
-                <div class="outcome-strip-header">
-                    <h2>Outcome Breakdown</h2>
-                    <p>Current outreach outcomes across your workspace.</p>
-                </div>
-                {% if outcome_breakdown %}
-                    <div class="outcome-strip-items">
-                        {% for row in outcome_breakdown %}
-                            <div class="outcome-strip-item">
-                                <span>{{ row.outcome or "Unknown" }}</span>
-                                <strong>{{ row.total }}</strong>
-                            </div>
-                        {% endfor %}
-                    </div>
-                {% else %}
-                    <p>No outcome data yet.</p>
-                {% endif %}
-            </div>
     </section>
 
     <section class="form-card dashboard-execution-insights-card">

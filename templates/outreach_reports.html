@@ -9,23 +9,23 @@
     <a href="{{ url_for('export_outreach_reports') }}" class="btn btn-primary">Export CSV</a>
 </div>
 
-<div class="dashboard-grid report-metric-grid">
-    <div class="dashboard-card report-metric-card">
+<div class="dashboard-grid report-metric-grid outreach-report-metrics">
+    <div class="dashboard-card report-metric-card report-metric-blue">
         <h3>Total Outreach</h3>
         <p>{{ total_outreach }}</p>
         <span>{{ report_range_label }}</span>
     </div>
-    <div class="dashboard-card report-metric-card">
+    <div class="dashboard-card report-metric-card report-metric-green">
         <h3>Discovery / NBM Success</h3>
         <p>{{ pg_success_count }}</p>
         <span>Meeting success outcomes</span>
     </div>
-    <div class="dashboard-card report-metric-card">
+    <div class="dashboard-card report-metric-card report-metric-amber">
         <h3>Open Tasks</h3>
         <p>{{ open_tasks }}</p>
         <span>Not completed, closed or cancelled</span>
     </div>
-    <div class="dashboard-card report-metric-card">
+    <div class="dashboard-card report-metric-card report-metric-red">
         <h3>Overdue Tasks</h3>
         <p>{{ overdue_tasks }}</p>
         <span>Due date/time has expired</span>
@@ -136,7 +136,12 @@
                         </td>
                         <td>{{ item["subject"] or item["next_action"] or "No subject" }}</td>
                         <td>{{ item["account_name"] or "Unknown" }}</td>
-                        <td>{{ item["contact_name"] or "No contact" }}</td>
+                        <td>
+                            {{ item["display_contact_name"] or item["contact_name"] or "No contact" }}
+                            {% if item["additional_contact_count"] %}
+                                <span class="multi-contact-count">+{{ item["additional_contact_count"] }}</span>
+                            {% endif %}
+                        </td>
                         <td>{{ item["activity_type"] or "Unknown" }}</td>
                         <td>{{ item["outcome"] or "Unknown" }}</td>
                         <td>{{ item["next_action_date"]|display_date or "Not set" }}{% if item["next_action_time"] %} {{ item["next_action_time"]|display_time }}{% endif %}</td>

@@ -5,9 +5,16 @@
 {% block content %}
 
 <div class="page-header">
-    <div>
-        <h1>{{ account["account_name"] }}</h1>
-        <p>Account profile, relationship coverage, outreach activity and timeline history.</p>
+    <div class="account-page-title">
+        {% if account["customer_logo"] %}
+            <img src="{{ account['customer_logo'] }}" alt="{{ account['account_name'] }} logo" class="account-page-logo">
+        {% else %}
+            <span class="account-page-logo account-page-logo-placeholder">{{ (account["account_name"] or "?")[:1] }}</span>
+        {% endif %}
+        <div>
+            <h1>{{ account["account_name"] }}</h1>
+            <p>Account profile, relationship coverage, outreach activity and timeline history.</p>
+        </div>
     </div>
 
     <div class="button-group">

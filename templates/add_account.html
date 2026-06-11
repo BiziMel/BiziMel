@@ -7,7 +7,7 @@
     <div class="alert-error">{{ error }}</div>
 {% endif %}
 
-<form method="POST">
+<form method="POST" enctype="multipart/form-data">
 
     <label>Account Name</label>
     <input type="text" name="account_name" value="{{ prefill.account_name or '' }}" required>
@@ -41,6 +41,10 @@
 
     <label>Website</label>
     <input type="url" name="website" value="{{ prefill.website or '' }}" placeholder="https://www.example.com">
+
+    <label>Customer Logo</label>
+    <input type="file" name="customer_logo" accept=".jpg,.jpeg,.png,image/jpeg,image/png">
+    <p class="field-help">Upload a JPG or PNG logo for this account.</p>
 
     <label>Pipeline Target USD $ ACV</label>
     <input type="number" id="pipeline_target" name="pipeline_target" step="0.01" min="0" value="{{ prefill.pipeline_target or '' }}" placeholder="0.00">

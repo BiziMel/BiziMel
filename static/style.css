@@ -3690,6 +3690,51 @@ body {
     min-height: 132px;
     border-left: 5px solid #2563eb;
     background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    overflow: hidden;
+}
+
+.report-metric-card::after {
+    content: "";
+    position: absolute;
+    right: -32px;
+    bottom: -40px;
+    width: 112px;
+    height: 112px;
+    border-radius: 50%;
+    background: rgba(37, 99, 235, 0.08);
+    pointer-events: none;
+}
+
+.report-metric-green {
+    border-left-color: #059669;
+}
+
+.report-metric-green::after {
+    background: rgba(5, 150, 105, 0.1);
+}
+
+.report-metric-amber {
+    border-left-color: #d97706;
+}
+
+.report-metric-amber::after {
+    background: rgba(217, 119, 6, 0.1);
+}
+
+.report-metric-red {
+    border-left-color: #dc2626;
+}
+
+.report-metric-red::after {
+    background: rgba(220, 38, 38, 0.1);
+}
+
+.report-metric-purple {
+    border-left-color: #7c3aed;
+}
+
+.report-metric-purple::after {
+    background: rgba(124, 58, 237, 0.1);
 }
 
 .report-metric-card h3 {
@@ -3722,6 +3767,123 @@ body {
     background: #f8fafc;
     color: #0f172a;
     font-weight: 800;
+}
+
+.pipeflow-dialog {
+    width: min(520px, calc(100vw - 32px));
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 0;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
+}
+
+.pipeflow-dialog::backdrop {
+    background: rgba(15, 23, 42, 0.42);
+}
+
+.dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 18px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.dialog-header h3 {
+    margin: 0;
+    color: #0f172a;
+}
+
+.dialog-close-button {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #334155;
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 1;
+}
+
+.pipeflow-dialog > p,
+.pipeflow-dialog > .secret-phrase-value,
+.pipeflow-dialog > .form-actions {
+    margin: 16px 18px;
+}
+
+.multi-contact-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 22px;
+    margin-left: 6px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: #dbeafe;
+    color: #1d4ed8;
+    font-size: 12px;
+    font-weight: 900;
+}
+
+.account-name-with-logo,
+.account-page-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.account-table-logo,
+.account-page-logo,
+.account-logo-preview,
+.account-mini-logo {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+    object-fit: contain;
+    border: 1px solid #dbe4f0;
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.account-table-logo {
+    width: 42px;
+    height: 42px;
+}
+
+.account-page-logo {
+    width: 64px;
+    height: 64px;
+}
+
+.account-logo-preview {
+    width: 88px;
+    height: 58px;
+}
+
+.account-mini-logo {
+    width: 24px;
+    height: 24px;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+
+.account-table-logo-placeholder,
+.account-page-logo-placeholder {
+    color: #1d4ed8;
+    font-weight: 900;
+    background: #eff6ff;
+}
+
+.account-logo-preview-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 4px 0 10px;
 }
 
 .compact-command-card {
@@ -4861,11 +5023,7 @@ body {
     overflow: auto;
     border: 1px solid #cbd5e1;
     border-radius: 8px;
-    background:
-        linear-gradient(#f8fafc 31px, transparent 31px),
-        linear-gradient(90deg, #f8fafc 31px, transparent 31px),
-        #ffffff;
-    background-size: 32px 32px;
+    background: #ffffff;
     resize: vertical;
 }
 
@@ -4880,8 +5038,8 @@ body {
 }
 
 .org-link-layer line {
-    stroke: #2563eb;
-    stroke-width: 2;
+    stroke: #1d4ed8;
+    stroke-width: 3;
     stroke-linecap: round;
 }
 

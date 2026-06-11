@@ -14,22 +14,22 @@
 {% endif %}
 
 <div class="dashboard-grid report-metric-grid">
-    <div class="dashboard-card report-metric-card">
+    <div class="dashboard-card report-metric-card report-metric-blue">
         <h3>Total Contacts</h3>
         <p>{{ contact_metrics.total_contacts }}</p>
         <span>All reportable contacts</span>
     </div>
-    <div class="dashboard-card report-metric-card">
+    <div class="dashboard-card report-metric-card report-metric-green">
         <h3>Active Contacts</h3>
         <p>{{ contact_metrics.active_contacts }}</p>
         <span>Currently active contacts</span>
     </div>
-    <div class="dashboard-card report-metric-card">
+    <div class="dashboard-card report-metric-card report-metric-purple">
         <h3>Executive Routes</h3>
         <p>{{ contact_metrics.executive_contacts }}</p>
         <span>Executive or senior route signals</span>
     </div>
-    <div class="dashboard-card report-metric-card">
+    <div class="dashboard-card report-metric-card report-metric-amber">
         <h3>Lead Status</h3>
         <p>{{ contact_metrics.lead_contacts }}</p>
         <span>Contacts not yet validated</span>

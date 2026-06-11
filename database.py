@@ -70,6 +70,7 @@ def initialise_database(force=False):
             country TEXT,
             city TEXT,
             website TEXT,
+            customer_logo TEXT,
             pipeline_target REAL,
             current_pipeline REAL,
             nbm_target TEXT,
@@ -428,6 +429,7 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "accounts", "current_pipeline", "REAL")
     add_column_if_missing(cursor, "accounts", "nbm_target", "TEXT")
     add_column_if_missing(cursor, "accounts", "sales_play", "TEXT")
+    add_column_if_missing(cursor, "accounts", "customer_logo", "TEXT")
     add_column_if_missing(cursor, "accounts", "owner_user_id", "INTEGER")
     add_column_if_missing(cursor, "accounts", "owner_name", "TEXT")
     add_column_if_missing(cursor, "accounts", "owner_email", "TEXT")

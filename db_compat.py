@@ -97,6 +97,13 @@ def insert_table_name(sql):
     return None
 
 
+def insert_ignore_table_name(sql):
+    match = re.match(r"\s*INSERT\s+OR\s+IGNORE\s+INTO\s+([a-zA-Z_][a-zA-Z0-9_]*)", sql, flags=re.IGNORECASE)
+    if match:
+        return match.group(1).lower()
+    return None
+
+
 def transient_database_error(exc):
     text = str(exc).lower()
     return any(
@@ -194,7 +201,19 @@ class PgConnectionAdapter:
 
     def execute(self, sql, params=None):
         params = tuple(params or ())
+        ignore_table = insert_ignore_table_name(sql)
         translated = translate_sql(sql)
+        if ignore_table and " on conflict " not in translated.lower():
+            conflict_targets = {
+                "partners": "(partner_name)",
+                "teams": "(team_name)",
+                "team_memberships": "(team_id, user_id)",
+                "account_shared_users": "(account_id, user_id)",
+                "outreach_recipients": "(outreach_id, contact_id, partner_contact_id)",
+            }
+            target = conflict_targets.get(ignore_table)
+            if target:
+                translated = translated.rstrip().rstrip(";") + f" ON CONFLICT {target} DO NOTHING"
         if re.search(r"\binsert\s+into\s+partners\s*\(partner_name\)[\s\S]+\bselect\b", translated, flags=re.IGNORECASE) and "on conflict" not in translated.lower():
             translated = translated.rstrip().rstrip(";") + " ON CONFLICT (partner_name) DO NOTHING"
         table = insert_table_name(translated)

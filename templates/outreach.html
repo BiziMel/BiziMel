@@ -184,7 +184,10 @@
                                 <strong>{{ item.account_name or "No account" }}</strong>
                                 <br>
                                 <span class="muted">
-                                    {{ item.contact_name or "No contact" }}
+                                    {{ item.display_contact_name or item.contact_name or "No contact" }}
+                                    {% if item.additional_contact_count %}
+                                        <span class="multi-contact-count">+{{ item.additional_contact_count }}</span>
+                                    {% endif %}
                                     {% if item.contact_source == "Partner" %}
                                         · Partner{% if item.partner_name %}: {{ item.partner_name }}{% endif %}
                                     {% endif %}
