@@ -23,6 +23,7 @@ for vendor_base in (
 
 from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from models import GoalsSummary, OwnerReport, PGBibleExportError
@@ -63,6 +64,20 @@ MONTH_PLAN_ROWS = {
     "march": 20,
 }
 ACTION_ENTRY_ROWS = range(33, 80)
+NBM_COLOUR_PALETTE = {
+    0: ("D90000", "FFFFFF"),
+    1: ("F00000", "FFFFFF"),
+    2: ("FFC000", "FFFFFF"),
+    3: ("FFF200", "111111"),
+    4: ("92D050", "FFFFFF"),
+    5: ("00B050", "FFFFFF"),
+    6: ("00B0F0", "FFFFFF"),
+    7: ("0070C0", "FFFFFF"),
+    8: ("002060", "FFFFFF"),
+    9: ("000000", "FFFFFF"),
+    10: ("7F7F7F", "FFFFFF"),
+    11: ("595959", "FFFFFF"),
+}
 
 
 @dataclass
@@ -414,7 +429,7 @@ class PGBibleExporter:
         if len(rows) > len(writable_rows):
             LOGGER.warning("PG Bible plan has %s accounts but only %s rows; extra accounts were not exported.", len(rows), len(writable_rows))
         for row, item in zip(writable_rows, rows):
-            self._write_coordinate(ws, f"B{row}", item.nbm_target)
+            self._write_nbm_target(ws, f"B{row}", item.nbm_target)
             self._write_coordinate(ws, f"D{row}", item.sales_play)
             self._write_coordinate(ws, f"L{row}", item.customer)
             self._write_coordinate(ws, f"M{row}", item.estimated_value)
@@ -443,7 +458,7 @@ class PGBibleExporter:
         for row, item in zip(writable_rows, report.action_items):
             discovery_target = item.discovery_target_name_title or " ".join(part for part in [item.person_name, item.person_title] if part)
             nbm_booked = " ".join(part for part in [item.nbm_booked_date, item.nbm_booked_name_title] if part)
-            self._write_coordinate(ws, f"B{row}", item.related_nbm_target)
+            self._write_nbm_target(ws, f"B{row}", item.related_nbm_target)
             self._write_coordinate(ws, f"C{row}", discovery_target)
             self._write_coordinate(ws, f"F{row}", self._yes_no(item.discovery_completed, default_no=True))
             self._write_coordinate(ws, f"G{row}", item.discovery_next_action or item.manager_notes or "No next action set")
@@ -600,6 +615,40 @@ class PGBibleExporter:
                     cell = ws.cell(merged.min_row, merged.min_col)
                     break
         self._write_value(cell, value)
+
+    def _write_nbm_target(self, ws, coordinate: str, value: Any) -> None:
+        self._write_coordinate(ws, coordinate, value)
+        anchor = self._anchor_cell(ws, coordinate)
+        self._apply_nbm_target_style(anchor, value)
+
+    def _anchor_cell(self, ws, coordinate: str):
+        cell = ws[coordinate]
+        if not isinstance(cell, MergedCell):
+            return cell
+        for merged in ws.merged_cells.ranges:
+            if (cell.row, cell.column) in merged.cells:
+                return ws.cell(merged.min_row, merged.min_col)
+        return cell
+
+    def _apply_nbm_target_style(self, cell, value: Any) -> None:
+        # PG Bible target badges must mirror PG Progress: the target number is
+        # the account PG Bible order and the colour is number % 12.
+        if value in (None, ""):
+            return
+        try:
+            colour_index = int(str(value).strip()) % 12
+        except ValueError:
+            colour_index = 0
+        fill_colour, font_colour = NBM_COLOUR_PALETTE[colour_index]
+        cell.fill = PatternFill(fill_type="solid", fgColor=fill_colour)
+        cell.font = Font(
+            name=cell.font.name,
+            size=cell.font.sz,
+            bold=True,
+            italic=cell.font.italic,
+            color=font_colour,
+        )
+        cell.alignment = Alignment(horizontal="center", vertical="center")
 
     def _clear_range(self, ws, start_coordinate: str, end_coordinate: str) -> None:
         for row in ws[start_coordinate:end_coordinate]:
