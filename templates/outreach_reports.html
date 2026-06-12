@@ -81,21 +81,33 @@
 </div>
 
 <div class="report-grid">
-    <div class="report-card">
+    <div class="report-card report-metric-section outreach-breakdown-card">
         <h3>Outcome Breakdown</h3>
-        <div class="compact-breakdown-list">
+        <div class="metric-bar-list">
             {% for item in outcome_breakdown %}
-                <div><span>{{ item.outcome or "Unknown" }}</span><strong>{{ item.count }}</strong></div>
+                <div class="metric-bar-row">
+                    <div class="metric-bar-row-top">
+                        <span>{{ item.outcome or "Unknown" }}</span>
+                        <strong>{{ item.count }}</strong>
+                    </div>
+                    <div class="metric-bar-track"><span style="width: {{ item.percent }}%;"></span></div>
+                </div>
             {% else %}
                 <p>No outcome data found.</p>
             {% endfor %}
         </div>
     </div>
-    <div class="report-card">
+    <div class="report-card report-metric-section outreach-breakdown-card">
         <h3>Activity Type Breakdown</h3>
-        <div class="compact-breakdown-list">
+        <div class="metric-bar-list">
             {% for item in outreach_by_type %}
-                <div><span>{{ item.activity_type or "Unknown" }}</span><strong>{{ item.count }}</strong></div>
+                <div class="metric-bar-row">
+                    <div class="metric-bar-row-top">
+                        <span>{{ item.activity_type or "Unknown" }}</span>
+                        <strong>{{ item.count }}</strong>
+                    </div>
+                    <div class="metric-bar-track"><span style="width: {{ item.percent }}%;"></span></div>
+                </div>
             {% else %}
                 <p>No activity type data found.</p>
             {% endfor %}

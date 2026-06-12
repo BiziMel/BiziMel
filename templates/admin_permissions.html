@@ -137,94 +137,107 @@
         </form>
     </section>
 
-    <div class="admin-user-card-grid">
-        {% for user in users %}
-            <article class="admin-user-card">
-                <div class="admin-user-card-header">
-                    <div>
-                        <h4>{{ user["full_name"] }}</h4>
-                        <p>{{ user["email"] }}</p>
-                    </div>
-                    <div class="admin-user-badges">
-                        <span class="permission-badge">{{ user["role"]|replace("_", " ")|title }}</span>
-                        <span class="user-status-pill {{ 'user-status-active' if user['is_active'] else 'user-status-inactive' }}">
-                            {{ "Active" if user["is_active"] else "Inactive" }}
-                        </span>
-                    </div>
-                </div>
+    <div class="table-container admin-user-table-container">
+        <table class="report-table admin-user-table">
+            <thead>
+                <tr>
+                    <th>User</th>
+                    <th>Email</th>
+                    <th>Company</th>
+                    <th>Team</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                    <tr>
+                        <td>
+                            <button type="button"
+                                    class="link-button admin-user-toggle"
+                                    data-user-panel="admin-user-panel-{{ user['id'] }}"
+                                    aria-expanded="false">
+                                {{ user["full_name"] }}
+                            </button>
+                        </td>
+                        <td>{{ user["email"] }}</td>
+                        <td>{{ user["company"] or "Not set" }}</td>
+                        <td>{{ user["team"] or "Not set" }}</td>
+                        <td><span class="permission-badge">{{ user["role"]|replace("_", " ")|title }}</span></td>
+                        <td>
+                            <span class="user-status-pill {{ 'user-status-active' if user['is_active'] else 'user-status-inactive' }}">
+                                {{ "Active" if user["is_active"] else "Inactive" }}
+                            </span>
+                        </td>
+                        <td>{{ user["date_created"] }}</td>
+                    </tr>
+                    <tr class="admin-user-panel-row" id="admin-user-panel-{{ user['id'] }}" hidden>
+                        <td colspan="7">
+                            <div class="admin-user-panel">
+                                <section>
+                                    <h4>Profile Information</h4>
+                                    <form method="POST" action="{{ url_for('admin_update_user_identity', user_id=user['id']) }}" class="admin-user-details-form">
+                                        <input type="text" name="full_name" value="{{ user['full_name'] }}" placeholder="Name" required>
+                                        <input type="email" name="email" value="{{ user['email'] }}" placeholder="Email" required>
+                                        <select name="company" required {% if not is_app_admin %}disabled{% endif %}>
+                                            {% for tenant in tenant_options %}
+                                                <option value="{{ tenant['company_name'] }}" {% if tenant['company_name'] == user['company'] %}selected{% endif %}>{{ tenant['company_name'] }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        {% if not is_app_admin %}
+                                            <input type="hidden" name="company" value="{{ user['company'] }}">
+                                        {% endif %}
+                                        <input type="text" name="team" value="{{ user['team'] or '' }}" placeholder="Team">
+                                        <button type="submit" class="btn btn-secondary">Save Profile</button>
+                                    </form>
+                                </section>
 
-                <div class="admin-user-meta-grid">
-                    <div>
-                        <span>Company</span>
-                        <strong>{{ user["company"] or "Not set" }}</strong>
-                    </div>
-                    <div>
-                        <span>Team</span>
-                        <strong>{{ user["team"] or "Not set" }}</strong>
-                    </div>
-                    <div>
-                        <span>Created</span>
-                        <strong>{{ user["date_created"] }}</strong>
-                    </div>
-                </div>
+                                <section>
+                                    <h4>Role</h4>
+                                    <form method="POST" action="{{ url_for('admin_update_user_role', user_id=user['id']) }}" class="admin-user-role-form">
+                                        <select name="role">
+                                            <option value="user" {% if user["role"] == "user" %}selected{% endif %}>User</option>
+                                            <option value="manager" {% if user["role"] == "manager" %}selected{% endif %}>Manager</option>
+                                            <option value="company_admin" {% if user["role"] == "company_admin" %}selected{% endif %}>Company Admin</option>
+                                            {% if is_app_admin %}
+                                                <option value="admin" {% if user["role"] == "admin" %}selected{% endif %}>Application Admin</option>
+                                            {% endif %}
+                                        </select>
+                                        <button type="submit" class="btn btn-secondary">Update Role</button>
+                                    </form>
+                                </section>
 
-                <div class="admin-user-section">
-                    <h5>Profile Details</h5>
-                    <form method="POST" action="{{ url_for('admin_update_user_identity', user_id=user['id']) }}" class="admin-user-details-form">
-                        <input type="text" name="full_name" value="{{ user['full_name'] }}" placeholder="Name" required>
-                        <input type="email" name="email" value="{{ user['email'] }}" placeholder="Email" required>
-                        <select name="company" required {% if not is_app_admin %}disabled{% endif %}>
-                            {% for tenant in tenant_options %}
-                                <option value="{{ tenant['company_name'] }}" {% if tenant['company_name'] == user['company'] %}selected{% endif %}>{{ tenant['company_name'] }}</option>
-                            {% endfor %}
-                        </select>
-                        {% if not is_app_admin %}
-                            <input type="hidden" name="company" value="{{ user['company'] }}">
-                        {% endif %}
-                        <input type="text" name="team" value="{{ user['team'] or '' }}" placeholder="Team">
-                        <button type="submit" class="btn btn-secondary">Save Details</button>
-                    </form>
-                </div>
+                                <section>
+                                    <h4>Access</h4>
+                                    {% if user["is_active"] %}
+                                        <form method="POST" action="{{ url_for('admin_deactivate_user', user_id=user['id']) }}">
+                                            <button type="submit" class="btn btn-danger">Deactivate Profile</button>
+                                        </form>
+                                    {% else %}
+                                        <form method="POST" action="{{ url_for('admin_reactivate_user', user_id=user['id']) }}">
+                                            <button type="submit" class="btn btn-secondary">Reactivate Profile</button>
+                                        </form>
+                                    {% endif %}
+                                </section>
 
-                <div class="admin-user-section admin-user-actions-grid">
-                    <div>
-                        <h5>Role</h5>
-                        <form method="POST" action="{{ url_for('admin_update_user_role', user_id=user['id']) }}" class="admin-user-role-form">
-                            <select name="role">
-                                <option value="user" {% if user["role"] == "user" %}selected{% endif %}>User</option>
-                                <option value="manager" {% if user["role"] == "manager" %}selected{% endif %}>Manager</option>
-                                <option value="company_admin" {% if user["role"] == "company_admin" %}selected{% endif %}>Company Admin</option>
-                                {% if is_app_admin %}
-                                    <option value="admin" {% if user["role"] == "admin" %}selected{% endif %}>Application Admin</option>
-                                {% endif %}
-                            </select>
-                            <button type="submit" class="btn btn-secondary">Update Role</button>
-                        </form>
-                    </div>
-
-                    <div>
-                        <h5>Access</h5>
-                        {% if user["is_active"] %}
-                            <form method="POST" action="{{ url_for('admin_deactivate_user', user_id=user['id']) }}">
-                                <button type="submit" class="btn btn-danger">Deactivate Profile</button>
-                            </form>
-                        {% else %}
-                            <form method="POST" action="{{ url_for('admin_reactivate_user', user_id=user['id']) }}">
-                                <button type="submit" class="btn btn-secondary">Reactivate Profile</button>
-                            </form>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div class="admin-user-section">
-                    <h5>Password Reset</h5>
-                    <form method="POST" action="{{ url_for('admin_reset_user_password', user_id=user['id']) }}" class="admin-user-password-form">
-                        <input type="password" name="password" minlength="8" placeholder="New password" required>
-                        <button type="submit" class="btn btn-secondary">Reset Password</button>
-                    </form>
-                </div>
-            </article>
-        {% endfor %}
+                                <section>
+                                    <h4>Password Reset</h4>
+                                    <form method="POST" action="{{ url_for('admin_reset_user_password', user_id=user['id']) }}" class="admin-user-password-form">
+                                        <input type="password" name="password" minlength="8" placeholder="New password" required>
+                                        <button type="submit" class="btn btn-secondary">Reset Password</button>
+                                    </form>
+                                </section>
+                            </div>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="7">No users found.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 
@@ -402,6 +415,22 @@
 {% endif %}
 
 <script>
+    document.querySelectorAll(".admin-user-toggle").forEach((button) => {
+        button.addEventListener("click", () => {
+            const panel = document.getElementById(button.dataset.userPanel);
+            if (!panel) return;
+            const isHidden = panel.hidden;
+            document.querySelectorAll(".admin-user-panel-row").forEach((row) => {
+                row.hidden = true;
+            });
+            document.querySelectorAll(".admin-user-toggle").forEach((toggle) => {
+                toggle.setAttribute("aria-expanded", "false");
+            });
+            panel.hidden = !isHidden;
+            button.setAttribute("aria-expanded", String(isHidden));
+        });
+    });
+
     document.querySelectorAll(".js-single-submit").forEach((form) => {
         form.addEventListener("submit", () => {
             const button = form.querySelector("button[type='submit']");

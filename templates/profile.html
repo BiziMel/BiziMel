@@ -116,6 +116,22 @@
             <button type="button" class="btn btn-primary" id="dismissSecretPhraseDialog">Close</button>
         </div>
     </dialog>
+
+    <form method="POST" action="{{ url_for('change_secret_phrase') }}" class="pipeflow-form secret-phrase-change-form">
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="new_secret_phrase">New Secret Phrase</label>
+                <input type="password" id="new_secret_phrase" name="new_secret_phrase" minlength="12" autocomplete="off" required>
+            </div>
+            <div class="form-group">
+                <label for="confirm_secret_phrase">Confirm Secret Phrase</label>
+                <input type="password" id="confirm_secret_phrase" name="confirm_secret_phrase" minlength="12" autocomplete="off" required>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-secondary">Change Secret Phrase</button>
+        </div>
+    </form>
 </div>
 
 <div class="form-card">

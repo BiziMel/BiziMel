@@ -71,24 +71,72 @@
 
 <div class="report-grid">
 
-    <div class="report-card">
+    <div class="report-card report-metric-section">
         <h3>Contacts by Category</h3>
-        <canvas id="categoryChart"></canvas>
+        <div class="metric-bar-list">
+            {% for item in contacts_by_category %}
+                <div class="metric-bar-row">
+                    <div class="metric-bar-row-top">
+                        <span>{{ item.category }}</span>
+                        <strong>{{ item.total }}</strong>
+                    </div>
+                    <div class="metric-bar-track"><span style="width: {{ item.percent }}%;"></span></div>
+                </div>
+            {% else %}
+                <p>No category data yet.</p>
+            {% endfor %}
+        </div>
     </div>
 
-    <div class="report-card">
+    <div class="report-card report-metric-section">
         <h3>Relationship Breakdown</h3>
-        <canvas id="relationshipChart"></canvas>
+        <div class="metric-bar-list">
+            {% for item in contacts_by_relationship %}
+                <div class="metric-bar-row">
+                    <div class="metric-bar-row-top">
+                        <span>{{ item.relationship }}</span>
+                        <strong>{{ item.total }}</strong>
+                    </div>
+                    <div class="metric-bar-track"><span style="width: {{ item.percent }}%;"></span></div>
+                </div>
+            {% else %}
+                <p>No relationship data yet.</p>
+            {% endfor %}
+        </div>
     </div>
 
-    <div class="report-card">
+    <div class="report-card report-metric-section">
         <h3>Top Accounts by Contacts</h3>
-        <canvas id="accountChart"></canvas>
+        <div class="metric-bar-list">
+            {% for item in contacts_by_account %}
+                <div class="metric-bar-row">
+                    <div class="metric-bar-row-top">
+                        <span>{{ item.account_name or "Unknown" }}</span>
+                        <strong>{{ item.total }}</strong>
+                    </div>
+                    <div class="metric-bar-track"><span style="width: {{ item.percent }}%;"></span></div>
+                </div>
+            {% else %}
+                <p>No account contact data yet.</p>
+            {% endfor %}
+        </div>
     </div>
 
-    <div class="report-card">
+    <div class="report-card report-metric-section">
         <h3>Contacts by Account Tier</h3>
-        <canvas id="tierChart"></canvas>
+        <div class="metric-bar-list">
+            {% for item in contacts_by_account_tier %}
+                <div class="metric-bar-row">
+                    <div class="metric-bar-row-top">
+                        <span>{% if item.account_tier != "Not set" %}Tier {{ item.account_tier }}{% else %}Not set{% endif %}</span>
+                        <strong>{{ item.total }}</strong>
+                    </div>
+                    <div class="metric-bar-track"><span style="width: {{ item.percent }}%;"></span></div>
+                </div>
+            {% else %}
+                <p>No account tier contact data yet.</p>
+            {% endfor %}
+        </div>
     </div>
 
 </div>
@@ -148,216 +196,5 @@
         </table>
     </div>
 </div>
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-<script>
-    const pipeflowPalette = [
-        "#2563eb",
-        "#14b8a6",
-        "#8b5cf6",
-        "#f59e0b",
-        "#ec4899",
-        "#22c55e",
-        "#0ea5e9",
-        "#f97316",
-        "#6366f1",
-        "#84cc16"
-    ];
-
-    const softGridColour = "rgba(148, 163, 184, 0.22)";
-    const axisTextColour = "#475569";
-
-    const categoryLabels = [
-        {% for item in contacts_by_category %}
-            "{{ item['category'] or 'Unknown' }}",
-        {% endfor %}
-    ];
-
-    const categoryData = [
-        {% for item in contacts_by_category %}
-            {{ item['total'] or 0 }},
-        {% endfor %}
-    ];
-
-    const relationshipLabels = [
-        {% for item in contacts_by_relationship %}
-            "{{ item['relationship'] or 'Unknown' }}",
-        {% endfor %}
-    ];
-
-    const relationshipData = [
-        {% for item in contacts_by_relationship %}
-            {{ item['total'] or 0 }},
-        {% endfor %}
-    ];
-
-    const accountLabels = [
-        {% for item in contacts_by_account %}
-            "{{ item['account_name'] or 'Unknown' }}",
-        {% endfor %}
-    ];
-
-    const accountData = [
-        {% for item in contacts_by_account %}
-            {{ item['total'] or 0 }},
-        {% endfor %}
-    ];
-
-    const tierLabels = [
-        {% for item in contacts_by_account_tier %}
-            "{% if item['account_tier'] != 'Not set' %}Tier {{ item['account_tier'] }}{% else %}Not set{% endif %}",
-        {% endfor %}
-    ];
-
-    const tierData = [
-        {% for item in contacts_by_account_tier %}
-            {{ item['total'] or 0 }},
-        {% endfor %}
-    ];
-
-    new Chart(document.getElementById("categoryChart"), {
-        type: "doughnut",
-        data: {
-            labels: categoryLabels,
-            datasets: [{
-                label: "Contacts",
-                data: categoryData,
-                backgroundColor: pipeflowPalette,
-                borderColor: "#ffffff",
-                borderWidth: 3,
-                hoverOffset: 8
-            }]
-        },
-        options: {
-            responsive: true,
-            cutout: "62%",
-            plugins: {
-                legend: {
-                    position: "bottom",
-                    labels: {
-                        boxWidth: 14,
-                        padding: 16,
-                        color: axisTextColour
-                    }
-                }
-            }
-        }
-    });
-
-    new Chart(document.getElementById("relationshipChart"), {
-        type: "bar",
-        data: {
-            labels: relationshipLabels,
-            datasets: [{
-                label: "Contacts",
-                data: relationshipData,
-                backgroundColor: pipeflowPalette,
-                borderRadius: 10,
-                borderSkipped: false
-            }]
-        },
-        options: {
-            responsive: true,
-            plugins: {
-                legend: {
-                    display: false
-                }
-            },
-            scales: {
-                x: {
-                    ticks: {
-                        color: axisTextColour
-                    },
-                    grid: {
-                        display: false
-                    }
-                },
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        precision: 0,
-                        color: axisTextColour
-                    },
-                    grid: {
-                        color: softGridColour
-                    }
-                }
-            }
-        }
-    });
-
-    new Chart(document.getElementById("accountChart"), {
-        type: "bar",
-        data: {
-            labels: accountLabels,
-            datasets: [{
-                label: "Contacts",
-                data: accountData,
-                backgroundColor: pipeflowPalette,
-                borderRadius: 10,
-                borderSkipped: false
-            }]
-        },
-        options: {
-            responsive: true,
-            indexAxis: "y",
-            plugins: {
-                legend: {
-                    display: false
-                }
-            },
-            scales: {
-                x: {
-                    beginAtZero: true,
-                    ticks: {
-                        precision: 0,
-                        color: axisTextColour
-                    },
-                    grid: {
-                        color: softGridColour
-                    }
-                },
-                y: {
-                    ticks: {
-                        color: axisTextColour
-                    },
-                    grid: {
-                        display: false
-                    }
-                }
-            }
-        }
-    });
-
-    new Chart(document.getElementById("tierChart"), {
-        type: "doughnut",
-        data: {
-            labels: tierLabels,
-            datasets: [{
-                label: "Contacts",
-                data: tierData,
-                backgroundColor: pipeflowPalette,
-                borderColor: "#ffffff",
-                borderWidth: 3,
-                hoverOffset: 8
-            }]
-        },
-        options: {
-            responsive: true,
-            cutout: "62%",
-            plugins: {
-                legend: {
-                    position: "bottom",
-                    labels: {
-                        boxWidth: 14,
-                        padding: 16,
-                        color: axisTextColour
-                    }
-                }
-            }
-        }
-    });
-</script>
 
 {% endblock %}

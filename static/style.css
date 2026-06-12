@@ -1422,6 +1422,63 @@ a:hover {
     margin: 0;
     color: #555;
 }
+
+.report-metric-section {
+    display: grid;
+    align-content: start;
+    gap: 14px;
+}
+
+.metric-bar-list {
+    display: grid;
+    gap: 12px;
+}
+
+.metric-bar-row {
+    display: grid;
+    gap: 6px;
+}
+
+.metric-bar-row-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    color: #334155;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.metric-bar-row-top span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.metric-bar-row-top strong {
+    color: #0f172a;
+    font-size: 15px;
+    white-space: nowrap;
+}
+
+.metric-bar-track {
+    height: 10px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e2e8f0;
+}
+
+.metric-bar-track span {
+    display: block;
+    min-width: 4px;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #2563eb, #14b8a6);
+}
+
+.outreach-breakdown-card .metric-bar-track span {
+    background: linear-gradient(90deg, #7c3aed, #f59e0b);
+}
+
 .report-card-link {
     text-decoration: none;
     color: inherit;
@@ -2510,6 +2567,80 @@ a:hover {
     background: #f8fafc;
     color: #64748b;
     border: 1px solid #dbe4f0;
+}
+
+.admin-user-table-container {
+    margin-top: 16px;
+}
+
+.admin-user-table th,
+.admin-user-table td {
+    vertical-align: middle;
+}
+
+.link-button {
+    border: 0;
+    background: transparent;
+    color: #1d4ed8;
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+    padding: 0;
+    text-align: left;
+}
+
+.link-button:hover,
+.link-button:focus {
+    color: #1e3a8a;
+    text-decoration: underline;
+}
+
+.admin-user-panel-row td {
+    background: #f8fafc;
+}
+
+.admin-user-panel {
+    display: grid;
+    grid-template-columns: minmax(260px, 1.6fr) repeat(3, minmax(180px, 1fr));
+    gap: 14px;
+    padding: 14px;
+    border: 1px solid #dbe4f0;
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.admin-user-panel section {
+    display: grid;
+    align-content: start;
+    gap: 10px;
+}
+
+.admin-user-panel h4 {
+    margin: 0;
+    color: #0f172a;
+    font-size: 14px;
+}
+
+.admin-user-panel form {
+    display: grid;
+    gap: 8px;
+}
+
+.admin-user-panel input,
+.admin-user-panel select {
+    width: 100%;
+}
+
+@media (max-width: 1100px) {
+    .admin-user-panel {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 720px) {
+    .admin-user-panel {
+        grid-template-columns: 1fr;
+    }
 }
 
 .admin-user-meta-grid {
@@ -3815,6 +3946,12 @@ body {
     margin: 16px 18px;
 }
 
+.secret-phrase-change-form {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #e2e8f0;
+}
+
 .multi-contact-count {
     display: inline-flex;
     align-items: center;
@@ -4806,6 +4943,8 @@ body {
     background: #ffffff;
     text-align: center;
     cursor: grab;
+    touch-action: none;
+    user-select: none;
 }
 
 .org-tray-person strong,
@@ -5056,6 +5195,8 @@ body {
     background: #ffffff;
     box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
     cursor: grab;
+    touch-action: none;
+    user-select: none;
     transition: border-color 0.16s ease, box-shadow 0.16s ease;
     overflow: hidden;
 }

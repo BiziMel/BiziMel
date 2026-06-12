@@ -14,15 +14,15 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session, abort
 from werkzeug.utils import secure_filename
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.2.2"
-APP_RELEASE_DATE = "2026-06-08"
-APP_BUILD = "2026-06-08-v2.2.2-enterprise-insights-reports-org-logo-r1"
+APP_VERSION = "2.2.3"
+APP_RELEASE_DATE = "2026-06-12"
+APP_BUILD = "2026-06-12-v2.2.3-enterprise-org-insights-reports-admin-profile-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -36,6 +36,23 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.2.3",
+        "release_date": "2026-06-12",
+        "title": "Org chart drag recovery, richer insights, durable report metrics and profile phrase control",
+        "new": [
+            "Added user-owned secret phrase changes from the signed-in Profile page.",
+        ],
+        "enhanced": [
+            "Expanded Execution Insights with more company, contact, relationship and campaign learning rows.",
+            "Reworked Account, Contact and Outreach report breakdowns into native metric sections that render without external chart scripts.",
+            "Changed Admin user permissions from cards to a table with clickable user rows that open editable profile controls.",
+            "Daily Focus now falls back to actual account names from the workspace when no due-action or success account is available.",
+        ],
+        "fixed": [
+            "Fixed the org chart tile drag regression by adding pointer-based drag support for profile and canvas tiles.",
+        ],
+    },
     {
         "version": "2.2.2",
         "release_date": "2026-06-08",
@@ -941,6 +958,15 @@ def save_account_logo(upload, existing_logo=""):
 
 def pluralise(count, singular, plural=None):
     return singular if int(count or 0) == 1 else (plural or f"{singular}s")
+
+
+def report_bar_rows(rows, value_key="total", percent_key="percent"):
+    rows = [dict(row) for row in rows or []]
+    max_value = max((float(row.get(value_key) or 0) for row in rows), default=0)
+    for row in rows:
+        value = float(row.get(value_key) or 0)
+        row[percent_key] = int(round((value / max_value) * 100)) if max_value else 0
+    return rows
 
 
 def rate_limit_key(prefix, identifier):
@@ -3159,7 +3185,7 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
             "priority": "medium",
         })
 
-    for learning in learning_insights[:2]:
+    for learning in learning_insights[:5]:
         insights.append({
             "source": "Campaign Learning",
             "category": learning.get("signal", "Learning"),
@@ -3181,7 +3207,7 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
             "priority": "medium",
         })
 
-    return insights[:8]
+    return insights[:12]
 
 
 def dashboard_guidance_week_key(today):
@@ -3327,6 +3353,24 @@ def generate_next_24_hours_focus(connection, today, metric_values, execution_ins
             focus_accounts.append(account_name)
     if not focus_accounts:
         focus_accounts = [row["account_name"] for row in success_account_rows if row["account_name"]]
+    if not focus_accounts:
+        focus_accounts = [
+            row["account_name"]
+            for row in dashboard_rows(connection, f"""
+                SELECT
+                    accounts.account_name,
+                    COUNT(outreach.id) AS open_actions,
+                    COALESCE(accounts.pipeline_target, 0) AS pipeline_target
+                FROM accounts
+                LEFT JOIN outreach
+                  ON outreach.account_id = accounts.id
+                 AND {open_task_sql("outreach")}
+                GROUP BY accounts.id, accounts.account_name, accounts.pipeline_target
+                ORDER BY open_actions DESC, pipeline_target DESC, accounts.account_name
+                LIMIT 4
+            """, open_task_params())
+            if row["account_name"]
+        ]
     focus_account_text = ", ".join(focus_accounts[:4]) if focus_accounts else "the accounts with the strongest executive route or overdue risk"
     lead_count = dashboard_scalar(connection, """
         SELECT COUNT(*)
@@ -3495,8 +3539,7 @@ def build_learning_insights(connection):
         GROUP BY outreach.sales_play
     """, learning_params).fetchall())
 
-    if sales_play_rows:
-        sales_play = sales_play_rows[0]
+    for sales_play in sales_play_rows[:3]:
         insights.append({
             "signal": "Sales Play",
             "title": f"{sales_play['sales_play']} is resonating best",
@@ -3525,8 +3568,7 @@ def build_learning_insights(connection):
         GROUP BY accounts.id, accounts.account_name, outreach.sales_play
     """, learning_params).fetchall())
 
-    if account_rows:
-        account = account_rows[0]
+    for account in account_rows[:3]:
         account_note_rows = connection.execute("""
             SELECT next_action, notes, outcome, activity_type
             FROM outreach
@@ -3572,8 +3614,7 @@ def build_learning_insights(connection):
         GROUP BY contacts.category, outreach.sales_play
     """, learning_params).fetchall())
 
-    if contact_category_rows:
-        category = contact_category_rows[0]
+    for category in contact_category_rows[:2]:
         category_note_rows = connection.execute("""
             SELECT outreach.next_action, outreach.notes
             FROM outreach
@@ -3616,8 +3657,7 @@ def build_learning_insights(connection):
         GROUP BY contacts.bmc_relationship, outreach.sales_play
     """, learning_params).fetchall())
 
-    if relationship_rows:
-        relationship = relationship_rows[0]
+    for relationship in relationship_rows[:2]:
         insights.append({
             "signal": "Relationship",
             "title": f"{relationship['sales_play']} is strongest with {relationship['bmc_relationship']} contacts",
@@ -3759,7 +3799,7 @@ def build_learning_insights(connection):
             "link": url_for("tasks")
         })
 
-    return insights[:5]
+    return insights[:12]
 
 
 @app.route("/")
@@ -9618,6 +9658,28 @@ def profile():
     )
 
 
+@app.route("/profile/secret-phrase", methods=("POST",))
+def change_secret_phrase():
+    user = current_user()
+    if not user:
+        return redirect(url_for("login"))
+    error = update_current_user_secret_phrase(
+        user["id"],
+        request.form.get("new_secret_phrase", ""),
+        request.form.get("confirm_secret_phrase", ""),
+    )
+    if error:
+        return redirect(url_for("profile", error=error))
+    log_admin_audit(
+        user,
+        "Secret phrase changed",
+        "User",
+        user["email"],
+        "User changed their own secret phrase from Profile."
+    )
+    return redirect(url_for("profile", message="Secret phrase changed."))
+
+
 @app.route("/profile/non-working/add", methods=("POST",))
 def add_non_working_block():
     start_date = request.form.get("start_date")
@@ -10370,10 +10432,10 @@ def account_reports():
         "account_reports.html",
         accounts=accounts,
         account_metrics=account_metrics,
-        accounts_by_industry=accounts_by_industry,
-        pipeline_by_account=pipeline_by_account,
-        accounts_by_country=accounts_by_country,
-        accounts_by_tier=accounts_by_tier
+        accounts_by_industry=report_bar_rows(accounts_by_industry),
+        pipeline_by_account=report_bar_rows(pipeline_by_account, "pipeline_target"),
+        accounts_by_country=report_bar_rows(accounts_by_country),
+        accounts_by_tier=report_bar_rows(accounts_by_tier)
     )
 
 
@@ -10840,6 +10902,8 @@ def outreach_reports():
         {"activity_type": activity_type, "count": count}
         for activity_type, count in sorted(type_totals.items(), key=lambda item: (-item[1], item[0]))
     ]
+    outcome_breakdown = report_bar_rows(outcome_breakdown, "count")
+    outreach_by_type = report_bar_rows(outreach_by_type, "count")
     working_week_start = report_today - timedelta(days=report_today.weekday())
     working_week_end = working_week_start + timedelta(days=6)
     working_week_outreach = [
@@ -11036,10 +11100,10 @@ def contact_reports():
         "contact_reports.html",
         contacts=contacts,
         contact_metrics=contact_metrics,
-        contacts_by_category=contacts_by_category,
-        contacts_by_relationship=contacts_by_relationship,
-        contacts_by_account=contacts_by_account,
-        contacts_by_account_tier=contacts_by_account_tier,
+        contacts_by_category=report_bar_rows(contacts_by_category),
+        contacts_by_relationship=report_bar_rows(contacts_by_relationship),
+        contacts_by_account=report_bar_rows(contacts_by_account),
+        contacts_by_account_tier=report_bar_rows(contacts_by_account_tier),
         message=request.args.get("message", "")
     )
 

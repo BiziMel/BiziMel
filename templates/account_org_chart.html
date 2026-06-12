@@ -228,6 +228,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const exportCanvas = document.getElementById("orgExportCanvas");
     const stagedActions = new Map();
     let draggedItem = null;
+    let pointerDrag = null;
 
     if (!pane) {
         return;
@@ -323,6 +324,133 @@ document.addEventListener("DOMContentLoaded", function () {
             });
             window.requestAnimationFrame(drawLinks);
         });
+        attachPointerDragHandler(element);
+    }
+
+    function dragItemFromElement(element) {
+        return {
+            type: element.dataset.dragType,
+            node_id: element.dataset.nodeId || "",
+            local_id: element.dataset.localId || "",
+            person_ref: element.dataset.personRef || "",
+            label_id: element.dataset.labelId || "",
+            label_text: element.dataset.labelText || element.textContent.trim(),
+            name: element.dataset.personName || "",
+            title: element.dataset.personTitle || "",
+            group: element.dataset.personGroup || "",
+            photo: element.dataset.personPhoto || "",
+            element: element
+        };
+    }
+
+    function attachPointerDragHandler(element) {
+        if (element.dataset.pointerDragAttached === "true") {
+            return;
+        }
+        element.dataset.pointerDragAttached = "true";
+        element.addEventListener("pointerdown", function (event) {
+            if (event.button !== 0 || event.target.closest("button, input, select, textarea")) {
+                return;
+            }
+            pointerDrag = {
+                item: dragItemFromElement(element),
+                pointerId: event.pointerId,
+                startClientX: event.clientX,
+                startClientY: event.clientY,
+                offsetX: event.offsetX || 0,
+                offsetY: event.offsetY || 0,
+                moved: false,
+                node: element
+            };
+            element.setPointerCapture?.(event.pointerId);
+        });
+        element.addEventListener("pointermove", function (event) {
+            if (!pointerDrag || pointerDrag.pointerId !== event.pointerId) {
+                return;
+            }
+            const dx = event.clientX - pointerDrag.startClientX;
+            const dy = event.clientY - pointerDrag.startClientY;
+            if (!pointerDrag.moved && Math.hypot(dx, dy) < 5) {
+                return;
+            }
+            event.preventDefault();
+            if (!pointerDrag.moved) {
+                pointerDrag.moved = true;
+                pointerDrag.item.element.classList.add("org-dragging");
+                if (pointerDrag.item.type === "person") {
+                    hideTrayPerson(pointerDrag.item.person_ref);
+                    pointerDrag.node = createCanvasNode(pointerDrag.item);
+                    pointerDrag.node.classList.add("org-dragging");
+                    pointerDrag.item.element.dataset.orgPlaced = "";
+                }
+            }
+            const point = panePoint(event);
+            const metrics = gridMetrics();
+            const dragNode = pointerDrag.node;
+            if (pointerDrag.item.type === "label") {
+                dragNode.style.left = `${clamp(Math.round(point.x - 40), 12, pane.scrollWidth - 180)}px`;
+                dragNode.style.top = `${clamp(Math.round(point.y - 18), 12, pane.scrollHeight - 60)}px`;
+            } else {
+                dragNode.style.left = `${clamp(Math.round(point.x - metrics.width / 2), 12, pane.scrollWidth - metrics.width - 12)}px`;
+                dragNode.style.top = `${clamp(Math.round(point.y - metrics.height / 2), 12, pane.scrollHeight - metrics.height - 12)}px`;
+            }
+            window.requestAnimationFrame(drawLinks);
+        });
+        element.addEventListener("pointerup", finishPointerDrag);
+        element.addEventListener("pointercancel", cancelPointerDrag);
+    }
+
+    function pointerDropTarget(event, movingNode) {
+        const previousPointerEvents = movingNode.style.pointerEvents;
+        movingNode.style.pointerEvents = "none";
+        const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(".org-canvas-node") || null;
+        movingNode.style.pointerEvents = previousPointerEvents;
+        if (target && nodeLinkId(target) !== (movingNode.dataset.nodeId || movingNode.dataset.localId)) {
+            return target;
+        }
+        return null;
+    }
+
+    function finishPointerDrag(event) {
+        if (!pointerDrag || pointerDrag.pointerId !== event.pointerId) {
+            return;
+        }
+        const drag = pointerDrag;
+        pointerDrag = null;
+        drag.item.element.releasePointerCapture?.(event.pointerId);
+        drag.item.element.classList.remove("org-dragging");
+        drag.node.classList.remove("org-dragging");
+        if (!drag.moved) {
+            return;
+        }
+        event.preventDefault();
+        if (drag.item.type === "label") {
+            placeLabel(drag.node, panePoint(event));
+            return;
+        }
+        const target = pointerDropTarget(event, drag.node);
+        const zone = target ? borderZone(target, event) : "";
+        const placement = placementForDrop(panePoint(event), target, zone);
+        if (drag.item.type === "person") {
+            drag.item.element.dataset.orgPlaced = "true";
+        }
+        placeNode(drag.node, placement, drag.item);
+    }
+
+    function cancelPointerDrag(event) {
+        if (!pointerDrag || pointerDrag.pointerId !== event.pointerId) {
+            return;
+        }
+        const drag = pointerDrag;
+        pointerDrag = null;
+        drag.item.element.classList.remove("org-dragging");
+        drag.node.classList.remove("org-dragging");
+        if (drag.item.type === "person" && drag.item.element.dataset.orgPlaced !== "true") {
+            restoreTrayPerson(drag.item.person_ref);
+            if (drag.node !== drag.item.element && drag.node.parentNode === pane) {
+                drag.node.remove();
+            }
+        }
     }
 
     function createCanvasNode(item) {

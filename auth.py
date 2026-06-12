@@ -460,6 +460,41 @@ def reset_password_with_phrase(email: str, reset_phrase: str, password: str):
     connection.close()
     return ""
 
+
+def update_current_user_secret_phrase(user_id: int, new_phrase: str, confirm_phrase: str):
+    new_phrase = (new_phrase or "").strip()
+    confirm_phrase = (confirm_phrase or "").strip()
+    if not new_phrase or not confirm_phrase:
+        return "Enter and confirm your new secret phrase."
+    if len(new_phrase) < 12:
+        return "Secret phrase must be at least 12 characters."
+    if new_phrase != confirm_phrase:
+        return "Secret phrase confirmation does not match."
+
+    connection = get_auth_connection()
+    try:
+        user = connection.execute(
+            "SELECT id FROM users WHERE id = ? AND is_active = 1",
+            (user_id,),
+        ).fetchone()
+        if not user:
+            return "Your profile could not be found."
+        connection.execute(
+            """
+            UPDATE users
+            SET reset_phrase_hash = ?,
+                reset_phrase_plain = ?,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (generate_password_hash(new_phrase), new_phrase, user_id),
+        )
+        connection.commit()
+        return ""
+    finally:
+        connection.close()
+
+
 def authenticate_user(email: str, password: str):
     connection = get_auth_connection()
     user = connection.execute(
