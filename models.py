@@ -50,6 +50,13 @@ class PlanItem:
 
 
 @dataclass
+class MonthlyPlanItem:
+    month: str
+    marketing_event: str = ""
+    notes: str = ""
+
+
+@dataclass
 class ActionItem:
     person_name: str = ""
     person_title: str = ""
@@ -88,6 +95,7 @@ class OwnerReport:
     profile: UserProfile
     goals: GoalsSummary | None = None
     plan_items: list[PlanItem] = field(default_factory=list)
+    monthly_plan_items: list[MonthlyPlanItem] = field(default_factory=list)
     action_items: list[ActionItem] = field(default_factory=list)
     weekly_results: list[WeeklyResultRow] = field(default_factory=list)
     calc_payload: dict[str, Any] = field(default_factory=dict)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 import re
 import sys
 from dataclasses import dataclass
@@ -27,6 +28,7 @@ from openpyxl.utils import get_column_letter
 from models import GoalsSummary, OwnerReport, PGBibleExportError
 
 
+LOGGER = logging.getLogger(__name__)
 SECTION_LABELS = ["PG GOALS", "PG PLAN", "PG ACTIONS", "PG RESULTS"]
 REQUIRED_SECTION_LABELS = ["PG GOALS", "PG PLAN", "PG ACTIONS"]
 INVALID_SHEET_CHARS = r"[]:*?/\\"
@@ -45,6 +47,22 @@ MONTH_ORDER = {
     "march": 12,
 }
 QUARTER_MARKERS = {"Q1 Results", "Q2 Results", "Q3 Results", "Q4 Results"}
+PLAN_ENTRY_ROWS = range(11, 30)
+MONTH_PLAN_ROWS = {
+    "april": 9,
+    "may": 10,
+    "june": 11,
+    "july": 12,
+    "august": 13,
+    "september": 14,
+    "october": 15,
+    "november": 16,
+    "december": 17,
+    "january": 18,
+    "february": 19,
+    "march": 20,
+}
+ACTION_ENTRY_ROWS = range(33, 80)
 
 
 @dataclass
@@ -155,23 +173,22 @@ class PGBibleExporter:
         print(f"profile name used: {report.profile.profile_name}")
         print(f"sheet name final: {final_sheet_name}")
 
-        self._validate_sections(ws)
-        self._validate_tables(ws)
+        self._discover_template(ws)
         baseline = self._structural_snapshot(ws)
         report.goals = report.goals or self._compute_goals(report, reporting_date)
 
-        self._clear_goals(ws)
-        self._clear_table(ws, self.header_cache["PG PLAN"])
-        self._clear_table(ws, self.header_cache["PG ACTIONS"])
+        self._clear_template_inputs(ws)
         if "PG RESULTS" in self.header_cache:
             self._clear_weekly_rows(ws, self.header_cache["PG RESULTS"])
 
         self._write_goals(ws, report.goals)
         plan_count = self._write_plan(ws, report)
+        monthly_count = self._write_monthly_plan(ws, report)
         action_count = self._write_actions(ws, report)
         weekly_count = self._write_weekly_results(ws, report) if "PG RESULTS" in self.header_cache else 0
 
         print(f"plan rows written: {plan_count}")
+        print(f"monthly plan rows written: {monthly_count}")
         print(f"action rows written: {action_count}")
         print(f"weekly rows written: {weekly_count}")
 
@@ -196,29 +213,66 @@ class PGBibleExporter:
         print(f"calculation pipeline_gap output: {gap}")
         return GoalsSummary(starting_pipeline=starting, pipeline_added=added, pipeline_target=target, pipeline_gap=gap)
 
+    def _discover_template(self, ws) -> None:
+        self._validate_sections(ws)
+        self._validate_may_2026_layout(ws)
+        if "PG RESULTS" in self.sections:
+            try:
+                self.header_cache["PG RESULTS"] = self._discover_results(ws)
+                self.weekly_key = self._discover_weekly_key(ws, self.header_cache["PG RESULTS"])
+                print(f"Weekly key resolved as: {get_column_letter(self.weekly_key.column)}, data type: {self.weekly_key.data_type}")
+            except PGBibleExportError as exc:
+                LOGGER.warning("PG RESULTS section present but not writable: %s %s", exc.error_code, exc.details)
+                self.header_cache.pop("PG RESULTS", None)
+                self.weekly_key = None
+
     def _validate_sections(self, ws) -> None:
-        missing = []
         for label in SECTION_LABELS:
             matches = self._find_exact(ws, label)
             if not matches:
                 if label in REQUIRED_SECTION_LABELS:
-                    missing.append(label)
+                    LOGGER.warning("PG Bible template is missing expected section %s; that block will be skipped.", label)
             elif len(matches) > 1:
-                raise PGBibleExportError("SECTION_MISSING", "A section label is ambiguous.", [label])
+                LOGGER.warning("PG Bible template section %s is ambiguous; using first occurrence.", label)
+                cell = matches[0]
+                self.sections[label] = Section(label, cell.row, cell.column)
             else:
                 cell = matches[0]
                 self.sections[label] = Section(label, cell.row, cell.column)
 
-        if missing:
-            raise PGBibleExportError("SECTION_MISSING", "The template is missing one or more required sections.", missing)
-
-    def _validate_tables(self, ws) -> None:
-        self.header_cache["PG PLAN"] = self._discover_plan(ws)
-        self.header_cache["PG ACTIONS"] = self._discover_actions(ws)
-        if "PG RESULTS" in self.sections:
-            self.header_cache["PG RESULTS"] = self._discover_results(ws)
-            self.weekly_key = self._discover_weekly_key(ws, self.header_cache["PG RESULTS"])
-            print(f"Weekly key resolved as: {get_column_letter(self.weekly_key.column)}, data type: {self.weekly_key.data_type}")
+    def _validate_may_2026_layout(self, ws) -> None:
+        expected = {
+            "B2": "PG GOALS",
+            "B8": "PG PLAN",
+            "B31": "PG ACTIONS",
+            "B9": "NBM Target",
+            "D9": "PG Sales Play or Initative",
+            "L9": "Customer",
+            "M9": "Estimated Value",
+            "O8": "Month",
+            "P8": "PG Marketing Event Being Supported",
+            "S8": "Notes & General PG Actions",
+            "B32": "Related NBM Target",
+            "C32": "Account / Contact",
+            "F32": "Completed Discovery Meeting",
+            "G32": "Next Action / Notes",
+            "J32": "NBM Booked / Date",
+            "M32": "Why Buy Document",
+            "N32": "Exec First",
+            "O32": "Preparation With Manager",
+            "P32": "Completed NBM",
+            "Q32": "NBM Next Action",
+            "T32": "VO Value",
+        }
+        for coordinate, expected_text in expected.items():
+            actual = self._merged_value(ws, ws[coordinate].row, ws[coordinate].column)
+            if expected_text.casefold() not in str(actual or "").casefold():
+                LOGGER.warning(
+                    "PG Bible template cell %s was expected to contain %r but contains %r.",
+                    coordinate,
+                    expected_text,
+                    actual,
+                )
 
     def _discover_plan(self, ws) -> TableRegion:
         return self._discover_header_block(
@@ -336,71 +390,71 @@ class PGBibleExporter:
         raise PGBibleExportError("WEEK_KEY_AMBIGUOUS", "The weekly key column could not be resolved.", [c.header for c in candidates])
 
     def _write_goals(self, ws, goals: GoalsSummary) -> None:
-        label_map = {
-            "FY22 Starting Pipeline Position": goals.starting_pipeline,
-            "FY Current Pipeline": goals.starting_pipeline,
-            "FY22 Pipeline Added": goals.pipeline_added,
-            "FY Pipeline Added": goals.pipeline_added,
-            "FY22 4 Quarter Total Addressable Pipeline TARGET": goals.pipeline_target,
-            "FY 4 Quarter Total Addressable Pipeline TARGET": goals.pipeline_target,
-            "FY22 4 Quarter Total Addressable Pipeline GAP": goals.pipeline_gap,
-            "FY 4 Quarter Total Addressable Pipeline GAP": goals.pipeline_gap,
-        }
-        for label, value in label_map.items():
-            cells = self._find_exact(ws, label)
-            if cells:
-                target = ws.cell(cells[0].row, cells[0].column + 4)
-                if not self._is_formula(target):
-                    self._write_value(target, value)
+        if "PG GOALS" not in self.sections:
+            return
+        self._write_coordinate(ws, "F3", goals.starting_pipeline)
+        self._write_coordinate(ws, "L3", goals.pipeline_target)
+        # The May 2026 template has no visible "Pipeline Added" label, but L5
+        # calculates the gap with =(F3+F5)-L3, making F5 the intended input.
+        # F5 is inside a merged area, so _write_coordinate stores the value on
+        # the merged range anchor while preserving the workbook structure.
+        self._write_coordinate(ws, "F5", goals.pipeline_added)
 
     def _write_plan(self, ws, report: OwnerReport) -> int:
-        region = self.header_cache["PG PLAN"]
+        if "PG PLAN" not in self.sections:
+            return 0
         rows = sorted(
             report.plan_items,
             key=lambda item: (
-                MONTH_ORDER.get(norm(item.month), 99),
                 item.pg_bible_order if item.pg_bible_order is not None else 999999,
-                int(item.account_tier or 99) if str(item.account_tier).isdigit() else 99,
-                -float(item.pipeline_target_value or 0),
+                item.customer.casefold(),
             ),
         )
-        self._ensure_capacity(ws, region, len(rows))
-        for offset, item in enumerate(rows):
-            row = region.start_row + offset
-            mapping = {
-                "month": item.month,
-                "marketing_event": item.marketing_event,
-                "notes": item.notes,
-                "nbm_target": item.nbm_target,
-                "sales_play": item.sales_play,
-                "customer": item.customer,
-                "estimated_value": item.estimated_value,
-            }
-            self._write_mapping(ws, region, row, mapping)
-        return len(rows)
+        writable_rows = list(PLAN_ENTRY_ROWS)
+        if len(rows) > len(writable_rows):
+            LOGGER.warning("PG Bible plan has %s accounts but only %s rows; extra accounts were not exported.", len(rows), len(writable_rows))
+        for row, item in zip(writable_rows, rows):
+            self._write_coordinate(ws, f"B{row}", item.nbm_target)
+            self._write_coordinate(ws, f"D{row}", item.sales_play)
+            self._write_coordinate(ws, f"L{row}", item.customer)
+            self._write_coordinate(ws, f"M{row}", item.estimated_value)
+        return min(len(rows), len(writable_rows))
+
+    def _write_monthly_plan(self, ws, report: OwnerReport) -> int:
+        if "PG PLAN" not in self.sections:
+            return 0
+        items = {norm(item.month): item for item in report.monthly_plan_items if norm(item.month)}
+        written = 0
+        for month_key, row in MONTH_PLAN_ROWS.items():
+            item = items.get(month_key)
+            if not item:
+                continue
+            self._write_coordinate(ws, f"P{row}", item.marketing_event)
+            self._write_coordinate(ws, f"S{row}", item.notes)
+            written += 1
+        return written
 
     def _write_actions(self, ws, report: OwnerReport) -> int:
-        region = self.header_cache["PG ACTIONS"]
-        self._ensure_capacity(ws, region, len(report.action_items))
-        for offset, item in enumerate(report.action_items):
-            row = region.start_row + offset
+        if "PG ACTIONS" not in self.sections:
+            return 0
+        writable_rows = list(ACTION_ENTRY_ROWS)
+        if len(report.action_items) > len(writable_rows):
+            LOGGER.warning("PG Bible actions has %s contacts but only %s rows; extra contacts were not exported.", len(report.action_items), len(writable_rows))
+        for row, item in zip(writable_rows, report.action_items):
             discovery_target = item.discovery_target_name_title or " ".join(part for part in [item.person_name, item.person_title] if part)
             nbm_booked = " ".join(part for part in [item.nbm_booked_date, item.nbm_booked_name_title] if part)
-            mapping = {
-                "related_nbm_target": item.related_nbm_target,
-                "discovery_target_name_title": discovery_target,
-                "discovery_completed": self._yes_no(item.discovery_completed),
-                "discovery_next_action": item.discovery_next_action or item.manager_notes,
-                "nbm_booked": nbm_booked,
-                "why_buy": self._yes_no(item.why_buy),
-                "exec_first": self._yes_no(item.exec_first),
-                "prep_with_manager": self._yes_no(item.prep_with_manager),
-                "nbm_completed": self._yes_no(item.nbm_completed),
-                "nbm_next_action": item.nbm_next_action,
-                "vo_value": item.vo_value,
-            }
-            self._write_mapping(ws, region, row, mapping)
-        return len(report.action_items)
+            self._write_coordinate(ws, f"B{row}", item.related_nbm_target)
+            self._write_coordinate(ws, f"C{row}", discovery_target)
+            self._write_coordinate(ws, f"F{row}", self._yes_no(item.discovery_completed, default_no=True))
+            self._write_coordinate(ws, f"G{row}", item.discovery_next_action or item.manager_notes or "No next action set")
+            self._write_coordinate(ws, f"J{row}", nbm_booked)
+            self._write_coordinate(ws, f"M{row}", self._yes_no(item.why_buy))
+            self._write_coordinate(ws, f"N{row}", self._yes_no(item.exec_first, default_no=True))
+            self._write_coordinate(ws, f"O{row}", self._yes_no(item.prep_with_manager))
+            self._write_coordinate(ws, f"P{row}", self._yes_no(item.nbm_completed, default_no=True))
+            self._write_coordinate(ws, f"Q{row}", item.nbm_next_action or item.discovery_next_action or "No next action set")
+            self._write_coordinate(ws, f"T{row}", item.vo_value)
+        return min(len(report.action_items), len(writable_rows))
 
     def _write_weekly_results(self, ws, report: OwnerReport) -> int:
         region = self.header_cache["PG RESULTS"]
@@ -432,21 +486,22 @@ class PGBibleExporter:
             written += 1
         return written
 
-    def _clear_goals(self, ws) -> None:
-        for label in [
-            "FY22 Starting Pipeline Position",
-            "FY Current Pipeline",
-            "FY22 Pipeline Added",
-            "FY Pipeline Added",
-            "FY22 4 Quarter Total Addressable Pipeline TARGET",
-            "FY 4 Quarter Total Addressable Pipeline TARGET",
-            "FY22 4 Quarter Total Addressable Pipeline GAP",
-            "FY 4 Quarter Total Addressable Pipeline GAP",
-        ]:
-            for cell in self._find_exact(ws, label):
-                target = ws.cell(cell.row, cell.column + 4)
-                if not self._is_formula(target):
-                    target.value = None
+    def _clear_template_inputs(self, ws) -> None:
+        for coordinate in ["F3", "F5", "L3"]:
+            self._write_coordinate(ws, coordinate, None)
+        # The account / SAAP booked date block contains template examples. There
+        # is no approved PipeFlow data source for it yet, so exported workbooks
+        # must clear O3:P6 instead of leaking placeholder account values.
+        self._clear_range(ws, "O3", "P6")
+        for row in PLAN_ENTRY_ROWS:
+            for col in ("B", "D", "L", "M"):
+                self._write_coordinate(ws, f"{col}{row}", None)
+        for row in MONTH_PLAN_ROWS.values():
+            for col in ("P", "S"):
+                self._write_coordinate(ws, f"{col}{row}", None)
+        for row in ACTION_ENTRY_ROWS:
+            for col in ("B", "C", "F", "G", "J", "M", "N", "O", "P", "Q", "T"):
+                self._write_coordinate(ws, f"{col}{row}", None)
 
     def _clear_table(self, ws, region: TableRegion) -> None:
         for row in range(region.start_row, region.end_row + 1):
@@ -527,15 +582,30 @@ class PGBibleExporter:
         else:
             cell.value = value
 
-    def _yes_no(self, value: Any) -> str:
+    def _yes_no(self, value: Any, default_no: bool = False) -> str:
         if value in (None, ""):
-            return ""
+            return "No" if default_no else ""
         text = str(value).strip().casefold()
         if text in {"yes", "y", "true", "1"}:
             return "Yes"
         if text in {"no", "n", "false", "0"}:
             return "No"
         return str(value).strip()
+
+    def _write_coordinate(self, ws, coordinate: str, value: Any) -> None:
+        cell = ws[coordinate]
+        if isinstance(cell, MergedCell):
+            for merged in ws.merged_cells.ranges:
+                if (cell.row, cell.column) in merged.cells:
+                    cell = ws.cell(merged.min_row, merged.min_col)
+                    break
+        self._write_value(cell, value)
+
+    def _clear_range(self, ws, start_coordinate: str, end_coordinate: str) -> None:
+        for row in ws[start_coordinate:end_coordinate]:
+            for cell in row:
+                if not isinstance(cell, MergedCell):
+                    self._write_value(cell, None)
 
     def _coerce_week_key(self, value: Any, data_type: str):
         if data_type == "date" and isinstance(value, str):

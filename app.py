@@ -10307,7 +10307,10 @@ def build_pg_bible_report_from_db(connection):
 def export_pg_bible():
     template_setting = os.environ.get("PG_BIBLE_TEMPLATE_PATH", "").strip()
     if not template_setting:
-        bundled_template = Path(__file__).resolve().parent / "pg_bible_templates" / "PG Bible FY27.xlsx"
+        template_dir = Path(__file__).resolve().parent / "pg_bible_templates"
+        bundled_template = template_dir / "PGBible_Template_May2026.xlsx"
+        if not bundled_template.exists():
+            bundled_template = template_dir / "PG Bible FY27.xlsx"
         template_setting = str(bundled_template)
 
     try:
