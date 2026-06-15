@@ -3169,6 +3169,71 @@ a:hover {
     vertical-align: top;
 }
 
+.pg-rag-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 74px;
+    min-height: 28px;
+    border-radius: 999px;
+    padding: 4px 12px;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.pg-rag-red {
+    background: #dc2626;
+}
+
+.pg-rag-amber {
+    background: #f59e0b;
+    color: #111827;
+}
+
+.pg-rag-green {
+    background: #16a34a;
+}
+
+.pg-group-row td {
+    border-color: #cbd5e1;
+    padding: 8px 10px;
+}
+
+.pg-group-row span {
+    display: inline-flex;
+    margin-right: 8px;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.pg-group-row strong {
+    margin-right: 10px;
+}
+
+.pg-group-row em {
+    color: #475569;
+    font-style: normal;
+    font-size: 12px;
+}
+
+.pg-group-account td {
+    background: #e8f3ff;
+    color: #0f172a;
+}
+
+.pg-group-org td {
+    background: #f1f5f9;
+}
+
+.pg-group-sales-play td {
+    background: #f8fafc;
+}
+
 .pg-plan-table td:nth-child(2) {
     min-width: 280px;
 }

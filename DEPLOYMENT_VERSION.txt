@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
-Version: 2.2.4
+Version: 2.3.0
 Release date: 2026-06-15
-Build: 2026-06-15-v2.2.4-admin-insights-account-owner-r1
+Build: 2026-06-15-v2.3.0-execution-insights-pg-progress-r1
 Package purpose: Hosted enterprise deployment only.

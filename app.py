@@ -20,9 +20,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.2.4"
+APP_VERSION = "2.3.0"
 APP_RELEASE_DATE = "2026-06-15"
-APP_BUILD = "2026-06-15-v2.2.4-admin-insights-account-owner-r1"
+APP_BUILD = "2026-06-15-v2.3.0-execution-insights-pg-progress-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -36,6 +36,22 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.3.0",
+        "release_date": "2026-06-15",
+        "title": "Execution insight clarity and grouped PG Progress RAG view",
+        "new": [
+            "Changed PG Progress into a grouped view by account, business org and sales play.",
+            "Added PG Progress RAG status for accounts based on outreach response outcomes.",
+        ],
+        "enhanced": [
+            "Execution Insights now names account, contact and outreach subjects for untouched accounts, no-contact accounts, overdue outreach and no-response campaign activity.",
+            "PG PLAN now displays PG RAG instead of NBM target numbers while keeping the PG Bible export mapping unchanged.",
+        ],
+        "fixed": [
+            "Removed the NBM target number column from the PG Progress action view without changing PG Bible output.",
+        ],
+    },
     {
         "version": "2.2.4",
         "release_date": "2026-06-15",
@@ -3134,6 +3150,121 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
     success_count = int(metric_values.get("this_week_meetings_booked") or 0)
     untouched_count = int(metric_values.get("this_week_untouched_accounts") or 0)
 
+    untouched_accounts = dashboard_rows(connection, """
+        SELECT
+            accounts.id,
+            accounts.account_name,
+            COALESCE(accounts.pipeline_target, 0) AS pipeline_target,
+            COALESCE(accounts.sales_play, '') AS sales_play,
+            COUNT(outreach.id) AS outreach_total
+        FROM accounts
+        LEFT JOIN outreach ON outreach.account_id = accounts.id
+        GROUP BY accounts.id, accounts.account_name, accounts.pipeline_target, accounts.sales_play
+        HAVING COUNT(outreach.id) = 0
+        ORDER BY pipeline_target DESC, accounts.account_name
+        LIMIT 4
+    """)
+    for row in untouched_accounts:
+        insights.append({
+            "source": "Daily Focus",
+            "category": "Account Activity",
+            "title": f"{row['account_name']} has no outreach activity",
+            "evidence": f"Account: {row['account_name']}. Sales play: {row['sales_play'] or 'not entered'}. Pipeline target: ${float(row['pipeline_target'] or 0):,.0f}.",
+            "message": "This account cannot create campaign learning or meeting conversion until the first focused action is created.",
+            "action": f"Create a dated outreach task for {row['account_name']} with a clear Discovery or NBM meeting ask tied to the account sales play.",
+            "link": url_for("add_outreach", account_id=row["id"]),
+            "priority": "high",
+        })
+
+    no_contact_accounts = dashboard_rows(connection, """
+        SELECT
+            accounts.id,
+            accounts.account_name,
+            COALESCE(accounts.pipeline_target, 0) AS pipeline_target
+        FROM accounts
+        LEFT JOIN contacts
+          ON contacts.account_id = accounts.id
+         AND COALESCE(contacts.status, 'Active') = 'Active'
+        GROUP BY accounts.id, accounts.account_name, accounts.pipeline_target
+        HAVING COUNT(contacts.id) = 0
+        ORDER BY pipeline_target DESC, accounts.account_name
+        LIMIT 4
+    """)
+    for row in no_contact_accounts:
+        insights.append({
+            "source": "Daily Focus",
+            "category": "Contact Activity",
+            "title": f"{row['account_name']} has no active contacts",
+            "evidence": f"Account: {row['account_name']}. Active contacts: 0. Pipeline target: ${float(row['pipeline_target'] or 0):,.0f}.",
+            "message": "No contact coverage means there is no person to progress toward Discovery, NBM or executive meetings.",
+            "action": f"Add at least one executive buyer, assistant or senior stakeholder for {row['account_name']}, then create the first meeting-led outreach task.",
+            "link": url_for("view_account", account_id=row["id"]),
+            "priority": "high",
+        })
+
+    overdue_outreach = dashboard_rows(connection, f"""
+        SELECT
+            outreach.id,
+            outreach.subject,
+            outreach.next_action,
+            outreach.next_action_date,
+            outreach.next_action_time,
+            accounts.account_name,
+            COALESCE(contacts.name, partner_contacts.name) AS contact_name,
+            COALESCE(contacts.job_title, partner_contacts.job_title) AS contact_title
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
+        LEFT JOIN partner_contacts ON outreach.partner_contact_id = partner_contacts.id
+        WHERE {overdue_task_sql("outreach")}
+        ORDER BY outreach.next_action_date ASC, outreach.next_action_time ASC, outreach.id DESC
+        LIMIT 6
+    """, overdue_task_params())
+    for row in overdue_outreach:
+        contact_label = ", ".join(part for part in [row["contact_name"], row["contact_title"]] if part) or "No contact assigned"
+        insight_link = url_for("view_outreach", outreach_id=row["id"])
+        insights.append({
+            "source": "Daily Focus",
+            "category": "Overdue Outreach",
+            "title": f"{row['account_name'] or 'Unknown account'} overdue: {row['subject'] or 'No subject'}",
+            "evidence": f"Account: {row['account_name'] or 'Unknown account'}. Contact: {contact_label}. Subject: {row['subject'] or 'No subject'}. Due: {display_date(row['next_action_date'])} {row['next_action_time'] or ''}.",
+            "message": "This specific overdue activity is blocking momentum because the next meeting-led step has not been completed or rescheduled.",
+            "action": f"Open the outreach item, update the outcome, and reset '{row['next_action'] or row['subject'] or 'the next action'}' toward a Discovery or NBM meeting.",
+            "link": insight_link,
+            "priority": "high",
+        })
+
+    campaign_gaps = dashboard_rows(connection, """
+        SELECT
+            outreach.id,
+            outreach.subject,
+            outreach.sales_play,
+            outreach.outcome,
+            outreach.activity_type,
+            accounts.account_name,
+            COALESCE(contacts.name, partner_contacts.name) AS contact_name,
+            COALESCE(contacts.job_title, partner_contacts.job_title) AS contact_title
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
+        LEFT JOIN partner_contacts ON outreach.partner_contact_id = partner_contacts.id
+        WHERE COALESCE(outreach.outcome, '') IN ('', 'No Response', 'No Response Yet')
+        ORDER BY outreach.last_updated DESC, outreach.id DESC
+        LIMIT 6
+    """)
+    for row in campaign_gaps:
+        contact_label = ", ".join(part for part in [row["contact_name"], row["contact_title"]] if part) or "No contact assigned"
+        insights.append({
+            "source": "Daily Focus",
+            "category": "Campaign Activity",
+            "title": f"{row['account_name'] or 'Unknown account'} campaign has no response signal",
+            "evidence": f"Account: {row['account_name'] or 'Unknown account'}. Contact: {contact_label}. Outreach subject: {row['subject'] or 'No subject'}. Sales play: {row['sales_play'] or 'not entered'}.",
+            "message": "The campaign has activity but no useful response signal, so PipeFlow cannot tell whether the route is working.",
+            "action": "Change the message, stakeholder route or ask, then record a clear response outcome so the campaign can learn what books meetings.",
+            "link": url_for("view_outreach", outreach_id=row["id"]),
+            "priority": "medium",
+        })
+
     if overdue_count:
         insights.append({
             "source": "Execution Guidance",
@@ -4719,6 +4850,27 @@ def nbm_colour_index(value):
     return number % 12
 
 
+def pg_progress_rag_status(outcomes):
+    normalised = [normalise_outreach_outcome(outcome) for outcome in outcomes if str(outcome or "").strip()]
+    if any(outcome in ("NBM Booked", "Exec Meeting Booked") for outcome in normalised):
+        return {
+            "status": "green",
+            "label": "Green",
+            "reason": "NBM or executive meeting booked",
+        }
+    if any(outcome in (*NEGATIVE_OUTCOMES, "Positive Response", "Discovery Booked", "Meeting Booked") for outcome in normalised):
+        return {
+            "status": "amber",
+            "label": "Amber",
+            "reason": "Response or Discovery meeting signal recorded",
+        }
+    return {
+        "status": "red",
+        "label": "Red",
+        "reason": "No response signal recorded",
+    }
+
+
 def activity_update_is_valid(value):
     return len((value or "").strip()) >= 5
 
@@ -5039,12 +5191,22 @@ def pg_dashboard_context(connection):
             if row["sales_play"]
         ]
         pg_sales_play = "; ".join(outreach_sales_plays) or account["sales_play"] or ""
+        account_outcome_rows = connection.execute("""
+            SELECT outcome
+            FROM outreach
+            WHERE account_id = ?
+        """, (account_id,)).fetchall()
+        rag = pg_progress_rag_status([row["outcome"] for row in account_outcome_rows])
         pg_plan_rows.append({
             "account_id": account_id,
             "target_number": pg_target_number,
             "colour_index": nbm_colour_index(pg_target_number),
+            "rag_status": rag["status"],
+            "rag_label": rag["label"],
+            "rag_reason": rag["reason"],
             "sales_play": pg_sales_play,
             "account_name": account["account_name"],
+            "business_org": account["business_unit"] or "No business org set",
             "estimated_value": money_value(account["pipeline_target"]),
         })
 
@@ -5147,11 +5309,15 @@ def pg_dashboard_context(connection):
                 "contact_id": contact_id,
                 "target_number": pg_target_number,
                 "colour_index": nbm_colour_index(pg_target_number),
+                "rag_status": rag["status"],
+                "rag_label": rag["label"],
+                "rag_reason": rag["reason"],
                 "account_name": account["account_name"],
+                "sales_play": pg_sales_play or "No sales play entered",
                 "targeted_discovery": contact["name"] or "No contact name",
                 "contact_job_title": contact["job_title"] or "",
                 "company_name": contact["account_name"] or account["account_name"],
-                "business_org": contact["business_unit"] or "",
+                "business_org": contact["business_unit"] or "No business org set",
                 "department": contact["org_dept"] or "",
                 "completed_discovery_meeting": manual_completed_discovery or ("Yes" if discovery_meeting_count else ""),
                 "exec_first": action_update["exec_first"] if action_update and "exec_first" in action_update.keys() else "",
@@ -5229,11 +5395,15 @@ def pg_dashboard_context(connection):
                 "contact_id": f"partner_{account_id}",
                 "target_number": pg_target_number,
                 "colour_index": nbm_colour_index(pg_target_number),
+                "rag_status": rag["status"],
+                "rag_label": rag["label"],
+                "rag_reason": rag["reason"],
                 "account_name": account["account_name"],
+                "sales_play": pg_sales_play or "No sales play entered",
                 "targeted_discovery": "Partner activity",
                 "contact_job_title": "",
                 "company_name": account["account_name"],
-                "business_org": "",
+                "business_org": account["business_unit"] or "No business org set",
                 "department": "",
                 "completed_discovery_meeting": "N/A",
                 "exec_first": "N/A",
