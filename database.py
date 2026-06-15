@@ -549,6 +549,8 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "partner_contacts", "relationship_owner", "TEXT")
     add_column_if_missing(cursor, "partner_contacts", "email", "TEXT")
     add_column_if_missing(cursor, "partner_contacts", "phone", "TEXT")
+    add_column_if_missing(cursor, "partner_contacts", "office_phone", "TEXT")
+    add_column_if_missing(cursor, "partner_contacts", "mobile_phone", "TEXT")
     add_column_if_missing(cursor, "partner_contacts", "location", "TEXT")
     add_column_if_missing(cursor, "partner_contacts", "linkedin", "TEXT")
     add_column_if_missing(cursor, "partner_contacts", "relationship_status", "TEXT")

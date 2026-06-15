@@ -23,6 +23,7 @@ USER_TABLES = {
     "account_partners",
     "partners",
     "partner_contacts",
+    "partner_contact_accounts",
     "account_org_charts",
     "account_org_chart_people",
     "timeline_entries",
@@ -210,6 +211,7 @@ class PgConnectionAdapter:
                 "team_memberships": "(team_id, user_id)",
                 "account_shared_users": "(account_id, user_id)",
                 "outreach_recipients": "(outreach_id, contact_id, partner_contact_id)",
+                "partner_contact_accounts": "(partner_contact_id, account_id)",
             }
             target = conflict_targets.get(ignore_table)
             if target:

@@ -22,7 +22,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.3.3"
 APP_RELEASE_DATE = "2026-06-15"
-APP_BUILD = "2026-06-15-v2.3.3-pg-progress-partner-multi-account-r1"
+APP_BUILD = "2026-06-15-v2.3.3-pg-progress-partner-multi-account-r2"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -50,6 +50,8 @@ RELEASE_NOTES = [
             "Inactive contacts no longer contribute to account-level PG Progress RAG status.",
             "Kept scheduled meeting date/time hidden unless a meeting outcome is selected.",
             "Removed visible partner account relationship add fields from the partner form and replaced them with a status table.",
+            "Fixed partner contact multi-account saves by adding the missing partner contact phone migrations and Postgres-safe conflict handling.",
+            "Changed partner contacts from tiles to a table with the contact name linked to its row profile anchor.",
         ],
     },
     {

@@ -235,119 +235,130 @@
     </form>
 
     {% if partner_contacts %}
-        <div class="contact-card-grid">
-            {% for contact in partner_contacts %}
-                <div class="contact-summary-card partner-contact-card">
-                    <div>
-                        <strong>{{ contact.name }}</strong>
-                        <p>{{ contact.job_title or "No job title" }}</p>
-                        <p class="muted">Supported accounts: {{ contact.supported_account_names|join(", ") if contact.supported_account_names else "Not assigned" }}</p>
-                        <p class="muted">{{ contact.coverage_area or "No coverage area" }}</p>
-                    </div>
-
-                    <div class="contact-summary-actions">
-                        <span class="status-pill">{{ contact.relationship_status or "No engagement" }}</span>
-                        {% if contact.email %}
-                            <a href="mailto:{{ contact.email }}" class="btn btn-secondary">Email</a>
-                        {% endif %}
-                        <form method="POST"
-                              action="{{ url_for('delete_partner_contact', partner_id=partner.id, contact_id=contact.id) }}"
-                              style="display:inline;">
-                            <button type="submit"
-                                    class="btn btn-danger"
-                                    onclick="return confirm('Delete this partner contact?');">
-                                Delete
-                            </button>
-                        </form>
-                    </div>
-
-                    <div class="partner-detail-grid full-width">
-                        <p><strong>Owner:</strong> {{ contact.relationship_owner or "Not assigned" }}</p>
-                        <p><strong>Supported Accounts:</strong> {{ contact.supported_account_names|join(", ") if contact.supported_account_names else "Not assigned" }}</p>
-                        <p><strong>Location:</strong> {{ contact.location or "No location" }}</p>
-                    </div>
-
-                    {% if contact.phone or contact.notes %}
-                        <p class="muted">
-                            {{ contact.phone or "" }}
-                            {% if contact.phone and contact.notes %}<br>{% endif %}
-                            {{ contact.notes or "" }}
-                        </p>
-                    {% endif %}
-
-                    <details class="inline-edit-panel full-width">
-                        <summary class="btn btn-secondary btn-small">Edit Partner Contact</summary>
-                        <form method="POST"
-                              action="{{ url_for('edit_partner_contact', partner_id=partner.id, contact_id=contact.id) }}"
-                              class="pipeflow-form compact-inline-form">
-                            <div class="form-grid">
-                                <div class="form-group">
-                                    <label for="edit_partner_contact_name_{{ contact.id }}">Name</label>
-                                    <input type="text" id="edit_partner_contact_name_{{ contact.id }}" name="name" value="{{ contact.name or '' }}" required>
-                                </div>
-                                <div class="form-group">
-                                    <label for="edit_partner_contact_title_{{ contact.id }}">Job Title</label>
-                                    <input type="text" id="edit_partner_contact_title_{{ contact.id }}" name="job_title" value="{{ contact.job_title or '' }}">
-                                </div>
-                                <div class="form-group full-width">
-                                    <label>Supported Accounts</label>
-                                    <div class="partner-checkbox-panel">
-                                        {% for account in accounts %}
-                                            <label class="partner-checkbox-option">
-                                                <input type="checkbox"
-                                                       name="account_ids"
-                                                       value="{{ account.id }}"
-                                                       {% if account.id|string in contact.supported_account_ids %}checked{% endif %}>
-                                                <span>{{ account.account_name }}</span>
-                                            </label>
-                                        {% endfor %}
-                                    </div>
-                                </div>
-                                <div class="form-group">
-                                    <label for="edit_partner_contact_status_{{ contact.id }}">Partner Engagement</label>
-                                    <select id="edit_partner_contact_status_{{ contact.id }}" name="relationship_status">
-                                        <option value="">Select engagement</option>
-                                        {% for status in dropdown_values.partner_engagement_statuses %}
-                                            <option value="{{ status }}" {% if contact.relationship_status == status %}selected{% endif %}>{{ status }}</option>
-                                        {% endfor %}
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label for="edit_partner_contact_owner_{{ contact.id }}">Relationship Owner</label>
-                                    <input type="text" id="edit_partner_contact_owner_{{ contact.id }}" name="relationship_owner" value="{{ contact.relationship_owner or '' }}">
-                                </div>
-                                <div class="form-group">
-                                    <label for="edit_partner_contact_coverage_{{ contact.id }}">Coverage / Influence Area</label>
-                                    <input type="text" id="edit_partner_contact_coverage_{{ contact.id }}" name="coverage_area" value="{{ contact.coverage_area or '' }}">
-                                </div>
-                                <div class="form-group">
-                                    <label for="edit_partner_contact_email_{{ contact.id }}">Email</label>
-                                    <input type="email" id="edit_partner_contact_email_{{ contact.id }}" name="email" value="{{ contact.email or '' }}">
-                                </div>
-                                <div class="form-group">
-                                    <label for="edit_partner_contact_phone_{{ contact.id }}">Phone</label>
-                                    <input type="text" id="edit_partner_contact_phone_{{ contact.id }}" name="phone" value="{{ contact.phone or '' }}">
-                                </div>
-                                <div class="form-group">
-                                    <label for="edit_partner_contact_location_{{ contact.id }}">Location</label>
-                                    <input type="text" id="edit_partner_contact_location_{{ contact.id }}" name="location" value="{{ contact.location or '' }}">
-                                </div>
-                                <div class="form-group">
-                                    <label for="edit_partner_contact_linkedin_{{ contact.id }}">LinkedIn</label>
-                                    <input type="text" id="edit_partner_contact_linkedin_{{ contact.id }}" name="linkedin" value="{{ contact.linkedin or '' }}">
-                                </div>
-                                <div class="form-group full-width">
-                                    <label for="edit_partner_contact_notes_{{ contact.id }}">Notes</label>
-                                    <textarea id="edit_partner_contact_notes_{{ contact.id }}" name="notes" rows="3">{{ contact.notes or '' }}</textarea>
-                                </div>
-                            </div>
-                            <div class="button-group">
-                                <button type="submit" class="btn btn-primary btn-small">Save Partner Contact</button>
-                            </div>
-                        </form>
-                    </details>
-                </div>
-            {% endfor %}
+        <div class="table-responsive">
+            <table class="report-table partner-contact-table">
+                <thead>
+                    <tr>
+                        <th>Partner Contact</th>
+                        <th>Job Title</th>
+                        <th>Supported Accounts</th>
+                        <th>Status</th>
+                        <th>Owner</th>
+                        <th>Contact Details</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for contact in partner_contacts %}
+                        <tr>
+                            <td>
+                                <a href="#partner-contact-{{ contact.id }}" id="partner-contact-{{ contact.id }}">
+                                    {{ contact.name or "Unnamed contact" }}
+                                </a>
+                            </td>
+                            <td>{{ contact.job_title or "No job title" }}</td>
+                            <td>{{ contact.supported_account_names|join(", ") if contact.supported_account_names else "Not assigned" }}</td>
+                            <td><span class="status-pill">{{ contact.relationship_status or "No engagement" }}</span></td>
+                            <td>{{ contact.relationship_owner or "Not assigned" }}</td>
+                            <td>
+                                {% if contact.email %}
+                                    <a href="mailto:{{ contact.email }}">{{ contact.email }}</a>
+                                {% else %}
+                                    No email
+                                {% endif %}
+                                {% if contact.phone %}
+                                    <br>{{ contact.phone }}
+                                {% endif %}
+                                {% if contact.location %}
+                                    <br><span class="muted">{{ contact.location }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <details class="inline-edit-panel">
+                                    <summary class="btn btn-secondary btn-small">Edit</summary>
+                                    <form method="POST"
+                                          action="{{ url_for('edit_partner_contact', partner_id=partner.id, contact_id=contact.id) }}"
+                                          class="pipeflow-form compact-inline-form">
+                                        <div class="form-grid">
+                                            <div class="form-group">
+                                                <label for="edit_partner_contact_name_{{ contact.id }}">Name</label>
+                                                <input type="text" id="edit_partner_contact_name_{{ contact.id }}" name="name" value="{{ contact.name or '' }}" required>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="edit_partner_contact_title_{{ contact.id }}">Job Title</label>
+                                                <input type="text" id="edit_partner_contact_title_{{ contact.id }}" name="job_title" value="{{ contact.job_title or '' }}">
+                                            </div>
+                                            <div class="form-group full-width">
+                                                <label>Supported Accounts</label>
+                                                <div class="partner-checkbox-panel">
+                                                    {% for account in accounts %}
+                                                        <label class="partner-checkbox-option">
+                                                            <input type="checkbox"
+                                                                   name="account_ids"
+                                                                   value="{{ account.id }}"
+                                                                   {% if account.id|string in contact.supported_account_ids %}checked{% endif %}>
+                                                            <span>{{ account.account_name }}</span>
+                                                        </label>
+                                                    {% endfor %}
+                                                </div>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="edit_partner_contact_status_{{ contact.id }}">Partner Engagement</label>
+                                                <select id="edit_partner_contact_status_{{ contact.id }}" name="relationship_status">
+                                                    <option value="">Select engagement</option>
+                                                    {% for status in dropdown_values.partner_engagement_statuses %}
+                                                        <option value="{{ status }}" {% if contact.relationship_status == status %}selected{% endif %}>{{ status }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="edit_partner_contact_owner_{{ contact.id }}">Relationship Owner</label>
+                                                <input type="text" id="edit_partner_contact_owner_{{ contact.id }}" name="relationship_owner" value="{{ contact.relationship_owner or '' }}">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="edit_partner_contact_coverage_{{ contact.id }}">Coverage / Influence Area</label>
+                                                <input type="text" id="edit_partner_contact_coverage_{{ contact.id }}" name="coverage_area" value="{{ contact.coverage_area or '' }}">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="edit_partner_contact_email_{{ contact.id }}">Email</label>
+                                                <input type="email" id="edit_partner_contact_email_{{ contact.id }}" name="email" value="{{ contact.email or '' }}">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="edit_partner_contact_phone_{{ contact.id }}">Phone</label>
+                                                <input type="text" id="edit_partner_contact_phone_{{ contact.id }}" name="phone" value="{{ contact.phone or '' }}">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="edit_partner_contact_location_{{ contact.id }}">Location</label>
+                                                <input type="text" id="edit_partner_contact_location_{{ contact.id }}" name="location" value="{{ contact.location or '' }}">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="edit_partner_contact_linkedin_{{ contact.id }}">LinkedIn</label>
+                                                <input type="text" id="edit_partner_contact_linkedin_{{ contact.id }}" name="linkedin" value="{{ contact.linkedin or '' }}">
+                                            </div>
+                                            <div class="form-group full-width">
+                                                <label for="edit_partner_contact_notes_{{ contact.id }}">Notes</label>
+                                                <textarea id="edit_partner_contact_notes_{{ contact.id }}" name="notes" rows="3">{{ contact.notes or '' }}</textarea>
+                                            </div>
+                                        </div>
+                                        <div class="button-group">
+                                            <button type="submit" class="btn btn-primary btn-small">Save</button>
+                                        </div>
+                                    </form>
+                                </details>
+                                <form method="POST"
+                                      action="{{ url_for('delete_partner_contact', partner_id=partner.id, contact_id=contact.id) }}"
+                                      class="inline-form">
+                                    <button type="submit"
+                                            class="btn btn-danger btn-small"
+                                            onclick="return confirm('Delete this partner contact?');">
+                                        Delete
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     {% else %}
         <p>No partner contacts added yet.</p>
