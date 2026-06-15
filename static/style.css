@@ -1564,7 +1564,7 @@ a:hover {
     background: #eef4ff;
     color: #1e3a8a;
     font-weight: 700;
-    text-align: left;
+    text-align: center;
     padding: 16px;
     border-bottom: 2px solid #c7d2fe;
     white-space: normal;
@@ -1694,6 +1694,7 @@ a:hover {
 
 .outreach-table th {
     white-space: normal;
+    text-align: center;
 }
 
 .outreach-table td {
@@ -2588,6 +2589,16 @@ a:hover {
     line-height: 1.35;
 }
 
+.admin-user-table th,
+.account-contact-table th,
+.accounts-clean-table th,
+.contact-list-table th,
+.contact-report-table th,
+.dashboard-task-table th,
+.partner-relationship-table th {
+    text-align: center;
+}
+
 .admin-user-table th:nth-child(1),
 .admin-user-table td:nth-child(1) {
     width: 19%;
@@ -3162,6 +3173,19 @@ a:hover {
     font-weight: 900;
 }
 
+.pg-actions-global-head {
+    display: none;
+}
+
+.pg-inline-header th {
+    background: #08a94f;
+    color: #ffffff;
+    border: 2px solid #f0a271;
+    padding: 8px;
+    text-align: center;
+    font-weight: 900;
+}
+
 .pg-plan-table td,
 .pg-actions-table td {
     border: 1px solid #f0b184;
@@ -3184,9 +3208,9 @@ a:hover {
 }
 
 .pg-rag-dot {
-    display: inline-block;
-    width: 13px;
-    height: 13px;
+    display: inline-flex;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
     border: 1px solid rgba(15, 23, 42, 0.28);
     vertical-align: middle;
@@ -3194,7 +3218,13 @@ a:hover {
 
 .pg-rag-cell {
     text-align: center;
+    vertical-align: middle !important;
     width: 54px;
+}
+
+.pg-plan-table td:first-child {
+    text-align: center;
+    vertical-align: middle;
 }
 
 .pg-rag-red {
@@ -3233,6 +3263,10 @@ a:hover {
     color: #475569;
     font-style: normal;
     font-size: 12px;
+}
+
+.pg-person-line .pg-job-title {
+    color: #2563eb;
 }
 
 .pg-group-account td {
@@ -3837,7 +3871,13 @@ body {
     display: grid;
     grid-template-columns: 1fr;
     gap: 18px;
-    margin-top: 18px;
+    max-width: min(1480px, calc(100vw - 32px));
+    margin: 14px auto 0;
+    padding: 14px;
+    border: 1px solid #d8e2f0;
+    border-radius: 8px;
+    background: #ffffff;
+    box-sizing: border-box;
     min-width: 0;
 }
 
@@ -4661,6 +4701,12 @@ body {
     textarea {
         width: 100%;
         max-width: 100%;
+    }
+
+    .dashboard-page-layout {
+        max-width: calc(100vw - 16px);
+        padding: 8px;
+        margin-top: 8px;
     }
 
     .dashboard-task-table th,

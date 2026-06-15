@@ -107,6 +107,7 @@
                     {% endfor %}
                     {% for partner_contact in partner_contacts %}
                         {% set partner_contact_available = selected_account_id and partner_contact.account_id|string == selected_account_id|string %}
+                        {% set partner_contact_label = partner_contact.name ~ ((' - ' ~ partner_contact.job_title) if partner_contact.job_title else '') ~ ' - Partner Account: ' ~ (partner_contact.partner_name or 'Not set') %}
                         <label class="checkbox-select-option" data-contact-option data-account-id="{{ partner_contact.account_id or '' }}" {% if not partner_contact_available %}hidden{% endif %}>
                             <input type="checkbox"
                                    name="contact_ids"
@@ -117,10 +118,10 @@
                                    data-linkedin="{{ partner_contact.linkedin or '' }}"
                                    data-job-title="{{ partner_contact.job_title or '' }}"
                                    data-partner-name="{{ partner_contact.partner_name or '' }}"
-                                   data-contact-label="{{ partner_contact.name }} - Partner: {{ partner_contact.partner_name }}"
+                                   data-contact-label="{{ partner_contact_label }}"
                                    {% if not partner_contact_available %}disabled{% endif %}
                                    {% if 'partner_contact:' ~ partner_contact.id|string in selected_contact_values %}checked{% endif %}>
-                            <span>{{ partner_contact.name }} - Partner: {{ partner_contact.partner_name }}</span>
+                            <span>{{ partner_contact_label }}</span>
                         </label>
                     {% endfor %}
                     </div>
@@ -143,14 +144,15 @@
             <div class="form-group">
                 <label for="assigned_to">Assigned To</label>
                 <select id="assigned_to" name="assigned_to">
-                    <option value="" {% if not outreach_item.assigned_to %}selected{% endif %}>Unassigned</option>
-
+                    {% if outreach_item.assigned_to and (not profile or outreach_item.assigned_to != profile["full_name"]) %}
+                        <option value="{{ outreach_item.assigned_to }}" selected>{{ outreach_item.assigned_to }}</option>
+                    {% endif %}
                     {% if profile and profile["full_name"] %}
-                        <option value="{{ profile['full_name'] }}" {% if outreach_item.assigned_to == profile["full_name"] %}selected{% endif %}>
+                        <option value="{{ profile['full_name'] }}" {% if (outreach_item.assigned_to or profile['full_name']) == profile["full_name"] %}selected{% endif %}>
                             {{ profile["full_name"] }}
                         </option>
                     {% else %}
-                        <option value="Melissa" {% if outreach_item.assigned_to == "Melissa" %}selected{% endif %}>
+                        <option value="Melissa" {% if (outreach_item.assigned_to or "Melissa") == "Melissa" %}selected{% endif %}>
                             Melissa
                         </option>
                     {% endif %}
@@ -208,13 +210,8 @@
             </div>
 
             <div class="form-group" data-scheduled-meeting-field hidden>
-                <label for="scheduled_meeting_date">Scheduled Meeting Date</label>
-                <input type="date" id="scheduled_meeting_date" name="scheduled_meeting_date" value="{{ outreach_item.scheduled_meeting_date or '' }}">
-            </div>
-
-            <div class="form-group" data-scheduled-meeting-field hidden>
-                <label for="scheduled_meeting_time">Scheduled Meeting Time</label>
-                <input type="time" id="scheduled_meeting_time" name="scheduled_meeting_time" value="{{ outreach_item.scheduled_meeting_time or '' }}">
+                <label for="scheduled_meeting_at">Scheduled Meeting Date / Time</label>
+                <input type="datetime-local" id="scheduled_meeting_at" name="scheduled_meeting_at" value="{{ scheduled_meeting_at or '' }}">
             </div>
 
             <div class="form-group full-width">
@@ -437,8 +434,7 @@
     function toggleScheduledMeetingFields() {
         const outcomeSelect = document.getElementById("outcome");
         const scheduledFields = Array.from(document.querySelectorAll("[data-scheduled-meeting-field]"));
-        const dateInput = document.getElementById("scheduled_meeting_date");
-        const timeInput = document.getElementById("scheduled_meeting_time");
+        const scheduledMeetingInput = document.getElementById("scheduled_meeting_at");
         const meetingOutcomes = new Set(["Discovery Booked", "NBM Booked", "Exec Meeting Booked", "Meeting Booked"]);
         function apply() {
             const show = outcomeSelect && meetingOutcomes.has(outcomeSelect.value);
@@ -446,8 +442,7 @@
                 field.hidden = !show;
             });
             if (!show) {
-                if (dateInput) dateInput.value = "";
-                if (timeInput) timeInput.value = "";
+                if (scheduledMeetingInput) scheduledMeetingInput.value = "";
             }
         }
         if (outcomeSelect) outcomeSelect.addEventListener("change", apply);
@@ -459,8 +454,7 @@
     document.querySelector(".pipeflow-form")?.addEventListener("submit", (event) => {
         const fields = [
             ["activity_date", "activity_time"],
-            ["next_action_date", "next_action_time"],
-            ["scheduled_meeting_date", "scheduled_meeting_time"]
+            ["next_action_date", "next_action_time"]
         ];
         for (const [dateId, timeId] of fields) {
             const dateInput = document.getElementById(dateId);

@@ -107,10 +107,9 @@
                                 <form method="POST" action="{{ url_for('reassign_team_outreach') }}" class="inline-form">
                                     <input type="hidden" name="workspace_schema" value="{{ item.workspace_schema }}">
                                     <input type="hidden" name="outreach_id" value="{{ item.id }}">
-                                    <select name="assigned_to" onchange="this.form.submit()">
-                                        <option value="">Unassigned</option>
+                                    <select name="assigned_to_user_id" onchange="this.form.submit()">
                                         {% for assignable_user in assignable_users %}
-                                            <option value="{{ assignable_user.full_name }}" {% if item.assigned_to == assignable_user.full_name %}selected{% endif %}>
+                                            <option value="{{ assignable_user.id }}" {% if item.assigned_to == assignable_user.full_name %}selected{% endif %}>
                                                 {{ assignable_user.full_name }}
                                             </option>
                                         {% endfor %}

@@ -62,7 +62,7 @@
 
         <div class="table-container">
             <table class="pg-plan-table no-sort">
-                <thead>
+                <thead class="pg-actions-global-head">
                     <tr>
                         <th>PG RAG</th>
                         <th>PG Sales Play or Initiative</th>
@@ -136,6 +136,15 @@
                             <tr class="pg-group-row pg-group-sales-play">
                                 <td colspan="7"><span>Sales Play</span><strong>{{ row.sales_play or "No sales play entered" }}</strong></td>
                             </tr>
+                            <tr class="pg-inline-header">
+                                <th>PG RAG</th>
+                                <th>Targeted or Booked Discovery Meeting</th>
+                                <th>Completed Discovery Meeting</th>
+                                <th>Exec First</th>
+                                <th>NBM Completed</th>
+                                <th>Last 7 Days Activity</th>
+                                <th>Next Planned Actions</th>
+                            </tr>
                         {% endif %}
                         <tr>
                             <td class="pg-rag-cell">
@@ -148,7 +157,7 @@
                                 {% endif %}
                                 <div class="pg-person-line"><span>Contact</span><strong>{{ row.targeted_discovery or "No account contacts entered" }}</strong></div>
                                 {% if row.contact_job_title %}
-                                    <div class="pg-person-line"><span>Job Title</span><strong>{{ row.contact_job_title }}</strong></div>
+                                    <div class="pg-person-line"><span>Job Title</span><strong class="pg-job-title">{{ row.contact_job_title }}</strong></div>
                                 {% endif %}
                             </td>
                             <td>

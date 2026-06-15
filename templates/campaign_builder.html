@@ -117,11 +117,13 @@
             <div class="form-group">
                 <label for="assigned_to">Assigned To</label>
                 <select id="assigned_to" name="assigned_to">
-                    <option value="">Unassigned</option>
+                    {% if default_assignee and (not profile or default_assignee != profile["full_name"]) %}
+                        <option value="{{ default_assignee }}" selected>{{ default_assignee }}</option>
+                    {% endif %}
                     {% if profile and profile["full_name"] %}
-                        <option value="{{ profile['full_name'] }}" selected>{{ profile["full_name"] }}</option>
+                        <option value="{{ profile['full_name'] }}" {% if not default_assignee or default_assignee == profile["full_name"] %}selected{% endif %}>{{ profile["full_name"] }}</option>
                     {% else %}
-                        <option value="Melissa" selected>Melissa</option>
+                        <option value="Melissa" {% if not default_assignee or default_assignee == "Melissa" %}selected{% endif %}>Melissa</option>
                     {% endif %}
                 </select>
             </div>

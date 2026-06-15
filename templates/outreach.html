@@ -248,7 +248,6 @@
                                     <label for="assigned_to_user_{{ item.id }}" class="table-field-label">Assigned To</label>
                                     <div class="assignment-save-control">
                                         <select id="assigned_to_user_{{ item.id }}" name="assigned_to_user_id" {% if task_locked %}disabled{% endif %}>
-                                            <option value="">Unassigned</option>
                                             {% for assignable_user in assignable_users %}
                                                 <option value="{{ assignable_user.id }}" {% if item.assigned_to == assignable_user.full_name %}selected{% endif %}>
                                                     {{ assignable_user.full_name }}
