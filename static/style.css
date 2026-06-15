@@ -3183,6 +3183,20 @@ a:hover {
     text-transform: uppercase;
 }
 
+.pg-rag-dot {
+    display: inline-block;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    border: 1px solid rgba(15, 23, 42, 0.28);
+    vertical-align: middle;
+}
+
+.pg-rag-cell {
+    text-align: center;
+    width: 54px;
+}
+
 .pg-rag-red {
     background: #dc2626;
 }

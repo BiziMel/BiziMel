@@ -20,9 +20,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.3.0"
+APP_VERSION = "2.3.1"
 APP_RELEASE_DATE = "2026-06-15"
-APP_BUILD = "2026-06-15-v2.3.0-execution-insights-pg-progress-r1"
+APP_BUILD = "2026-06-15-v2.3.1-pg-progress-rag-table-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -36,6 +36,20 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.3.1",
+        "release_date": "2026-06-15",
+        "title": "PG Progress table restoration and dot-only RAG display",
+        "new": [],
+        "enhanced": [
+            "Changed every PG Progress RAG presentation to a small filled colour dot with no text label.",
+            "Simplified PG Progress contact rows to show only contact name and job title.",
+            "Suppressed empty Business Org grouping rows unless the row is partner activity.",
+        ],
+        "fixed": [
+            "Restored the PG Progress action table columns for the editable dropdowns plus the Last 7 Days Activity and Next Planned Actions columns.",
+        ],
+    },
     {
         "version": "2.3.0",
         "release_date": "2026-06-15",
@@ -5206,7 +5220,7 @@ def pg_dashboard_context(connection):
             "rag_reason": rag["reason"],
             "sales_play": pg_sales_play,
             "account_name": account["account_name"],
-            "business_org": account["business_unit"] or "No business org set",
+            "business_org": account["business_unit"] or "",
             "estimated_value": money_value(account["pipeline_target"]),
         })
 
@@ -5317,7 +5331,7 @@ def pg_dashboard_context(connection):
                 "targeted_discovery": contact["name"] or "No contact name",
                 "contact_job_title": contact["job_title"] or "",
                 "company_name": contact["account_name"] or account["account_name"],
-                "business_org": contact["business_unit"] or "No business org set",
+                "business_org": contact["business_unit"] or "",
                 "department": contact["org_dept"] or "",
                 "completed_discovery_meeting": manual_completed_discovery or ("Yes" if discovery_meeting_count else ""),
                 "exec_first": action_update["exec_first"] if action_update and "exec_first" in action_update.keys() else "",
@@ -5403,7 +5417,7 @@ def pg_dashboard_context(connection):
                 "targeted_discovery": "Partner activity",
                 "contact_job_title": "",
                 "company_name": account["account_name"],
-                "business_org": account["business_unit"] or "No business org set",
+                "business_org": account["business_unit"] or "Partner activity",
                 "department": "",
                 "completed_discovery_meeting": "N/A",
                 "exec_first": "N/A",

@@ -74,7 +74,7 @@
                     {% for row in pg_plan_rows %}
                         <tr>
                             <td>
-                                <span class="pg-rag-pill pg-rag-{{ row.rag_status }}" title="{{ row.rag_reason }}">{{ row.rag_label }}</span>
+                                <span class="pg-rag-dot pg-rag-{{ row.rag_status }}" title="{{ row.rag_reason }}"></span>
                             </td>
                             <td>{{ row.sales_play or "No sales play entered" }}</td>
                             <td>{{ row.account_name }}</td>
@@ -100,6 +100,7 @@
             <table class="pg-actions-table no-sort">
                 <thead>
                     <tr>
+                        <th>PG RAG</th>
                         <th>Targeted or Booked Discovery Meeting</th>
                         <th>Completed Discovery Meeting</th>
                         <th>Exec First</th>
@@ -116,41 +117,34 @@
                             {% set pg_group.business_org = "" %}
                             {% set pg_group.sales_play = "" %}
                             <tr class="pg-group-row pg-group-account">
-                                <td colspan="6">
+                                <td colspan="7">
                                     <span>Account</span>
                                     <strong>{{ row.account_name }}</strong>
-                                    <span class="pg-rag-pill pg-rag-{{ row.rag_status }}">{{ row.rag_label }}</span>
-                                    <em>{{ row.rag_reason }}</em>
+                                    <span class="pg-rag-dot pg-rag-{{ row.rag_status }}" title="{{ row.rag_reason }}"></span>
                                 </td>
                             </tr>
                         {% endif %}
-                        {% if row.business_org != pg_group.business_org %}
+                        {% if (row.business_org or row.is_partner_row) and row.business_org != pg_group.business_org %}
                             {% set pg_group.business_org = row.business_org %}
                             {% set pg_group.sales_play = "" %}
                             <tr class="pg-group-row pg-group-org">
-                                <td colspan="6"><span>Business Org</span><strong>{{ row.business_org or "No business org set" }}</strong></td>
+                                <td colspan="7"><span>Business Org</span><strong>{{ row.business_org }}</strong></td>
                             </tr>
                         {% endif %}
                         {% if row.sales_play != pg_group.sales_play %}
                             {% set pg_group.sales_play = row.sales_play %}
                             <tr class="pg-group-row pg-group-sales-play">
-                                <td colspan="6"><span>Sales Play</span><strong>{{ row.sales_play or "No sales play entered" }}</strong></td>
+                                <td colspan="7"><span>Sales Play</span><strong>{{ row.sales_play or "No sales play entered" }}</strong></td>
                             </tr>
                         {% endif %}
                         <tr>
+                            <td class="pg-rag-cell">
+                                <span class="pg-rag-dot pg-rag-{{ row.rag_status }}" title="{{ row.rag_reason }}"></span>
+                            </td>
                             <td>
                                 {% if not row.is_partner_row %}
                                     <input type="hidden" name="pg_action_contact_id" value="{{ row.contact_id }}">
                                     <input type="hidden" name="pg_action_account_id_{{ row.contact_id }}" value="{{ row.account_id }}">
-                                {% endif %}
-                                {% if row.company_name %}
-                                    <div class="pg-person-line"><span>Company</span><strong>{{ row.company_name }}</strong></div>
-                                {% endif %}
-                                {% if row.business_org %}
-                                    <div class="pg-person-line"><span>Business / Org</span><strong>{{ row.business_org }}</strong></div>
-                                {% endif %}
-                                {% if row.department %}
-                                    <div class="pg-person-line"><span>Department</span><strong>{{ row.department }}</strong></div>
                                 {% endif %}
                                 <div class="pg-person-line"><span>Contact</span><strong>{{ row.targeted_discovery or "No account contacts entered" }}</strong></div>
                                 {% if row.contact_job_title %}
@@ -212,7 +206,7 @@
                         </tr>
                     {% else %}
                         <tr>
-                            <td colspan="6">No action rows found. Add accounts and contacts to populate this table.</td>
+                            <td colspan="7">No action rows found. Add accounts and contacts to populate this table.</td>
                         </tr>
                     {% endfor %}
                 </tbody>
