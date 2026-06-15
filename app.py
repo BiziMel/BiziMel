@@ -20,9 +20,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.2.3"
-APP_RELEASE_DATE = "2026-06-12"
-APP_BUILD = "2026-06-12-v2.2.3-enterprise-org-insights-reports-admin-profile-r1"
+APP_VERSION = "2.2.4"
+APP_RELEASE_DATE = "2026-06-15"
+APP_BUILD = "2026-06-15-v2.2.4-admin-insights-account-owner-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -36,6 +36,21 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.2.4",
+        "release_date": "2026-06-15",
+        "title": "Admin table layout, account-specific Daily Focus and default account ownership",
+        "new": [],
+        "enhanced": [
+            "Expanded Daily Focus into more account-specific rows that explain why each account needs attention and how the action should drive booked meetings or new-business progress.",
+            "Defaulted the Add Account owner dropdown to the signed-in user while preserving reassignment to another eligible user.",
+            "Improved Admin user permissions table spacing so profile details, roles and access controls fit without overlapping.",
+        ],
+        "fixed": [
+            "Changed Admin user permissions created dates to numeric dd-mm-yyyy display.",
+            "Shortened Admin user access buttons into compact two-line labels to avoid cramped table controls.",
+        ],
+    },
     {
         "version": "2.2.3",
         "release_date": "2026-06-12",
@@ -877,9 +892,9 @@ def format_display_date(value, month_name=True):
     else:
         text = str(value).strip()
         parsed = None
-        for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M"):
+        for fmt, width in (("%Y-%m-%d %H:%M:%S", 19), ("%Y-%m-%dT%H:%M", 16), ("%Y-%m-%d", 10)):
             try:
-                parsed = datetime.strptime(text[:len(fmt)], fmt).date()
+                parsed = datetime.strptime(text[:width], fmt).date()
                 break
             except ValueError:
                 continue
@@ -3238,8 +3253,8 @@ def format_dashboard_guidance(title, lead, bullets, subtitle=""):
         "title": title,
         "subtitle": subtitle,
         "lead": lead,
-        "bullets": cleaned_bullets[:6],
-        "paragraphs": paragraphs[:8],
+        "bullets": cleaned_bullets[:12],
+        "paragraphs": paragraphs[:14],
         "body": body,
     }
 
@@ -3399,26 +3414,126 @@ def generate_next_24_hours_focus(connection, today, metric_values, execution_ins
              OR lower(COALESCE(job_title, '')) LIKE '%head of%'
           )
     """, default=0)
+    overdue_account_rows = dashboard_rows(connection, f"""
+        SELECT
+            accounts.account_name,
+            COUNT(outreach.id) AS overdue_actions,
+            MIN(outreach.next_action_date) AS oldest_due_date,
+            MAX(COALESCE(outreach.next_action, outreach.subject, '')) AS action_hint
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        WHERE {overdue_task_sql("outreach")}
+        GROUP BY accounts.account_name
+        HAVING accounts.account_name IS NOT NULL
+        ORDER BY overdue_actions DESC, oldest_due_date ASC, accounts.account_name
+        LIMIT 4
+    """, overdue_task_params())
+    conversion_gap_rows = dashboard_rows(connection, """
+        SELECT
+            accounts.account_name,
+            COUNT(outreach.id) AS activity_count,
+            COALESCE(accounts.pipeline_target, 0) AS pipeline_target,
+            MAX(COALESCE(outreach.sales_play, accounts.sales_play, '')) AS sales_play
+        FROM accounts
+        JOIN outreach ON outreach.account_id = accounts.id
+        GROUP BY accounts.id, accounts.account_name, accounts.pipeline_target
+        HAVING SUM(CASE WHEN outreach.outcome IN ('Discovery Booked', 'NBM Booked', 'Exec Meeting Booked', 'Meeting Booked') THEN 1 ELSE 0 END) = 0
+        ORDER BY activity_count DESC, pipeline_target DESC, accounts.account_name
+        LIMIT 4
+    """)
+    executive_gap_rows = dashboard_rows(connection, """
+        SELECT
+            accounts.account_name,
+            COALESCE(accounts.pipeline_target, 0) AS pipeline_target,
+            COUNT(contacts.id) AS contact_count
+        FROM accounts
+        LEFT JOIN contacts ON contacts.account_id = accounts.id
+          AND COALESCE(contacts.status, 'Active') = 'Active'
+          AND (
+                COALESCE(contacts.category, '') = 'Executive'
+             OR COALESCE(contacts.bmc_relationship, '') IN ('Executive Buyer', 'Executive Assistant')
+             OR lower(COALESCE(contacts.job_title, '')) LIKE '%chief%'
+             OR lower(COALESCE(contacts.job_title, '')) LIKE '%vp%'
+             OR lower(COALESCE(contacts.job_title, '')) LIKE '%vice president%'
+             OR lower(COALESCE(contacts.job_title, '')) LIKE '%executive%'
+             OR lower(COALESCE(contacts.job_title, '')) LIKE '%director%'
+             OR lower(COALESCE(contacts.job_title, '')) LIKE '%head of%'
+          )
+        GROUP BY accounts.id, accounts.account_name, accounts.pipeline_target
+        HAVING COUNT(contacts.id) = 0
+        ORDER BY pipeline_target DESC, accounts.account_name
+        LIMIT 4
+    """)
+    untouched_account_rows = dashboard_rows(connection, f"""
+        SELECT
+            accounts.account_name,
+            COALESCE(accounts.pipeline_target, 0) AS pipeline_target,
+            COALESCE(accounts.sales_play, '') AS sales_play,
+            COUNT(outreach.id) AS open_actions
+        FROM accounts
+        LEFT JOIN outreach
+          ON outreach.account_id = accounts.id
+         AND {open_task_sql("outreach")}
+        GROUP BY accounts.id, accounts.account_name, accounts.pipeline_target, accounts.sales_play
+        HAVING COUNT(outreach.id) = 0
+        ORDER BY pipeline_target DESC, accounts.account_name
+        LIMIT 4
+    """, open_task_params())
     pg_week = active_pg_week_broadcast()
-    bullets = [
-        f"Spend the next working window on {focus_account_text}. Use activity that can create a Discovery Meeting or, better, an NBM Meeting. The current success baseline is {success_summary}, which means {success_total} booked {pluralise(success_total, 'Meeting')} recorded so far.",
-        f"There are {upcoming_count} open {pluralise(upcoming_count, 'action')} due in the next 24 hours and {executive_count} active executive-route {pluralise(executive_count, 'contact')}, so start where a senior route already exists.",
-    ]
+    bullets = []
+    for row in upcoming_rows[:5]:
+        account_name = row["account_name"] or "Unknown account"
+        due_time = row["next_action_time"] or "time not set"
+        action_hint = row["next_action"] or row["activity_type"] or "complete the open action"
+        bullets.append(
+            f"{account_name}: complete the due action on {display_date(row['next_action_date'])} at {due_time}. "
+            f"Use '{action_hint}' to ask for a Discovery Meeting or NBM Meeting, because this account is already in today's work queue and can move quickest toward booked meetings."
+        )
+    for row in overdue_account_rows[:3]:
+        account_name = row["account_name"] or "Unknown account"
+        action_hint = row["action_hint"] or "reset the next action"
+        bullets.append(
+            f"{account_name}: clear {row['overdue_actions']} overdue {pluralise(row['overdue_actions'], 'action')} before adding new activity. "
+            f"The oldest due date is {display_date(row['oldest_due_date'])}; update '{action_hint}' into a specific meeting ask so stale work becomes new-business progression."
+        )
+    for row in conversion_gap_rows[:3]:
+        account_name = row["account_name"] or "Unknown account"
+        sales_play = row["sales_play"] or "the current sales play"
+        bullets.append(
+            f"{account_name}: {row['activity_count']} outreach {pluralise(row['activity_count'], 'touchpoint')} exist but no Discovery, NBM or executive meeting is booked. "
+            f"Change the route or sharpen {sales_play} into a senior meeting ask so activity converts into pipeline rather than noise."
+        )
+    for row in executive_gap_rows[:3]:
+        account_name = row["account_name"] or "Unknown account"
+        bullets.append(
+            f"{account_name}: no executive route is mapped yet. Add or identify the senior buyer/assistant path first, then create a focused outreach action aimed at booking a Discovery Meeting."
+        )
+    for row in untouched_account_rows[:3]:
+        account_name = row["account_name"] or "Unknown account"
+        sales_play = row["sales_play"] or "a named sales play"
+        bullets.append(
+            f"{account_name}: there are no open actions, so create the first next step against {sales_play}. "
+            f"Use the account's target value to justify a direct Discovery/NBM ask and start generating PG learning."
+        )
     if success_accounts:
-        bullets.append(f"The accounts proving the pattern are {success_accounts}; reuse what worked there before adding generic volume elsewhere.")
+        bullets.append(f"{success_accounts}: these accounts are proving the meeting-booking pattern with {success_summary}. Reuse the stakeholder route, sales play and timing from them on similar accounts today.")
     if pg_week:
-        bullets.append("PG week is active, so work at pace: make the calls, send the VITOs, use LinkedIn to create recognition, and keep the ask clear. The win is meetings scheduled this week for a future Discovery or NBM slot.")
+        bullets.append(f"{focus_account_text}: PG week is active, so work at pace on these named accounts. The desired outcome is a scheduled Discovery or NBM meeting, not just completed activity.")
     if lead_count:
-        bullets.append(f"{lead_count} active {pluralise(lead_count, 'contact')} still {pluralise(lead_count, 'is', 'are')} marked Lead; convert the real relationships out of Lead status before treating them as opportunity-progress contacts.")
+        bullets.append(f"{focus_account_text}: {lead_count} active {pluralise(lead_count, 'contact')} still {pluralise(lead_count, 'is', 'are')} marked Lead. Clean the relationship status on the named focus accounts before relying on them for meeting conversion.")
     if overdue_count:
-        bullets.append(f"Clear {overdue_count} overdue {pluralise(overdue_count, 'action')} before adding new campaign volume so stale work does not dilute focus.")
+        bullets.append(f"{focus_account_text}: there are {overdue_count} overdue {pluralise(overdue_count, 'action')} across the focus set. Clear them first so new campaign volume is not built on stale follow-up.")
     if untouched_count:
-        bullets.append(f"Select from {untouched_count} untouched {pluralise(untouched_count, 'account')} only after confirming executive route, sales play and next action quality.")
+        bullets.append(f"{focus_account_text}: {untouched_count} untouched {pluralise(untouched_count, 'account')} need a confirmed executive route, sales play and dated next action before they can contribute to meeting goals.")
     for insight in execution_insights[:3]:
-        bullets.append(f"{insight.get('category', 'Focus')}: {insight.get('action', '')}")
+        bullets.append(f"{focus_account_text}: {insight.get('category', 'Focus')} - {insight.get('action', '')}")
+    if not bullets:
+        bullets.append(
+            f"{focus_account_text}: start here today because these are the best available accounts in the workspace. Add executive contacts, create dated outreach, and record outcomes so PipeFlow can learn what books meetings."
+        )
     return format_dashboard_guidance(
         f"Next 24 Hours - {display_date(today)}",
-        f"Here is the focus for {display_date(today)}.",
+        f"Here is the account-specific focus for {display_date(today)}. Each row names where to act, why it matters, and how the action should create booked meetings or new-business progression.",
         bullets,
         subtitle=display_date(today),
     )
@@ -5875,7 +5990,14 @@ def add_account():
         connection.close()
         return redirect(url_for("accounts"))
 
-    return render_template("add_account.html", custom_fields=custom_fields, assignable_users=list_assignable_users(), prefill={}, error="")
+    default_owner = current_user_owner_payload()
+    return render_template(
+        "add_account.html",
+        custom_fields=custom_fields,
+        assignable_users=list_assignable_users(),
+        prefill={"owner_user_id": default_owner["owner_user_id"]},
+        error="",
+    )
 
 
 @app.route("/accounts/<int:account_id>")

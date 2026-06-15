@@ -2571,11 +2571,54 @@ a:hover {
 
 .admin-user-table-container {
     margin-top: 16px;
+    overflow-x: auto;
+}
+
+.admin-user-table {
+    min-width: 980px;
+    table-layout: fixed;
 }
 
 .admin-user-table th,
 .admin-user-table td {
     vertical-align: middle;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    line-height: 1.35;
+}
+
+.admin-user-table th:nth-child(1),
+.admin-user-table td:nth-child(1) {
+    width: 19%;
+}
+
+.admin-user-table th:nth-child(2),
+.admin-user-table td:nth-child(2) {
+    width: 24%;
+}
+
+.admin-user-table th:nth-child(3),
+.admin-user-table td:nth-child(3) {
+    width: 17%;
+}
+
+.admin-user-table th:nth-child(4),
+.admin-user-table td:nth-child(4) {
+    width: 12%;
+}
+
+.admin-user-table th:nth-child(5),
+.admin-user-table td:nth-child(5),
+.admin-user-table th:nth-child(6),
+.admin-user-table td:nth-child(6),
+.admin-user-table th:nth-child(7),
+.admin-user-table td:nth-child(7) {
+    width: 9%;
+}
+
+.admin-user-email {
+    font-size: 13px;
 }
 
 .link-button {
@@ -2601,7 +2644,7 @@ a:hover {
 
 .admin-user-panel {
     display: grid;
-    grid-template-columns: minmax(260px, 1.6fr) repeat(3, minmax(180px, 1fr));
+    grid-template-columns: minmax(320px, 1.8fr) minmax(180px, 0.9fr) minmax(130px, 0.7fr) minmax(210px, 1fr);
     gap: 14px;
     padding: 14px;
     border: 1px solid #dbe4f0;
@@ -2629,6 +2672,18 @@ a:hover {
 .admin-user-panel input,
 .admin-user-panel select {
     width: 100%;
+    min-width: 0;
+}
+
+.admin-access-button {
+    display: inline-grid;
+    justify-items: center;
+    gap: 1px;
+    width: 96px;
+    min-height: 42px;
+    padding: 6px 8px;
+    line-height: 1.05;
+    white-space: normal;
 }
 
 @media (max-width: 1100px) {

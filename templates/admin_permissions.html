@@ -161,7 +161,7 @@
                                 {{ user["full_name"] }}
                             </button>
                         </td>
-                        <td>{{ user["email"] }}</td>
+                        <td class="admin-user-email">{{ user["email"] }}</td>
                         <td>{{ user["company"] or "Not set" }}</td>
                         <td>{{ user["team"] or "Not set" }}</td>
                         <td><span class="permission-badge">{{ user["role"]|replace("_", " ")|title }}</span></td>
@@ -170,7 +170,7 @@
                                 {{ "Active" if user["is_active"] else "Inactive" }}
                             </span>
                         </td>
-                        <td>{{ user["date_created"] }}</td>
+                        <td>{{ user["date_created"]|display_date(false) }}</td>
                     </tr>
                     <tr class="admin-user-panel-row" id="admin-user-panel-{{ user['id'] }}" hidden>
                         <td colspan="7">
@@ -212,11 +212,11 @@
                                     <h4>Access</h4>
                                     {% if user["is_active"] %}
                                         <form method="POST" action="{{ url_for('admin_deactivate_user', user_id=user['id']) }}">
-                                            <button type="submit" class="btn btn-danger">Deactivate Profile</button>
+                                            <button type="submit" class="btn btn-danger admin-access-button"><span>Deactivate</span><span>Profile</span></button>
                                         </form>
                                     {% else %}
                                         <form method="POST" action="{{ url_for('admin_reactivate_user', user_id=user['id']) }}">
-                                            <button type="submit" class="btn btn-secondary">Reactivate Profile</button>
+                                            <button type="submit" class="btn btn-secondary admin-access-button"><span>Reactivate</span><span>Profile</span></button>
                                         </form>
                                     {% endif %}
                                 </section>
