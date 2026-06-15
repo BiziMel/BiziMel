@@ -109,76 +109,42 @@
     <div class="section-header">
         <div>
             <h2>Account Relationships</h2>
-            <p>Accounts this partner is helping you sell into.</p>
+            <p>Accounts this partner supports, generated from linked partner contacts.</p>
         </div>
     </div>
 
-    <form method="POST" action="{{ url_for('add_partner_account_relationship', partner_id=partner.id) }}" class="pipeflow-form partner-form">
-        <div class="form-grid">
-            <div class="form-group">
-                <label for="account_id">Account</label>
-                <select id="account_id" name="account_id" required>
-                    <option value="">Select account</option>
-                    {% for account in accounts %}
-                        <option value="{{ account.id }}">{{ account.account_name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label for="involvement_status">Partner Engagement</label>
-                <select id="involvement_status" name="involvement_status">
-                    <option value="">Select status</option>
-                    {% for status in dropdown_values.partner_involvement_statuses %}
-                        <option value="{{ status }}">{{ status }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label for="account_relationship_owner">Relationship Owner</label>
-                <input type="text" id="account_relationship_owner" name="relationship_owner" value="{{ partner.bmc_partner_manager or partner.relationship_owner or '' }}">
-            </div>
-
-            <div class="form-group full-width">
-                <label for="relationship_notes">Notes</label>
-                <textarea id="relationship_notes" name="notes" rows="3"></textarea>
-            </div>
-        </div>
-
-        <div class="button-group">
-            <button type="submit" class="btn btn-primary">Link Account</button>
-        </div>
-    </form>
-
     {% if partner_accounts %}
-        <div class="partner-card-grid">
-            {% for relationship in partner_accounts %}
-                <div class="partner-card">
-                    <div class="partner-card-main">
-                        <div>
-                            <strong>
+        <div class="table-responsive">
+            <table class="report-table partner-relationship-table">
+                <thead>
+                    <tr>
+                        <th>Account</th>
+                        <th>Partner Contact</th>
+                        <th>Status</th>
+                        <th>Location</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for relationship in partner_accounts %}
+                        <tr>
+                            <td>
                                 <a href="{{ url_for('view_account', account_id=relationship.account_id) }}">
                                     {{ relationship.account_name or "Unknown account" }}
                                 </a>
-                            </strong>
-                            <p>{{ partner.partner_type or "Partner type not set" }}</p>
-                            <p class="muted">{{ relationship.industry or "Industry not set" }}</p>
-                        </div>
-
-                        <span class="status-pill">{{ relationship.involvement_status or "No status" }}</span>
-                    </div>
-
-                    <div class="partner-detail-grid">
-                        <p><strong>Owner:</strong> {{ relationship.relationship_owner or "Not assigned" }}</p>
-                        <p><strong>Location:</strong> {{ relationship.city or "City not set" }}, {{ relationship.country or "Country not set" }}</p>
-                    </div>
-
-                    {% if relationship.notes %}
-                        <p class="muted">{{ relationship.notes }}</p>
-                    {% endif %}
-                </div>
-            {% endfor %}
+                                <p class="muted">{{ relationship.industry or "Industry not set" }}</p>
+                            </td>
+                            <td>
+                                <strong>{{ relationship.partner_contact_name or "Partner contact not set" }}</strong>
+                                {% if relationship.partner_contact_job_title %}
+                                    <span class="muted"> - {{ relationship.partner_contact_job_title }}</span>
+                                {% endif %}
+                            </td>
+                            <td><span class="status-pill">{{ relationship.involvement_status or "No status" }}</span></td>
+                            <td>{{ relationship.city or "City not set" }}, {{ relationship.country or "Country not set" }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     {% else %}
         <p>No account relationships linked to this partner yet.</p>
@@ -215,14 +181,16 @@
                 </select>
             </div>
 
-            <div class="form-group">
-                <label for="contact_account_id">Responsible Account</label>
-                <select id="contact_account_id" name="account_id">
-                    <option value="">No account assigned</option>
+            <div class="form-group full-width">
+                <label>Supported Accounts</label>
+                <div class="partner-checkbox-panel">
                     {% for account in accounts %}
-                        <option value="{{ account.id }}">{{ account.account_name }}</option>
+                        <label class="partner-checkbox-option">
+                            <input type="checkbox" name="account_ids" value="{{ account.id }}">
+                            <span>{{ account.account_name }}</span>
+                        </label>
                     {% endfor %}
-                </select>
+                </div>
             </div>
 
             <div class="form-group">
@@ -273,7 +241,7 @@
                     <div>
                         <strong>{{ contact.name }}</strong>
                         <p>{{ contact.job_title or "No job title" }}</p>
-                        <p class="muted">Responsible account: {{ contact.account_name or "Not assigned" }}</p>
+                        <p class="muted">Supported accounts: {{ contact.supported_account_names|join(", ") if contact.supported_account_names else "Not assigned" }}</p>
                         <p class="muted">{{ contact.coverage_area or "No coverage area" }}</p>
                     </div>
 
@@ -295,7 +263,7 @@
 
                     <div class="partner-detail-grid full-width">
                         <p><strong>Owner:</strong> {{ contact.relationship_owner or "Not assigned" }}</p>
-                        <p><strong>Responsible Account:</strong> {{ contact.account_name or "Not assigned" }}</p>
+                        <p><strong>Supported Accounts:</strong> {{ contact.supported_account_names|join(", ") if contact.supported_account_names else "Not assigned" }}</p>
                         <p><strong>Location:</strong> {{ contact.location or "No location" }}</p>
                     </div>
 
@@ -321,14 +289,19 @@
                                     <label for="edit_partner_contact_title_{{ contact.id }}">Job Title</label>
                                     <input type="text" id="edit_partner_contact_title_{{ contact.id }}" name="job_title" value="{{ contact.job_title or '' }}">
                                 </div>
-                                <div class="form-group">
-                                    <label for="edit_partner_contact_account_{{ contact.id }}">Responsible Account</label>
-                                    <select id="edit_partner_contact_account_{{ contact.id }}" name="account_id">
-                                        <option value="">No account assigned</option>
+                                <div class="form-group full-width">
+                                    <label>Supported Accounts</label>
+                                    <div class="partner-checkbox-panel">
                                         {% for account in accounts %}
-                                            <option value="{{ account.id }}" {% if contact.account_id == account.id %}selected{% endif %}>{{ account.account_name }}</option>
+                                            <label class="partner-checkbox-option">
+                                                <input type="checkbox"
+                                                       name="account_ids"
+                                                       value="{{ account.id }}"
+                                                       {% if account.id|string in contact.supported_account_ids %}checked{% endif %}>
+                                                <span>{{ account.account_name }}</span>
+                                            </label>
                                         {% endfor %}
-                                    </select>
+                                    </div>
                                 </div>
                                 <div class="form-group">
                                     <label for="edit_partner_contact_status_{{ contact.id }}">Partner Engagement</label>

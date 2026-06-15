@@ -98,9 +98,9 @@
                         </label>
                     {% endfor %}
                     {% for partner_contact in partner_contacts %}
-                        {% set partner_contact_available = selected_account_id and partner_contact.account_id|string == selected_account_id|string %}
+                        {% set partner_contact_available = selected_account_id %}
                         {% set partner_contact_label = partner_contact.name ~ ((' - ' ~ partner_contact.job_title) if partner_contact.job_title else '') ~ ' - Partner Account: ' ~ (partner_contact.partner_name or 'Not set') %}
-                        <label class="checkbox-select-option" data-contact-option data-account-id="{{ partner_contact.account_id or '' }}" {% if not partner_contact_available %}hidden{% endif %}>
+                        <label class="checkbox-select-option" data-contact-option data-account-id="{{ selected_account_id or partner_contact.account_id or '' }}" {% if not partner_contact_available %}hidden{% endif %}>
                             <input type="checkbox"
                                    name="contact_ids"
                                    value="partner_contact:{{ partner_contact.id }}"

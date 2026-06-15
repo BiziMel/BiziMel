@@ -271,6 +271,22 @@ def initialise_database(force=False):
     """)
 
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS partner_contact_accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            partner_contact_id INTEGER NOT NULL,
+            partner_id INTEGER NOT NULL,
+            account_id INTEGER NOT NULL,
+            relationship_status TEXT,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(partner_contact_id, account_id),
+            FOREIGN KEY(partner_contact_id) REFERENCES partner_contacts(id),
+            FOREIGN KEY(partner_id) REFERENCES partners(id),
+            FOREIGN KEY(account_id) REFERENCES accounts(id)
+        )
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS account_custom_values (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             account_id INTEGER NOT NULL,
@@ -542,6 +558,18 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "partner_contacts", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
 
     cursor.execute("""
+        INSERT OR IGNORE INTO partner_contact_accounts (
+            partner_contact_id,
+            partner_id,
+            account_id,
+            relationship_status
+        )
+        SELECT id, partner_id, account_id, relationship_status
+        FROM partner_contacts
+        WHERE account_id IS NOT NULL
+    """)
+
+    cursor.execute("""
         INSERT OR IGNORE INTO partners (partner_name)
         SELECT DISTINCT TRIM(partner_name)
         FROM account_partners
@@ -642,6 +670,9 @@ def initialise_database(force=False):
         ("idx_account_partners_account", "account_partners", ["account_id"]),
         ("idx_account_partners_partner", "account_partners", ["partner_id"]),
         ("idx_partner_contacts_partner", "partner_contacts", ["partner_id"]),
+        ("idx_partner_contact_accounts_contact", "partner_contact_accounts", ["partner_contact_id"]),
+        ("idx_partner_contact_accounts_partner", "partner_contact_accounts", ["partner_id"]),
+        ("idx_partner_contact_accounts_account", "partner_contact_accounts", ["account_id"]),
         ("idx_timeline_related", "timeline_entries", ["related_type", "related_id"]),
         ("idx_account_custom_values_account", "account_custom_values", ["account_id"]),
         ("idx_account_org_charts_account", "account_org_charts", ["account_id"]),

@@ -20,9 +20,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.3.2"
+APP_VERSION = "2.3.3"
 APP_RELEASE_DATE = "2026-06-15"
-APP_BUILD = "2026-06-15-v2.3.2-pg-progress-outreach-partner-r1"
+APP_BUILD = "2026-06-15-v2.3.3-pg-progress-partner-multi-account-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -36,6 +36,22 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.3.3",
+        "release_date": "2026-06-15",
+        "title": "Contact-level PG RAG and partner multi-account relationships",
+        "new": [],
+        "enhanced": [
+            "Partner contacts can now support multiple customer accounts through a supported-account selection panel.",
+            "Partner relationship tables on partner, account and report views are generated from partner contact supported-account data.",
+        ],
+        "fixed": [
+            "Changed PG Progress account RAG to aggregate from active contact RAG only, while each contact keeps its own red, amber or green status.",
+            "Inactive contacts no longer contribute to account-level PG Progress RAG status.",
+            "Kept scheduled meeting date/time hidden unless a meeting outcome is selected.",
+            "Removed visible partner account relationship add fields from the partner form and replaced them with a status table.",
+        ],
+    },
     {
         "version": "2.3.2",
         "release_date": "2026-06-15",
@@ -2171,9 +2187,10 @@ def delete_account_records(connection, account_ids):
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'contact' AND related_id IN (SELECT id FROM contacts WHERE account_id = ?)", (account_id,))
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'outreach' AND related_id IN (SELECT id FROM outreach WHERE account_id = ?)", (account_id,))
         connection.execute("DELETE FROM account_partners WHERE account_id = ?", (account_id,))
+        connection.execute("DELETE FROM partner_contact_accounts WHERE account_id = ?", (account_id,))
         connection.execute("DELETE FROM account_custom_values WHERE account_id = ?", (account_id,))
         connection.execute("DELETE FROM outreach_recipients WHERE outreach_id IN (SELECT id FROM outreach WHERE account_id = ?)", (account_id,))
-        connection.execute("DELETE FROM partner_contacts WHERE account_id = ?", (account_id,))
+        connection.execute("UPDATE partner_contacts SET account_id = NULL WHERE account_id = ?", (account_id,))
         connection.execute("DELETE FROM outreach WHERE account_id = ?", (account_id,))
         connection.execute("DELETE FROM contacts WHERE account_id = ?", (account_id,))
         connection.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
@@ -2216,6 +2233,7 @@ def delete_partner_records(connection, partner_ids):
             continue
         audit_record_delete(connection, "partner", partner_id, partner["partner_name"] if partner else "")
         connection.execute("DELETE FROM account_partners WHERE partner_id = ?", (partner_id,))
+        connection.execute("DELETE FROM partner_contact_accounts WHERE partner_id = ?", (partner_id,))
         connection.execute("DELETE FROM partner_contacts WHERE partner_id = ?", (partner_id,))
         connection.execute("DELETE FROM partners WHERE id = ?", (partner_id,))
 
@@ -4951,6 +4969,83 @@ def pg_progress_rag_status(outcomes, discovery_values=None, nbm_values=None):
     }
 
 
+def aggregate_pg_progress_rag(contact_rags):
+    contact_rags = [rag for rag in contact_rags if rag]
+    if any(rag["status"] == "green" for rag in contact_rags):
+        return {
+            "status": "green",
+            "label": "Green",
+            "reason": "At least one active contact has NBM or executive meeting evidence",
+        }
+    if any(rag["status"] == "amber" for rag in contact_rags):
+        return {
+            "status": "amber",
+            "label": "Amber",
+            "reason": "At least one active contact has a response or Discovery meeting signal",
+        }
+    return {
+        "status": "red",
+        "label": "Red",
+        "reason": "No active contact has a response or meeting signal",
+    }
+
+
+def contact_pg_progress_rag(connection, account_id, contact_id, legacy_action_update=None):
+    action_update = connection.execute("""
+        SELECT *
+        FROM pg_action_contact_updates
+        WHERE contact_id = ?
+    """, (contact_id,)).fetchone()
+    discovery_meeting_count = connection.execute("""
+        SELECT COUNT(*)
+        FROM outreach
+        WHERE account_id = ?
+          AND (
+                contact_id = ?
+             OR id IN (
+                    SELECT outreach_id
+                    FROM outreach_recipients
+                    WHERE contact_id = ?
+                )
+          )
+          AND (
+                outcome = 'Discovery Booked'
+             OR outcome = 'Meeting Booked'
+             OR activity_type = 'Meeting'
+          )
+    """, (account_id, contact_id, contact_id)).fetchone()[0]
+    manual_completed_discovery = (
+        action_update["completed_discovery_meeting"]
+        if action_update
+        else (legacy_action_update["completed_discovery_meeting"] if legacy_action_update else "")
+    )
+    contact_outcome_rows = connection.execute("""
+        SELECT outcome
+        FROM outreach
+        WHERE account_id = ?
+          AND (
+                contact_id = ?
+             OR id IN (
+                    SELECT outreach_id
+                    FROM outreach_recipients
+                    WHERE contact_id = ?
+                )
+          )
+    """, (account_id, contact_id, contact_id)).fetchall()
+    completed_discovery = manual_completed_discovery or ("Yes" if discovery_meeting_count else "")
+    nbm_completed = action_update["nbm_completed"] if action_update and "nbm_completed" in action_update.keys() else ""
+    return {
+        "action_update": action_update,
+        "completed_discovery": completed_discovery,
+        "nbm_completed": nbm_completed,
+        "rag": pg_progress_rag_status(
+            [row["outcome"] for row in contact_outcome_rows],
+            [completed_discovery],
+            [nbm_completed],
+        ),
+    }
+
+
 def activity_update_is_valid(value):
     return len((value or "").strip()) >= 5
 
@@ -5049,8 +5144,15 @@ def partner_contact_matches_account(connection, account_id, partner_contact_id):
         SELECT id
         FROM partner_contacts
         WHERE id = ?
-          AND account_id = ?
-    """, (partner_contact_id, account_id)).fetchone()
+          AND (
+                account_id = ?
+             OR id IN (
+                    SELECT partner_contact_id
+                    FROM partner_contact_accounts
+                    WHERE account_id = ?
+                )
+          )
+    """, (partner_contact_id, account_id, account_id)).fetchone()
     return bool(match)
 
 
@@ -5114,12 +5216,29 @@ def partner_contacts_for_outreach(connection, account_id=None):
         FROM partner_contacts
         LEFT JOIN partners ON partners.id = partner_contacts.partner_id
         LEFT JOIN accounts ON accounts.id = partner_contacts.account_id
-        WHERE partner_contacts.account_id IS NOT NULL
+        WHERE (
+            partner_contacts.account_id IS NOT NULL
+            OR EXISTS (
+                SELECT 1
+                FROM partner_contact_accounts
+                WHERE partner_contact_accounts.partner_contact_id = partner_contacts.id
+            )
+        )
     """
     params = []
     if account_id:
-        query += " AND partner_contacts.account_id = ?"
-        params.append(account_id)
+        query += """
+            AND (
+                partner_contacts.account_id = ?
+                OR EXISTS (
+                    SELECT 1
+                    FROM partner_contact_accounts
+                    WHERE partner_contact_accounts.partner_contact_id = partner_contacts.id
+                      AND partner_contact_accounts.account_id = ?
+                )
+            )
+        """
+        params.extend([account_id, account_id])
     query += " ORDER BY accounts.account_name, partners.partner_name, partner_contacts.name"
     return connection.execute(query, params).fetchall()
 
@@ -5193,19 +5312,60 @@ def account_sales_play_options(connection, account_id=None):
     return [dict(row) for row in rows if row["sales_play"]]
 
 
+def normalise_selected_account_ids(values):
+    account_ids = []
+    seen = set()
+    for value in values or []:
+        value = str(value or "").strip()
+        if not value.isdigit() or value in seen:
+            continue
+        seen.add(value)
+        account_ids.append(value)
+    return account_ids
+
+
+def save_partner_contact_accounts(connection, partner_id, contact_id, account_ids, relationship_status=""):
+    account_ids = normalise_selected_account_ids(account_ids)
+    connection.execute(
+        "DELETE FROM partner_contact_accounts WHERE partner_contact_id = ?",
+        (contact_id,),
+    )
+    for account_id in account_ids:
+        connection.execute("""
+            INSERT OR IGNORE INTO partner_contact_accounts (
+                partner_contact_id,
+                partner_id,
+                account_id,
+                relationship_status
+            )
+            VALUES (?, ?, ?, ?)
+        """, (contact_id, partner_id, account_id, relationship_status))
+    primary_account_id = account_ids[0] if account_ids else None
+    connection.execute("""
+        UPDATE partner_contacts
+        SET account_id = ?,
+            relationship_status = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE id = ?
+          AND partner_id = ?
+    """, (primary_account_id, relationship_status, contact_id, partner_id))
+    return account_ids
+
+
 def account_partner_activity_options(connection):
     return connection.execute("""
         SELECT
-            account_partners.account_id,
-            account_partners.partner_id,
-            account_partners.partner_name,
+            partner_contact_accounts.account_id,
+            partners.id AS partner_id,
+            partners.partner_name,
             partners.partner_type
-        FROM account_partners
-        LEFT JOIN partners ON partners.id = account_partners.partner_id
-        WHERE account_partners.account_id IS NOT NULL
-          AND account_partners.partner_name IS NOT NULL
-          AND account_partners.partner_name != ''
-        ORDER BY account_partners.partner_name
+        FROM partner_contact_accounts
+        JOIN partners ON partners.id = partner_contact_accounts.partner_id
+        WHERE partner_contact_accounts.account_id IS NOT NULL
+          AND partners.partner_name IS NOT NULL
+          AND partners.partner_name != ''
+        GROUP BY partner_contact_accounts.account_id, partners.id, partners.partner_name, partners.partner_type
+        ORDER BY partners.partner_name
     """).fetchall()
 
 
@@ -5254,7 +5414,7 @@ def pg_dashboard_context(connection):
             FROM contacts
             LEFT JOIN accounts ON accounts.id = contacts.account_id
             WHERE contacts.account_id = ?
-              AND COALESCE(status, 'Active') != 'Archived'
+              AND COALESCE(status, 'Active') = 'Active'
             ORDER BY name
         """, (account_id,)).fetchall()
         outreach_sales_play_rows = connection.execute("""
@@ -5271,21 +5431,16 @@ def pg_dashboard_context(connection):
             if row["sales_play"]
         ]
         pg_sales_play = "; ".join(outreach_sales_plays) or account["sales_play"] or ""
-        account_outcome_rows = connection.execute("""
-            SELECT outcome
-            FROM outreach
+        legacy_action_update = connection.execute("""
+            SELECT *
+            FROM pg_action_updates
             WHERE account_id = ?
-        """, (account_id,)).fetchall()
-        account_update_rows = connection.execute("""
-            SELECT completed_discovery_meeting, nbm_completed
-            FROM pg_action_contact_updates
-            WHERE account_id = ?
-        """, (account_id,)).fetchall()
-        rag = pg_progress_rag_status(
-            [row["outcome"] for row in account_outcome_rows],
-            [row["completed_discovery_meeting"] for row in account_update_rows],
-            [row["nbm_completed"] for row in account_update_rows],
-        )
+        """, (account_id,)).fetchone()
+        contact_rag_payloads = {
+            contact["id"]: contact_pg_progress_rag(connection, account_id, contact["id"], legacy_action_update)
+            for contact in contacts
+        }
+        rag = aggregate_pg_progress_rag(payload["rag"] for payload in contact_rag_payloads.values())
         pg_plan_rows.append({
             "account_id": account_id,
             "target_number": pg_target_number,
@@ -5298,12 +5453,6 @@ def pg_dashboard_context(connection):
             "business_org": account["business_unit"] or "",
             "estimated_value": money_value(account["pipeline_target"]),
         })
-
-        legacy_action_update = connection.execute("""
-            SELECT *
-            FROM pg_action_updates
-            WHERE account_id = ?
-        """, (account_id,)).fetchone()
 
         for contact in contacts:
             contact_id = contact["id"]
@@ -5345,54 +5494,11 @@ def pg_dashboard_context(connection):
                   AND COALESCE(task_status, '') IN ('Closed', 'Completed', 'Cancelled')
                 ORDER BY last_updated DESC, id DESC
             """, (account_id, contact_id, contact_id, seven_days_ago)).fetchall()
-            action_update = connection.execute("""
-                SELECT *
-                FROM pg_action_contact_updates
-                WHERE contact_id = ?
-            """, (contact_id,)).fetchone()
-            discovery_meeting_count = connection.execute("""
-                SELECT COUNT(*)
-                FROM outreach
-                WHERE account_id = ?
-                  AND (
-                        contact_id = ?
-                     OR id IN (
-                            SELECT outreach_id
-                            FROM outreach_recipients
-                            WHERE contact_id = ?
-                        )
-                  )
-                  AND (
-                        outcome = 'Discovery Booked'
-                     OR outcome = 'Meeting Booked'
-                     OR activity_type = 'Meeting'
-                  )
-            """, (account_id, contact_id, contact_id)).fetchone()[0]
-            manual_completed_discovery = (
-                action_update["completed_discovery_meeting"]
-                if action_update
-                else (legacy_action_update["completed_discovery_meeting"] if legacy_action_update else "")
-            )
-            contact_outcome_rows = connection.execute("""
-                SELECT outcome
-                FROM outreach
-                WHERE account_id = ?
-                  AND (
-                        contact_id = ?
-                     OR id IN (
-                            SELECT outreach_id
-                            FROM outreach_recipients
-                            WHERE contact_id = ?
-                        )
-                  )
-            """, (account_id, contact_id, contact_id)).fetchall()
-            contact_completed_discovery = manual_completed_discovery or ("Yes" if discovery_meeting_count else "")
-            contact_nbm_completed = action_update["nbm_completed"] if action_update and "nbm_completed" in action_update.keys() else ""
-            contact_rag = pg_progress_rag_status(
-                [row["outcome"] for row in contact_outcome_rows],
-                [contact_completed_discovery],
-                [contact_nbm_completed],
-            )
+            contact_rag_payload = contact_rag_payloads.get(contact_id) or contact_pg_progress_rag(connection, account_id, contact_id, legacy_action_update)
+            action_update = contact_rag_payload["action_update"]
+            contact_completed_discovery = contact_rag_payload["completed_discovery"]
+            contact_nbm_completed = contact_rag_payload["nbm_completed"]
+            contact_rag = contact_rag_payload["rag"]
 
             next_7_days_actions = []
             for action_row in scheduled_action_rows:
@@ -5450,15 +5556,16 @@ def pg_dashboard_context(connection):
                 partner_contacts.job_title AS partner_contact_job_title,
                 partner_contacts.notes AS partner_notes,
                 partner_contacts.last_updated AS partner_last_updated
-            FROM partner_contacts
+            FROM partner_contact_accounts
+            JOIN partner_contacts ON partner_contacts.id = partner_contact_accounts.partner_contact_id
             LEFT JOIN partners ON partners.id = partner_contacts.partner_id
             LEFT JOIN outreach
-              ON outreach.account_id = partner_contacts.account_id
+              ON outreach.account_id = partner_contact_accounts.account_id
              AND (
                     outreach.activity_type = ('Partner: ' || partners.partner_name)
                  OR outreach.partner_contact_id = partner_contacts.id
              )
-            WHERE partner_contacts.account_id = ?
+            WHERE partner_contact_accounts.account_id = ?
             ORDER BY partners.partner_name, partner_contacts.name, outreach.last_updated DESC
         """, (account_id,)).fetchall()
         partner_activity_entries = []
@@ -5834,18 +5941,24 @@ def view_partner(partner_id):
 
     partner_accounts = connection.execute("""
         SELECT
-            account_partners.*,
+            partner_contact_accounts.account_id,
+            partner_contact_accounts.relationship_status AS involvement_status,
+            partner_contacts.name AS partner_contact_name,
+            partner_contacts.job_title AS partner_contact_job_title,
+            partner_contacts.relationship_owner,
+            partner_contacts.notes,
             accounts.account_name,
             accounts.industry,
             accounts.country,
             accounts.city
-        FROM account_partners
-        LEFT JOIN accounts ON account_partners.account_id = accounts.id
-        WHERE account_partners.partner_id = ?
-        ORDER BY accounts.account_name
+        FROM partner_contact_accounts
+        JOIN partner_contacts ON partner_contacts.id = partner_contact_accounts.partner_contact_id
+        LEFT JOIN accounts ON partner_contact_accounts.account_id = accounts.id
+        WHERE partner_contact_accounts.partner_id = ?
+        ORDER BY accounts.account_name, partner_contacts.name
     """, (partner_id,)).fetchall()
 
-    partner_contacts = connection.execute("""
+    partner_contact_rows = connection.execute("""
         SELECT
             partner_contacts.*,
             accounts.account_name
@@ -5854,6 +5967,29 @@ def view_partner(partner_id):
         WHERE partner_contacts.partner_id = ?
         ORDER BY accounts.account_name, partner_contacts.name
     """, (partner_id,)).fetchall()
+    supported_account_rows = connection.execute("""
+        SELECT
+            partner_contact_accounts.partner_contact_id,
+            partner_contact_accounts.account_id,
+            accounts.account_name
+        FROM partner_contact_accounts
+        LEFT JOIN accounts ON accounts.id = partner_contact_accounts.account_id
+        WHERE partner_contact_accounts.partner_id = ?
+        ORDER BY accounts.account_name
+    """, (partner_id,)).fetchall()
+    supported_by_contact = {}
+    for row in supported_account_rows:
+        payload = supported_by_contact.setdefault(row["partner_contact_id"], {"ids": [], "names": []})
+        payload["ids"].append(str(row["account_id"]))
+        if row["account_name"]:
+            payload["names"].append(row["account_name"])
+    partner_contacts = []
+    for row in partner_contact_rows:
+        contact = dict(row)
+        supported = supported_by_contact.get(row["id"], {"ids": [], "names": []})
+        contact["supported_account_ids"] = supported["ids"] or ([str(row["account_id"])] if row["account_id"] else [])
+        contact["supported_account_names"] = supported["names"] or ([row["account_name"]] if row["account_name"] else [])
+        partner_contacts.append(contact)
 
     partner_contact_count = connection.execute("""
         SELECT COUNT(*)
@@ -5862,8 +5998,8 @@ def view_partner(partner_id):
     """, (partner_id,)).fetchone()[0]
 
     partner_account_count = connection.execute("""
-        SELECT COUNT(*)
-        FROM account_partners
+        SELECT COUNT(DISTINCT account_id)
+        FROM partner_contact_accounts
         WHERE partner_id = ?
     """, (partner_id,)).fetchone()[0]
 
@@ -5964,6 +6100,7 @@ def add_partner_contact(partner_id):
     contact_name = request.form.get("name", "").strip()
 
     if contact_name:
+        account_ids = normalise_selected_account_ids(request.form.getlist("account_ids") or request.form.getlist("account_id"))
         cursor = connection.execute("""
             INSERT INTO partner_contacts (
                 partner_id,
@@ -5988,7 +6125,7 @@ def add_partner_contact(partner_id):
             request.form.get("job_title"),
             request.form.get("partner_contact_role"),
             request.form.get("coverage_area"),
-            request.form.get("account_id") or None,
+            account_ids[0] if account_ids else None,
             request.form.get("relationship_owner"),
             request.form.get("email"),
             request.form.get("phone"),
@@ -5999,6 +6136,13 @@ def add_partner_contact(partner_id):
             request.form.get("notes")
         ))
         contact_id = cursor.lastrowid
+        save_partner_contact_accounts(
+            connection,
+            partner_id,
+            contact_id,
+            account_ids,
+            request.form.get("relationship_status"),
+        )
         partner_row = connection.execute("SELECT partner_name FROM partners WHERE id = ?", (partner_id,)).fetchone()
         audit_record_create(connection, "partner_contact", contact_id, {
             "partner_id": partner_id,
@@ -6006,7 +6150,7 @@ def add_partner_contact(partner_id):
             "job_title": request.form.get("job_title"),
             "partner_contact_role": request.form.get("partner_contact_role"),
             "coverage_area": request.form.get("coverage_area"),
-            "account_id": request.form.get("account_id") or None,
+            "account_ids": ", ".join(account_ids),
             "relationship_owner": request.form.get("relationship_owner"),
             "email": request.form.get("email"),
             "relationship_status": request.form.get("relationship_status"),
@@ -6030,6 +6174,7 @@ def delete_partner_contact(partner_id, contact_id):
     if contact:
         audit_record_delete(connection, "partner_contact", contact_id, contact["name"])
     connection.execute("DELETE FROM outreach_recipients WHERE partner_contact_id = ?", (contact_id,))
+    connection.execute("DELETE FROM partner_contact_accounts WHERE partner_contact_id = ?", (contact_id,))
     connection.execute("""
         DELETE FROM partner_contacts
         WHERE id = ?
@@ -6053,11 +6198,12 @@ def edit_partner_contact(partner_id, contact_id):
     partner = connection.execute("SELECT partner_name FROM partners WHERE id = ?", (partner_id,)).fetchone()
 
     if existing:
+        account_ids = normalise_selected_account_ids(request.form.getlist("account_ids") or request.form.getlist("account_id"))
         new_values = {
             "name": request.form.get("name"),
             "job_title": request.form.get("job_title"),
             "coverage_area": request.form.get("coverage_area"),
-            "account_id": request.form.get("account_id") or None,
+            "account_id": account_ids[0] if account_ids else None,
             "relationship_owner": request.form.get("relationship_owner"),
             "email": request.form.get("email"),
             "phone": combined_contact_phone(request.form.get("office_phone"), request.form.get("mobile_phone"), request.form.get("phone")),
@@ -6123,6 +6269,13 @@ def edit_partner_contact(partner_id, contact_id):
             contact_id,
             partner_id,
         ))
+        save_partner_contact_accounts(
+            connection,
+            partner_id,
+            contact_id,
+            account_ids,
+            new_values["relationship_status"],
+        )
         audit_record_update(connection, "partner_contact", contact_id, existing, new_values, labels)
         connection.commit()
 
@@ -6390,13 +6543,14 @@ def view_account(account_id):
             accounts.account_name,
             partner_contacts.name AS partner_contact_name,
             partner_contacts.job_title,
-            partner_contacts.relationship_status,
+            COALESCE(partner_contact_accounts.relationship_status, partner_contacts.relationship_status) AS relationship_status,
             partners.id AS partner_id,
             partners.partner_name
-        FROM partner_contacts
+        FROM partner_contact_accounts
+        JOIN partner_contacts ON partner_contacts.id = partner_contact_accounts.partner_contact_id
         LEFT JOIN partners ON partners.id = partner_contacts.partner_id
-        LEFT JOIN accounts ON accounts.id = partner_contacts.account_id
-        WHERE partner_contacts.account_id = ?
+        LEFT JOIN accounts ON accounts.id = partner_contact_accounts.account_id
+        WHERE partner_contact_accounts.account_id = ?
         ORDER BY partners.partner_name, partner_contacts.name
     """, (account_id,)).fetchall()
 
@@ -6859,9 +7013,10 @@ def org_chart_person_options(connection, account):
 
     partner_contacts = connection.execute("""
         SELECT partner_contacts.*, partners.partner_name
-        FROM partner_contacts
+        FROM partner_contact_accounts
+        JOIN partner_contacts ON partner_contacts.id = partner_contact_accounts.partner_contact_id
         LEFT JOIN partners ON partners.id = partner_contacts.partner_id
-        WHERE partner_contacts.account_id = ?
+        WHERE partner_contact_accounts.account_id = ?
         ORDER BY partners.partner_name, partner_contacts.name
     """, (account_id,)).fetchall()
     for contact in partner_contacts:
@@ -10239,20 +10394,20 @@ def partner_reports():
             partners.id,
             partners.partner_name,
             partners.partner_type,
-            account_partners.involvement_status,
+            partner_contact_accounts.relationship_status AS involvement_status,
             accounts.account_name,
-            COUNT(partner_contacts.id) AS contact_count
+            COUNT(DISTINCT partner_contacts.id) AS contact_count
         FROM partners
-        LEFT JOIN account_partners ON account_partners.partner_id = partners.id
-        LEFT JOIN accounts ON accounts.id = account_partners.account_id
-        LEFT JOIN partner_contacts ON partner_contacts.partner_id = partners.id
-        GROUP BY partners.id, partners.partner_name, partners.partner_type, account_partners.involvement_status, accounts.account_name
+        LEFT JOIN partner_contact_accounts ON partner_contact_accounts.partner_id = partners.id
+        LEFT JOIN accounts ON accounts.id = partner_contact_accounts.account_id
+        LEFT JOIN partner_contacts ON partner_contacts.id = partner_contact_accounts.partner_contact_id
+        GROUP BY partners.id, partners.partner_name, partners.partner_type, partner_contact_accounts.relationship_status, accounts.account_name
         ORDER BY partners.partner_name, accounts.account_name
     """).fetchall()
     engagement_rows = connection.execute("""
-        SELECT COALESCE(NULLIF(account_partners.involvement_status, ''), 'Not set') AS engagement, COUNT(*) AS total
-        FROM account_partners
-        GROUP BY COALESCE(NULLIF(account_partners.involvement_status, ''), 'Not set')
+        SELECT COALESCE(NULLIF(relationship_status, ''), 'Not set') AS engagement, COUNT(*) AS total
+        FROM partner_contact_accounts
+        GROUP BY COALESCE(NULLIF(relationship_status, ''), 'Not set')
         ORDER BY total DESC
     """).fetchall()
     connection.close()
@@ -10266,15 +10421,15 @@ def export_partner_reports():
         SELECT
             partners.partner_name,
             partners.partner_type,
-            account_partners.involvement_status,
+            partner_contact_accounts.relationship_status AS involvement_status,
             accounts.account_name,
             partner_contacts.name AS partner_contact_name,
             partner_contacts.job_title,
             partner_contacts.relationship_status
         FROM partners
-        LEFT JOIN account_partners ON account_partners.partner_id = partners.id
-        LEFT JOIN accounts ON accounts.id = account_partners.account_id
-        LEFT JOIN partner_contacts ON partner_contacts.partner_id = partners.id
+        LEFT JOIN partner_contact_accounts ON partner_contact_accounts.partner_id = partners.id
+        LEFT JOIN accounts ON accounts.id = partner_contact_accounts.account_id
+        LEFT JOIN partner_contacts ON partner_contacts.id = partner_contact_accounts.partner_contact_id
         ORDER BY partners.partner_name, accounts.account_name, partner_contacts.name
     """).fetchall()
     connection.close()
