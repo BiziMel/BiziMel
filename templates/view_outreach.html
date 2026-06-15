@@ -41,6 +41,9 @@
     <p><strong>Activity Start Date:</strong> {{ outreach_item.activity_date }}</p>
     <p><strong>Activity Start Time:</strong> {{ outreach_item.activity_time }}</p>
     <p><strong>Outcome:</strong> {{ outreach_item.outcome }}</p>
+    {% if outreach_item.outcome in ["Discovery Booked", "NBM Booked", "Exec Meeting Booked", "Meeting Booked"] %}
+        <p><strong>Scheduled Meeting:</strong> {{ outreach_item.scheduled_meeting_date or "Date not set" }}{% if outreach_item.scheduled_meeting_time %} {{ outreach_item.scheduled_meeting_time }}{% endif %}</p>
+    {% endif %}
 </div>
 
 <div class="detail-card">

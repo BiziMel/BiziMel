@@ -64,6 +64,8 @@ CREATE TABLE outreach (
     subject TEXT,
     notes TEXT,
     outcome TEXT,
+    scheduled_meeting_date TEXT,
+    scheduled_meeting_time TEXT,
     next_action TEXT,
     next_action_date TEXT,
     next_action_time TEXT,

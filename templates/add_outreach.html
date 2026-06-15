@@ -195,6 +195,16 @@
                 </select>
             </div>
 
+            <div class="form-group" data-scheduled-meeting-field hidden>
+                <label for="scheduled_meeting_date">Scheduled Meeting Date</label>
+                <input type="date" id="scheduled_meeting_date" name="scheduled_meeting_date" value="{{ prefill.scheduled_meeting_date or '' }}">
+            </div>
+
+            <div class="form-group" data-scheduled-meeting-field hidden>
+                <label for="scheduled_meeting_time">Scheduled Meeting Time</label>
+                <input type="time" id="scheduled_meeting_time" name="scheduled_meeting_time" value="{{ prefill.scheduled_meeting_time or '' }}">
+            </div>
+
             <div class="form-group full-width">
                 <label for="next_action">Activity Update</label>
                 <textarea id="next_action" name="next_action" rows="4">{{ prefill.next_action or '' }}</textarea>
@@ -406,10 +416,33 @@
 
     constrainContactsByAccount();
 
+    function toggleScheduledMeetingFields() {
+        const outcomeSelect = document.getElementById("outcome");
+        const scheduledFields = Array.from(document.querySelectorAll("[data-scheduled-meeting-field]"));
+        const dateInput = document.getElementById("scheduled_meeting_date");
+        const timeInput = document.getElementById("scheduled_meeting_time");
+        const meetingOutcomes = new Set(["Discovery Booked", "NBM Booked", "Exec Meeting Booked", "Meeting Booked"]);
+        function apply() {
+            const show = outcomeSelect && meetingOutcomes.has(outcomeSelect.value);
+            scheduledFields.forEach((field) => {
+                field.hidden = !show;
+            });
+            if (!show) {
+                if (dateInput) dateInput.value = "";
+                if (timeInput) timeInput.value = "";
+            }
+        }
+        if (outcomeSelect) outcomeSelect.addEventListener("change", apply);
+        apply();
+    }
+
+    toggleScheduledMeetingFields();
+
     document.querySelector(".pipeflow-form")?.addEventListener("submit", (event) => {
         const fields = [
             ["activity_date", "activity_time"],
-            ["next_action_date", "next_action_time"]
+            ["next_action_date", "next_action_time"],
+            ["scheduled_meeting_date", "scheduled_meeting_time"]
         ];
         for (const [dateId, timeId] of fields) {
             const dateInput = document.getElementById(dateId);

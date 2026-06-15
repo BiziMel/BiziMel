@@ -183,6 +183,8 @@ def initialise_database(force=False):
             subject TEXT,
             notes TEXT,
             outcome TEXT,
+            scheduled_meeting_date TEXT,
+            scheduled_meeting_time TEXT,
             next_action TEXT,
             next_action_date TEXT,
             next_action_time TEXT,
@@ -481,6 +483,8 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "outreach", "campaign_tasks_per_week", "INTEGER")
     add_column_if_missing(cursor, "outreach", "campaign_total_tasks", "INTEGER")
     add_column_if_missing(cursor, "outreach", "activity_time", "TEXT")
+    add_column_if_missing(cursor, "outreach", "scheduled_meeting_date", "TEXT")
+    add_column_if_missing(cursor, "outreach", "scheduled_meeting_time", "TEXT")
     add_column_if_missing(cursor, "outreach", "next_action_time", "TEXT")
     add_column_if_missing(cursor, "outreach", "task_status", "TEXT DEFAULT 'Not Started'")
     add_column_if_missing(cursor, "outreach", "completed_at", "TEXT")

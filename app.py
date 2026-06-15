@@ -2694,6 +2694,8 @@ PG_SUCCESS_OUTCOMES = (
     "Meeting Booked",
 )
 
+SCHEDULED_MEETING_OUTCOMES = PG_SUCCESS_OUTCOMES
+
 PRIMARY_PG_SUCCESS_OUTCOMES = (
     "Discovery Booked",
     "NBM Booked",
@@ -2909,6 +2911,10 @@ def overdue_task_params(now=None):
 
 def is_pg_success_outcome(outcome, activity_type=""):
     return (outcome or "").strip() in PG_SUCCESS_OUTCOMES or (activity_type or "").strip() == "Meeting"
+
+
+def outcome_requires_scheduled_meeting(outcome):
+    return (outcome or "").strip() in SCHEDULED_MEETING_OUTCOMES
 
 
 def is_primary_pg_success_outcome(outcome):
@@ -4978,6 +4984,29 @@ def pg_dashboard_context(connection):
                 FROM pg_action_contact_updates
                 WHERE contact_id = ?
             """, (contact_id,)).fetchone()
+            discovery_meeting_count = connection.execute("""
+                SELECT COUNT(*)
+                FROM outreach
+                WHERE account_id = ?
+                  AND (
+                        contact_id = ?
+                     OR id IN (
+                            SELECT outreach_id
+                            FROM outreach_recipients
+                            WHERE contact_id = ?
+                        )
+                  )
+                  AND (
+                        outcome = 'Discovery Booked'
+                     OR outcome = 'Meeting Booked'
+                     OR activity_type = 'Meeting'
+                  )
+            """, (account_id, contact_id, contact_id)).fetchone()[0]
+            manual_completed_discovery = (
+                action_update["completed_discovery_meeting"]
+                if action_update
+                else (legacy_action_update["completed_discovery_meeting"] if legacy_action_update else "")
+            )
 
             next_7_days_actions = []
             for action_row in scheduled_action_rows:
@@ -5009,11 +5038,7 @@ def pg_dashboard_context(connection):
                 "company_name": contact["account_name"] or account["account_name"],
                 "business_org": contact["business_unit"] or "",
                 "department": contact["org_dept"] or "",
-                "completed_discovery_meeting": (
-                    action_update["completed_discovery_meeting"]
-                    if action_update
-                    else (legacy_action_update["completed_discovery_meeting"] if legacy_action_update else "")
-                ),
+                "completed_discovery_meeting": manual_completed_discovery or ("Yes" if discovery_meeting_count else ""),
                 "exec_first": action_update["exec_first"] if action_update and "exec_first" in action_update.keys() else "",
                 "nbm_completed": action_update["nbm_completed"] if action_update and "nbm_completed" in action_update.keys() else "",
                 "last_7_days_activity_entries": last_7_days_activity_entries,
@@ -7891,14 +7916,18 @@ def add_outreach():
             error = activity_update_required_message()
         else:
             sales_play_value = request.form.get("sales_play")
+            outcome_value = normalise_outreach_outcome(request.form.get("outcome"))
+            scheduled_meeting_date = request.form.get("scheduled_meeting_date") if outcome_requires_scheduled_meeting(outcome_value) else ""
+            scheduled_meeting_time = request.form.get("scheduled_meeting_time") if outcome_requires_scheduled_meeting(outcome_value) else ""
             cursor = connection.execute("""
                 INSERT INTO outreach (
                     fy, quarter, campaign, sales_play, account_id, contact_id, partner_contact_id, activity_type,
                     activity_date, activity_time, subject, notes, outcome,
+                    scheduled_meeting_date, scheduled_meeting_time,
                     next_action, next_action_date, next_action_time,
                     task_status, completed_at, assigned_to
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 request.form.get("fy"),
                 request.form.get("quarter"),
@@ -7912,7 +7941,9 @@ def add_outreach():
                 request.form.get("activity_time"),
                 request.form.get("subject"),
                 request.form.get("notes", ""),
-                normalise_outreach_outcome(request.form.get("outcome")),
+                outcome_value,
+                scheduled_meeting_date,
+                scheduled_meeting_time,
                 request.form.get("next_action"),
                 request.form.get("next_action_date"),
                 request.form.get("next_action_time"),
@@ -7934,7 +7965,9 @@ def add_outreach():
                 "activity_date": request.form.get("activity_date"),
                 "activity_time": request.form.get("activity_time"),
                 "subject": request.form.get("subject"),
-                "outcome": normalise_outreach_outcome(request.form.get("outcome")),
+                "outcome": outcome_value,
+                "scheduled_meeting_date": scheduled_meeting_date,
+                "scheduled_meeting_time": scheduled_meeting_time,
                 "next_action": request.form.get("next_action"),
                 "next_action_date": request.form.get("next_action_date"),
                 "next_action_time": request.form.get("next_action_time"),
@@ -8548,6 +8581,9 @@ def edit_outreach(outreach_id):
             return redirect(url_for("outreach", error=task_lock_message(outreach_item)))
         submit_action = request.form.get("submit_action", "save")
         sales_play_value = request.form.get("sales_play")
+        outcome_value = normalise_outreach_outcome(request.form.get("outcome"))
+        scheduled_meeting_date = request.form.get("scheduled_meeting_date") if outcome_requires_scheduled_meeting(outcome_value) else ""
+        scheduled_meeting_time = request.form.get("scheduled_meeting_time") if outcome_requires_scheduled_meeting(outcome_value) else ""
         recipient_values = outreach_contact_form_values(request.form)
         recipients = parse_outreach_contact_selections(recipient_values)
         contact_id, partner_contact_id = recipients[0] if recipients else (None, None)
@@ -8564,7 +8600,9 @@ def edit_outreach(outreach_id):
             "activity_time": request.form.get("activity_time"),
             "subject": request.form.get("subject"),
             "notes": outreach_item["notes"] or "",
-            "outcome": normalise_outreach_outcome(request.form.get("outcome")),
+            "outcome": outcome_value,
+            "scheduled_meeting_date": scheduled_meeting_date,
+            "scheduled_meeting_time": scheduled_meeting_time,
             "next_action": request.form.get("next_action"),
             "next_action_date": request.form.get("next_action_date"),
             "next_action_time": request.form.get("next_action_time"),
@@ -8653,6 +8691,8 @@ def edit_outreach(outreach_id):
             "subject": "Subject",
             "notes": "System metadata",
             "outcome": "Outcome",
+            "scheduled_meeting_date": "Scheduled meeting date",
+            "scheduled_meeting_time": "Scheduled meeting time",
             "next_action": "Activity update",
             "next_action_date": "Activity due date",
             "next_action_time": "Activity due time",
@@ -8678,6 +8718,8 @@ def edit_outreach(outreach_id):
                 subject = ?,
                 notes = ?,
                 outcome = ?,
+                scheduled_meeting_date = ?,
+                scheduled_meeting_time = ?,
                 next_action = ?,
                 next_action_date = ?,
                 next_action_time = ?,
@@ -8700,6 +8742,8 @@ def edit_outreach(outreach_id):
             new_values["subject"],
             new_values["notes"],
             new_values["outcome"],
+            new_values["scheduled_meeting_date"],
+            new_values["scheduled_meeting_time"],
             new_values["next_action"],
             new_values["next_action_date"],
             new_values["next_action_time"],
@@ -10074,6 +10118,57 @@ def documented_sales_play(row):
     return ""
 
 
+def pg_bible_meeting_datetime_label(row):
+    if not row:
+        return ""
+    parts = [row["scheduled_meeting_date"] or ""]
+    if row["scheduled_meeting_time"]:
+        parts.append(row["scheduled_meeting_time"])
+    return " ".join(part for part in parts if part).strip()
+
+
+def pg_bible_outreach_people_label(connection, outreach_row):
+    if not outreach_row:
+        return ""
+    people = connection.execute("""
+        SELECT
+            COALESCE(contacts.name, partner_contacts.name) AS person_name,
+            COALESCE(contacts.job_title, partner_contacts.job_title) AS person_title,
+            partners.partner_name
+        FROM outreach_recipients
+        LEFT JOIN contacts ON outreach_recipients.contact_id = contacts.id
+        LEFT JOIN partner_contacts ON outreach_recipients.partner_contact_id = partner_contacts.id
+        LEFT JOIN partners ON partner_contacts.partner_id = partners.id
+        WHERE outreach_recipients.outreach_id = ?
+        ORDER BY outreach_recipients.sort_order, outreach_recipients.id
+    """, (outreach_row["id"],)).fetchall()
+    if not people:
+        people = connection.execute("""
+            SELECT
+                COALESCE(contacts.name, partner_contacts.name) AS person_name,
+                COALESCE(contacts.job_title, partner_contacts.job_title) AS person_title,
+                partners.partner_name
+            FROM outreach
+            LEFT JOIN contacts ON outreach.contact_id = contacts.id
+            LEFT JOIN partner_contacts ON outreach.partner_contact_id = partner_contacts.id
+            LEFT JOIN partners ON partner_contacts.partner_id = partners.id
+            WHERE outreach.id = ?
+        """, (outreach_row["id"],)).fetchall()
+
+    labels = []
+    for person in people:
+        name = person["person_name"] or ""
+        title = person["person_title"] or ""
+        partner = person["partner_name"] or ""
+        if not name and not title:
+            continue
+        label = ", ".join(part for part in [name, title] if part)
+        if partner:
+            label = f"{label} ({partner})"
+        labels.append(label)
+    return "; ".join(labels)
+
+
 def build_pg_bible_report_from_db(connection):
     from models import ActionItem, OwnerReport, PlanItem, UserProfile, WeeklyResultRow
 
@@ -10095,21 +10190,6 @@ def build_pg_bible_report_from_db(connection):
 
     plan_items = []
     for account in accounts:
-        sales_play_rows = connection.execute("""
-            SELECT sales_play, subject, notes
-            FROM outreach
-            WHERE account_id = ?
-            ORDER BY activity_date, activity_time, id
-        """, (account["id"],)).fetchall()
-        sales_plays = []
-        seen_sales_plays = set()
-        for row in sales_play_rows:
-            sales_play = documented_sales_play(row)
-            sales_play_key = sales_play.casefold()
-            if sales_play and sales_play_key not in seen_sales_plays:
-                sales_plays.append(sales_play)
-                seen_sales_plays.add(sales_play_key)
-
         plan_items.append(PlanItem(
             pg_bible_order=account["pg_bible_order"],
             account_tier=account["account_tier"] or "",
@@ -10117,7 +10197,7 @@ def build_pg_bible_report_from_db(connection):
             notes=account["notes"] or "",
             nbm_target=str(account["pg_bible_order"] or ""),
             customer=account["account_name"] or "",
-            sales_play="; ".join(sales_plays),
+            sales_play=account["sales_play"] or "",
             estimated_value=account["pipeline_target"] or 0,
         ))
 
@@ -10126,7 +10206,8 @@ def build_pg_bible_report_from_db(connection):
             contacts.*,
             accounts.pipeline_target,
             accounts.account_name,
-            accounts.pg_bible_order
+            accounts.pg_bible_order,
+            accounts.sales_play AS account_sales_play
         FROM contacts
         LEFT JOIN accounts ON contacts.account_id = accounts.id
         ORDER BY
@@ -10172,6 +10253,15 @@ def build_pg_bible_report_from_db(connection):
             (open_outreach["next_action"] or open_outreach["subject"] or "").strip()
             if open_outreach else ""
         ) or "No next action set"
+        contact_sales_play = (
+            (latest_outreach["sales_play"] or documented_sales_play(latest_outreach)).strip()
+            if latest_outreach else ""
+        ) or (contact["account_sales_play"] or "")
+        discovery_target_parts = [
+            ", ".join(part for part in [contact["name"], contact["job_title"]] if part)
+        ]
+        if contact_sales_play:
+            discovery_target_parts.append(contact_sales_play)
 
         meeting_count = connection.execute("""
             SELECT COUNT(*)
@@ -10189,20 +10279,62 @@ def build_pg_bible_report_from_db(connection):
                  OR activity_type = 'Meeting'
               )
         """, (contact["id"], contact["id"])).fetchone()[0]
+        discovery_meeting_count = connection.execute("""
+            SELECT COUNT(*)
+            FROM outreach
+            WHERE (
+                    contact_id = ?
+                 OR id IN (
+                        SELECT outreach_id
+                        FROM outreach_recipients
+                        WHERE contact_id = ?
+                    )
+            )
+              AND (
+                    outcome = 'Discovery Booked'
+                 OR outcome = 'Meeting Booked'
+                 OR activity_type = 'Meeting'
+              )
+        """, (contact["id"], contact["id"])).fetchone()[0]
+        pg_progress_update = connection.execute("""
+            SELECT completed_discovery_meeting
+            FROM pg_action_contact_updates
+            WHERE contact_id = ?
+        """, (contact["id"],)).fetchone()
+        discovery_completed = (
+            pg_progress_update["completed_discovery_meeting"]
+            if pg_progress_update and pg_progress_update["completed_discovery_meeting"]
+            else ("Yes" if discovery_meeting_count else "No")
+        )
+        nbm_booked_outreach = connection.execute("""
+            SELECT *
+            FROM outreach
+            WHERE (
+                    contact_id = ?
+                 OR id IN (
+                        SELECT outreach_id
+                        FROM outreach_recipients
+                        WHERE contact_id = ?
+                    )
+            )
+              AND outcome = 'NBM Booked'
+              AND scheduled_meeting_date IS NOT NULL
+              AND scheduled_meeting_date != ''
+            ORDER BY scheduled_meeting_date DESC, scheduled_meeting_time DESC, id DESC
+            LIMIT 1
+        """, (contact["id"], contact["id"])).fetchone()
+        nbm_booked_date = pg_bible_meeting_datetime_label(nbm_booked_outreach)
+        nbm_booked_people = pg_bible_outreach_people_label(connection, nbm_booked_outreach)
 
         action_items.append(ActionItem(
             person_name=contact["name"] or "",
             person_title=contact["job_title"] or "",
             related_nbm_target=str(contact["pg_bible_order"] or ""),
-            discovery_target_name_title=", ".join(
-                part for part in [contact["name"], contact["job_title"]] if part
-            ),
-            discovery_completed="Yes" if meeting_count else "",
+            discovery_target_name_title=" - ".join(part for part in discovery_target_parts if part),
+            discovery_completed=discovery_completed,
             discovery_next_action=next_action_text,
-            nbm_booked_date=latest_outreach["activity_date"] if latest_outreach and meeting_count else "",
-            nbm_booked_name_title=", ".join(
-                part for part in [contact["name"], contact["job_title"]] if part
-            ) if meeting_count else "",
+            nbm_booked_date=nbm_booked_date,
+            nbm_booked_name_title=nbm_booked_people,
             why_buy="",
             exec_first="Yes" if contact["category"] == "Executive" else "",
             prep_with_manager="",
