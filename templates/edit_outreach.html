@@ -435,7 +435,7 @@
         const outcomeSelect = document.getElementById("outcome");
         const scheduledFields = Array.from(document.querySelectorAll("[data-scheduled-meeting-field]"));
         const scheduledMeetingInput = document.getElementById("scheduled_meeting_at");
-        const meetingOutcomes = new Set(["Meeting Booked", "NBM Meeting", "Discovery Booked", "Exec Meeting Booked"]);
+        const meetingOutcomes = new Set(["Meeting Booked", "NBM Booked", "Discovery Booked", "Exec Meeting Booked"]);
         function apply() {
             const show = outcomeSelect && meetingOutcomes.has(outcomeSelect.value);
             scheduledFields.forEach((field) => {

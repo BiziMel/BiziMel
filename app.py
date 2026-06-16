@@ -45,8 +45,8 @@ RELEASE_NOTES = [
         "fixed": [
             "Removed the top PG Progress action table headings so headings only appear under each account, business org and sales play grouping.",
             "Moved Account to the first field on the Add Outreach form so users choose the account context before entering activity details.",
-            "Restricted the outreach scheduled meeting date/time field to appear only for Meeting Booked, NBM Meeting, Discovery Booked and Exec Meeting Booked outcomes.",
-            "Added NBM Meeting as an outreach outcome while keeping legacy NBM Booked available without triggering the meeting date/time field.",
+            "Restricted the outreach scheduled meeting date/time field to appear only for Meeting Booked, NBM Booked, Discovery Booked and Exec Meeting Booked outcomes.",
+            "Added NBM Meeting as an outreach outcome while keeping NBM Booked as the scheduled NBM meeting trigger.",
         ],
     },
     {
@@ -2812,7 +2812,7 @@ PG_SUCCESS_OUTCOMES = (
 
 SCHEDULED_MEETING_OUTCOMES = (
     "Meeting Booked",
-    "NBM Meeting",
+    "NBM Booked",
     "Discovery Booked",
     "Exec Meeting Booked",
 )
