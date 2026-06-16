@@ -3156,11 +3156,31 @@ a:hover {
     width: 100%;
     border-collapse: collapse;
     background: #ffffff;
+    table-layout: fixed;
+}
+
+.pg-plan-table {
+    font-size: 13px;
 }
 
 .pg-actions-table {
-    table-layout: fixed;
     font-size: 12px;
+}
+
+.pg-plan-table .pg-plan-rag-col {
+    width: 72px;
+}
+
+.pg-plan-table .pg-plan-sales-play-col {
+    width: 42%;
+}
+
+.pg-plan-table .pg-plan-account-col {
+    width: 38%;
+}
+
+.pg-plan-table .pg-plan-value-col {
+    width: 140px;
 }
 
 .pg-actions-table .pg-rag-col {
@@ -3209,7 +3229,6 @@ a:hover {
     padding: 6px 7px;
     vertical-align: top;
     min-width: 0;
-    max-width: 0;
     overflow-wrap: anywhere;
     word-break: normal;
 }
@@ -3303,8 +3322,10 @@ a:hover {
     background: #f8fafc;
 }
 
-.pg-plan-table td:nth-child(2) {
-    min-width: 280px;
+.pg-plan-table td:nth-child(2),
+.pg-plan-table td:nth-child(3) {
+    white-space: normal;
+    line-height: 1.35;
 }
 
 .pg-actions-table th:nth-child(1),
@@ -3318,7 +3339,7 @@ a:hover {
 .pg-actions-table td:nth-child(4),
 .pg-actions-table th:nth-child(5),
 .pg-actions-table td:nth-child(5) {
-    width: 82px;
+    width: 92px;
 }
 
 .pg-actions-table th:nth-child(2),
@@ -3443,6 +3464,10 @@ a:hover {
 
 .scheduled-action-entry strong {
     color: #164f2b;
+}
+
+[data-scheduled-meeting-field][hidden] {
+    display: none !important;
 }
 
 .system-metadata-panel {

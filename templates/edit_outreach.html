@@ -440,6 +440,7 @@
             const show = outcomeSelect && meetingOutcomes.has(outcomeSelect.value);
             scheduledFields.forEach((field) => {
                 field.hidden = !show;
+                field.style.display = show ? "" : "none";
             });
             if (scheduledMeetingInput) scheduledMeetingInput.required = !!show;
             if (!show) {
