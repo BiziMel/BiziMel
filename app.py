@@ -20,9 +20,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.3.3"
-APP_RELEASE_DATE = "2026-06-15"
-APP_BUILD = "2026-06-16-v2.3.3-pg-progress-partner-multi-account-r4"
+APP_VERSION = "2.3.4"
+APP_RELEASE_DATE = "2026-06-16"
+APP_BUILD = "2026-06-16-v2.3.4-pg-progress-outreach-meeting-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -36,6 +36,19 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.3.4",
+        "release_date": "2026-06-16",
+        "title": "PG Progress group headers and meeting outcome scheduling",
+        "new": [],
+        "enhanced": [],
+        "fixed": [
+            "Removed the top PG Progress action table headings so headings only appear under each account, business org and sales play grouping.",
+            "Moved Account to the first field on the Add Outreach form so users choose the account context before entering activity details.",
+            "Restricted the outreach scheduled meeting date/time field to appear only for Meeting Booked, NBM Meeting, Discovery Booked and Exec Meeting Booked outcomes.",
+            "Added NBM Meeting as an outreach outcome while keeping legacy NBM Booked available without triggering the meeting date/time field.",
+        ],
+    },
     {
         "version": "2.3.3",
         "release_date": "2026-06-15",
@@ -2792,11 +2805,17 @@ POSITIVE_OUTCOMES = (
 PG_SUCCESS_OUTCOMES = (
     "Discovery Booked",
     "NBM Booked",
+    "NBM Meeting",
     "Exec Meeting Booked",
     "Meeting Booked",
 )
 
-SCHEDULED_MEETING_OUTCOMES = PG_SUCCESS_OUTCOMES
+SCHEDULED_MEETING_OUTCOMES = (
+    "Meeting Booked",
+    "NBM Meeting",
+    "Discovery Booked",
+    "Exec Meeting Booked",
+)
 
 PRIMARY_PG_SUCCESS_OUTCOMES = (
     "Discovery Booked",
@@ -8536,6 +8555,8 @@ def add_outreach():
             error = "Select a contact or partner contact that belongs to the selected account."
         elif status_requires_activity_update(requested_status) and not activity_update_is_valid(request.form.get("next_action")):
             error = activity_update_required_message()
+        elif outcome_requires_scheduled_meeting(normalise_outreach_outcome(request.form.get("outcome"))) and not request.form.get("scheduled_meeting_at"):
+            error = "Add the scheduled meeting date and time before saving this meeting outcome."
         else:
             sales_play_value = request.form.get("sales_play")
             outcome_value = normalise_outreach_outcome(request.form.get("outcome"))
@@ -9272,6 +9293,27 @@ def edit_outreach(outreach_id):
 
         if not outreach_recipients_match_account(connection, new_values["account_id"], recipients):
             error = "Select a contact or partner contact that belongs to the selected account."
+            connection.close()
+            return render_template(
+                "edit_outreach.html",
+                outreach_item=outreach_item,
+                accounts=accounts,
+                contacts=contacts,
+                profile=profile,
+                non_working_blocks=non_working_block_rows,
+                sales_play_options=sales_play_rows,
+                partner_activity_options=partner_activity_options,
+                partner_contacts=partner_contacts,
+                selected_contact_values=recipient_values,
+                selected_account_id=new_values["account_id"],
+                scheduled_meeting_at=request.form.get("scheduled_meeting_at", ""),
+                error=error,
+                task_locked=task_locked_value,
+                task_lock_message=task_lock_message_value
+            )
+
+        if outcome_requires_scheduled_meeting(new_values["outcome"]) and not request.form.get("scheduled_meeting_at"):
+            error = "Add the scheduled meeting date and time before saving this meeting outcome."
             connection.close()
             return render_template(
                 "edit_outreach.html",

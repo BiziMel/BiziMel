@@ -142,6 +142,7 @@ DROPDOWN_VALUES = {
         "Neutral Response",
         "Negative Response",
         "Meeting Booked",
+        "NBM Meeting",
         "NBM Booked",
         "Discovery Booked",
         "Exec Meeting Booked",
