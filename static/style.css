@@ -3188,16 +3188,16 @@ a:hover {
 }
 
 .pg-actions-table .pg-contact-col {
-    width: 22%;
+    width: 24%;
 }
 
 .pg-actions-table .pg-status-col {
-    width: 92px;
+    width: 96px;
 }
 
 .pg-actions-table .pg-activity-col,
 .pg-actions-table .pg-next-action-col {
-    width: calc((78% - 340px) / 2);
+    width: calc((76% - 352px) / 2);
 }
 
 .pg-plan-table th,
@@ -3231,6 +3231,32 @@ a:hover {
     min-width: 0;
     overflow-wrap: anywhere;
     word-break: normal;
+}
+
+.pg-plan-rag-cell,
+.pg-rag-cell {
+    text-align: center;
+    vertical-align: middle !important;
+}
+
+.pg-plan-sales-play-cell,
+.pg-plan-account-cell,
+.pg-contact-cell,
+.pg-activity-cell,
+.pg-next-action-cell {
+    text-align: left;
+    white-space: normal;
+    line-height: 1.35;
+}
+
+.pg-plan-value-cell {
+    text-align: right;
+    vertical-align: middle;
+}
+
+.pg-status-cell {
+    text-align: center;
+    vertical-align: middle !important;
 }
 
 .pg-rag-pill {
@@ -3333,20 +3359,6 @@ a:hover {
     width: 64px;
 }
 
-.pg-actions-table th:nth-child(3),
-.pg-actions-table td:nth-child(3),
-.pg-actions-table th:nth-child(4),
-.pg-actions-table td:nth-child(4),
-.pg-actions-table th:nth-child(5),
-.pg-actions-table td:nth-child(5) {
-    width: 92px;
-}
-
-.pg-actions-table th:nth-child(2),
-.pg-actions-table td:nth-child(2) {
-    width: 22%;
-}
-
 .nbm-col {
     color: #ffffff;
     font-weight: 900;
@@ -3401,13 +3413,6 @@ a:hover {
 .pg-person-line strong {
     min-width: 0;
     overflow-wrap: anywhere;
-}
-
-.pg-actions-table td:nth-child(3),
-.pg-actions-table td:nth-child(4),
-.pg-actions-table td:nth-child(5) {
-    text-align: center;
-    vertical-align: middle;
 }
 
 .activity-notes-cell {

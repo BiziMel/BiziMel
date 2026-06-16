@@ -79,12 +79,12 @@
                 <tbody>
                     {% for row in pg_plan_rows %}
                         <tr>
-                            <td>
+                            <td class="pg-plan-rag-cell">
                                 <span class="pg-rag-dot pg-rag-{{ row.rag_status }}" title="{{ row.rag_reason }}"></span>
                             </td>
-                            <td>{{ row.sales_play or "No sales play entered" }}</td>
-                            <td>{{ row.account_name }}</td>
-                            <td class="money-cell">${{ "{:,.0f}".format(row.estimated_value or 0) }}</td>
+                            <td class="pg-plan-sales-play-cell">{{ row.sales_play or "No sales play entered" }}</td>
+                            <td class="pg-plan-account-cell">{{ row.account_name }}</td>
+                            <td class="pg-plan-value-cell money-cell">${{ "{:,.0f}".format(row.estimated_value or 0) }}</td>
                         </tr>
                     {% else %}
                         <tr>
@@ -165,7 +165,7 @@
                             <td class="pg-rag-cell">
                                 <span class="pg-rag-dot pg-rag-{{ row.rag_status }}" title="{{ row.rag_reason }}"></span>
                             </td>
-                            <td>
+                            <td class="pg-contact-cell">
                                 {% if not row.is_partner_row %}
                                     <input type="hidden" name="pg_action_contact_id" value="{{ row.contact_id }}">
                                     <input type="hidden" name="pg_action_account_id_{{ row.contact_id }}" value="{{ row.account_id }}">
@@ -175,7 +175,7 @@
                                     <div class="pg-person-line"><span>Job Title</span><strong class="pg-job-title">{{ row.contact_job_title }}</strong></div>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td class="pg-status-cell">
                                 <select name="completed_discovery_contact_{{ row.contact_id }}" {% if row.is_partner_row %}disabled{% endif %}>
                                     <option value="" {% if not row.completed_discovery_meeting %}selected{% endif %}>Select</option>
                                     <option value="Yes" {% if row.completed_discovery_meeting == "Yes" %}selected{% endif %}>Yes</option>
@@ -183,7 +183,7 @@
                                     <option value="N/A" {% if row.completed_discovery_meeting == "N/A" %}selected{% endif %}>N/A</option>
                                 </select>
                             </td>
-                            <td>
+                            <td class="pg-status-cell">
                                 <select name="exec_first_contact_{{ row.contact_id }}" {% if row.is_partner_row %}disabled{% endif %}>
                                     <option value="" {% if not row.exec_first %}selected{% endif %}>Select</option>
                                     <option value="Yes" {% if row.exec_first == "Yes" %}selected{% endif %}>Yes</option>
@@ -191,7 +191,7 @@
                                     <option value="N/A" {% if row.exec_first == "N/A" %}selected{% endif %}>N/A</option>
                                 </select>
                             </td>
-                            <td>
+                            <td class="pg-status-cell">
                                 <select name="nbm_completed_contact_{{ row.contact_id }}" {% if row.is_partner_row %}disabled{% endif %}>
                                     <option value="" {% if not row.nbm_completed %}selected{% endif %}>Select</option>
                                     <option value="Yes" {% if row.nbm_completed == "Yes" %}selected{% endif %}>Yes</option>
@@ -199,7 +199,7 @@
                                     <option value="N/A" {% if row.nbm_completed == "N/A" %}selected{% endif %}>N/A</option>
                                 </select>
                             </td>
-                            <td class="activity-notes-cell">
+                            <td class="pg-activity-cell activity-notes-cell">
                                 {% if row.last_7_days_activity_entries %}
                                     <div class="activity-update-list">
                                         {% for entry in row.last_7_days_activity_entries %}
@@ -212,7 +212,7 @@
                                     </div>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td class="pg-next-action-cell">
                                 {% if row.next_7_days_actions %}
                                     <div class="scheduled-action-list">
                                         {% for action in row.next_7_days_actions %}

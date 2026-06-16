@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <title>{% block title %}PipeFlow PG Manager{% endblock %}</title>
 
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=app_build or app_version) }}">
     <link rel="icon" type="image/png" href="/static/pipeflow.png?v=300">
-    <script src="{{ url_for('static', filename='table_sort.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='bulk_actions.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='table_sort.js', v=app_build or app_version) }}" defer></script>
+    <script src="{{ url_for('static', filename='bulk_actions.js', v=app_build or app_version) }}" defer></script>
 </head>
 <body>
 

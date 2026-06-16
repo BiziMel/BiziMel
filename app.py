@@ -1101,6 +1101,7 @@ def inject_dropdown_values():
         "current_user": current_user(),
         "app_name": "PipeFlow PG Manager",
         "app_version": APP_VERSION,
+        "app_build": APP_BUILD,
         "app_release_date": APP_RELEASE_DATE,
         "page_instructions": page_instructions_for_endpoint(request.endpoint),
         "csrf_token": csrf_token,

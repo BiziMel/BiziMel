@@ -419,7 +419,8 @@
         const scheduledMeetingInput = document.getElementById("scheduled_meeting_at");
         const meetingOutcomes = new Set(["Meeting Booked", "NBM Booked", "Discovery Booked", "Exec Meeting Booked"]);
         function apply() {
-            const show = outcomeSelect && meetingOutcomes.has(outcomeSelect.value);
+            const selectedOutcome = outcomeSelect ? outcomeSelect.value.trim() : "";
+            const show = meetingOutcomes.has(selectedOutcome);
             scheduledFields.forEach((field) => {
                 field.hidden = !show;
                 field.style.display = show ? "" : "none";
@@ -433,7 +434,11 @@
         apply();
     }
 
-    toggleScheduledMeetingFields();
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", toggleScheduledMeetingFields);
+    } else {
+        toggleScheduledMeetingFields();
+    }
 
     document.querySelector(".pipeflow-form")?.addEventListener("submit", (event) => {
         const fields = [
