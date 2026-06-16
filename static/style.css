@@ -3184,20 +3184,20 @@ a:hover {
 }
 
 .pg-actions-table .pg-rag-col {
-    width: 64px;
+    width: 46px;
 }
 
 .pg-actions-table .pg-contact-col {
-    width: 24%;
+    width: 26%;
 }
 
 .pg-actions-table .pg-status-col {
-    width: 96px;
+    width: 54px;
 }
 
 .pg-actions-table .pg-activity-col,
 .pg-actions-table .pg-next-action-col {
-    width: calc((76% - 352px) / 2);
+    width: calc((74% - 208px) / 2);
 }
 
 .pg-plan-table th,
@@ -3221,6 +3221,15 @@ a:hover {
     padding: 8px;
     text-align: center;
     font-weight: 900;
+    line-height: 1.05;
+    vertical-align: middle;
+}
+
+.pg-stacked-heading {
+    display: inline-block;
+    max-width: 58px;
+    line-height: 1.05;
+    white-space: normal;
 }
 
 .pg-plan-table td,
@@ -3263,8 +3272,8 @@ a:hover {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     cursor: pointer;
 }
 
@@ -3278,8 +3287,8 @@ a:hover {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 22px;
-    height: 22px;
+    width: 19px;
+    height: 19px;
     border: 2px solid #94a3b8;
     border-radius: 5px;
     background: #ffffff;
@@ -3322,8 +3331,8 @@ a:hover {
 
 .pg-rag-dot {
     display: inline-flex;
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
     border: 1px solid rgba(15, 23, 42, 0.28);
     vertical-align: middle;
@@ -3332,7 +3341,7 @@ a:hover {
 .pg-rag-cell {
     text-align: center;
     vertical-align: middle !important;
-    width: 54px;
+    width: 46px;
 }
 
 .pg-plan-table td:first-child {
