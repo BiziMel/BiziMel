@@ -3184,20 +3184,20 @@ a:hover {
 }
 
 .pg-actions-table .pg-rag-col {
-    width: 46px;
+    width: 4%;
 }
 
 .pg-actions-table .pg-contact-col {
-    width: 26%;
+    width: 24%;
 }
 
 .pg-actions-table .pg-status-col {
-    width: 54px;
+    width: 5.5%;
 }
 
 .pg-actions-table .pg-activity-col,
 .pg-actions-table .pg-next-action-col {
-    width: calc((74% - 208px) / 2);
+    width: 27.75%;
 }
 
 .pg-plan-table th,
@@ -3238,8 +3238,9 @@ a:hover {
     padding: 6px 7px;
     vertical-align: top;
     min-width: 0;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
     word-break: normal;
+    white-space: normal;
 }
 
 .pg-plan-rag-cell,
@@ -3256,6 +3257,8 @@ a:hover {
     text-align: left;
     white-space: normal;
     line-height: 1.35;
+    overflow-wrap: break-word;
+    word-break: normal;
 }
 
 .pg-plan-value-cell {
@@ -3410,11 +3413,6 @@ a:hover {
     line-height: 1.35;
 }
 
-.pg-actions-table th:nth-child(1),
-.pg-actions-table td:nth-child(1) {
-    width: 64px;
-}
-
 .nbm-col {
     color: #ffffff;
     font-weight: 900;
@@ -3485,11 +3483,16 @@ a:hover {
 
 .activity-update-entry {
     display: grid;
-    grid-template-columns: auto 18px minmax(0, 1fr);
+    grid-template-columns: max-content 18px minmax(0, 1fr);
     gap: 6px;
     align-items: start;
     min-width: 0;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
+    word-break: normal;
+}
+
+.activity-update-entry strong {
+    white-space: nowrap;
 }
 
 .activity-update-arrow {
@@ -3511,7 +3514,8 @@ a:hover {
     padding: 9px 0;
     border-bottom: 1px solid #cfe0cb;
     min-width: 0;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
+    word-break: normal;
 }
 
 .scheduled-action-entry:first-child {
