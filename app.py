@@ -48,6 +48,7 @@ RELEASE_NOTES = [
             "Restricted the outreach scheduled meeting date/time field to appear only for Meeting Booked, NBM Booked, Discovery Booked and Exec Meeting Booked outcomes.",
             "Added NBM Meeting as an outreach outcome while keeping NBM Booked as the scheduled NBM meeting trigger.",
             "Restored PG Progress table alignment so contact, status, recent activity and future action text stays within its assigned cell.",
+            "Changed PG Progress Completed Discovery Meeting, Exec First and NBM Completed controls from dropdowns to Yes/No checkboxes.",
         ],
     },
     {
@@ -5722,9 +5723,9 @@ def pg_progress():
             if not str(contact_id).isdigit():
                 continue
             account_id = request.form.get(f"pg_action_account_id_{contact_id}", "")
-            completed = request.form.get(f"completed_discovery_contact_{contact_id}", "")
-            exec_first = request.form.get(f"exec_first_contact_{contact_id}", "")
-            nbm_completed = request.form.get(f"nbm_completed_contact_{contact_id}", "")
+            completed = "Yes" if request.form.get(f"completed_discovery_contact_{contact_id}") == "Yes" else "No"
+            exec_first = "Yes" if request.form.get(f"exec_first_contact_{contact_id}") == "Yes" else "No"
+            nbm_completed = "Yes" if request.form.get(f"nbm_completed_contact_{contact_id}") == "Yes" else "No"
             next_action = request.form.get(f"next_action_contact_{contact_id}", "")
             existing = connection.execute(
                 "SELECT id FROM pg_action_contact_updates WHERE contact_id = ?",

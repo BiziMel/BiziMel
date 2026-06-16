@@ -3259,6 +3259,53 @@ a:hover {
     vertical-align: middle !important;
 }
 
+.pg-status-checkbox {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    cursor: pointer;
+}
+
+.pg-status-checkbox input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.pg-status-checkbox span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: 2px solid #94a3b8;
+    border-radius: 5px;
+    background: #ffffff;
+}
+
+.pg-status-checkbox input:checked + span {
+    border-color: #138a43;
+    background: #138a43;
+}
+
+.pg-status-checkbox input:checked + span::after {
+    content: "";
+    width: 6px;
+    height: 11px;
+    border: solid #ffffff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+    margin-top: -2px;
+}
+
+.pg-status-checkbox input:disabled + span {
+    border-color: #cbd5e1;
+    background: #f1f5f9;
+    cursor: not-allowed;
+}
+
 .pg-rag-pill {
     display: inline-flex;
     align-items: center;
