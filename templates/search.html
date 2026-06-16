@@ -156,7 +156,7 @@
                             {{ "Tier " ~ item.account_tier if item.account_tier else "No tier" }} ·
                             {{ item.contact_name or "No contact" }}
                         </p>
-                        <p class="muted">{{ item.activity_date }} {{ item.activity_time }}</p>
+                        <p class="muted">{{ item.activity_date|display_datetime(item.activity_time) }}</p>
                     </div>
 
                     <div class="latest-outreach-status">

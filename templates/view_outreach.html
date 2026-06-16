@@ -38,11 +38,11 @@
         {% endif %}
     </div>
     <p><strong>Activity Type:</strong> {{ outreach_item.activity_type }}</p>
-    <p><strong>Activity Start Date:</strong> {{ outreach_item.activity_date }}</p>
+    <p><strong>Activity Start Date:</strong> {{ outreach_item.activity_date|display_datetime(outreach_item.activity_time) }}</p>
     <p><strong>Activity Start Time:</strong> {{ outreach_item.activity_time }}</p>
     <p><strong>Outcome:</strong> {{ outreach_item.outcome }}</p>
     {% if outreach_item.outcome in ["Discovery Booked", "NBM Booked", "Exec Meeting Booked", "Meeting Booked"] %}
-        <p><strong>Scheduled Meeting:</strong> {{ outreach_item.scheduled_meeting_date or "Date not set" }}{% if outreach_item.scheduled_meeting_time %} {{ outreach_item.scheduled_meeting_time }}{% endif %}</p>
+        <p><strong>Scheduled Meeting:</strong> {{ outreach_item.scheduled_meeting_date|display_datetime(outreach_item.scheduled_meeting_time) or "Date not set" }}</p>
     {% endif %}
 </div>
 
@@ -54,7 +54,7 @@
         <p>{{ outreach_item.notes or "No system scheduling metadata recorded." }}</p>
     </div>
     <p><strong>Next Action:</strong><br>{{ outreach_item.next_action }}</p>
-    <p><strong>Activity Due Date:</strong> {{ outreach_item.next_action_date }}</p>
+    <p><strong>Activity Due Date:</strong> {{ outreach_item.next_action_date|display_datetime(outreach_item.next_action_time) }}</p>
     <p><strong>Activity Due Time:</strong> {{ outreach_item.next_action_time }}</p>
 </div>
 

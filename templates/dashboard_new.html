@@ -105,8 +105,8 @@
                         <th>Completed Discovery Meeting</th>
                         <th>Exec First</th>
                         <th>NBM Completed</th>
-                        <th>Last 7 Days Activity</th>
-                        <th>Next Planned Actions</th>
+                        <th>Last 30 Days Activity</th>
+                        <th>Future Planned Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -142,8 +142,8 @@
                                 <th>Completed Discovery Meeting</th>
                                 <th>Exec First</th>
                                 <th>NBM Completed</th>
-                                <th>Last 7 Days Activity</th>
-                                <th>Next Planned Actions</th>
+                                <th>Last 30 Days Activity</th>
+                                <th>Future Planned Actions</th>
                             </tr>
                         {% endif %}
                         <tr>
@@ -189,7 +189,7 @@
                                     <div class="activity-update-list">
                                         {% for entry in row.last_7_days_activity_entries %}
                                             <div class="activity-update-entry">
-                                                <strong>{{ entry.date }}</strong>
+                                                <strong>{{ entry.date|display_datetime }}</strong>
                                                 <span class="activity-update-arrow" aria-hidden="true">&rarr;</span>
                                                 <span>{{ entry.activity_update }}</span>
                                             </div>

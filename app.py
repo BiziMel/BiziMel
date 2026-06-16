@@ -22,7 +22,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.3.3"
 APP_RELEASE_DATE = "2026-06-15"
-APP_BUILD = "2026-06-15-v2.3.3-pg-progress-partner-multi-account-r2"
+APP_BUILD = "2026-06-16-v2.3.3-pg-progress-partner-multi-account-r4"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -52,6 +52,9 @@ RELEASE_NOTES = [
             "Removed visible partner account relationship add fields from the partner form and replaced them with a status table.",
             "Fixed partner contact multi-account saves by adding the missing partner contact phone migrations and Postgres-safe conflict handling.",
             "Changed partner contacts from tiles to a table with the contact name linked to its row profile anchor.",
+            "Standardised visible date/time output to dd-mm-yyyy hh:mm where a time is available.",
+            "Revised PG Progress RAG scoring so red means no positive or meeting outcome, amber means positive response and green means meeting scheduled; partner activity now uses the same scoring.",
+            "Changed PG Progress activity display from last 7 days to last 30 days, hides contacts with no activity in that period, and shows all future open planned outreach for displayed contacts.",
         ],
     },
     {
@@ -948,7 +951,7 @@ def csrf_token_is_valid():
     return bool(expected and submitted and secrets.compare_digest(expected, submitted))
 
 
-def format_display_date(value, month_name=True):
+def format_display_date(value, month_name=False):
     if not value:
         return ""
     if isinstance(value, datetime):
@@ -966,7 +969,7 @@ def format_display_date(value, month_name=True):
                 continue
         if parsed is None:
             return text
-    return parsed.strftime("%d-%b-%Y" if month_name else "%d-%m-%Y")
+    return parsed.strftime("%d-%m-%Y")
 
 
 def format_display_time(value):
@@ -979,6 +982,21 @@ def format_display_time(value):
         except ValueError:
             continue
     return text
+
+
+def format_display_datetime(value, time_value=""):
+    date_text = format_display_date(value)
+    time_text = format_display_time(time_value)
+    if not time_text and value:
+        text = str(value).strip()
+        for fmt, width in (("%Y-%m-%d %H:%M:%S", 19), ("%Y-%m-%dT%H:%M", 16)):
+            try:
+                parsed = datetime.strptime(text[:width], fmt)
+                time_text = parsed.strftime("%H:%M")
+                break
+            except ValueError:
+                continue
+    return " ".join(part for part in (date_text, time_text) if part)
 
 
 def combined_contact_phone(office_phone="", mobile_phone="", legacy_phone=""):
@@ -1077,6 +1095,7 @@ def inject_dropdown_values():
 
 app.jinja_env.filters["display_date"] = format_display_date
 app.jinja_env.filters["display_time"] = format_display_time
+app.jinja_env.filters["display_datetime"] = format_display_datetime
 
 
 PAGE_INSTRUCTIONS = {
@@ -4930,20 +4949,35 @@ def nbm_colour_index(value):
     return number % 12
 
 
-def pg_progress_rag_status(outcomes, discovery_values=None, nbm_values=None):
+PG_PROGRESS_POSITIVE_OUTCOMES = (
+    "Positive Response",
+    "Referral Made",
+    "Follow-up Required",
+)
+
+
+def pg_progress_rag_status(outcomes, discovery_values=None, nbm_values=None, scheduled_meetings=None):
     discovery_values = [str(value or "").strip() for value in (discovery_values or [])]
     nbm_values = [str(value or "").strip() for value in (nbm_values or [])]
+    scheduled_meetings = [str(value or "").strip() for value in (scheduled_meetings or [])]
+    normalised = [normalise_outreach_outcome(outcome) for outcome in outcomes if str(outcome or "").strip()]
+    if any(scheduled_meetings) or any(value == "Yes" for value in nbm_values):
+        return {
+            "status": "green",
+            "label": "Green",
+            "reason": "Meeting scheduled",
+        }
     if any(value == "Yes" for value in nbm_values):
         return {
             "status": "green",
             "label": "Green",
             "reason": "NBM meeting marked as completed",
         }
-    if any(value == "Yes" for value in discovery_values):
+    if any(value == "Yes" for value in discovery_values) or any(outcome in PG_PROGRESS_POSITIVE_OUTCOMES for outcome in normalised):
         return {
             "status": "amber",
             "label": "Amber",
-            "reason": "Discovery meeting marked as completed",
+            "reason": "Positive response recorded",
         }
     if any(value == "No" for value in (*discovery_values, *nbm_values)):
         return {
@@ -4951,23 +4985,10 @@ def pg_progress_rag_status(outcomes, discovery_values=None, nbm_values=None):
             "label": "Red",
             "reason": "Meeting progression marked as no",
         }
-    normalised = [normalise_outreach_outcome(outcome) for outcome in outcomes if str(outcome or "").strip()]
-    if any(outcome in ("NBM Booked", "Exec Meeting Booked") for outcome in normalised):
-        return {
-            "status": "green",
-            "label": "Green",
-            "reason": "NBM or executive meeting booked",
-        }
-    if any(outcome in (*NEGATIVE_OUTCOMES, "Positive Response", "Discovery Booked", "Meeting Booked") for outcome in normalised):
-        return {
-            "status": "amber",
-            "label": "Amber",
-            "reason": "Response or Discovery meeting signal recorded",
-        }
     return {
         "status": "red",
         "label": "Red",
-        "reason": "No response signal recorded",
+        "reason": "No positive response or scheduled meeting recorded",
     }
 
 
@@ -5022,7 +5043,7 @@ def contact_pg_progress_rag(connection, account_id, contact_id, legacy_action_up
         else (legacy_action_update["completed_discovery_meeting"] if legacy_action_update else "")
     )
     contact_outcome_rows = connection.execute("""
-        SELECT outcome
+        SELECT outcome, scheduled_meeting_date, scheduled_meeting_time
         FROM outreach
         WHERE account_id = ?
           AND (
@@ -5044,6 +5065,11 @@ def contact_pg_progress_rag(connection, account_id, contact_id, legacy_action_up
             [row["outcome"] for row in contact_outcome_rows],
             [completed_discovery],
             [nbm_completed],
+            [
+                format_display_datetime(row["scheduled_meeting_date"], row["scheduled_meeting_time"])
+                for row in contact_outcome_rows
+                if row["scheduled_meeting_date"]
+            ],
         ),
     }
 
@@ -5398,10 +5424,8 @@ def pg_dashboard_context(connection):
 
     pg_plan_rows = []
     pg_action_rows = []
-    seven_days_ago = (datetime.now() - timedelta(days=7)).date().isoformat()
+    thirty_days_ago = (datetime.now() - timedelta(days=30)).date().isoformat()
     today_key = datetime.now().date().isoformat()
-    seven_days_forward = (datetime.now() + timedelta(days=7)).date().isoformat()
-    stale_contact_cutoff = (datetime.now() - timedelta(days=30)).date()
     for account in accounts:
         account_id = account["id"]
         pg_target_number = account["pg_bible_order"] or ""
@@ -5458,8 +5482,6 @@ def pg_dashboard_context(connection):
 
         for contact in contacts:
             contact_id = contact["id"]
-            if not contact_has_recent_or_open_activity(connection, contact_id, stale_contact_cutoff):
-                continue
             scheduled_action_rows = connection.execute("""
                 SELECT subject, activity_type, next_action_date, next_action_time
                 FROM outreach
@@ -5474,12 +5496,12 @@ def pg_dashboard_context(connection):
                   )
                   AND next_action_date IS NOT NULL
                   AND next_action_date != ''
-                  AND next_action_date <= ?
+                  AND next_action_date >= ?
                   AND COALESCE(task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
                 ORDER BY next_action_date ASC, next_action_time ASC, id DESC
-            """, (account_id, contact_id, contact_id, seven_days_forward)).fetchall()
+            """, (account_id, contact_id, contact_id, today_key)).fetchall()
             recent_activity_rows = connection.execute("""
-                SELECT activity_date, activity_type, subject, next_action, last_updated
+                SELECT activity_date, activity_time, activity_type, subject, outcome, next_action, last_updated, task_status
                 FROM outreach
                 WHERE account_id = ?
                   AND (
@@ -5490,34 +5512,38 @@ def pg_dashboard_context(connection):
                             WHERE contact_id = ?
                         )
                   )
-                  AND last_updated >= ?
-                  AND next_action IS NOT NULL
-                  AND next_action != ''
-                  AND COALESCE(task_status, '') IN ('Closed', 'Completed', 'Cancelled')
-                ORDER BY last_updated DESC, id DESC
-            """, (account_id, contact_id, contact_id, seven_days_ago)).fetchall()
+                  AND activity_date IS NOT NULL
+                  AND activity_date != ''
+                  AND activity_date >= ?
+                ORDER BY activity_date DESC, activity_time DESC, last_updated DESC, id DESC
+            """, (account_id, contact_id, contact_id, thirty_days_ago)).fetchall()
+            if not recent_activity_rows:
+                continue
             contact_rag_payload = contact_rag_payloads.get(contact_id) or contact_pg_progress_rag(connection, account_id, contact_id, legacy_action_update)
             action_update = contact_rag_payload["action_update"]
             contact_completed_discovery = contact_rag_payload["completed_discovery"]
             contact_nbm_completed = contact_rag_payload["nbm_completed"]
             contact_rag = contact_rag_payload["rag"]
 
-            next_7_days_actions = []
+            future_planned_actions = []
             for action_row in scheduled_action_rows:
                 subject = action_row["subject"] or "Scheduled action"
-                due_parts = [action_row["next_action_date"] or "", action_row["next_action_time"] or ""]
-                next_7_days_actions.append({
+                future_planned_actions.append({
                     "subject": subject,
                     "activity_type": action_row["activity_type"] or "",
-                    "due": " ".join(part for part in due_parts if part),
+                    "due": format_display_datetime(action_row["next_action_date"], action_row["next_action_time"]),
                 })
-            last_7_days_activity_entries = []
+            last_30_days_activity_entries = []
             for row in recent_activity_rows:
-                submitted_date = str(row["last_updated"] or row["activity_date"] or "No date")[:10]
-                last_7_days_activity_entries.append({
-                    "date": submitted_date,
+                activity_bits = [
+                    row["activity_type"] or row["subject"] or "Activity",
+                    row["outcome"] or "",
+                    row["next_action"] or "",
+                ]
+                last_30_days_activity_entries.append({
+                    "date": format_display_datetime(row["activity_date"], row["activity_time"]) or format_display_datetime(row["last_updated"]) or "No date",
                     "activity": row["activity_type"] or row["subject"] or "Activity",
-                    "activity_update": row["next_action"],
+                    "activity_update": " - ".join(part for part in activity_bits if part),
                 })
 
             pg_action_rows.append({
@@ -5539,8 +5565,8 @@ def pg_dashboard_context(connection):
                 "completed_discovery_meeting": contact_completed_discovery,
                 "exec_first": action_update["exec_first"] if action_update and "exec_first" in action_update.keys() else "",
                 "nbm_completed": contact_nbm_completed,
-                "last_7_days_activity_entries": last_7_days_activity_entries,
-                "next_7_days_actions": next_7_days_actions or [{"subject": "No next action set", "activity_type": "", "due": ""}],
+                "last_7_days_activity_entries": last_30_days_activity_entries,
+                "next_7_days_actions": future_planned_actions or [{"subject": "No future planned action set", "activity_type": "", "due": ""}],
             })
 
         partner_activity_rows = connection.execute("""
@@ -5548,10 +5574,13 @@ def pg_dashboard_context(connection):
                 outreach.activity_date,
                 outreach.activity_type,
                 outreach.next_action,
+                outreach.outcome,
                 outreach.subject,
                 outreach.last_updated,
                 outreach.next_action_date,
                 outreach.next_action_time,
+                outreach.scheduled_meeting_date,
+                outreach.scheduled_meeting_time,
                 outreach.task_status,
                 partners.partner_name,
                 partner_contacts.name AS partner_contact_name,
@@ -5572,6 +5601,8 @@ def pg_dashboard_context(connection):
         """, (account_id,)).fetchall()
         partner_activity_entries = []
         partner_scheduled_actions = []
+        partner_outcomes = []
+        partner_scheduled_meetings = []
         seen_partner_entries = set()
         partner_group_names = []
         partner_contact_names = []
@@ -5580,40 +5611,49 @@ def pg_dashboard_context(connection):
             partner_contact_name = row["partner_contact_name"] or "Partner contact"
             if partner_name not in partner_group_names:
                 partner_group_names.append(partner_name)
+            if row["outcome"]:
+                partner_outcomes.append(row["outcome"])
+            if row["scheduled_meeting_date"]:
+                partner_scheduled_meetings.append(format_display_datetime(row["scheduled_meeting_date"], row["scheduled_meeting_time"]))
             contact_label = partner_contact_name
             if row["partner_contact_job_title"]:
                 contact_label = f"{contact_label} - {row['partner_contact_job_title']}"
             if contact_label not in partner_contact_names:
                 partner_contact_names.append(contact_label)
-            if row["next_action"] and row["last_updated"] and str(row["last_updated"])[:10] >= seven_days_ago and is_closed_task_status(row["task_status"]):
+            if row["activity_date"] and row["activity_date"] >= thirty_days_ago:
                 key = ("outreach", row["last_updated"], row["next_action"])
                 if key not in seen_partner_entries:
                     seen_partner_entries.add(key)
+                    activity_bits = [
+                        row["activity_type"] or row["subject"] or "Partner activity",
+                        row["outcome"] or "",
+                        row["next_action"] or "",
+                    ]
                     partner_activity_entries.append({
-                        "date": str(row["last_updated"])[:10],
+                        "date": format_display_datetime(row["activity_date"], row["activity_time"]) or format_display_datetime(row["last_updated"]),
                         "activity": row["activity_type"] or f"Partner activity - {partner_name}",
-                        "activity_update": f"{partner_name}: {row['next_action']}",
+                        "activity_update": f"{partner_name}: " + " - ".join(part for part in activity_bits if part),
                     })
-            if row["partner_notes"] and row["partner_last_updated"] and str(row["partner_last_updated"])[:10] >= seven_days_ago:
+            if row["partner_notes"] and row["partner_last_updated"] and str(row["partner_last_updated"])[:10] >= thirty_days_ago:
                 key = ("partner_contact", row["partner_last_updated"], row["partner_notes"])
                 if key not in seen_partner_entries:
                     seen_partner_entries.add(key)
                     partner_activity_entries.append({
-                        "date": str(row["partner_last_updated"])[:10],
+                        "date": format_display_datetime(row["partner_last_updated"]),
                         "activity": f"Partner activity - {partner_name}",
                         "activity_update": f"{partner_contact_name}: {row['partner_notes']}",
                     })
-            if row["next_action_date"] and row["next_action_date"] <= seven_days_forward and not is_closed_task_status(row["task_status"]):
+            if row["next_action_date"] and row["next_action_date"] >= today_key and not is_closed_task_status(row["task_status"]):
                 key = ("scheduled", row["next_action_date"], row["next_action_time"], row["subject"])
                 if key not in seen_partner_entries:
                     seen_partner_entries.add(key)
-                    due_parts = [row["next_action_date"] or "", row["next_action_time"] or ""]
                     partner_scheduled_actions.append({
                         "subject": row["subject"] or f"Partner activity - {partner_name}",
                         "activity_type": row["activity_type"] or "Partner Touchpoint",
-                        "due": " ".join(part for part in due_parts if part),
+                        "due": format_display_datetime(row["next_action_date"], row["next_action_time"]),
                     })
         if partner_activity_entries or partner_scheduled_actions:
+            partner_rag = pg_progress_rag_status(partner_outcomes, [], [], partner_scheduled_meetings)
             partner_group_label = "Partner Account: " + compact_join(partner_group_names, 3) if partner_group_names else "Partner activity"
             pg_action_rows.append({
                 "is_partner_row": True,
@@ -5621,9 +5661,9 @@ def pg_dashboard_context(connection):
                 "contact_id": f"partner_{account_id}",
                 "target_number": pg_target_number,
                 "colour_index": nbm_colour_index(pg_target_number),
-                "rag_status": rag["status"],
-                "rag_label": rag["label"],
-                "rag_reason": rag["reason"],
+                "rag_status": partner_rag["status"],
+                "rag_label": partner_rag["label"],
+                "rag_reason": partner_rag["reason"],
                 "account_name": account["account_name"],
                 "sales_play": pg_sales_play or "No sales play entered",
                 "targeted_discovery": compact_join(partner_contact_names, 3) if partner_contact_names else "Partner activity",

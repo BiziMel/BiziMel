@@ -207,7 +207,7 @@
                                     <span class="outreach-date-label">Due</span>
                                     <span class="outreach-date-value">
                                         {% if item.next_action_date %}
-                                            {{ item.next_action_date[8:10] }}-{{ item.next_action_date[5:7] }}-{{ item.next_action_date[0:4] }}
+                                            {{ item.next_action_date|display_datetime(item.next_action_time) }}
                                         {% else %}
                                             No due date
                                         {% endif %}

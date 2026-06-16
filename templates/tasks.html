@@ -22,7 +22,7 @@
                             </p>
                         </div>
                         <div class="task-due-block">
-                            {% if show_date %}<strong>{{ item.next_action_date or "No date" }}</strong>{% endif %}
+                            {% if show_date %}<strong>{{ item.next_action_date|display_datetime(item.next_action_time) or "No date" }}</strong>{% endif %}
                             <span>{{ item.next_action_time or "No time" }}</span>
                         </div>
                     </div>

@@ -289,7 +289,7 @@
                     <div>
                         <strong>{{ item.subject or "No subject" }}</strong>
                         <p>{{ item.contact_name or "No contact linked" }} · {{ item.activity_type or "No type" }}</p>
-                        <p class="muted">{{ item.activity_date or "No date" }} {{ item.activity_time or "" }}</p>
+                        <p class="muted">{{ item.activity_date|display_datetime(item.activity_time) or "No date" }}</p>
                     </div>
 
                     <div class="latest-outreach-status">

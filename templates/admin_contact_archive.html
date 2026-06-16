@@ -75,7 +75,7 @@
                         <td>{{ contact.account_name or "Unknown account" }}</td>
                         <td>{{ contact.email or "Not set" }}</td>
                         <td>{{ contact.status or "Inactive" }}</td>
-                        <td>{{ contact.last_updated or "Not set" }}</td>
+                        <td>{{ contact.last_updated|display_datetime or "Not set" }}</td>
                     </tr>
                 {% endfor %}
             </tbody>

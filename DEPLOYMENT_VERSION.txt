@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
 Version: 2.3.3
 Release date: 2026-06-15
-Build: 2026-06-15-v2.3.3-pg-progress-partner-multi-account-r2
+Build: 2026-06-16-v2.3.3-pg-progress-partner-multi-account-r4
 Package purpose: Hosted enterprise deployment only.

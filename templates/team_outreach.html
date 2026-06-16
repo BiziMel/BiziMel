@@ -85,7 +85,7 @@
                             <td data-sort-value="{{ item.next_action_date or '9999-12-31' }} {{ item.next_action_time or '99:99' }}">
                                 <div class="outreach-due-date-block">
                                     <span class="outreach-date-label">Due</span>
-                                    <span class="outreach-date-value">{{ item.next_action_date or "No due date" }}</span>
+                                    <span class="outreach-date-value">{{ item.next_action_date|display_datetime(item.next_action_time) or "No due date" }}</span>
                                     <div class="outreach-due-meta">
                                         <span>{{ item.next_action_time or "No due time" }}</span>
                                         <span class="outreach-status-chip">{{ item.task_status or "Not Started" }}</span>
