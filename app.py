@@ -47,6 +47,7 @@ RELEASE_NOTES = [
             "Moved Account to the first field on the Add Outreach form so users choose the account context before entering activity details.",
             "Restricted the outreach scheduled meeting date/time field to appear only for Meeting Booked, NBM Booked, Discovery Booked and Exec Meeting Booked outcomes.",
             "Added NBM Meeting as an outreach outcome while keeping NBM Booked as the scheduled NBM meeting trigger.",
+            "Restored PG Progress table alignment so contact, status, recent activity and future action text stays within its assigned cell.",
         ],
     },
     {

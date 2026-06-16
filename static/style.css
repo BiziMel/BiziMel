@@ -3163,6 +3163,23 @@ a:hover {
     font-size: 12px;
 }
 
+.pg-actions-table .pg-rag-col {
+    width: 64px;
+}
+
+.pg-actions-table .pg-contact-col {
+    width: 22%;
+}
+
+.pg-actions-table .pg-status-col {
+    width: 92px;
+}
+
+.pg-actions-table .pg-activity-col,
+.pg-actions-table .pg-next-action-col {
+    width: calc((78% - 340px) / 2);
+}
+
 .pg-plan-table th,
 .pg-actions-table th {
     background: #08a94f;
@@ -3191,6 +3208,10 @@ a:hover {
     border: 1px solid #f0b184;
     padding: 6px 7px;
     vertical-align: top;
+    min-width: 0;
+    max-width: 0;
+    overflow-wrap: anywhere;
+    word-break: normal;
 }
 
 .pg-rag-pill {
@@ -3288,7 +3309,7 @@ a:hover {
 
 .pg-actions-table th:nth-child(1),
 .pg-actions-table td:nth-child(1) {
-    width: 76px;
+    width: 64px;
 }
 
 .pg-actions-table th:nth-child(3),
@@ -3302,7 +3323,7 @@ a:hover {
 
 .pg-actions-table th:nth-child(2),
 .pg-actions-table td:nth-child(2) {
-    width: 19%;
+    width: 22%;
 }
 
 .nbm-col {
@@ -3333,6 +3354,8 @@ a:hover {
 .pg-actions-table textarea,
 .pg-actions-table select {
     width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
     min-width: 0;
     font-size: 12px;
     padding: 6px;
@@ -3340,10 +3363,11 @@ a:hover {
 
 .pg-person-line {
     display: grid;
-    grid-template-columns: minmax(72px, auto) 1fr;
+    grid-template-columns: 58px minmax(0, 1fr);
     gap: 6px;
     margin-bottom: 3px;
     line-height: 1.25;
+    min-width: 0;
 }
 
 .pg-person-line span {
@@ -3351,6 +3375,18 @@ a:hover {
     font-size: 10px;
     font-weight: 800;
     text-transform: uppercase;
+}
+
+.pg-person-line strong {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.pg-actions-table td:nth-child(3),
+.pg-actions-table td:nth-child(4),
+.pg-actions-table td:nth-child(5) {
+    text-align: center;
+    vertical-align: middle;
 }
 
 .activity-notes-cell {
@@ -3362,6 +3398,7 @@ a:hover {
 .activity-update-list {
     display: grid;
     gap: 6px;
+    min-width: 0;
 }
 
 .activity-update-entry {
@@ -3369,6 +3406,8 @@ a:hover {
     grid-template-columns: auto 18px minmax(0, 1fr);
     gap: 6px;
     align-items: start;
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .activity-update-arrow {
@@ -3380,7 +3419,8 @@ a:hover {
 
 .scheduled-action-list {
     display: grid;
-    gap: 0;
+    gap: 6px;
+    min-width: 0;
 }
 
 .scheduled-action-entry {
@@ -3388,6 +3428,8 @@ a:hover {
     gap: 4px;
     padding: 9px 0;
     border-bottom: 1px solid #cfe0cb;
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .scheduled-action-entry:first-child {
