@@ -31,6 +31,12 @@
 {% if error %}
     <div class="alert-error">{{ error }}</div>
 {% endif %}
+{% if nbm_success_week_filter %}
+    <div class="alert-success">
+        Showing PG Success This Week: NBM Booked or NBM Meeting records scheduled in the selected week.
+        <a href="{{ url_for('outreach') }}">Clear filter</a>
+    </div>
+{% endif %}
 
 <div class="outreach-control-grid outreach-filter-only-grid">
     <div class="form-card compact-filter-card">

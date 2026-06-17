@@ -3184,20 +3184,20 @@ a:hover {
 }
 
 .pg-actions-table .pg-rag-col {
-    width: 4%;
+    width: 5%;
 }
 
 .pg-actions-table .pg-contact-col {
-    width: 24%;
+    width: 19%;
 }
 
 .pg-actions-table .pg-status-col {
-    width: 5.5%;
+    width: 7%;
 }
 
 .pg-actions-table .pg-activity-col,
 .pg-actions-table .pg-next-action-col {
-    width: 27.75%;
+    width: 27.5%;
 }
 
 .pg-plan-table th,
@@ -3208,6 +3208,9 @@ a:hover {
     padding: 8px;
     text-align: center;
     font-weight: 900;
+    box-sizing: border-box;
+    overflow-wrap: break-word;
+    word-break: normal;
 }
 
 .pg-actions-global-head {
@@ -3218,16 +3221,20 @@ a:hover {
     background: #08a94f;
     color: #ffffff;
     border: 2px solid #f0a271;
-    padding: 8px;
+    padding: 6px 4px;
     text-align: center;
     font-weight: 900;
+    font-size: 10px;
     line-height: 1.05;
     vertical-align: middle;
+    box-sizing: border-box;
+    overflow-wrap: break-word;
+    word-break: normal;
 }
 
 .pg-stacked-heading {
     display: inline-block;
-    max-width: 58px;
+    max-width: 72px;
     line-height: 1.05;
     white-space: normal;
 }
@@ -3241,6 +3248,7 @@ a:hover {
     overflow-wrap: break-word;
     word-break: normal;
     white-space: normal;
+    box-sizing: border-box;
 }
 
 .pg-plan-rag-cell,
@@ -3344,7 +3352,6 @@ a:hover {
 .pg-rag-cell {
     text-align: center;
     vertical-align: middle !important;
-    width: 46px;
 }
 
 .pg-plan-table td:first-child {

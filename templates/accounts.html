@@ -19,6 +19,12 @@
 {% if error %}
     <div class="alert-error">{{ error }}</div>
 {% endif %}
+{% if untouched_filter %}
+    <div class="alert-success">
+        Showing untouched accounts only: accounts with no active contacts or no campaign-generated outreach tasks.
+        <a href="{{ url_for('accounts') }}">Clear filter</a>
+    </div>
+{% endif %}
 
 <section class="form-card compact-filter-card account-sharing-card">
     <div class="section-header compact-section-header">

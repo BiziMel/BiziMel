@@ -55,14 +55,14 @@
                         <p class="metric-number">{{ this_week_overdue|default(0, true) }}</p>
                     </div>
                 </a>
-                <a href="{{ url_for('accounts') }}" class="metric-card-link">
+                <a href="{{ url_for('accounts', untouched='1') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
                         <h3>Untouched Accounts</h3>
                         <p class="metric-number">{{ this_week_untouched_accounts|default(0, true) }}</p>
                         <p class="metric-subtext">No active contacts or campaign tasks</p>
                     </div>
                 </a>
-                <a href="{{ url_for('outreach', task_status='All', activity_start=this_week_start, activity_end=this_week_end, pg_success='1') }}" class="metric-card-link">
+                <a href="{{ url_for('outreach', task_status='All', nbm_success_week='1', week_start=this_week_start, week_end=this_week_end) }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
                         <h3>PG Success This Week</h3>
                         <p class="metric-number">{{ this_week_meetings_booked|default(0, true) }}</p>

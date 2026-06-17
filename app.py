@@ -44,12 +44,15 @@ RELEASE_NOTES = [
         "enhanced": [
             "Added campaign builder activity-type checkboxes so generated campaigns can be filtered to selected activities, while unfiltered campaigns use a varied sequence that starts with VITO.",
             "Updated the User Guide dashboard section to explain how each Insights Dashboard metric is calculated.",
+            "Updated the User Guide Good To Know sections so guidance reflects current navigation and terminology.",
         ],
         "fixed": [
             "Corrected Untouched Accounts so it counts accounts with no active contacts or no campaign-generated tasks.",
             "Changed PG Success This Week to count NBM meetings booked or scheduled in the current week.",
             "Removed the low-value Total Outreach metric from the Insights Dashboard command centre.",
             "Reviewed and consolidated Insights Dashboard metric calculations so fallback and primary dashboard paths use the same definitions.",
+            "Changed Insights Dashboard metric cards to open filtered record views that show the data behind each reported number.",
+            "Improved PG Actions tracker column sizing so headings and body text align within readable table columns.",
         ],
     },
     {
@@ -601,7 +604,7 @@ USER_GUIDE_SECTIONS = [
             "Review Dashboard and Reports regularly to check execution progress and accountability.",
         ],
         "tips": [
-            "Your workspace data is private unless you explicitly share an account through Outreach Tasks.",
+            "Your workspace data is private unless you explicitly share an account from the account record or Accounts page.",
             "Use the global search field when you know the account, contact, partner or outreach text you are looking for.",
             "If a menu item is missing, it is normally because your profile does not have permission for that function.",
             "Every user must belong to a company tenant before they can use the application.",
@@ -635,12 +638,12 @@ USER_GUIDE_SECTIONS = [
         "tips": [
             "Total Outreach has been removed from the command centre because the dashboard now prioritises actionable execution measures.",
             "Completed, Closed and Cancelled work is removed from active execution views, overdue counts and AI Insights; Completed work can still be reopened for 10 days.",
-            "AI Insights are recalculated on every dashboard refresh from current account, contact, partner, outreach, outcome and due-date data.",
+            "Execution Insights are recalculated on every dashboard refresh from current account, contact, partner, outreach, outcome and due-date data.",
             "Insights prioritise executive coverage and PG conversion. NBM Booked and NBM Meeting are treated as the strongest weekly success signals.",
             "Weekly Wrap Up is refreshed each Friday from 15:00 and covers the previous 7 days.",
             "Next 24 Hours is refreshed daily from midnight and overwrites the previous focus guidance.",
             "Overdue logic is time-aware. A blank due time is treated as end of day.",
-            "Pipeline generated value should be treated as a source-system metric when it belongs in SFDC rather than PipeFlow.",
+            "Click any command centre metric to open the filtered records behind the number.",
         ],
     },
     {
@@ -775,9 +778,9 @@ USER_GUIDE_SECTIONS = [
             "If access is revoked, tasks assigned to that user return to the account owner.",
         ],
         "tips": [
-            "Other users' full names are only displayed in Outreach Tasks assignment and share dropdowns when tenancy rules allow them to be visible.",
+            "Other users' full names are only displayed in assignment and share dropdowns when tenancy rules allow them to be visible.",
             "Sharing and assignment remain inside the company tenant; users in another company cannot be selected.",
-            "Sharing copies the full account package into the selected user's workspace while the originator retains their own access.",
+            "Sharing grants the selected user access to the account package while the originator retains their own access.",
             "Revoking an account share moves any tasks assigned to that user back to the account owner.",
             "Use sharing for collaboration. Use ownership reassignment only when responsibility for the account itself changes.",
         ],
@@ -5875,6 +5878,7 @@ def accounts():
     user = current_user()
     connection = get_db_connection()
     now = current_app_datetime()
+    untouched_filter = request.args.get("untouched", "")
 
     account_rows = connection.execute(f"""
         SELECT 
@@ -5923,6 +5927,23 @@ def accounts():
 
     for row in account_rows:
         account = dict(row)
+        account["active_contact_count"] = dashboard_scalar(connection, """
+            SELECT COUNT(*)
+            FROM contacts
+            WHERE account_id = ?
+              AND COALESCE(status, 'Active') = 'Active'
+        """, (account["id"],))
+        account["campaign_task_count"] = dashboard_scalar(connection, """
+            SELECT COUNT(*)
+            FROM outreach
+            WHERE account_id = ?
+              AND (
+                    NULLIF(TRIM(COALESCE(campaign_start_date, '')), '') IS NOT NULL
+                 OR NULLIF(TRIM(COALESCE(campaign_end_date, '')), '') IS NOT NULL
+                 OR COALESCE(campaign_total_tasks, 0) > 0
+                 OR NULLIF(TRIM(COALESCE(campaign, '')), '') IS NOT NULL
+              )
+        """, (account["id"],))
 
         health = calculate_account_health(
             contact_count=account["contact_count"] or 0,
@@ -5937,6 +5958,13 @@ def accounts():
         account["health_reason"] = health["reason"]
 
         accounts.append(account)
+
+    if untouched_filter:
+        accounts = [
+            account for account in accounts
+            if int(account.get("active_contact_count") or 0) == 0
+            or int(account.get("campaign_task_count") or 0) == 0
+        ]
 
     accounts.sort(
         key=lambda account: (
@@ -5971,6 +5999,7 @@ def accounts():
         shareable_accounts=shareable_accounts,
         account_shares=account_shares,
         assignable_users=list_assignable_users(),
+        untouched_filter=untouched_filter,
         message=request.args.get("message", ""),
         error=request.args.get("error", ""),
     )
@@ -8431,6 +8460,7 @@ def outreach():
     overdue_filter = request.args.get("overdue", "")
     followup_due_filter = request.args.get("followup_due", "")
     pg_success_filter = request.args.get("pg_success", "")
+    nbm_success_week_filter = request.args.get("nbm_success_week", "")
     selected_statuses = request.args.getlist("task_status")
     if not selected_statuses:
         selected_statuses = ["All Open"]
@@ -8549,6 +8579,33 @@ def outreach():
             )
         """
 
+    if nbm_success_week_filter:
+        nbm_start = activity_start_filter or request.args.get("week_start", "")
+        nbm_end = activity_end_filter or request.args.get("week_end", "")
+        if not nbm_start or not nbm_end:
+            today = current_app_datetime().date()
+            week_start = today - timedelta(days=today.weekday())
+            week_end = week_start + timedelta(days=6)
+            nbm_start = nbm_start or week_start.isoformat()
+            nbm_end = nbm_end or week_end.isoformat()
+        query += """
+            AND COALESCE(outreach.outcome, '') IN ('NBM Booked', 'NBM Meeting')
+            AND (
+                    (
+                        outreach.scheduled_meeting_date IS NOT NULL
+                        AND outreach.scheduled_meeting_date != ''
+                        AND date(outreach.scheduled_meeting_date) BETWEEN date(?) AND date(?)
+                    )
+                 OR (
+                        (outreach.scheduled_meeting_date IS NULL OR outreach.scheduled_meeting_date = '')
+                        AND outreach.activity_date IS NOT NULL
+                        AND outreach.activity_date != ''
+                        AND date(outreach.activity_date) BETWEEN date(?) AND date(?)
+                    )
+            )
+        """
+        params.extend([nbm_start, nbm_end, nbm_start, nbm_end])
+
     if "All" in selected_statuses:
         pass
     elif "All Closed" in selected_statuses:
@@ -8614,6 +8671,7 @@ def outreach():
         sales_play_filter=sales_play_filter,
         account_filter=account_filter,
         outcome_filter=outcome_filter,
+        nbm_success_week_filter=nbm_success_week_filter,
         selected_statuses=selected_statuses,
         assignable_users=list_assignable_users(),
         message=request.args.get("message", ""),
