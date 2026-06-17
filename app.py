@@ -53,6 +53,7 @@ RELEASE_NOTES = [
             "Reviewed and consolidated Insights Dashboard metric calculations so fallback and primary dashboard paths use the same definitions.",
             "Changed Insights Dashboard metric cards to open filtered record views that show the data behind each reported number.",
             "Improved PG Actions tracker column sizing so headings and body text align within readable table columns.",
+            "Updated Add Outreach account selection to show account name plus business unit so duplicate account names can be distinguished.",
         ],
     },
     {
@@ -8788,7 +8789,11 @@ def add_outreach():
         selected_contact_values = prefill.get("contact_ids", [])
         selected_account_id = request.args.get("account_id") or prefill.get("account_id", "")
 
-    accounts = connection.execute("SELECT * FROM accounts ORDER BY account_name").fetchall()
+    accounts = connection.execute("""
+        SELECT *
+        FROM accounts
+        ORDER BY account_name, business_unit
+    """).fetchall()
 
     contacts = connection.execute("""
         SELECT contacts.*, accounts.account_name, accounts.account_tier
