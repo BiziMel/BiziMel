@@ -20,9 +20,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.3.4"
-APP_RELEASE_DATE = "2026-06-16"
-APP_BUILD = "2026-06-16-v2.3.4-pg-progress-outreach-meeting-r1"
+APP_VERSION = "2.3.5"
+APP_RELEASE_DATE = "2026-06-17"
+APP_BUILD = "2026-06-17-v2.3.5-insights-campaign-metrics-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -36,6 +36,22 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.3.5",
+        "release_date": "2026-06-17",
+        "title": "Insights metrics and campaign activity selection",
+        "new": [],
+        "enhanced": [
+            "Added campaign builder activity-type checkboxes so generated campaigns can be filtered to selected activities, while unfiltered campaigns use a varied sequence that starts with VITO.",
+            "Updated the User Guide dashboard section to explain how each Insights Dashboard metric is calculated.",
+        ],
+        "fixed": [
+            "Corrected Untouched Accounts so it counts accounts with no active contacts or no campaign-generated tasks.",
+            "Changed PG Success This Week to count NBM meetings booked or scheduled in the current week.",
+            "Removed the low-value Total Outreach metric from the Insights Dashboard command centre.",
+            "Reviewed and consolidated Insights Dashboard metric calculations so fallback and primary dashboard paths use the same definitions.",
+        ],
+    },
     {
         "version": "2.3.4",
         "release_date": "2026-06-16",
@@ -602,10 +618,14 @@ USER_GUIDE_SECTIONS = [
         ],
         "steps": [
             "Review the command centre metrics for this week.",
-            "Use Overdue Actions to see open outreach tasks whose Activity Due Date and due time have passed.",
-            "Use Follow-ups Due to see open follow-ups due through the next 7 days, including overdue work.",
-            "Use PG Success This Week to track Discovery Booked, NBM Booked, Exec Meeting Booked and legacy Meeting Booked outcomes.",
-            "Use the pipeline target card to see total PG target ACV across your accounts.",
+            "Due This Week counts open outreach tasks with Activity Due Date between Monday and Sunday of the current week.",
+            "Closed This Week counts outreach tasks moved into a closed status during the current week.",
+            "Overdue Actions counts open outreach tasks whose Activity Due Date and due time have already passed.",
+            "Untouched Accounts counts accounts with no active contacts or no campaign-generated outreach tasks.",
+            "PG Success This Week counts NBM Booked or NBM Meeting outcomes whose scheduled meeting date is this week; if no scheduled date is stored, the activity date is used.",
+            "FY PG Target sums Pipeline Target USD ACV across all accounts.",
+            "Total Accounts and Total Contacts count account and contact records in the workspace.",
+            "Follow-ups Due counts open outreach due up to 7 days from today, including overdue work.",
             "Open Weekly Wrap Up below the metrics to review the latest Friday-generated success and risk summary.",
             "Open Next 24 Hours below the metrics to review the daily strategic focus for the immediate work window.",
             "Work active outreach tasks directly from the dashboard task table.",
@@ -613,10 +633,10 @@ USER_GUIDE_SECTIONS = [
             "Update task status and due dates as work progresses so the dashboard stays accurate.",
         ],
         "tips": [
-            "Untouched accounts are accounts with no active campaign or outreach tasks.",
+            "Total Outreach has been removed from the command centre because the dashboard now prioritises actionable execution measures.",
             "Completed, Closed and Cancelled work is removed from active execution views, overdue counts and AI Insights; Completed work can still be reopened for 10 days.",
             "AI Insights are recalculated on every dashboard refresh from current account, contact, partner, outreach, outcome and due-date data.",
-            "Insights prioritise executive coverage and PG conversion. NBM Booked is treated as the strongest success signal, followed by Discovery Booked and executive meeting outcomes.",
+            "Insights prioritise executive coverage and PG conversion. NBM Booked and NBM Meeting are treated as the strongest weekly success signals.",
             "Weekly Wrap Up is refreshed each Friday from 15:00 and covers the previous 7 days.",
             "Next 24 Hours is refreshed daily from midnight and overwrites the previous focus guidance.",
             "Overdue logic is time-aware. A blank due time is treated as end of day.",
@@ -721,6 +741,7 @@ USER_GUIDE_SECTIONS = [
             "Choose an account that already has contacts.",
             "Select one or more contacts for the campaign.",
             "Enter one sales play only.",
+            "Optionally tick the campaign activity types you want PipeFlow to generate.",
             "Set PG Week, campaign start and campaign end dates.",
             "Set the total outreach task quantity and how many times per week activities should occur.",
             "Generate the campaign to create outreach tasks across the selected contacts.",
@@ -730,7 +751,7 @@ USER_GUIDE_SECTIONS = [
             "Generated campaigns avoid weekends and your configured non-working dates.",
             "Tasks are placed inside your working hours and avoid duplicate time slots where possible.",
             "Generated campaign tasks will not start earlier than the campaign submit time.",
-            "The first email-style touch per contact is VITO. Later email-style tasks are generated as Email or Follow-up activity based on learned success patterns so the sequence is less repetitive.",
+            "Every generated campaign starts with VITO. If activity-type checkboxes are selected, later tasks use those selected types. If nothing is selected, PipeFlow uses a varied activity mix rather than repeating one activity.",
             "Campaign learning favours historic success signals, with NBM Booked carrying the strongest weighting and Discovery Booked also treated as a key PG success outcome.",
             "If no account appears, add at least one contact to the account first.",
         ],
@@ -1243,6 +1264,8 @@ PAGE_INSTRUCTIONS = {
         "title": "Campaign Builder Guidance",
         "items": [
             "Campaigns use one sales play only and can be generated for multiple contacts on the selected account.",
+            "Use Campaign Activity Types to limit generated tasks to selected activities, or leave them blank for a varied mix.",
+            "Every generated campaign starts with VITO before moving into the selected or varied follow-up activity mix.",
             "Campaign start date cannot be earlier than today and generated tasks stay on or after the configured start date.",
             "Auto-scheduling avoids weekends, configured non-working dates and duplicate time slots where possible.",
         ],
@@ -2644,6 +2667,28 @@ def build_campaign_success_context(connection, account_id, contact_ids, sales_pl
     }
 
 
+def campaign_activity_templates_for_selection(selected_activity_types, learned_templates=None):
+    base_templates = campaign_step_templates()
+    template_by_type = {template["activity_type"]: template for template in base_templates}
+    selected = [
+        activity_type for activity_type in selected_activity_types
+        if activity_type in template_by_type
+    ]
+    if selected:
+        return [dict(template_by_type[activity_type]) for activity_type in selected]
+
+    learned_order = [
+        template["activity_type"] for template in (learned_templates or [])
+        if template.get("activity_type") in template_by_type
+    ]
+    standard_order = [template["activity_type"] for template in base_templates]
+    varied_order = []
+    for activity_type in [*learned_order, *standard_order]:
+        if activity_type not in varied_order:
+            varied_order.append(activity_type)
+    return [dict(template_by_type[activity_type]) for activity_type in varied_order]
+
+
 def evenly_spaced_dates(start_date, end_date, task_count):
     days = (end_date - start_date).days
     if task_count <= 1 or days <= 0:
@@ -3262,6 +3307,72 @@ def dashboard_rows(connection, sql, params=()):
         return []
 
 
+def dashboard_untouched_accounts_count(connection):
+    """Accounts are untouched when they lack contacts or campaign-generated tasks."""
+    return dashboard_scalar(connection, """
+        SELECT COUNT(*)
+        FROM accounts
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM contacts
+            WHERE contacts.account_id = accounts.id
+              AND COALESCE(contacts.status, 'Active') = 'Active'
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM outreach
+            WHERE outreach.account_id = accounts.id
+              AND (
+                    NULLIF(TRIM(COALESCE(outreach.campaign_start_date, '')), '') IS NOT NULL
+                 OR NULLIF(TRIM(COALESCE(outreach.campaign_end_date, '')), '') IS NOT NULL
+                 OR COALESCE(outreach.campaign_total_tasks, 0) > 0
+                 OR NULLIF(TRIM(COALESCE(outreach.campaign, '')), '') IS NOT NULL
+              )
+        )
+    """)
+
+
+def dashboard_nbm_meetings_this_week_count(connection, week_start, week_end):
+    return dashboard_scalar(connection, """
+        SELECT COUNT(*)
+        FROM outreach
+        WHERE COALESCE(outcome, '') IN ('NBM Booked', 'NBM Meeting')
+          AND (
+                (
+                    scheduled_meeting_date IS NOT NULL
+                    AND scheduled_meeting_date != ''
+                    AND date(scheduled_meeting_date) BETWEEN date(?) AND date(?)
+                )
+             OR (
+                    (scheduled_meeting_date IS NULL OR scheduled_meeting_date = '')
+                    AND activity_date IS NOT NULL
+                    AND activity_date != ''
+                    AND date(activity_date) BETWEEN date(?) AND date(?)
+                )
+          )
+    """, (week_start.isoformat(), week_end.isoformat(), week_start.isoformat(), week_end.isoformat()))
+
+
+def dashboard_meetings_booked_count(connection):
+    return dashboard_scalar(connection, """
+        SELECT COUNT(*)
+        FROM outreach
+        WHERE outcome IN ('Discovery Booked', 'NBM Booked', 'NBM Meeting', 'Exec Meeting Booked', 'Meeting Booked')
+           OR activity_type = 'Meeting'
+    """)
+
+
+def dashboard_follow_ups_due_count(connection, today):
+    return dashboard_scalar(connection, f"""
+        SELECT COUNT(*)
+        FROM outreach
+        WHERE next_action_date IS NOT NULL
+          AND next_action_date != ''
+          AND date(next_action_date) <= date(?)
+          AND {open_task_sql("outreach")}
+    """, ((today + timedelta(days=7)).isoformat(), *open_task_params()))
+
+
 def build_dashboard_strategy_insights(connection, metric_values, account_health_rows=None, learning_insights=None):
     account_health_rows = account_health_rows or []
     learning_insights = learning_insights or []
@@ -3272,28 +3383,53 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
     untouched_count = int(metric_values.get("this_week_untouched_accounts") or 0)
 
     untouched_accounts = dashboard_rows(connection, """
-        SELECT
-            accounts.id,
-            accounts.account_name,
-            COALESCE(accounts.pipeline_target, 0) AS pipeline_target,
-            COALESCE(accounts.sales_play, '') AS sales_play,
-            COUNT(outreach.id) AS outreach_total
-        FROM accounts
-        LEFT JOIN outreach ON outreach.account_id = accounts.id
-        GROUP BY accounts.id, accounts.account_name, accounts.pipeline_target, accounts.sales_play
-        HAVING COUNT(outreach.id) = 0
-        ORDER BY pipeline_target DESC, accounts.account_name
+        WITH account_touch AS (
+            SELECT
+                accounts.id,
+                accounts.account_name,
+                COALESCE(accounts.pipeline_target, 0) AS pipeline_target,
+                COALESCE(accounts.sales_play, '') AS sales_play,
+                (
+                    SELECT COUNT(*)
+                    FROM contacts
+                    WHERE contacts.account_id = accounts.id
+                      AND COALESCE(contacts.status, 'Active') = 'Active'
+                ) AS active_contact_total,
+                (
+                    SELECT COUNT(*)
+                    FROM outreach
+                    WHERE outreach.account_id = accounts.id
+                      AND (
+                            NULLIF(TRIM(COALESCE(outreach.campaign_start_date, '')), '') IS NOT NULL
+                         OR NULLIF(TRIM(COALESCE(outreach.campaign_end_date, '')), '') IS NOT NULL
+                         OR COALESCE(outreach.campaign_total_tasks, 0) > 0
+                         OR NULLIF(TRIM(COALESCE(outreach.campaign, '')), '') IS NOT NULL
+                      )
+                ) AS campaign_task_total
+            FROM accounts
+        )
+        SELECT *
+        FROM account_touch
+        WHERE active_contact_total = 0
+           OR campaign_task_total = 0
+        ORDER BY pipeline_target DESC, account_name
         LIMIT 4
     """)
     for row in untouched_accounts:
+        reasons = []
+        if int(row["active_contact_total"] or 0) == 0:
+            reasons.append("no active contacts")
+        if int(row["campaign_task_total"] or 0) == 0:
+            reasons.append("no campaign tasks")
+        reason_text = " and ".join(reasons) or "coverage gap"
         insights.append({
             "source": "Daily Focus",
             "category": "Account Activity",
-            "title": f"{row['account_name']} has no outreach activity",
-            "evidence": f"Account: {row['account_name']}. Sales play: {row['sales_play'] or 'not entered'}. Pipeline target: ${float(row['pipeline_target'] or 0):,.0f}.",
-            "message": "This account cannot create campaign learning or meeting conversion until the first focused action is created.",
-            "action": f"Create a dated outreach task for {row['account_name']} with a clear Discovery or NBM meeting ask tied to the account sales play.",
-            "link": url_for("add_outreach", account_id=row["id"]),
+            "title": f"{row['account_name']} is untouched: {reason_text}",
+            "evidence": f"Account: {row['account_name']}. Active contacts: {row['active_contact_total'] or 0}. Campaign tasks: {row['campaign_task_total'] or 0}. Sales play: {row['sales_play'] or 'not entered'}. Pipeline target: ${float(row['pipeline_target'] or 0):,.0f}.",
+            "message": "This account cannot create reliable campaign learning or meeting conversion until contact coverage and campaign tasks exist.",
+            "action": f"Add contacts or build campaign tasks for {row['account_name']}, then make the first ask point toward an NBM meeting.",
+            "link": url_for("view_account", account_id=row["id"]),
             "priority": "high",
         })
 
@@ -3401,9 +3537,9 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
         insights.append({
             "source": "Execution Guidance",
             "category": "Scale What Works",
-            "title": f"{success_count} PG success outcome(s) landed this week",
-            "message": "Discovery, NBM and executive meeting bookings are the clearest signals of successful PG motion.",
-            "action": "Review which account, contact route and sales play produced the booking, then reuse that pattern on similar executive stakeholders.",
+            "title": f"{success_count} NBM meeting(s) booked or scheduled this week",
+            "message": "NBM meetings scheduled this week are the clearest signal of current PG success.",
+            "action": "Review which account, contact route and sales play produced the NBM booking, then reuse that pattern on similar executive stakeholders.",
             "link": url_for("reports"),
             "priority": "positive",
         })
@@ -4232,7 +4368,6 @@ def dashboard_metric_fallback_values(connection):
         week_end = week_start + timedelta(days=6)
         values["total_accounts"] = connection.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
         values["total_contacts"] = connection.execute("SELECT COUNT(*) FROM contacts").fetchone()[0]
-        values["total_outreach"] = connection.execute("SELECT COUNT(*) FROM outreach").fetchone()[0]
         values["total_pg_target"] = connection.execute("SELECT COALESCE(SUM(pipeline_target), 0) FROM accounts").fetchone()[0]
         rows = connection.execute("SELECT * FROM outreach").fetchall()
         for row in rows:
@@ -4258,26 +4393,14 @@ def dashboard_metric_fallback_values(connection):
                     updated_date = None
                 if updated_date and week_start <= updated_date <= week_end:
                     values["this_week_completed"] += 1
-            if activity_date and week_start <= activity_date <= week_end and is_pg_success_outcome(row["outcome"], row["activity_type"]):
-                values["this_week_meetings_booked"] += 1
             if next_date and next_date <= today + timedelta(days=7) and not closed:
                 values["follow_ups_due"] += 1
             if is_pg_success_outcome(row["outcome"], row["activity_type"]):
                 values["meetings_booked"] += 1
-        values["this_week_untouched_accounts"] = connection.execute(f"""
-            SELECT COUNT(*)
-            FROM accounts
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM outreach
-                WHERE outreach.account_id = accounts.id
-                  AND {open_task_sql("outreach")}
-                  AND (
-                        NULLIF(TRIM(COALESCE(outreach.sales_play, '')), '') IS NOT NULL
-                     OR NULLIF(TRIM(COALESCE(outreach.next_action, '')), '') IS NOT NULL
-                  )
-            )
-        """, open_task_params()).fetchone()[0]
+        values["this_week_untouched_accounts"] = dashboard_untouched_accounts_count(connection)
+        values["this_week_meetings_booked"] = dashboard_nbm_meetings_this_week_count(connection, week_start, week_end)
+        values["meetings_booked"] = dashboard_meetings_booked_count(connection)
+        values["follow_ups_due"] = dashboard_follow_ups_due_count(connection, today)
     except Exception:
         traceback.print_exc()
     return values
@@ -4343,7 +4466,6 @@ def build_dashboard_response(connection):
 
     total_accounts = connection.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
     total_contacts = connection.execute("SELECT COUNT(*) FROM contacts").fetchone()[0]
-    total_outreach = connection.execute("SELECT COUNT(*) FROM outreach").fetchone()[0]
     total_pg_target = connection.execute("""
         SELECT COALESCE(SUM(pipeline_target), 0)
         FROM accounts
@@ -4399,38 +4521,10 @@ def build_dashboard_response(connection):
             if last_updated_date and week_start <= last_updated_date <= week_end:
                 this_week_completed += 1
 
-        if activity_date and week_start <= activity_date <= week_end:
-            if is_pg_success_outcome(row["outcome"], row["activity_type"]):
-                this_week_meetings_booked += 1
-
-    this_week_untouched_accounts = connection.execute(f"""
-        SELECT COUNT(*)
-        FROM accounts
-        WHERE NOT EXISTS (
-            SELECT 1
-            FROM outreach
-            WHERE outreach.account_id = accounts.id
-              AND {open_task_sql("outreach")}
-              AND (
-                    (outreach.sales_play IS NOT NULL AND outreach.sales_play != '')
-                 OR (outreach.next_action IS NOT NULL AND outreach.next_action != '')
-              )
-        )
-    """, open_task_params()).fetchone()[0]
-
-    meetings_booked = connection.execute("""
-        SELECT COUNT(*) FROM outreach
-        WHERE outcome IN ('Discovery Booked', 'NBM Booked', 'Exec Meeting Booked', 'Meeting Booked')
-           OR activity_type = 'Meeting'
-    """).fetchone()[0]
-
-    follow_ups_due = connection.execute(f"""
-        SELECT COUNT(*) FROM outreach
-        WHERE next_action_date IS NOT NULL
-          AND next_action_date != ''
-          AND date(next_action_date) <= date(?)
-          AND {open_task_sql("outreach")}
-    """, ((today + timedelta(days=7)).isoformat(), *open_task_params())).fetchone()[0]
+    this_week_untouched_accounts = dashboard_untouched_accounts_count(connection)
+    this_week_meetings_booked = dashboard_nbm_meetings_this_week_count(connection, week_start, week_end)
+    meetings_booked = dashboard_meetings_booked_count(connection)
+    follow_ups_due = dashboard_follow_ups_due_count(connection, today)
 
     outreach_by_account = connection.execute("""
         SELECT
@@ -4817,7 +4911,7 @@ def build_dashboard_response(connection):
         "this_week_meetings_booked": this_week_meetings_booked,
         "total_accounts": total_accounts,
         "total_contacts": total_contacts,
-        "total_outreach": total_outreach,
+        "total_outreach": 0,
         "total_pg_target": total_pg_target,
         "meetings_booked": meetings_booked,
         "follow_ups_due": follow_ups_due,
@@ -4882,7 +4976,7 @@ def build_dashboard_response(connection):
         this_week_end=week_end_key,
         total_accounts=total_accounts,
         total_contacts=total_contacts,
-        total_outreach=total_outreach,
+        total_outreach=0,
         total_pg_target=total_pg_target,
         meetings_booked=meetings_booked,
         follow_ups_due=follow_ups_due,
@@ -8698,6 +8792,8 @@ def campaign_builder():
     selected_sales_play = request.form.get("sales_play") or request.form.get("sales_plays", "")
     selected_fy = request.form.get("fy", "")
     selected_quarter = request.form.get("quarter", "")
+    campaign_activity_options = campaign_step_templates()
+    selected_campaign_activity_types = request.form.getlist("campaign_activity_types")
     success_context_summary = ""
     profile = connection.execute("""
         SELECT *
@@ -8735,6 +8831,10 @@ def campaign_builder():
         selected_sales_play = sales_play
         selected_fy = request.form.get("fy", "")
         selected_quarter = request.form.get("quarter", "")
+        selected_campaign_activity_types = [
+            activity_type for activity_type in request.form.getlist("campaign_activity_types")
+            if activity_type in {template["activity_type"] for template in campaign_activity_options}
+        ]
 
         if not account_id:
             error = "Select an account before generating a campaign."
@@ -8786,7 +8886,19 @@ def campaign_builder():
                 quarter = selected_quarter
                 success_context = build_campaign_success_context(connection, account_id, valid_contact_ids, sales_play)
                 success_context_summary = success_context["summary"]
-                schedule_templates = success_context["templates"]
+                schedule_templates = campaign_activity_templates_for_selection(
+                    selected_campaign_activity_types,
+                    success_context["templates"],
+                )
+                if selected_campaign_activity_types:
+                    success_context_summary = (
+                        f"{success_context_summary} Activity filter applied: "
+                        f"{', '.join(selected_campaign_activity_types)}."
+                    )
+                else:
+                    success_context_summary = (
+                        f"{success_context_summary} No activity filter selected, so PipeFlow used a varied activity mix after the opening VITO."
+                    )
                 selected_fy = fy
                 selected_quarter = quarter
                 reserved_rows = connection.execute("""
@@ -8929,6 +9041,8 @@ def campaign_builder():
         sales_play_options=sales_play_rows,
         selected_fy=selected_fy,
         selected_quarter=selected_quarter,
+        campaign_activity_options=campaign_activity_options,
+        selected_campaign_activity_types=selected_campaign_activity_types,
         success_context_summary=success_context_summary,
         error=error
     )

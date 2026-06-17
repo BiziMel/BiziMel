@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
-Version: 2.3.4
-Release date: 2026-06-16
-Build: 2026-06-16-v2.3.4-pg-progress-outreach-meeting-r1
+Version: 2.3.5
+Release date: 2026-06-17
+Build: 2026-06-17-v2.3.5-insights-campaign-metrics-r1
 Package purpose: Hosted enterprise deployment only.

@@ -144,6 +144,22 @@
                 </datalist>
                 <p class="field-help">PipeFlow uses this play plus historic outcomes, industry, account details and selected contact data to shape the activity mix.</p>
             </div>
+
+            <div class="form-group full-width">
+                <label>Campaign Activity Types</label>
+                <div class="checkbox-grid campaign-activity-type-grid">
+                    {% for activity in campaign_activity_options %}
+                        <label class="checkbox-card">
+                            <input type="checkbox"
+                                   name="campaign_activity_types"
+                                   value="{{ activity.activity_type }}"
+                                   {% if activity.activity_type in selected_campaign_activity_types %}checked{% endif %}>
+                            <span>{{ activity.activity_type }}</span>
+                        </label>
+                    {% endfor %}
+                </div>
+                <p class="field-help">Leave blank to generate a varied campaign mix. Every generated campaign starts with VITO.</p>
+            </div>
         </div>
 
         <div class="campaign-builder-panel">

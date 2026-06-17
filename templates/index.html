@@ -59,13 +59,14 @@
                     <div class="metric-card compact-command-card">
                         <h3>Untouched Accounts</h3>
                         <p class="metric-number">{{ this_week_untouched_accounts|default(0, true) }}</p>
-                        <p class="metric-subtext">No active campaign or outreach tasks</p>
+                        <p class="metric-subtext">No active contacts or campaign tasks</p>
                     </div>
                 </a>
                 <a href="{{ url_for('outreach', task_status='All', activity_start=this_week_start, activity_end=this_week_end, pg_success='1') }}" class="metric-card-link">
                     <div class="metric-card compact-command-card">
                         <h3>PG Success This Week</h3>
                         <p class="metric-number">{{ this_week_meetings_booked|default(0, true) }}</p>
+                        <p class="metric-subtext">NBM meetings booked or scheduled</p>
                     </div>
                 </a>
                 <a href="{{ url_for('accounts') }}" class="metric-card-link">
@@ -85,12 +86,6 @@
                     <div class="metric-card compact-command-card">
                         <h3>Total Contacts</h3>
                         <p class="metric-number">{{ total_contacts|default(0, true) }}</p>
-                    </div>
-                </a>
-                <a href="{{ url_for('outreach', task_status='All') }}" class="metric-card-link">
-                    <div class="metric-card compact-command-card">
-                        <h3>Total Outreach</h3>
-                        <p class="metric-number">{{ total_outreach|default(0, true) }}</p>
                     </div>
                 </a>
                 <a href="{{ url_for('outreach', task_status='All Open', followup_due='1') }}" class="metric-card-link">

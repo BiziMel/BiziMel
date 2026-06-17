@@ -5048,6 +5048,32 @@ body {
     font-size: 13px;
 }
 
+.checkbox-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+}
+
+.checkbox-card {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 42px;
+    padding: 10px 12px;
+    border: 1px solid #dbe6d8;
+    border-radius: 8px;
+    background: #f8fbf6;
+    color: #273b2d;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.checkbox-card input {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+}
+
 .pg-goals-dashboard-form {
     width: min(100%, 1760px);
     margin: 0 auto;
