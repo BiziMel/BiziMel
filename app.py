@@ -54,7 +54,8 @@ RELEASE_NOTES = [
             "Changed Insights Dashboard metric cards to open filtered record views that show the data behind each reported number.",
             "Improved PG Actions tracker column sizing so headings and body text align within readable table columns.",
             "Updated Add Outreach account selection to show account name plus business unit so duplicate account names can be distinguished.",
-            "Excluded deleted, cancelled and unworked scheduled tasks from PG Progress and PG Bible reporting so only completed, updated or overdue work is shown.",
+            "Excluded deleted and cancelled tasks from PG Progress and PG Bible reporting while preserving active future actions in the PG Progress pending-actions column.",
+            "Corrected PG Progress Last 30 Days Activity so completed and updated tasks are dated by completion or update time rather than only the original activity date.",
         ],
     },
     {
@@ -3104,6 +3105,18 @@ def report_visible_task_params(now=None):
     return (*REPORT_EXCLUDED_TASK_STATUSES, *overdue_task_params(now))
 
 
+def report_scheduled_task_sql(alias="outreach"):
+    # Future planned actions should include ordinary active tasks, while deleted,
+    # cancelled and completed work stays out of the PG Progress pending column.
+    excluded_statuses = (*INACTIVE_TASK_STATUSES, "Deleted")
+    placeholders = ",".join("?" for _ in excluded_statuses)
+    return f"COALESCE({alias}.task_status, '') NOT IN ({placeholders})"
+
+
+def report_scheduled_task_params():
+    return (*INACTIVE_TASK_STATUSES, "Deleted")
+
+
 def is_pg_success_outcome(outcome, activity_type=""):
     return (outcome or "").strip() in PG_SUCCESS_OUTCOMES or (activity_type or "").strip() == "Meeting"
 
@@ -5640,11 +5653,11 @@ def pg_dashboard_context(connection):
                   AND next_action_date IS NOT NULL
                   AND next_action_date != ''
                   AND next_action_date >= ?
-                  AND {report_visible_task_sql("outreach")}
+                  AND {report_scheduled_task_sql("outreach")}
                 ORDER BY next_action_date ASC, next_action_time ASC, id DESC
-            """, (account_id, contact_id, contact_id, today_key, *report_visible_task_params())).fetchall()
+            """, (account_id, contact_id, contact_id, today_key, *report_scheduled_task_params())).fetchall()
             recent_activity_rows = connection.execute(f"""
-                SELECT activity_date, activity_time, activity_type, subject, outcome, next_action, last_updated, task_status
+                SELECT activity_date, activity_time, activity_type, subject, outcome, next_action, last_updated, completed_at, task_status
                 FROM outreach
                 WHERE account_id = ?
                   AND (
@@ -5655,11 +5668,12 @@ def pg_dashboard_context(connection):
                             WHERE contact_id = ?
                         )
                   )
-                  AND activity_date IS NOT NULL
-                  AND activity_date != ''
-                  AND activity_date >= ?
+                  AND substr(COALESCE(NULLIF(completed_at, ''), NULLIF(last_updated, ''), NULLIF(activity_date, '')), 1, 10) >= ?
                   AND {report_visible_task_sql("outreach")}
-                ORDER BY activity_date DESC, activity_time DESC, last_updated DESC, id DESC
+                ORDER BY substr(COALESCE(NULLIF(completed_at, ''), NULLIF(last_updated, ''), NULLIF(activity_date, '')), 1, 10) DESC,
+                         activity_time DESC,
+                         last_updated DESC,
+                         id DESC
             """, (account_id, contact_id, contact_id, thirty_days_ago, *report_visible_task_params())).fetchall()
             if not recent_activity_rows:
                 continue
@@ -5685,7 +5699,7 @@ def pg_dashboard_context(connection):
                     row["next_action"] or "",
                 ]
                 last_30_days_activity_entries.append({
-                    "date": format_display_datetime(row["activity_date"], row["activity_time"]) or format_display_datetime(row["last_updated"]) or "No date",
+                    "date": format_display_datetime(row["completed_at"]) or format_display_datetime(row["last_updated"]) or format_display_datetime(row["activity_date"], row["activity_time"]) or "No date",
                     "activity": row["activity_type"] or row["subject"] or "Activity",
                     "activity_update": " - ".join(part for part in activity_bits if part),
                 })
@@ -5726,6 +5740,9 @@ def pg_dashboard_context(connection):
                 outreach.scheduled_meeting_date,
                 outreach.scheduled_meeting_time,
                 outreach.task_status,
+                outreach.completed_at,
+                CASE WHEN {report_visible_task_sql("outreach")} THEN 1 ELSE 0 END AS is_report_visible_task,
+                CASE WHEN {report_scheduled_task_sql("outreach")} THEN 1 ELSE 0 END AS is_report_scheduled_task,
                 partners.partner_name,
                 partner_contacts.name AS partner_contact_name,
                 partner_contacts.job_title AS partner_contact_job_title,
@@ -5740,10 +5757,9 @@ def pg_dashboard_context(connection):
                     outreach.activity_type = ('Partner: ' || partners.partner_name)
                  OR outreach.partner_contact_id = partner_contacts.id
              )
-             AND {report_visible_task_sql("outreach")}
             WHERE partner_contact_accounts.account_id = ?
             ORDER BY partners.partner_name, partner_contacts.name, outreach.last_updated DESC
-        """, (*report_visible_task_params(), account_id)).fetchall()
+        """, (*report_visible_task_params(), *report_scheduled_task_params(), account_id)).fetchall()
         partner_activity_entries = []
         partner_scheduled_actions = []
         partner_outcomes = []
@@ -5752,20 +5768,23 @@ def pg_dashboard_context(connection):
         partner_group_names = []
         partner_contact_names = []
         for row in partner_activity_rows:
+            is_report_visible_task = bool(row["is_report_visible_task"])
+            is_report_scheduled_task = bool(row["is_report_scheduled_task"])
             partner_name = row["partner_name"] or "Partner"
             partner_contact_name = row["partner_contact_name"] or "Partner contact"
             if partner_name not in partner_group_names:
                 partner_group_names.append(partner_name)
-            if row["outcome"]:
+            if row["outcome"] and (is_report_visible_task or is_report_scheduled_task):
                 partner_outcomes.append(row["outcome"])
-            if row["scheduled_meeting_date"]:
+            if row["scheduled_meeting_date"] and (is_report_visible_task or is_report_scheduled_task):
                 partner_scheduled_meetings.append(format_display_datetime(row["scheduled_meeting_date"], row["scheduled_meeting_time"]))
             contact_label = partner_contact_name
             if row["partner_contact_job_title"]:
                 contact_label = f"{contact_label} - {row['partner_contact_job_title']}"
             if contact_label not in partner_contact_names:
                 partner_contact_names.append(contact_label)
-            if row["activity_date"] and row["activity_date"] >= thirty_days_ago:
+            report_activity_date = str(row["completed_at"] or row["last_updated"] or row["activity_date"] or "")[:10]
+            if is_report_visible_task and report_activity_date and report_activity_date >= thirty_days_ago:
                 key = ("outreach", row["last_updated"], row["next_action"])
                 if key not in seen_partner_entries:
                     seen_partner_entries.add(key)
@@ -5775,7 +5794,7 @@ def pg_dashboard_context(connection):
                         row["next_action"] or "",
                     ]
                     partner_activity_entries.append({
-                        "date": format_display_datetime(row["activity_date"], row["activity_time"]) or format_display_datetime(row["last_updated"]),
+                        "date": format_display_datetime(row["completed_at"]) or format_display_datetime(row["last_updated"]) or format_display_datetime(row["activity_date"], row["activity_time"]),
                         "activity": row["activity_type"] or f"Partner activity - {partner_name}",
                         "activity_update": f"{partner_name}: " + " - ".join(part for part in activity_bits if part),
                     })
@@ -5788,7 +5807,7 @@ def pg_dashboard_context(connection):
                         "activity": f"Partner activity - {partner_name}",
                         "activity_update": f"{partner_contact_name}: {row['partner_notes']}",
                     })
-            if row["next_action_date"] and row["next_action_date"] >= today_key and not is_closed_task_status(row["task_status"]):
+            if is_report_scheduled_task and row["next_action_date"] and row["next_action_date"] >= today_key:
                 key = ("scheduled", row["next_action_date"], row["next_action_time"], row["subject"])
                 if key not in seen_partner_entries:
                     seen_partner_entries.add(key)
