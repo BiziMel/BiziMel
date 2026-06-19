@@ -54,6 +54,7 @@ RELEASE_NOTES = [
             "Changed Insights Dashboard metric cards to open filtered record views that show the data behind each reported number.",
             "Improved PG Actions tracker column sizing so headings and body text align within readable table columns.",
             "Updated Add Outreach account selection to show account name plus business unit so duplicate account names can be distinguished.",
+            "Excluded deleted, cancelled and unworked scheduled tasks from PG Progress and PG Bible reporting so only completed, updated or overdue work is shown.",
         ],
     },
     {
@@ -2927,6 +2928,11 @@ INACTIVE_TASK_STATUSES = (
 
 COMPLETED_REOPEN_DAYS = 10
 
+REPORT_EXCLUDED_TASK_STATUSES = (
+    "Cancelled",
+    "Deleted",
+)
+
 
 def is_closed_task_status(status):
     return (status or "").strip() in INACTIVE_TASK_STATUSES
@@ -3080,6 +3086,22 @@ def overdue_task_sql(alias="outreach"):
 
 def overdue_task_params(now=None):
     return (app_datetime_key(now), *open_task_params())
+
+
+def report_visible_task_sql(alias="outreach"):
+    excluded = ",".join("?" for _ in REPORT_EXCLUDED_TASK_STATUSES)
+    return (
+        f"COALESCE({alias}.task_status, '') NOT IN ({excluded}) "
+        f"AND ("
+        f"COALESCE({alias}.task_status, '') IN ('Completed', 'Closed') "
+        f"OR NULLIF(TRIM(COALESCE({alias}.next_action, '')), '') IS NOT NULL "
+        f"OR {overdue_task_sql(alias)}"
+        f")"
+    )
+
+
+def report_visible_task_params(now=None):
+    return (*REPORT_EXCLUDED_TASK_STATUSES, *overdue_task_params(now))
 
 
 def is_pg_success_outcome(outcome, activity_type=""):
@@ -5029,10 +5051,11 @@ def save_dashboard_setting(connection, key, value):
 
 
 def contact_has_recent_or_open_activity(connection, contact_id, cutoff_date):
+    visible_task_filter = report_visible_task_sql("outreach")
     row = connection.execute(f"""
         SELECT
-            MAX(NULLIF(activity_date, '')) AS latest_activity_date,
-            SUM(CASE WHEN {open_task_sql("outreach")} THEN 1 ELSE 0 END) AS open_count
+            MAX(CASE WHEN {visible_task_filter} THEN NULLIF(activity_date, '') ELSE NULL END) AS latest_activity_date,
+            SUM(CASE WHEN {visible_task_filter} THEN 1 ELSE 0 END) AS visible_task_count
         FROM outreach
         WHERE contact_id = ?
            OR id IN (
@@ -5040,10 +5063,10 @@ def contact_has_recent_or_open_activity(connection, contact_id, cutoff_date):
                 FROM outreach_recipients
                 WHERE contact_id = ?
            )
-    """, (*open_task_params(), contact_id, contact_id)).fetchone()
+    """, (*report_visible_task_params(), *report_visible_task_params(), contact_id, contact_id)).fetchone()
     if not row:
         return False
-    if (row["open_count"] or 0) > 0:
+    if (row["visible_task_count"] or 0) > 0:
         return True
     latest = row["latest_activity_date"]
     if not latest:
@@ -5602,7 +5625,7 @@ def pg_dashboard_context(connection):
 
         for contact in contacts:
             contact_id = contact["id"]
-            scheduled_action_rows = connection.execute("""
+            scheduled_action_rows = connection.execute(f"""
                 SELECT subject, activity_type, next_action_date, next_action_time
                 FROM outreach
                 WHERE account_id = ?
@@ -5617,10 +5640,10 @@ def pg_dashboard_context(connection):
                   AND next_action_date IS NOT NULL
                   AND next_action_date != ''
                   AND next_action_date >= ?
-                  AND COALESCE(task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
+                  AND {report_visible_task_sql("outreach")}
                 ORDER BY next_action_date ASC, next_action_time ASC, id DESC
-            """, (account_id, contact_id, contact_id, today_key)).fetchall()
-            recent_activity_rows = connection.execute("""
+            """, (account_id, contact_id, contact_id, today_key, *report_visible_task_params())).fetchall()
+            recent_activity_rows = connection.execute(f"""
                 SELECT activity_date, activity_time, activity_type, subject, outcome, next_action, last_updated, task_status
                 FROM outreach
                 WHERE account_id = ?
@@ -5635,8 +5658,9 @@ def pg_dashboard_context(connection):
                   AND activity_date IS NOT NULL
                   AND activity_date != ''
                   AND activity_date >= ?
+                  AND {report_visible_task_sql("outreach")}
                 ORDER BY activity_date DESC, activity_time DESC, last_updated DESC, id DESC
-            """, (account_id, contact_id, contact_id, thirty_days_ago)).fetchall()
+            """, (account_id, contact_id, contact_id, thirty_days_ago, *report_visible_task_params())).fetchall()
             if not recent_activity_rows:
                 continue
             contact_rag_payload = contact_rag_payloads.get(contact_id) or contact_pg_progress_rag(connection, account_id, contact_id, legacy_action_update)
@@ -5689,7 +5713,7 @@ def pg_dashboard_context(connection):
                 "next_7_days_actions": future_planned_actions or [{"subject": "No future planned action set", "activity_type": "", "due": ""}],
             })
 
-        partner_activity_rows = connection.execute("""
+        partner_activity_rows = connection.execute(f"""
             SELECT
                 outreach.activity_date,
                 outreach.activity_type,
@@ -5716,9 +5740,10 @@ def pg_dashboard_context(connection):
                     outreach.activity_type = ('Partner: ' || partners.partner_name)
                  OR outreach.partner_contact_id = partner_contacts.id
              )
+             AND {report_visible_task_sql("outreach")}
             WHERE partner_contact_accounts.account_id = ?
             ORDER BY partners.partner_name, partner_contacts.name, outreach.last_updated DESC
-        """, (account_id,)).fetchall()
+        """, (*report_visible_task_params(), account_id)).fetchall()
         partner_activity_entries = []
         partner_scheduled_actions = []
         partner_outcomes = []
@@ -11086,18 +11111,21 @@ def build_pg_bible_report_from_db(connection):
     for contact in contacts:
         if not contact_has_recent_or_open_activity(connection, contact["id"], stale_contact_cutoff):
             continue
-        latest_outreach = connection.execute("""
+        latest_outreach = connection.execute(f"""
             SELECT *
             FROM outreach
-            WHERE contact_id = ?
-               OR id IN (
+            WHERE (
+                    contact_id = ?
+                 OR id IN (
                     SELECT outreach_id
                     FROM outreach_recipients
                     WHERE contact_id = ?
-               )
+                 )
+            )
+              AND {report_visible_task_sql("outreach")}
             ORDER BY activity_date DESC, activity_time DESC
             LIMIT 1
-        """, (contact["id"], contact["id"])).fetchone()
+        """, (contact["id"], contact["id"], *report_visible_task_params())).fetchone()
         open_outreach = connection.execute(f"""
             SELECT *
             FROM outreach
@@ -11109,10 +11137,10 @@ def build_pg_bible_report_from_db(connection):
                         WHERE contact_id = ?
                     )
             )
-              AND {open_task_sql("outreach")}
+              AND {report_visible_task_sql("outreach")}
             ORDER BY next_action_date ASC, next_action_time ASC, id DESC
             LIMIT 1
-        """, (contact["id"], contact["id"], *open_task_params())).fetchone()
+        """, (contact["id"], contact["id"], *report_visible_task_params())).fetchone()
         next_action_text = (
             (open_outreach["next_action"] or open_outreach["subject"] or "").strip()
             if open_outreach else ""
@@ -11127,7 +11155,7 @@ def build_pg_bible_report_from_db(connection):
         if contact_sales_play:
             discovery_target_parts.append(contact_sales_play)
 
-        meeting_count = connection.execute("""
+        meeting_count = connection.execute(f"""
             SELECT COUNT(*)
             FROM outreach
             WHERE (
@@ -11142,8 +11170,9 @@ def build_pg_bible_report_from_db(connection):
                     outcome IN ('Discovery Booked', 'NBM Booked', 'Exec Meeting Booked', 'Meeting Booked')
                  OR activity_type = 'Meeting'
               )
-        """, (contact["id"], contact["id"])).fetchone()[0]
-        discovery_meeting_count = connection.execute("""
+              AND {report_visible_task_sql("outreach")}
+        """, (contact["id"], contact["id"], *report_visible_task_params())).fetchone()[0]
+        discovery_meeting_count = connection.execute(f"""
             SELECT COUNT(*)
             FROM outreach
             WHERE (
@@ -11159,7 +11188,8 @@ def build_pg_bible_report_from_db(connection):
                  OR outcome = 'Meeting Booked'
                  OR activity_type = 'Meeting'
               )
-        """, (contact["id"], contact["id"])).fetchone()[0]
+              AND {report_visible_task_sql("outreach")}
+        """, (contact["id"], contact["id"], *report_visible_task_params())).fetchone()[0]
         pg_progress_update = connection.execute("""
             SELECT completed_discovery_meeting
             FROM pg_action_contact_updates
@@ -11170,7 +11200,7 @@ def build_pg_bible_report_from_db(connection):
             if pg_progress_update and pg_progress_update["completed_discovery_meeting"]
             else ("Yes" if discovery_meeting_count else "No")
         )
-        nbm_booked_outreach = connection.execute("""
+        nbm_booked_outreach = connection.execute(f"""
             SELECT *
             FROM outreach
             WHERE (
@@ -11184,9 +11214,10 @@ def build_pg_bible_report_from_db(connection):
               AND outcome = 'NBM Booked'
               AND scheduled_meeting_date IS NOT NULL
               AND scheduled_meeting_date != ''
+              AND {report_visible_task_sql("outreach")}
             ORDER BY scheduled_meeting_date DESC, scheduled_meeting_time DESC, id DESC
             LIMIT 1
-        """, (contact["id"], contact["id"])).fetchone()
+        """, (contact["id"], contact["id"], *report_visible_task_params())).fetchone()
         nbm_booked_date = pg_bible_meeting_datetime_label(nbm_booked_outreach)
         nbm_booked_people = pg_bible_outreach_people_label(connection, nbm_booked_outreach)
 
@@ -11207,7 +11238,7 @@ def build_pg_bible_report_from_db(connection):
             vo_value=contact["pipeline_target"] or 0 if meeting_count else 0,
         ))
 
-    weekly_source_rows = connection.execute("""
+    weekly_source_rows = connection.execute(f"""
         SELECT
             outreach.activity_date,
             outreach.activity_type,
@@ -11220,7 +11251,8 @@ def build_pg_bible_report_from_db(connection):
         LEFT JOIN contacts ON outreach.contact_id = contacts.id
         WHERE activity_date IS NOT NULL
           AND activity_date != ''
-    """).fetchall()
+          AND {report_visible_task_sql("outreach")}
+    """, report_visible_task_params()).fetchall()
 
     weekly_totals = {}
     for row in weekly_source_rows:
