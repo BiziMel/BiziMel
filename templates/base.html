@@ -33,10 +33,11 @@
     <a href="/" class="btn btn-primary {% if request.endpoint == 'home' %}active-tab{% endif %}">Insights Dashboard</a>
     <a href="{{ url_for('pg_progress') }}" class="btn btn-primary {% if request.endpoint == 'pg_progress' %}active-tab{% endif %}">PG Progress</a>
     <a href="/outreach" class="btn btn-primary {% if request.endpoint in ['outreach', 'add_outreach', 'edit_outreach', 'view_outreach', 'campaign_builder'] %}active-tab{% endif %}">Outreach Tasks</a>
+    <a href="{{ url_for('sales_plays') }}" class="btn btn-primary {% if request.endpoint in ['sales_plays', 'edit_sales_play', 'delete_sales_play'] %}active-tab{% endif %}">Sales Plays</a>
     <a href="/accounts" class="btn btn-primary {% if request.endpoint in ['accounts', 'add_account', 'edit_account', 'view_account'] %}active-tab{% endif %}">Accounts</a>
     <a href="/contacts" class="btn btn-primary {% if request.endpoint in ['contacts', 'add_contact', 'edit_contact', 'view_contact'] %}active-tab{% endif %}">Contacts</a>
     <a href="/partners" class="btn btn-primary {% if request.endpoint in ['partners', 'add_partner', 'edit_partner', 'view_partner'] %}active-tab{% endif %}">Partners</a>
-    <a href="/reports" class="btn btn-primary {% if request.endpoint in ['reports', 'partner_reports', 'account_reports', 'task_reports', 'outreach_reports', 'contact_reports'] %}active-tab{% endif %}">Reports</a>
+    <a href="/reports" class="btn btn-primary {% if request.endpoint in ['reports', 'partner_reports', 'account_reports', 'task_reports', 'outreach_reports', 'contact_reports', 'sales_play_reports'] %}active-tab{% endif %}">Reports</a>
     <a href="/profile" class="btn btn-secondary {% if request.endpoint == 'profile' %}active-tab{% endif %}">Profile</a>
     {% if current_user and current_user["role"] in ["admin", "company_admin"] %}
     <a href="/admin/permissions" class="btn btn-secondary {% if request.endpoint and request.endpoint.startswith('admin') %}active-tab{% endif %}">Admin</a>

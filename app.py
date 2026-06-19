@@ -20,9 +20,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.3.5"
-APP_RELEASE_DATE = "2026-06-17"
-APP_BUILD = "2026-06-17-v2.3.5-insights-campaign-metrics-r1"
+APP_VERSION = "2.6.0"
+APP_RELEASE_DATE = "2026-06-19"
+APP_BUILD = "2026-06-19-v2.6.0-sales-play-management-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -37,12 +37,16 @@ except ZoneInfoNotFoundError:
 
 RELEASE_NOTES = [
     {
-        "version": "2.3.5",
-        "release_date": "2026-06-17",
-        "title": "Insights metrics and campaign activity selection",
-        "new": [],
+        "version": "2.6.0",
+        "release_date": "2026-06-19",
+        "title": "Sales Play management, reporting and insights metrics",
+        "new": [
+            "Added a Sales Plays tab for configuring reusable Sales Play titles, descriptions, products and linked asset rows.",
+            "Added Sales Play reports for filtered account/contact/date usage and quantity with last-used date.",
+        ],
         "enhanced": [
             "Added campaign builder activity-type checkboxes so generated campaigns can be filtered to selected activities, while unfiltered campaigns use a varied sequence that starts with VITO.",
+            "Changed account Sales Play entry into a multi-select Sales Play(s) picker sourced from configured Sales Plays.",
             "Updated the User Guide dashboard section to explain how each Insights Dashboard metric is calculated.",
             "Updated the User Guide Good To Know sections so guidance reflects current navigation and terminology.",
         ],
@@ -1569,7 +1573,7 @@ def user_guide_section(section_slug):
 
 @app.route("/login", methods=("GET", "POST"))
 def login():
-    error = ""
+    error = request.args.get("error", "")
     message = request.args.get("message", "")
     if request.method == "POST":
         email = request.form.get("email", "")
@@ -5463,37 +5467,166 @@ def create_partner_next_action_outreach(connection, account_id, partner_name, co
 
 
 def account_sales_play_options(connection, account_id=None):
-    rows = []
+    options = {}
     if account_id:
-        rows = connection.execute("""
-            SELECT DISTINCT sales_play
-            FROM outreach
-            WHERE account_id = ?
-              AND sales_play IS NOT NULL
-              AND sales_play != ''
-            UNION
-            SELECT DISTINCT sales_play
-            FROM accounts
-            WHERE id = ?
-              AND sales_play IS NOT NULL
-              AND sales_play != ''
-            ORDER BY sales_play
-        """, (account_id, account_id)).fetchall()
+        configured_rows = connection.execute("""
+            SELECT
+                account_sales_plays.account_id,
+                sales_plays.sales_play_title AS sales_play
+            FROM account_sales_plays
+            JOIN sales_plays ON sales_plays.id = account_sales_plays.sales_play_id
+            WHERE account_sales_plays.account_id = ?
+            ORDER BY sales_plays.sales_play_title
+        """, (account_id,)).fetchall()
+        rows = configured_rows
+        if not rows:
+            rows = connection.execute("""
+                SELECT DISTINCT sales_play
+                FROM outreach
+                WHERE account_id = ?
+                  AND sales_play IS NOT NULL
+                  AND sales_play != ''
+                UNION
+                SELECT DISTINCT sales_play
+                FROM accounts
+                WHERE id = ?
+                  AND sales_play IS NOT NULL
+                  AND sales_play != ''
+                ORDER BY sales_play
+            """, (account_id, account_id)).fetchall()
+        for row in rows:
+            sales_play = (row["sales_play"] or "").strip()
+            if sales_play:
+                options[(str(account_id), sales_play)] = {"account_id": account_id, "sales_play": sales_play}
     else:
         rows = connection.execute("""
-            SELECT DISTINCT accounts.id AS account_id, outreach.sales_play
-            FROM outreach
-            JOIN accounts ON accounts.id = outreach.account_id
-            WHERE outreach.sales_play IS NOT NULL
-              AND outreach.sales_play != ''
+            SELECT
+                account_sales_plays.account_id,
+                sales_plays.sales_play_title AS sales_play
+            FROM account_sales_plays
+            JOIN sales_plays ON sales_plays.id = account_sales_plays.sales_play_id
             UNION
-            SELECT id AS account_id, sales_play
+            SELECT accounts.id AS account_id, accounts.sales_play
             FROM accounts
             WHERE sales_play IS NOT NULL
               AND sales_play != ''
             ORDER BY sales_play
         """).fetchall()
-    return [dict(row) for row in rows if row["sales_play"]]
+        for row in rows:
+            sales_play = (row["sales_play"] or "").strip()
+            account_id_value = row["account_id"]
+            if sales_play:
+                options[(str(account_id_value or ""), sales_play)] = {
+                    "account_id": account_id_value,
+                    "sales_play": sales_play,
+                }
+    return sorted(options.values(), key=lambda item: ((item["sales_play"] or "").lower(), str(item["account_id"] or "")))
+
+
+def sales_play_catalog(connection):
+    return connection.execute("""
+        SELECT *
+        FROM sales_plays
+        ORDER BY sales_play_title
+    """).fetchall()
+
+
+def sales_play_asset_rows(connection, sales_play_id):
+    return connection.execute("""
+        SELECT *
+        FROM sales_play_assets
+        WHERE sales_play_id = ?
+        ORDER BY sort_order, id
+    """, (sales_play_id,)).fetchall()
+
+
+def account_selected_sales_play_ids(connection, account_id):
+    rows = connection.execute("""
+        SELECT sales_play_id
+        FROM account_sales_plays
+        WHERE account_id = ?
+    """, (account_id,)).fetchall()
+    return [str(row["sales_play_id"]) for row in rows]
+
+
+def sales_play_titles_for_ids(connection, sales_play_ids):
+    clean_ids = [str(value) for value in sales_play_ids if str(value or "").isdigit()]
+    if not clean_ids:
+        return []
+    placeholders = ",".join("?" for _ in clean_ids)
+    rows = connection.execute(f"""
+        SELECT sales_play_title
+        FROM sales_plays
+        WHERE id IN ({placeholders})
+        ORDER BY sales_play_title
+    """, clean_ids).fetchall()
+    return [row["sales_play_title"] for row in rows if row["sales_play_title"]]
+
+
+def save_account_sales_play_links(connection, account_id, sales_play_ids):
+    clean_ids = []
+    seen = set()
+    for value in sales_play_ids or []:
+        value = str(value or "").strip()
+        if not value.isdigit() or value in seen:
+            continue
+        seen.add(value)
+        clean_ids.append(value)
+    connection.execute("DELETE FROM account_sales_plays WHERE account_id = ?", (account_id,))
+    for sales_play_id in clean_ids:
+        connection.execute("""
+            INSERT OR IGNORE INTO account_sales_plays (account_id, sales_play_id)
+            VALUES (?, ?)
+        """, (account_id, sales_play_id))
+    return clean_ids
+
+
+def sales_play_allowed_for_account(connection, account_id, sales_play_title):
+    sales_play_title = (sales_play_title or "").strip()
+    if not sales_play_title:
+        return False
+    allowed = account_sales_play_options(connection, account_id)
+    if not allowed:
+        return True
+    return sales_play_title in {row["sales_play"] for row in allowed}
+
+
+def sales_play_asset_form_rows(form):
+    names = form.getlist("asset_name")
+    systems = form.getlist("asset_system")
+    urls = form.getlist("asset_url")
+    assets = []
+    for index, name in enumerate(names):
+        asset = {
+            "asset_name": (name or "").strip(),
+            "asset_system": (systems[index] if index < len(systems) else "").strip(),
+            "asset_url": (urls[index] if index < len(urls) else "").strip(),
+            "sort_order": index,
+        }
+        if asset["asset_name"] or asset["asset_system"] or asset["asset_url"]:
+            assets.append(asset)
+    return assets
+
+
+def save_sales_play_assets(connection, sales_play_id, assets):
+    connection.execute("DELETE FROM sales_play_assets WHERE sales_play_id = ?", (sales_play_id,))
+    for asset in assets:
+        connection.execute("""
+            INSERT INTO sales_play_assets (
+                sales_play_id,
+                asset_name,
+                asset_system,
+                asset_url,
+                sort_order
+            )
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            sales_play_id,
+            asset["asset_name"],
+            asset["asset_system"],
+            asset["asset_url"],
+            asset["sort_order"],
+        ))
 
 
 def normalise_selected_account_ids(values):
@@ -6055,6 +6188,154 @@ def accounts():
     )
 
 
+@app.route("/sales-plays", methods=("GET", "POST"))
+def sales_plays():
+    initialise_database(force=True)
+    connection = get_db_connection()
+    error = ""
+
+    if request.method == "POST":
+        title = (request.form.get("sales_play_title") or "").strip()
+        description = (request.form.get("sales_play_description") or "").strip()
+        products = (request.form.get("sales_play_products") or "").strip()
+        assets = sales_play_asset_form_rows(request.form)
+        if not title:
+            error = "Sales Play title is required."
+        else:
+            existing = connection.execute("""
+                SELECT id
+                FROM sales_plays
+                WHERE LOWER(sales_play_title) = LOWER(?)
+            """, (title,)).fetchone()
+            if existing:
+                error = "A Sales Play with this title already exists."
+            else:
+                cursor = connection.execute("""
+                    INSERT INTO sales_plays (
+                        sales_play_title,
+                        sales_play_description,
+                        sales_play_products
+                    )
+                    VALUES (?, ?, ?)
+                """, (title, description, products))
+                sales_play_id = cursor.lastrowid
+                save_sales_play_assets(connection, sales_play_id, assets)
+                audit_record_create(connection, "sales_play", sales_play_id, {
+                    "sales_play_title": title,
+                    "sales_play_description": description,
+                    "sales_play_products": products,
+                })
+                connection.commit()
+                connection.close()
+                return redirect(url_for("sales_plays", message="Sales Play saved."))
+
+    rows = sales_play_catalog(connection)
+    sales_play_rows = []
+    for row in rows:
+        sales_play_rows.append({
+            **dict(row),
+            "assets": [dict(asset) for asset in sales_play_asset_rows(connection, row["id"])],
+            "account_count": dashboard_scalar(connection, """
+                SELECT COUNT(*)
+                FROM account_sales_plays
+                WHERE sales_play_id = ?
+            """, (row["id"],)),
+            "usage_count": dashboard_scalar(connection, """
+                SELECT COUNT(*)
+                FROM outreach
+                WHERE sales_play = ?
+            """, (row["sales_play_title"],)),
+        })
+    connection.close()
+    return render_template(
+        "sales_plays.html",
+        sales_plays=sales_play_rows,
+        error=error,
+        message=request.args.get("message", ""),
+    )
+
+
+@app.route("/sales-plays/<int:sales_play_id>/edit", methods=("POST",))
+def edit_sales_play(sales_play_id):
+    connection = get_db_connection()
+    sales_play = connection.execute("SELECT * FROM sales_plays WHERE id = ?", (sales_play_id,)).fetchone()
+    if not sales_play:
+        connection.close()
+        return redirect(url_for("sales_plays", error="Sales Play could not be found."))
+    title = (request.form.get("sales_play_title") or "").strip()
+    description = (request.form.get("sales_play_description") or "").strip()
+    products = (request.form.get("sales_play_products") or "").strip()
+    if not title:
+        connection.close()
+        return redirect(url_for("sales_plays", error="Sales Play title is required."))
+    duplicate = connection.execute("""
+        SELECT id
+        FROM sales_plays
+        WHERE LOWER(sales_play_title) = LOWER(?)
+          AND id != ?
+    """, (title, sales_play_id)).fetchone()
+    if duplicate:
+        connection.close()
+        return redirect(url_for("sales_plays", error="A Sales Play with this title already exists."))
+
+    old_title = sales_play["sales_play_title"]
+    affected_accounts = connection.execute("""
+        SELECT account_id
+        FROM account_sales_plays
+        WHERE sales_play_id = ?
+    """, (sales_play_id,)).fetchall()
+    connection.execute("""
+        UPDATE sales_plays
+        SET sales_play_title = ?,
+            sales_play_description = ?,
+            sales_play_products = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE id = ?
+    """, (title, description, products, sales_play_id))
+    save_sales_play_assets(connection, sales_play_id, sales_play_asset_form_rows(request.form))
+    if old_title != title:
+        for row in affected_accounts:
+            titles = sales_play_titles_for_ids(connection, account_selected_sales_play_ids(connection, row["account_id"]))
+            connection.execute("""
+                UPDATE accounts
+                SET sales_play = ?,
+                    last_updated = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (", ".join(titles), row["account_id"]))
+        connection.execute("""
+            UPDATE outreach
+            SET sales_play = ?,
+                campaign = ?
+            WHERE sales_play = ?
+        """, (title, title, old_title))
+    audit_record_update(connection, "sales_play", sales_play_id, sales_play, {
+        "sales_play_title": title,
+        "sales_play_description": description,
+        "sales_play_products": products,
+    }, {
+        "sales_play_title": "Sales Play title",
+        "sales_play_description": "Sales Play description",
+        "sales_play_products": "Sales Play products",
+    })
+    connection.commit()
+    connection.close()
+    return redirect(url_for("sales_plays", message="Sales Play updated."))
+
+
+@app.route("/sales-plays/<int:sales_play_id>/delete", methods=("POST",))
+def delete_sales_play(sales_play_id):
+    connection = get_db_connection()
+    sales_play = connection.execute("SELECT * FROM sales_plays WHERE id = ?", (sales_play_id,)).fetchone()
+    if sales_play:
+        connection.execute("DELETE FROM sales_play_assets WHERE sales_play_id = ?", (sales_play_id,))
+        connection.execute("DELETE FROM account_sales_plays WHERE sales_play_id = ?", (sales_play_id,))
+        connection.execute("DELETE FROM sales_plays WHERE id = ?", (sales_play_id,))
+        audit_record_delete(connection, "sales_play", sales_play_id, sales_play["sales_play_title"])
+        connection.commit()
+    connection.close()
+    return redirect(url_for("sales_plays", message="Sales Play deleted."))
+
+
 @app.route("/partners")
 def partners():
     connection = get_db_connection()
@@ -6602,8 +6883,13 @@ def add_partner_account_relationship(partner_id):
 @app.route("/accounts/add", methods=("GET", "POST"))
 def add_account():
     custom_fields = account_custom_field_payload(active_only=True)
+    sales_play_options = []
     if request.method == "POST":
         connection = get_db_connection()
+        selected_sales_play_ids = request.form.getlist("sales_play_ids")
+        sales_play_options = sales_play_catalog(connection)
+        selected_sales_play_titles = sales_play_titles_for_ids(connection, selected_sales_play_ids)
+        sales_play_summary = ", ".join(selected_sales_play_titles)
         customer_logo = save_account_logo(request.files.get("customer_logo"))
         selected_owner = assignable_user_by_id(request.form.get("owner_user_id"))
         owner = {
@@ -6628,7 +6914,7 @@ def add_account():
                 customer_logo,
                 request.form.get("pipeline_target") or None,
                 request.form.get("nbm_target"),
-                request.form.get("sales_play"),
+                sales_play_summary,
                 owner["owner_user_id"],
                 owner["owner_name"],
                 owner["owner_email"],
@@ -6647,10 +6933,11 @@ def add_account():
                 "customer_logo": customer_logo,
                 "pipeline_target": request.form.get("pipeline_target"),
                 "nbm_target": request.form.get("nbm_target"),
-                "sales_play": request.form.get("sales_play"),
+                "sales_play": sales_play_summary,
                 "owner_name": owner["owner_name"],
                 "notes": request.form.get("notes"),
             })
+            save_account_sales_play_links(connection, account_id, selected_sales_play_ids)
             save_account_custom_values(connection, account_id, custom_fields, request.form)
             commit_with_retry(connection)
         except Exception:
@@ -6661,17 +6948,24 @@ def add_account():
                 "add_account.html",
                 custom_fields=custom_fields,
                 assignable_users=list_assignable_users(),
+                sales_play_options=sales_play_options,
+                selected_sales_play_ids=selected_sales_play_ids,
                 error="The account could not be saved. Check the required values and try again.",
                 prefill=dict(request.form),
             ), 500
         connection.close()
         return redirect(url_for("accounts"))
 
+    connection = get_db_connection()
+    sales_play_options = sales_play_catalog(connection)
+    connection.close()
     default_owner = current_user_owner_payload()
     return render_template(
         "add_account.html",
         custom_fields=custom_fields,
         assignable_users=list_assignable_users(),
+        sales_play_options=sales_play_options,
+        selected_sales_play_ids=[],
         prefill={"owner_user_id": default_owner["owner_user_id"]},
         error="",
     )
@@ -7042,8 +7336,13 @@ def edit_account(account_id):
     ).fetchone()
     custom_fields = account_custom_field_payload(active_only=True)
     custom_values = load_account_custom_values(connection, account_id)
+    sales_play_options = sales_play_catalog(connection)
+    selected_sales_play_ids = account_selected_sales_play_ids(connection, account_id)
 
     if request.method == "POST":
+        selected_sales_play_ids = request.form.getlist("sales_play_ids")
+        selected_sales_play_titles = sales_play_titles_for_ids(connection, selected_sales_play_ids)
+        sales_play_summary = ", ".join(selected_sales_play_titles)
         new_values = {
             "account_name": request.form.get("account_name"),
             "pg_bible_order": request.form.get("pg_bible_order") or None,
@@ -7059,7 +7358,7 @@ def edit_account(account_id):
             ),
             "pipeline_target": request.form.get("pipeline_target"),
             "nbm_target": request.form.get("nbm_target"),
-            "sales_play": request.form.get("sales_play"),
+            "sales_play": sales_play_summary,
             "notes": request.form.get("notes")
         }
 
@@ -7137,6 +7436,7 @@ def edit_account(account_id):
         ))
 
         save_account_custom_values(connection, account_id, custom_fields, request.form)
+        save_account_sales_play_links(connection, account_id, selected_sales_play_ids)
 
         if changes:
             audit_record_update(connection, "account", account_id, account, new_values, labels)
@@ -7179,6 +7479,8 @@ def edit_account(account_id):
         custom_fields=custom_fields,
         custom_values=custom_values,
         assignable_users=list_assignable_users(),
+        sales_play_options=sales_play_options,
+        selected_sales_play_ids=selected_sales_play_ids,
         owner=account_owner_payload(account)
     )
 
@@ -8705,6 +9007,11 @@ def outreach():
         FROM outreach
         WHERE sales_play IS NOT NULL
           AND sales_play != ''
+        UNION
+        SELECT sales_play_title AS sales_play
+        FROM sales_plays
+        WHERE sales_play_title IS NOT NULL
+          AND sales_play_title != ''
         ORDER BY sales_play
     """).fetchall()
     sales_play_options = sorted(row["sales_play"] for row in existing_sales_plays if row["sales_play"])
@@ -8751,11 +9058,14 @@ def add_outreach():
     if request.method == "POST":
         prefill = dict(request.form)
         requested_status = normalise_task_status(request.form.get("task_status", "Not Started"))
+        sales_play_value = request.form.get("sales_play")
         recipient_values = outreach_contact_form_values(request.form)
         recipients = parse_outreach_contact_selections(recipient_values)
         contact_id, partner_contact_id = recipients[0] if recipients else (None, None)
         if not fy_quarter_are_valid(request.form.get("fy"), request.form.get("quarter")):
             error = fy_quarter_required_message()
+        elif not sales_play_allowed_for_account(connection, request.form.get("account_id"), sales_play_value):
+            error = "Select a Sales Play configured on the selected account."
         elif not outreach_recipients_match_account(connection, request.form.get("account_id"), recipients):
             error = "Select a contact or partner contact that belongs to the selected account."
         elif status_requires_activity_update(requested_status) and not activity_update_is_valid(request.form.get("next_action")):
@@ -8763,7 +9073,6 @@ def add_outreach():
         elif outcome_requires_scheduled_meeting(normalise_outreach_outcome(request.form.get("outcome"))) and not request.form.get("scheduled_meeting_at"):
             error = "Add the scheduled meeting date and time before saving this meeting outcome."
         else:
-            sales_play_value = request.form.get("sales_play")
             outcome_value = normalise_outreach_outcome(request.form.get("outcome"))
             scheduled_meeting_date, scheduled_meeting_time = split_scheduled_meeting_datetime(
                 request.form.get("scheduled_meeting_at") if outcome_requires_scheduled_meeting(outcome_value) else ""
@@ -8954,6 +9263,8 @@ def campaign_builder():
             error = "Select at least one contact for the selected account before generating a campaign."
         elif not fy_quarter_are_valid(selected_fy, selected_quarter):
             error = fy_quarter_required_message()
+        elif not sales_play_allowed_for_account(connection, account_id, sales_play):
+            error = "Select a Sales Play configured on the selected account."
         elif account_id and pg_week_start_raw and campaign_start_raw and campaign_end_raw and contact_ids:
             today = datetime.now().date()
             pg_week_start = datetime.strptime(pg_week_start_raw, "%Y-%m-%d").date()
@@ -9501,6 +9812,27 @@ def edit_outreach(outreach_id):
 
         if not fy_quarter_are_valid(new_values["fy"], new_values["quarter"]):
             error = fy_quarter_required_message()
+            connection.close()
+            return render_template(
+                "edit_outreach.html",
+                outreach_item=outreach_item,
+                accounts=accounts,
+                contacts=contacts,
+                profile=profile,
+                non_working_blocks=non_working_block_rows,
+                sales_play_options=sales_play_rows,
+                partner_activity_options=partner_activity_options,
+                partner_contacts=partner_contacts,
+                selected_contact_values=recipient_values,
+                selected_account_id=new_values["account_id"],
+                scheduled_meeting_at=request.form.get("scheduled_meeting_at", ""),
+                error=error,
+                task_locked=task_locked_value,
+                task_lock_message=task_lock_message_value
+            )
+
+        if not sales_play_allowed_for_account(connection, new_values["account_id"], new_values["sales_play"]):
+            error = "Select a Sales Play configured on the selected account."
             connection.close()
             return render_template(
                 "edit_outreach.html",
@@ -11813,6 +12145,107 @@ def export_task_reports():
     )
 
     return response
+
+
+@app.route("/reports/sales-plays")
+def sales_play_reports():
+    initialise_database(force=True)
+    connection = get_db_connection()
+    report_today = current_app_datetime().date()
+    default_start = report_today - timedelta(days=29)
+    selected_start_date = request.args.get("start_date", default_start.isoformat())
+    selected_end_date = request.args.get("end_date", report_today.isoformat())
+    selected_account_ids = set(request.args.getlist("account_ids"))
+    selected_contact_ids = set(request.args.getlist("contact_ids"))
+
+    accounts = connection.execute("""
+        SELECT id, account_name, business_unit
+        FROM accounts
+        ORDER BY account_name, business_unit
+    """).fetchall()
+    contacts = connection.execute("""
+        SELECT contacts.id, contacts.name, contacts.job_title, contacts.account_id, accounts.account_name
+        FROM contacts
+        LEFT JOIN accounts ON accounts.id = contacts.account_id
+        WHERE COALESCE(contacts.status, 'Active') = 'Active'
+        ORDER BY accounts.account_name, contacts.name
+    """).fetchall()
+    rows = connection.execute("""
+        SELECT
+            outreach.id,
+            outreach.sales_play,
+            outreach.activity_date,
+            outreach.activity_time,
+            outreach.completed_at,
+            outreach.last_updated,
+            outreach.activity_type,
+            outreach.outcome,
+            outreach.subject,
+            outreach.task_status,
+            outreach.account_id,
+            accounts.account_name,
+            accounts.business_unit,
+            contacts.id AS contact_id,
+            contacts.name AS contact_name,
+            contacts.job_title
+        FROM outreach
+        LEFT JOIN accounts ON accounts.id = outreach.account_id
+        LEFT JOIN contacts ON contacts.id = outreach.contact_id
+        WHERE outreach.sales_play IS NOT NULL
+          AND outreach.sales_play != ''
+        ORDER BY outreach.activity_date DESC, outreach.last_updated DESC, outreach.id DESC
+    """).fetchall()
+    connection.close()
+
+    def parse_report_date(value):
+        if not value:
+            return None
+        try:
+            return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+        except ValueError:
+            return None
+
+    start_date = parse_report_date(selected_start_date)
+    end_date = parse_report_date(selected_end_date)
+    filtered_rows = []
+    for row in rows:
+        row_date = parse_report_date(row["completed_at"] or row["last_updated"] or row["activity_date"])
+        if start_date and (not row_date or row_date < start_date):
+            continue
+        if end_date and (not row_date or row_date > end_date):
+            continue
+        if selected_account_ids and str(row["account_id"] or "") not in selected_account_ids:
+            continue
+        if selected_contact_ids and str(row["contact_id"] or "") not in selected_contact_ids:
+            continue
+        filtered_rows.append({
+            **dict(row),
+            "report_date": row_date.isoformat() if row_date else "",
+        })
+
+    usage = {}
+    for row in filtered_rows:
+        title = row["sales_play"] or "Unknown"
+        current = usage.setdefault(title, {"sales_play": title, "quantity": 0, "last_used": ""})
+        current["quantity"] += 1
+        if row["report_date"] and row["report_date"] > current["last_used"]:
+            current["last_used"] = row["report_date"]
+
+    usage_rows = sorted(usage.values(), key=lambda item: (-item["quantity"], item["sales_play"].lower()))
+
+    return render_template(
+        "sales_play_reports.html",
+        accounts=accounts,
+        contacts=contacts,
+        report_rows=filtered_rows,
+        usage_rows=usage_rows,
+        selected_start_date=selected_start_date,
+        selected_end_date=selected_end_date,
+        selected_account_ids=selected_account_ids,
+        selected_contact_ids=selected_contact_ids,
+        total_usage=sum(item["quantity"] for item in usage_rows),
+        distinct_sales_plays=len(usage_rows),
+    )
 
 
 @app.route("/reports/outreach")

@@ -78,8 +78,30 @@
     <input type="number" name="nbm_target" min="1" step="1" value="{{ account['nbm_target'] or '' }}" placeholder="Example: 1">
     <p class="field-help">Used to map this account into the PG Goals dashboard plan and actions tables.</p>
 
-    <label>Account Sales Play or Initiative</label>
-    <textarea name="sales_play" rows="3">{{ account['sales_play'] or '' }}</textarea>
+    <label for="account_sales_play_toggle">Sales Play(s)</label>
+    <div class="checkbox-select" id="account_sales_play_picker">
+        <button type="button"
+                id="account_sales_play_toggle"
+                class="checkbox-select-toggle"
+                aria-expanded="false"
+                aria-controls="account_sales_play_panel">
+            Select Sales Play(s)
+        </button>
+        <div class="checkbox-select-panel" id="account_sales_play_panel" hidden>
+            {% for sales_play in sales_play_options %}
+                <label class="checkbox-select-option">
+                    <input type="checkbox"
+                           name="sales_play_ids"
+                           value="{{ sales_play.id }}"
+                           {% if sales_play.id|string in selected_sales_play_ids %}checked{% endif %}>
+                    <span>{{ sales_play.sales_play_title }}</span>
+                </label>
+            {% else %}
+                <div class="checkbox-select-empty">No Sales Plays configured yet. Add them from the Sales Plays tab.</div>
+            {% endfor %}
+        </div>
+    </div>
+    <p class="field-help">Select one or more configured Sales Plays for this account.</p>
 
     <label>Account Owner</label>
     <select name="owner_user_id">
@@ -117,4 +139,36 @@
     </div>
 </form>
 </div>
+<script>
+    const accountSalesPlayPicker = document.getElementById("account_sales_play_picker");
+    const accountSalesPlayToggle = document.getElementById("account_sales_play_toggle");
+    const accountSalesPlayPanel = document.getElementById("account_sales_play_panel");
+    const accountSalesPlayChecks = accountSalesPlayPicker ? Array.from(accountSalesPlayPicker.querySelectorAll("input[type='checkbox']")) : [];
+
+    function updateAccountSalesPlayToggle() {
+        if (!accountSalesPlayToggle) {
+            return;
+        }
+        const selected = accountSalesPlayChecks
+            .filter((checkbox) => checkbox.checked)
+            .map((checkbox) => checkbox.closest("label").innerText.trim());
+        accountSalesPlayToggle.textContent = selected.length ? selected.join(", ") : "Select Sales Play(s)";
+    }
+
+    if (accountSalesPlayToggle && accountSalesPlayPanel) {
+        accountSalesPlayToggle.addEventListener("click", () => {
+            const isOpen = accountSalesPlayToggle.getAttribute("aria-expanded") === "true";
+            accountSalesPlayToggle.setAttribute("aria-expanded", String(!isOpen));
+            accountSalesPlayPanel.hidden = isOpen;
+        });
+        document.addEventListener("click", (event) => {
+            if (!accountSalesPlayPicker.contains(event.target)) {
+                accountSalesPlayToggle.setAttribute("aria-expanded", "false");
+                accountSalesPlayPanel.hidden = true;
+            }
+        });
+        accountSalesPlayChecks.forEach((checkbox) => checkbox.addEventListener("change", updateAccountSalesPlayToggle));
+        updateAccountSalesPlayToggle();
+    }
+</script>
 {% endblock %}

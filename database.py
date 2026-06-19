@@ -107,6 +107,43 @@ def initialise_database(force=False):
     """)
 
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sales_plays (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sales_play_title TEXT NOT NULL UNIQUE,
+            sales_play_description TEXT,
+            sales_play_products TEXT,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sales_play_assets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sales_play_id INTEGER NOT NULL,
+            asset_name TEXT,
+            asset_system TEXT,
+            asset_url TEXT,
+            sort_order INTEGER DEFAULT 0,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(sales_play_id) REFERENCES sales_plays(id)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS account_sales_plays (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            sales_play_id INTEGER NOT NULL,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(account_id, sales_play_id),
+            FOREIGN KEY(account_id) REFERENCES accounts(id),
+            FOREIGN KEY(sales_play_id) REFERENCES sales_plays(id)
+        )
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS pg_action_updates (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             account_id INTEGER NOT NULL UNIQUE,
@@ -452,6 +489,23 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "accounts", "owner_name", "TEXT")
     add_column_if_missing(cursor, "accounts", "owner_email", "TEXT")
 
+    # Safe migrations for configured sales plays
+    add_column_if_missing(cursor, "sales_plays", "sales_play_title", "TEXT")
+    add_column_if_missing(cursor, "sales_plays", "sales_play_description", "TEXT")
+    add_column_if_missing(cursor, "sales_plays", "sales_play_products", "TEXT")
+    add_column_if_missing(cursor, "sales_plays", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "sales_plays", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "sales_play_assets", "sales_play_id", "INTEGER")
+    add_column_if_missing(cursor, "sales_play_assets", "asset_name", "TEXT")
+    add_column_if_missing(cursor, "sales_play_assets", "asset_system", "TEXT")
+    add_column_if_missing(cursor, "sales_play_assets", "asset_url", "TEXT")
+    add_column_if_missing(cursor, "sales_play_assets", "sort_order", "INTEGER DEFAULT 0")
+    add_column_if_missing(cursor, "sales_play_assets", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "sales_play_assets", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "account_sales_plays", "account_id", "INTEGER")
+    add_column_if_missing(cursor, "account_sales_plays", "sales_play_id", "INTEGER")
+    add_column_if_missing(cursor, "account_sales_plays", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+
     # Safe migrations for dashboard settings and PG action dashboard overrides
     add_column_if_missing(cursor, "dashboard_settings", "setting_key", "TEXT")
     add_column_if_missing(cursor, "dashboard_settings", "setting_value", "TEXT")
@@ -591,6 +645,23 @@ def initialise_database(force=False):
           AND TRIM(partner_name) != ''
     """)
 
+    cursor.execute("""
+        INSERT OR IGNORE INTO sales_plays (sales_play_title)
+        SELECT DISTINCT TRIM(sales_play)
+        FROM accounts
+        WHERE sales_play IS NOT NULL
+          AND TRIM(sales_play) != ''
+    """)
+
+    cursor.execute("""
+        INSERT OR IGNORE INTO account_sales_plays (account_id, sales_play_id)
+        SELECT accounts.id, sales_plays.id
+        FROM accounts
+        JOIN sales_plays ON sales_plays.sales_play_title = TRIM(accounts.sales_play)
+        WHERE accounts.sales_play IS NOT NULL
+          AND TRIM(accounts.sales_play) != ''
+    """)
+
     # Safe migrations for timeline
     add_column_if_missing(cursor, "timeline_entries", "team_id", "INTEGER DEFAULT 1")
     add_column_if_missing(cursor, "timeline_entries", "related_type", "TEXT")
@@ -655,6 +726,10 @@ def initialise_database(force=False):
         ("idx_accounts_tier", "accounts", ["account_tier"]),
         ("idx_accounts_owner", "accounts", ["owner_user_id"]),
         ("idx_accounts_nbm_target", "accounts", ["nbm_target"]),
+        ("idx_sales_plays_title", "sales_plays", ["sales_play_title"]),
+        ("idx_sales_play_assets_play", "sales_play_assets", ["sales_play_id"]),
+        ("idx_account_sales_plays_account", "account_sales_plays", ["account_id"]),
+        ("idx_account_sales_plays_play", "account_sales_plays", ["sales_play_id"]),
         ("idx_account_shared_users_account", "account_shared_users", ["account_id"]),
         ("idx_account_shared_users_user", "account_shared_users", ["user_id"]),
         ("idx_pg_action_updates_account", "pg_action_updates", ["account_id"]),

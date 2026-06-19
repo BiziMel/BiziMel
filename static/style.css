@@ -5947,3 +5947,72 @@ body {
 .compact-list li {
     margin-bottom: 6px;
 }
+
+.sales-play-form-card {
+    margin-bottom: 24px;
+}
+
+.sales-play-assets {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.sales-play-asset-row {
+    display: grid;
+    grid-template-columns: minmax(180px, 1.3fr) minmax(140px, 0.8fr) minmax(220px, 1.5fr) auto;
+    gap: 10px;
+    align-items: start;
+}
+
+.sales-play-asset-row input {
+    min-width: 0;
+}
+
+.sales-play-config-card {
+    border: 1px solid #d8dee9;
+    border-radius: 8px;
+    background: #ffffff;
+    margin-bottom: 14px;
+    padding: 14px 16px;
+}
+
+.sales-play-config-card summary {
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.sales-play-config-card summary span {
+    color: #64748b;
+}
+
+.sales-play-report-filter {
+    align-items: stretch;
+}
+
+.filter-check-section {
+    grid-column: 1 / -1;
+}
+
+.filter-check-section strong {
+    display: block;
+    margin-bottom: 8px;
+}
+
+.report-filter-checkbox-grid {
+    max-height: 220px;
+    overflow: auto;
+    padding-right: 4px;
+}
+
+@media (max-width: 900px) {
+    .sales-play-asset-row {
+        grid-template-columns: 1fr;
+    }
+
+    .sales-play-config-card summary {
+        display: block;
+    }
+}

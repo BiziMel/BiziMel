@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}Sales Play Reports | PipeFlow{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Sales Play Reports</h1>
+
+<div class="button-group">
+    <a href="{{ url_for('reports') }}" class="btn btn-secondary">Back to Reports</a>
+</div>
+
+<div class="dashboard-grid report-metric-grid">
+    <div class="dashboard-card report-metric-card report-metric-blue">
+        <h3>Sales Plays Used</h3>
+        <p>{{ distinct_sales_plays }}</p>
+        <span>Distinct Sales Plays in filter</span>
+    </div>
+    <div class="dashboard-card report-metric-card report-metric-green">
+        <h3>Total Usage</h3>
+        <p>{{ total_usage }}</p>
+        <span>Outreach activities in filter</span>
+    </div>
+</div>
+
+<form method="get" action="{{ url_for('sales_play_reports') }}" class="filter-form sales-play-report-filter">
+    <div>
+        <label for="start_date">Start date</label>
+        <input type="date" id="start_date" name="start_date" value="{{ selected_start_date }}">
+    </div>
+    <div>
+        <label for="end_date">End date</label>
+        <input type="date" id="end_date" name="end_date" value="{{ selected_end_date }}">
+    </div>
+
+    <div class="filter-check-section">
+        <strong>Accounts</strong>
+        <div class="checkbox-grid report-filter-checkbox-grid">
+            {% for account in accounts %}
+                <label class="checkbox-card">
+                    <input type="checkbox"
+                           name="account_ids"
+                           value="{{ account.id }}"
+                           {% if account.id|string in selected_account_ids %}checked{% endif %}>
+                    <span>{{ account.account_name }}{% if account.business_unit %} · {{ account.business_unit }}{% endif %}</span>
+                </label>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="filter-check-section">
+        <strong>Contacts</strong>
+        <div class="checkbox-grid report-filter-checkbox-grid">
+            {% for contact in contacts %}
+                <label class="checkbox-card">
+                    <input type="checkbox"
+                           name="contact_ids"
+                           value="{{ contact.id }}"
+                           {% if contact.id|string in selected_contact_ids %}checked{% endif %}>
+                    <span>{{ contact.name }}{% if contact.job_title %} · {{ contact.job_title }}{% endif %}{% if contact.account_name %} · {{ contact.account_name }}{% endif %}</span>
+                </label>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="button-group">
+        <button type="submit" class="btn btn-primary">Apply Filters</button>
+        <a href="{{ url_for('sales_play_reports') }}" class="btn btn-secondary">Reset</a>
+    </div>
+</form>
+
+<div class="report-grid">
+    <div class="report-card report-metric-section">
+        <h3>Sales Play Usage</h3>
+        <div class="metric-bar-list">
+            {% for item in usage_rows %}
+                <div class="metric-bar-row">
+                    <div class="metric-bar-row-top">
+                        <span>{{ item.sales_play }}</span>
+                        <strong>{{ item.quantity }}</strong>
+                    </div>
+                    <div class="metric-bar-track"><span style="width: {{ (item.quantity / total_usage * 100) if total_usage else 0 }}%;"></span></div>
+                    <p class="muted">Last used: {{ item.last_used|display_date if item.last_used else "Not used" }}</p>
+                </div>
+            {% else %}
+                <p>No Sales Play usage found for the selected filters.</p>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="report-table-section">
+    <div class="section-header">
+        <div>
+            <h2>Sales Play Activity Detail</h2>
+            <p>Filtered outreach records showing where each Sales Play was used.</p>
+        </div>
+    </div>
+    <div class="table-container">
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Sales Play</th>
+                    <th>Account</th>
+                    <th>Contact</th>
+                    <th>Activity</th>
+                    <th>Outcome</th>
+                    <th>Status</th>
+                    <th>Subject</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in report_rows %}
+                    <tr>
+                        <td>{{ row.report_date|display_date if row.report_date else "No date" }}</td>
+                        <td>{{ row.sales_play }}</td>
+                        <td>{{ row.account_name or "No account" }}{% if row.business_unit %}<br><span class="muted">{{ row.business_unit }}</span>{% endif %}</td>
+                        <td>{{ row.contact_name or "No contact" }}{% if row.job_title %}<br><span class="muted">{{ row.job_title }}</span>{% endif %}</td>
+                        <td>{{ row.activity_type or "Not set" }}</td>
+                        <td>{{ row.outcome or "Not set" }}</td>
+                        <td>{{ row.task_status or "Not set" }}</td>
+                        <td>{{ row.subject or "No subject" }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="8">No Sales Play activity found.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
