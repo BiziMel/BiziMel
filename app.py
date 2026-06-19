@@ -5668,13 +5668,18 @@ def pg_dashboard_context(connection):
                             WHERE contact_id = ?
                         )
                   )
-                  AND substr(COALESCE(NULLIF(completed_at, ''), NULLIF(last_updated, ''), NULLIF(activity_date, '')), 1, 10) >= ?
                   AND {report_visible_task_sql("outreach")}
-                ORDER BY substr(COALESCE(NULLIF(completed_at, ''), NULLIF(last_updated, ''), NULLIF(activity_date, '')), 1, 10) DESC,
+                ORDER BY completed_at DESC,
+                         last_updated DESC,
+                         activity_date DESC,
                          activity_time DESC,
                          last_updated DESC,
                          id DESC
-            """, (account_id, contact_id, contact_id, thirty_days_ago, *report_visible_task_params())).fetchall()
+            """, (account_id, contact_id, contact_id, *report_visible_task_params())).fetchall()
+            recent_activity_rows = [
+                row for row in recent_activity_rows
+                if str(row["completed_at"] or row["last_updated"] or row["activity_date"] or "")[:10] >= thirty_days_ago
+            ]
             if not recent_activity_rows:
                 continue
             contact_rag_payload = contact_rag_payloads.get(contact_id) or contact_pg_progress_rag(connection, account_id, contact_id, legacy_action_update)
