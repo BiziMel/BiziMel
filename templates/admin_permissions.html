@@ -114,6 +114,17 @@
     </div>
 
     <section class="admin-user-create-panel">
+        <h4>Create Team</h4>
+        <form method="POST" action="{{ url_for('admin_add_team') }}" class="admin-user-create-form">
+            <input type="text" name="team_name" placeholder="Team name" required>
+            <select name="company" required>
+                {% for tenant in tenant_options %}
+                    <option value="{{ tenant['company_name'] }}">{{ tenant['company_name'] }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-primary">Create Team</button>
+        </form>
+
         <h4>Create User Profile</h4>
         <form method="POST" action="{{ url_for('admin_create_user') }}" class="admin-user-create-form">
             <input type="text" name="full_name" placeholder="Full name" required>
@@ -131,6 +142,16 @@
                     <option value="admin">Application Admin</option>
                 {% endif %}
             </select>
+            <div class="admin-team-checkboxes">
+                {% for team in team_options %}
+                    <label>
+                        <input type="checkbox" name="team_ids" value="{{ team.id }}">
+                        <span>{{ team.team_name }}{% if team.company %} ({{ team.company }}){% endif %}</span>
+                    </label>
+                {% else %}
+                    <span class="muted-text">Create a team before assigning users.</span>
+                {% endfor %}
+            </div>
             <input type="password" name="password" minlength="8" placeholder="Temporary password" required>
             <input type="password" name="reset_phrase" minlength="12" placeholder="Secret reset phrase" required>
             <button type="submit" class="btn btn-primary">Create User</button>
@@ -188,7 +209,22 @@
                                         {% if not is_app_admin %}
                                             <input type="hidden" name="company" value="{{ user['company'] }}">
                                         {% endif %}
-                                        <input type="text" name="team" value="{{ user['team'] or '' }}" placeholder="Team">
+                                        <div class="admin-team-checkboxes admin-team-checkboxes-wide">
+                                            {% set selected_team_ids = user_team_ids.get(user['id']|string, []) %}
+                                            {% for team in team_options %}
+                                                {% if is_app_admin or team.company == user.company %}
+                                                    <label>
+                                                        <input type="checkbox"
+                                                               name="team_ids"
+                                                               value="{{ team.id }}"
+                                                               {% if team.id|string in selected_team_ids %}checked{% endif %}>
+                                                        <span>{{ team.team_name }}{% if team.company %} ({{ team.company }}){% endif %}</span>
+                                                    </label>
+                                                {% endif %}
+                                            {% else %}
+                                                <span class="muted-text">No teams configured.</span>
+                                            {% endfor %}
+                                        </div>
                                         <button type="submit" class="btn btn-secondary">Save Profile</button>
                                     </form>
                                 </section>

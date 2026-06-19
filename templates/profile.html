@@ -41,11 +41,20 @@
 
             <div class="form-group">
                 <label for="team">Team</label>
-                <input type="text"
-                       id="team"
-                       name="team"
-                       value="{{ profile.team or '' }}"
-                       placeholder="Enter team">
+                {% if user_team_options %}
+                    <select id="team" name="active_team_id">
+                        {% for team in user_team_options %}
+                            <option value="{{ team.id }}" {% if team.id|string == active_team_id|string %}selected{% endif %}>{{ team.team_name }}</option>
+                        {% endfor %}
+                    </select>
+                    <input type="hidden" name="team" value="{{ profile.team or '' }}">
+                {% else %}
+                    <input type="text"
+                           id="team"
+                           name="team"
+                           value="{{ profile.team or '' }}"
+                           placeholder="Enter team">
+                {% endif %}
             </div>
 
             <div class="form-group full-width">

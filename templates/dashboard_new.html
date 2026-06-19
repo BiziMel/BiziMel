@@ -16,13 +16,35 @@
 {% endif %}
 
 <form method="POST" class="pg-goals-dashboard-form">
+    {% if is_team_pg_progress %}
+        <section class="form-card pg-team-filter-card">
+            <div class="section-header">
+                <div>
+                    <h2>Team PG Progress</h2>
+                    <p>Manager view grouped by user across associated team members.</p>
+                </div>
+            </div>
+            <div class="button-group pg-team-filter-buttons">
+                <a href="{{ url_for('pg_progress') }}" class="btn {% if not selected_team_user_id %}btn-primary{% else %}btn-secondary{% endif %}">All Team</a>
+                {% for member in team_members %}
+                    <a href="{{ url_for('pg_progress', user_id=member.id) }}"
+                       class="btn {% if selected_team_user_id|string == member.id|string %}btn-primary{% else %}btn-secondary{% endif %}">
+                        {{ member.full_name }}
+                    </a>
+                {% endfor %}
+            </div>
+        </section>
+    {% endif %}
+
     <section class="pg-goals-hero form-card">
         <div class="section-header">
             <div>
                 <h2>PG Goals</h2>
                 <p>Pipeline target, current pipeline and gap position for the financial year.</p>
             </div>
-            <button type="submit" class="btn btn-primary">Save PG Progress</button>
+            {% if not is_team_pg_progress and not pg_progress_read_only %}
+                <button type="submit" class="btn btn-primary">Save PG Progress</button>
+            {% endif %}
         </div>
 
         <div class="pg-goals-metric-grid">
@@ -41,7 +63,8 @@
                            name="current_pipeline"
                            step="0.01"
                            min="0"
-                           value="{{ '%.2f'|format(current_pipeline or 0) }}">
+                           value="{{ '%.2f'|format(current_pipeline or 0) }}"
+                           {% if is_team_pg_progress or pg_progress_read_only %}disabled{% endif %}>
                 </div>
                 <p class="metric-subtext">Manual field for pipeline movement</p>
             </div>
@@ -125,8 +148,17 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% set pg_group = namespace(account="", business_org="", sales_play="") %}
+                    {% set pg_group = namespace(owner="", account="", business_org="", sales_play="") %}
                     {% for row in pg_action_rows %}
+                        {% if is_team_pg_progress and row.owner_name != pg_group.owner %}
+                            {% set pg_group.owner = row.owner_name %}
+                            {% set pg_group.account = "" %}
+                            {% set pg_group.business_org = "" %}
+                            {% set pg_group.sales_play = "" %}
+                            <tr class="pg-group-row pg-group-owner">
+                                <td colspan="7"><span>User</span><strong>{{ row.owner_name }}</strong></td>
+                            </tr>
+                        {% endif %}
                         {% if row.account_name != pg_group.account %}
                             {% set pg_group.account = row.account_name %}
                             {% set pg_group.business_org = "" %}
@@ -181,7 +213,7 @@
                                            name="completed_discovery_contact_{{ row.contact_id }}"
                                            value="Yes"
                                            {% if row.completed_discovery_meeting == "Yes" %}checked{% endif %}
-                                           {% if row.is_partner_row %}disabled{% endif %}>
+                                           {% if row.is_partner_row or is_team_pg_progress or pg_progress_read_only %}disabled{% endif %}>
                                     <span aria-hidden="true"></span>
                                 </label>
                             </td>
@@ -191,7 +223,7 @@
                                            name="exec_first_contact_{{ row.contact_id }}"
                                            value="Yes"
                                            {% if row.exec_first == "Yes" %}checked{% endif %}
-                                           {% if row.is_partner_row %}disabled{% endif %}>
+                                           {% if row.is_partner_row or is_team_pg_progress or pg_progress_read_only %}disabled{% endif %}>
                                     <span aria-hidden="true"></span>
                                 </label>
                             </td>
@@ -201,7 +233,7 @@
                                            name="nbm_completed_contact_{{ row.contact_id }}"
                                            value="Yes"
                                            {% if row.nbm_completed == "Yes" %}checked{% endif %}
-                                           {% if row.is_partner_row %}disabled{% endif %}>
+                                           {% if row.is_partner_row or is_team_pg_progress or pg_progress_read_only %}disabled{% endif %}>
                                     <span aria-hidden="true"></span>
                                 </label>
                             </td>

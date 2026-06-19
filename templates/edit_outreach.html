@@ -199,6 +199,11 @@
                 <div id="contact_system_fields" class="selected-contact-frame">Select one or more contacts to show phone, email and LinkedIn.</div>
             </div>
 
+            <div class="form-group full-width">
+                <label>Sales Play Assets</label>
+                <div id="sales_play_asset_panel" class="selected-contact-frame">Select a Sales Play to show linked assets.</div>
+            </div>
+
             <div class="form-group">
                 <label for="outcome">Outcome</label>
                 <select id="outcome" name="outcome">
@@ -288,6 +293,9 @@
         const contactEmpty = document.getElementById("contact_picker_empty");
         const activityTypeSelect = document.getElementById("activity_type");
         const salesPlayDatalist = document.getElementById("sales_play_options");
+        const salesPlayInput = document.getElementById("sales_play");
+        const salesPlayAssetPanel = document.getElementById("sales_play_asset_panel");
+        const salesPlayAssets = {{ sales_play_assets|tojson }};
         const allSalesPlayOptions = salesPlayDatalist ? Array.from(salesPlayDatalist.options).map((option) => ({
             value: option.value,
             accountId: option.dataset.accountId || ""
@@ -351,6 +359,22 @@
             }).join("");
         }
 
+        function renderSalesPlayAssets() {
+            if (!salesPlayAssetPanel || !salesPlayInput) return;
+            const assets = salesPlayAssets[salesPlayInput.value] || [];
+            if (!assets.length) {
+                salesPlayAssetPanel.textContent = salesPlayInput.value
+                    ? "No assets configured for this Sales Play."
+                    : "Select a Sales Play to show linked assets.";
+                return;
+            }
+            salesPlayAssetPanel.innerHTML = assets.map((asset) => {
+                const system = asset.system ? `<span>System: ${asset.system}</span>` : "<span>System: Not set</span>";
+                const link = asset.url ? `<a href="${asset.url}" target="_blank" rel="noopener" class="btn btn-secondary btn-small">Open</a>` : "<span>No URL</span>";
+                return `<div class="selected-contact-row"><strong>${asset.name || "Sales Play asset"}</strong>${system}${link}</div>`;
+            }).join("");
+        }
+
         function applyContactFilter() {
             const selectedAccountId = accountSelect.value;
             let visibleCount = 0;
@@ -401,6 +425,7 @@
             }
             updateContactSummary();
             renderContactDetails();
+            renderSalesPlayAssets();
         }
 
         contactToggle.addEventListener("click", () => {
@@ -412,6 +437,10 @@
             updateContactSummary();
             renderContactDetails();
         }));
+        if (salesPlayInput) {
+            salesPlayInput.addEventListener("input", renderSalesPlayAssets);
+            salesPlayInput.addEventListener("change", renderSalesPlayAssets);
+        }
         document.addEventListener("click", (event) => {
             if (!contactPicker.contains(event.target)) {
                 setContactPanelOpen(false);
@@ -427,6 +456,7 @@
             window.location.href = url.toString();
         });
         applyContactFilter();
+        renderSalesPlayAssets();
     }
 
     constrainContactsByAccount();

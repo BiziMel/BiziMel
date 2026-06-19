@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
-Version: 2.6.0
+Version: 2.6.1
 Release date: 2026-06-19
-Build: 2026-06-19-v2.6.0-sales-play-management-r1
+Build: 2026-06-19-v2.6.1-team-pg-progress-sales-play-assets-r1
 Package purpose: Hosted enterprise deployment only.

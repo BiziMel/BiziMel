@@ -14,15 +14,15 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session, abort
 from werkzeug.utils import secure_filename
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.6.0"
+APP_VERSION = "2.6.1"
 APP_RELEASE_DATE = "2026-06-19"
-APP_BUILD = "2026-06-19-v2.6.0-sales-play-management-r1"
+APP_BUILD = "2026-06-19-v2.6.1-team-pg-progress-sales-play-assets-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -37,10 +37,13 @@ except ZoneInfoNotFoundError:
 
 RELEASE_NOTES = [
     {
-        "version": "2.6.0",
+        "version": "2.6.1",
         "release_date": "2026-06-19",
-        "title": "Sales Play management, reporting and insights metrics",
+        "title": "Team management, manager PG Progress and Sales Play assets",
         "new": [
+            "Added admin-managed Teams with company scoping and user membership assignment.",
+            "Added manager team PG Progress views grouped by user with user filter buttons.",
+            "Added Sales Play asset links inside outreach forms when a selected Sales Play has configured assets.",
             "Added a Sales Plays tab for configuring reusable Sales Play titles, descriptions, products and linked asset rows.",
             "Added Sales Play reports for filtered account/contact/date usage and quantity with last-used date.",
         ],
@@ -1675,6 +1678,8 @@ def render_admin_permissions():
         "admin_permissions.html",
         users=list_users(actor),
         tenant_options=list_tenants(actor, active_only=True),
+        team_options=list_teams(actor),
+        user_team_ids={str(user["id"]): user_team_ids(user["id"]) for user in list_users(actor)},
         is_app_admin=is_application_admin(actor),
         broadcast_messages=list_broadcast_messages(active_only=False),
         audit_retention_enabled=audit_retention_enabled(),
@@ -1712,6 +1717,20 @@ def admin_users():
 @admin_required
 def admin_permissions():
     return render_admin_permissions()
+
+
+@app.route("/admin/teams/add", methods=("POST",))
+@admin_required
+def admin_add_team():
+    actor = current_user()
+    company = request.form.get("company", actor["company"] if actor and "company" in actor.keys() else "")
+    if actor and not is_application_admin(actor):
+        company = actor["company"]
+    team_id, error = create_team(request.form.get("team_name", ""), company, actor)
+    if error:
+        return redirect(url_for("admin_users", error=error))
+    log_admin_audit(actor, "Team created", "Team", request.form.get("team_name", ""), f"Company: {company}; Team ID: {team_id}.")
+    return redirect(url_for("admin_users", message="Team created."))
 
 
 @app.route("/admin/tenants", methods=("GET", "POST"))
@@ -1792,6 +1811,11 @@ def admin_create_user():
     role_error = set_user_role(user_id, role)
     if role_error:
         return redirect(url_for("admin_users", error=role_error))
+    team_ids = request.form.getlist("team_ids")
+    membership_role = "manager" if role == "manager" else "admin" if role in ("admin", "company_admin") else "member"
+    team_error = set_user_team_memberships(user_id, team_ids, membership_role)
+    if team_error:
+        return redirect(url_for("admin_users", error=team_error))
     log_admin_audit(
         actor,
         "User created",
@@ -1992,11 +2016,17 @@ def admin_update_user_identity(user_id):
     old_company = user["company"] if "company" in user.keys() and user["company"] else ""
     new_email = request.form.get("email", "")
     new_name = request.form.get("full_name", "")
-    new_team = request.form.get("team", "")
     new_company = request.form.get("company", old_company) if is_application_admin(actor) else old_company
+    selected_team_ids = request.form.getlist("team_ids")
+    team_names = [team["team_name"] for team in list_teams(actor, company=new_company) if str(team["id"]) in selected_team_ids]
+    new_team = team_names[0] if team_names else ""
     error = update_user_identity(user_id, new_email, new_name, new_team, new_company)
     if error:
         return redirect(url_for("admin_users", error=error))
+    membership_role = "manager" if user["role"] == "manager" else "admin" if user["role"] in ("admin", "company_admin") else "member"
+    team_error = set_user_team_memberships(user_id, selected_team_ids, membership_role)
+    if team_error:
+        return redirect(url_for("admin_users", error=team_error))
 
     changes = []
     if old_name != new_name.strip():
@@ -2067,6 +2097,10 @@ def admin_update_user_role(user_id):
     error = set_user_role(user_id, new_role)
     if error:
         return redirect(url_for("admin_users", error=error))
+    membership_role = "manager" if new_role == "manager" else "admin" if new_role in ("admin", "company_admin") else "member"
+    team_error = set_user_team_memberships(user_id, user_team_ids(user_id), membership_role)
+    if team_error:
+        return redirect(url_for("admin_users", error=team_error))
     log_admin_audit(
         current_user(),
         "Role updated",
@@ -5629,6 +5663,30 @@ def save_sales_play_assets(connection, sales_play_id, assets):
         ))
 
 
+def sales_play_asset_map(connection):
+    rows = connection.execute("""
+        SELECT
+            sales_plays.sales_play_title,
+            sales_play_assets.asset_name,
+            sales_play_assets.asset_system,
+            sales_play_assets.asset_url
+        FROM sales_play_assets
+        JOIN sales_plays ON sales_plays.id = sales_play_assets.sales_play_id
+        WHERE sales_plays.sales_play_title IS NOT NULL
+          AND sales_plays.sales_play_title != ''
+        ORDER BY sales_plays.sales_play_title, sales_play_assets.sort_order, sales_play_assets.id
+    """).fetchall()
+    asset_map = {}
+    for row in rows:
+        title = row["sales_play_title"]
+        asset_map.setdefault(title, []).append({
+            "name": row["asset_name"] or "Sales Play asset",
+            "system": row["asset_system"] or "",
+            "url": row["asset_url"] or "",
+        })
+    return asset_map
+
+
 def normalise_selected_account_ids(values):
     account_ids = []
     seen = set()
@@ -5989,6 +6047,55 @@ def pg_dashboard_context(connection):
     }
 
 
+def manager_pg_dashboard_context(selected_user_id=""):
+    user = current_user()
+    members = manager_team_members(user)
+    if not members:
+        return None
+    selected_user_id = str(selected_user_id or "")
+    if selected_user_id:
+        members = [member for member in members if str(member["id"]) == selected_user_id]
+    team_context = {
+        "fy_pipeline_target": 0,
+        "current_pipeline": 0,
+        "pipeline_gap": 0,
+        "pg_plan_rows": [],
+        "pg_action_rows": [],
+        "team_members": manager_team_members(user),
+        "selected_team_user_id": selected_user_id,
+        "is_team_pg_progress": True,
+    }
+    for member in members:
+        connection = None
+        try:
+            if using_postgres() and member["workspace_schema"]:
+                connection = get_schema_connection(schema=member["workspace_schema"])
+            elif str(member["id"]) == str(user["id"]):
+                connection = get_db_connection()
+            else:
+                continue
+            context = pg_dashboard_context(connection)
+            team_context["fy_pipeline_target"] += context["fy_pipeline_target"] or 0
+            team_context["current_pipeline"] += context["current_pipeline"] or 0
+            team_context["pipeline_gap"] += context["pipeline_gap"] or 0
+            for row in context["pg_plan_rows"]:
+                row["owner_user_id"] = member["id"]
+                row["owner_name"] = member["full_name"]
+                team_context["pg_plan_rows"].append(row)
+            for row in context["pg_action_rows"]:
+                row["owner_user_id"] = member["id"]
+                row["owner_name"] = member["full_name"]
+                team_context["pg_action_rows"].append(row)
+        except Exception:
+            traceback.print_exc()
+        finally:
+            if connection:
+                connection.close()
+    team_context["pg_plan_rows"].sort(key=lambda row: (row.get("owner_name") or "", row.get("account_name") or "", row.get("sales_play") or ""))
+    team_context["pg_action_rows"].sort(key=lambda row: (row.get("owner_name") or "", row.get("account_name") or "", row.get("business_org") or "", row.get("sales_play") or ""))
+    return team_context
+
+
 @app.route("/dashboard-new")
 def dashboard_new():
     return redirect(url_for("pg_progress"))
@@ -6047,8 +6154,13 @@ def pg_progress():
         connection.close()
         return redirect(url_for("pg_progress", message="PG Progress saved."))
 
-    context = pg_dashboard_context(connection)
-    connection.close()
+    team_context = manager_pg_dashboard_context(request.args.get("user_id", ""))
+    if team_context:
+        context = team_context
+        connection.close()
+    else:
+        context = pg_dashboard_context(connection)
+        connection.close()
     return render_template(
         "dashboard_new.html",
         message=request.args.get("message", ""),
@@ -9162,6 +9274,7 @@ def add_outreach():
         ORDER BY contacts.name
     """, (selected_account_id,)).fetchall() if selected_account_id else []
     sales_play_rows = account_sales_play_options(connection)
+    sales_play_assets = sales_play_asset_map(connection)
     partner_activity_options = account_partner_activity_options(connection)
     partner_contacts = partner_contacts_for_outreach(connection, selected_account_id)
 
@@ -9189,6 +9302,7 @@ def add_outreach():
         profile=profile,
         non_working_blocks=non_working_block_rows,
         sales_play_options=sales_play_rows,
+        sales_play_assets=sales_play_assets,
         partner_activity_options=partner_activity_options,
         partner_contacts=partner_contacts,
         prefill=prefill,
@@ -9442,6 +9556,7 @@ def campaign_builder():
             contacts.name
     """).fetchall()
     sales_play_rows = account_sales_play_options(connection)
+    sales_play_assets = sales_play_asset_map(connection)
     partner_activity_options = account_partner_activity_options(connection)
 
     connection.close()
@@ -9821,6 +9936,7 @@ def edit_outreach(outreach_id):
                 profile=profile,
                 non_working_blocks=non_working_block_rows,
                 sales_play_options=sales_play_rows,
+                sales_play_assets=sales_play_assets,
                 partner_activity_options=partner_activity_options,
                 partner_contacts=partner_contacts,
                 selected_contact_values=recipient_values,
@@ -9842,6 +9958,7 @@ def edit_outreach(outreach_id):
                 profile=profile,
                 non_working_blocks=non_working_block_rows,
                 sales_play_options=sales_play_rows,
+                sales_play_assets=sales_play_assets,
                 partner_activity_options=partner_activity_options,
                 partner_contacts=partner_contacts,
                 selected_contact_values=recipient_values,
@@ -9863,6 +9980,7 @@ def edit_outreach(outreach_id):
                 profile=profile,
                 non_working_blocks=non_working_block_rows,
                 sales_play_options=sales_play_rows,
+                sales_play_assets=sales_play_assets,
                 partner_activity_options=partner_activity_options,
                 partner_contacts=partner_contacts,
                 selected_contact_values=recipient_values,
@@ -9884,6 +10002,7 @@ def edit_outreach(outreach_id):
                 profile=profile,
                 non_working_blocks=non_working_block_rows,
                 sales_play_options=sales_play_rows,
+                sales_play_assets=sales_play_assets,
                 partner_activity_options=partner_activity_options,
                 partner_contacts=partner_contacts,
                 selected_contact_values=recipient_values,
@@ -10026,6 +10145,7 @@ def edit_outreach(outreach_id):
         profile=profile,
         non_working_blocks=non_working_block_rows,
         sales_play_options=sales_play_rows,
+        sales_play_assets=sales_play_assets,
         partner_activity_options=partner_activity_options,
         partner_contacts=partner_contacts,
         selected_contact_values=selected_contact_values,
@@ -10857,6 +10977,7 @@ def profile():
     connection = get_db_connection()
     message = request.args.get("message", "")
     error = request.args.get("error", "")
+    signed_in_user = current_user()
 
     if request.method == "POST":
         existing_profile = connection.execute("""
@@ -10864,9 +10985,31 @@ def profile():
             FROM user_profile
             WHERE id = 1
         """).fetchone()
+        selected_team_name = request.form.get("team", "")
+        selected_active_team_id = request.form.get("active_team_id", "")
+        if signed_in_user and selected_active_team_id:
+            auth_connection = get_auth_connection()
+            membership = auth_connection.execute("""
+                SELECT teams.id, teams.team_name
+                FROM team_memberships
+                JOIN teams ON teams.id = team_memberships.team_id
+                WHERE team_memberships.user_id = ?
+                  AND teams.id = ?
+            """, (signed_in_user["id"], selected_active_team_id)).fetchone()
+            if membership:
+                selected_team_name = membership["team_name"]
+                auth_connection.execute("""
+                    UPDATE users
+                    SET active_team_id = ?,
+                        team = ?,
+                        last_updated = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (selected_active_team_id, selected_team_name, signed_in_user["id"]))
+                auth_connection.commit()
+            auth_connection.close()
         new_values = {
             "full_name": request.form.get("full_name"),
-            "team": request.form.get("team"),
+            "team": selected_team_name,
             "job_title": request.form.get("job_title"),
             "work_day_start": request.form.get("work_day_start") or "09:00",
             "work_day_end": request.form.get("work_day_end") or "17:00",
@@ -10924,9 +11067,17 @@ def profile():
     connection.close()
     secret_phrase = ""
     secret_phrase_available = False
-    user = current_user()
+    user = signed_in_user
+    user_team_options = []
     if user:
         auth_connection = get_auth_connection()
+        user_team_options = auth_connection.execute("""
+            SELECT teams.id, teams.team_name
+            FROM team_memberships
+            JOIN teams ON teams.id = team_memberships.team_id
+            WHERE team_memberships.user_id = ?
+            ORDER BY teams.team_name
+        """, (user["id"],)).fetchall()
         auth_row = auth_connection.execute("""
             SELECT reset_phrase_plain
             FROM users
@@ -10939,6 +11090,8 @@ def profile():
     return render_template(
         "profile.html",
         profile=profile_record,
+        user_team_options=user_team_options,
+        active_team_id=user["active_team_id"] if user and "active_team_id" in user.keys() else "",
         non_working_blocks=non_working_blocks,
         secret_phrase=secret_phrase,
         secret_phrase_available=secret_phrase_available,
@@ -11029,6 +11182,22 @@ def delete_profile_data():
 @app.route("/reports")
 def reports():
     return render_template("reports.html")
+
+
+@app.route("/reports/pg-progress")
+def pg_progress_report():
+    context = manager_pg_dashboard_context(request.args.get("user_id", ""))
+    if not context:
+        connection = get_db_connection()
+        context = pg_dashboard_context(connection)
+        context["is_team_pg_progress"] = False
+        connection.close()
+    context["pg_progress_read_only"] = True
+    return render_template(
+        "dashboard_new.html",
+        message="",
+        **context,
+    )
 
 
 @app.route("/reports/partners")

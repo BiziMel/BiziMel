@@ -151,6 +151,7 @@ def initialise_auth_database() -> None:
         CREATE TABLE IF NOT EXISTS teams (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             team_name TEXT NOT NULL UNIQUE,
+            company TEXT,
             created_by_user_id INTEGER,
             date_created TEXT DEFAULT CURRENT_TIMESTAMP,
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP
@@ -185,6 +186,7 @@ def initialise_auth_database() -> None:
     add_column_if_missing(connection, "users", "team", "TEXT")
     add_column_if_missing(connection, "users", "workspace_schema", "TEXT")
     add_column_if_missing(connection, "users", "active_team_id", "INTEGER")
+    add_column_if_missing(connection, "teams", "company", "TEXT")
     add_column_if_missing(connection, "broadcast_messages", "start_at", "TEXT")
     add_column_if_missing(connection, "broadcast_messages", "stop_at", "TEXT")
     add_column_if_missing(connection, "team_memberships", "role", "TEXT DEFAULT 'member'")
@@ -552,18 +554,18 @@ def ensure_default_team_for_user(user):
     if using_postgres():
         row = connection.execute(
             """
-            INSERT INTO teams (team_name, created_by_user_id)
-            VALUES (?, ?)
+            INSERT INTO teams (team_name, company, created_by_user_id)
+            VALUES (?, ?, ?)
             ON CONFLICT (team_name) DO UPDATE SET team_name = EXCLUDED.team_name
             RETURNING id
             """,
-            (team_name, user["id"]),
+            (team_name, user["company"] if "company" in user.keys() else "", user["id"]),
         ).fetchone()
         team_id = row["id"]
     else:
         connection.execute(
-            "INSERT OR IGNORE INTO teams (team_name, created_by_user_id) VALUES (?, ?)",
-            (team_name, user["id"]),
+            "INSERT OR IGNORE INTO teams (team_name, company, created_by_user_id) VALUES (?, ?, ?)",
+            (team_name, user["company"] if "company" in user.keys() else "", user["id"]),
         )
         team_id = connection.execute("SELECT id FROM teams WHERE team_name = ?", (team_name,)).fetchone()["id"]
     membership_role = "admin" if user["role"] in ("admin", "company_admin") else "member"
@@ -598,6 +600,137 @@ def active_team_for_user(user):
     team = connection.execute("SELECT * FROM teams WHERE id = ?", (team_id,)).fetchone()
     connection.close()
     return team
+
+
+def create_team(team_name, company, actor=None):
+    team_name = (team_name or "").strip()
+    company = normalise_company_name(company)
+    if not team_name or not company:
+        return None, "Team name and company are required."
+    if not tenant_exists(company):
+        return None, "Select a valid tenant for the team."
+    connection = get_auth_connection()
+    if using_postgres():
+        row = connection.execute("""
+            INSERT INTO teams (team_name, company, created_by_user_id)
+            VALUES (?, ?, ?)
+            ON CONFLICT (team_name) DO UPDATE SET company = EXCLUDED.company
+            RETURNING id
+        """, (team_name, company, actor["id"] if actor else None)).fetchone()
+        team_id = row["id"]
+    else:
+        connection.execute("""
+            INSERT OR IGNORE INTO teams (team_name, company, created_by_user_id)
+            VALUES (?, ?, ?)
+        """, (team_name, company, actor["id"] if actor else None))
+        connection.execute("""
+            UPDATE teams
+            SET company = COALESCE(NULLIF(company, ''), ?),
+                last_updated = CURRENT_TIMESTAMP
+            WHERE team_name = ?
+        """, (company, team_name))
+        team_id = connection.execute("SELECT id FROM teams WHERE team_name = ?", (team_name,)).fetchone()["id"]
+    connection.commit()
+    connection.close()
+    return team_id, ""
+
+
+def list_teams(actor=None, company=None):
+    connection = get_auth_connection()
+    params = []
+    where = []
+    if actor and not is_application_admin(actor):
+        where.append("LOWER(COALESCE(company, '')) = LOWER(?)")
+        params.append(actor["company"] if "company" in actor.keys() and actor["company"] else "")
+    elif company:
+        where.append("LOWER(COALESCE(company, '')) = LOWER(?)")
+        params.append(normalise_company_name(company))
+    where_sql = "WHERE " + " AND ".join(where) if where else ""
+    rows = connection.execute(f"""
+        SELECT *
+        FROM teams
+        {where_sql}
+        ORDER BY company, team_name
+    """, params).fetchall()
+    connection.close()
+    return rows
+
+
+def user_team_ids(user_id):
+    connection = get_auth_connection()
+    rows = connection.execute("""
+        SELECT team_id
+        FROM team_memberships
+        WHERE user_id = ?
+        ORDER BY team_id
+    """, (user_id,)).fetchall()
+    connection.close()
+    return [str(row["team_id"]) for row in rows]
+
+
+def set_user_team_memberships(user_id, team_ids, membership_role="member"):
+    team_ids = [str(team_id) for team_id in team_ids or [] if str(team_id or "").isdigit()]
+    connection = get_auth_connection()
+    user = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        connection.close()
+        return "User was not found."
+    valid_rows = []
+    if team_ids:
+        placeholders = ",".join("?" for _ in team_ids)
+        valid_rows = connection.execute(f"""
+            SELECT id, team_name
+            FROM teams
+            WHERE id IN ({placeholders})
+              AND LOWER(COALESCE(company, '')) = LOWER(?)
+        """, (*team_ids, user["company"] or "")).fetchall()
+    valid_ids = [str(row["id"]) for row in valid_rows]
+    connection.execute("DELETE FROM team_memberships WHERE user_id = ?", (user_id,))
+    for team_id in valid_ids:
+        connection.execute("""
+            INSERT OR IGNORE INTO team_memberships (team_id, user_id, role)
+            VALUES (?, ?, ?)
+        """, (team_id, user_id, membership_role))
+    connection.execute("""
+        UPDATE users
+        SET active_team_id = ?,
+            team = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE id = ?
+    """, (valid_ids[0] if valid_ids else None, valid_rows[0]["team_name"] if valid_rows else "", user_id))
+    connection.commit()
+    connection.close()
+    return ""
+
+
+def manager_team_members(user):
+    if not user or user["role"] != "manager":
+        return []
+    connection = get_auth_connection()
+    team_rows = connection.execute("""
+        SELECT team_id
+        FROM team_memberships
+        WHERE user_id = ?
+          AND role IN ('manager', 'admin')
+    """, (user["id"],)).fetchall()
+    team_ids = [str(row["team_id"]) for row in team_rows]
+    if not team_ids:
+        connection.close()
+        return []
+    placeholders = ",".join("?" for _ in team_ids)
+    members = connection.execute(f"""
+        SELECT DISTINCT users.id, users.email, users.full_name, users.company, users.team, users.role, users.workspace_schema, users.active_team_id
+        FROM team_memberships
+        JOIN users ON users.id = team_memberships.user_id
+        WHERE team_memberships.team_id IN ({placeholders})
+          AND users.is_active = 1
+          AND LOWER(users.company) = LOWER(?)
+        ORDER BY users.full_name, users.email
+    """, (*team_ids, user["company"] or "")).fetchall()
+    connection.close()
+    for member in members:
+        ensure_user_workspace_schema(member)
+    return members
 
 
 def list_active_team_members(user):

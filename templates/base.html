@@ -37,7 +37,7 @@
     <a href="/accounts" class="btn btn-primary {% if request.endpoint in ['accounts', 'add_account', 'edit_account', 'view_account'] %}active-tab{% endif %}">Accounts</a>
     <a href="/contacts" class="btn btn-primary {% if request.endpoint in ['contacts', 'add_contact', 'edit_contact', 'view_contact'] %}active-tab{% endif %}">Contacts</a>
     <a href="/partners" class="btn btn-primary {% if request.endpoint in ['partners', 'add_partner', 'edit_partner', 'view_partner'] %}active-tab{% endif %}">Partners</a>
-    <a href="/reports" class="btn btn-primary {% if request.endpoint in ['reports', 'partner_reports', 'account_reports', 'task_reports', 'outreach_reports', 'contact_reports', 'sales_play_reports'] %}active-tab{% endif %}">Reports</a>
+    <a href="/reports" class="btn btn-primary {% if request.endpoint in ['reports', 'partner_reports', 'account_reports', 'task_reports', 'outreach_reports', 'contact_reports', 'sales_play_reports', 'pg_progress_report'] %}active-tab{% endif %}">Reports</a>
     <a href="/profile" class="btn btn-secondary {% if request.endpoint == 'profile' %}active-tab{% endif %}">Profile</a>
     {% if current_user and current_user["role"] in ["admin", "company_admin"] %}
     <a href="/admin/permissions" class="btn btn-secondary {% if request.endpoint and request.endpoint.startswith('admin') %}active-tab{% endif %}">Admin</a>

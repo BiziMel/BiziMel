@@ -6007,6 +6007,40 @@ body {
     padding-right: 4px;
 }
 
+.admin-team-checkboxes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px;
+    align-items: start;
+}
+
+.admin-team-checkboxes label {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px;
+    border: 1px solid #d8dee9;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.admin-team-checkboxes-wide {
+    grid-column: 1 / -1;
+}
+
+.pg-team-filter-card {
+    margin-bottom: 18px;
+}
+
+.pg-team-filter-buttons {
+    justify-content: flex-start;
+}
+
+.pg-group-owner td {
+    background: #e8f1ff;
+    border-top: 2px solid #7aa7e8;
+}
+
 @media (max-width: 900px) {
     .sales-play-asset-row {
         grid-template-columns: 1fr;
