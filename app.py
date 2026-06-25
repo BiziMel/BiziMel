@@ -9868,6 +9868,7 @@ def edit_outreach(outreach_id):
         ORDER BY contacts.name
     """, (selected_account_for_contacts, outreach_item["contact_id"])).fetchall() if selected_account_for_contacts else []
     sales_play_rows = account_sales_play_options(connection)
+    sales_play_assets = sales_play_asset_map(connection)
     partner_activity_options = account_partner_activity_options(connection)
     partner_contacts = partner_contacts_for_outreach(connection, selected_account_for_contacts)
 
