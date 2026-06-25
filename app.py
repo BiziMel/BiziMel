@@ -3347,6 +3347,52 @@ def behaviour_signal_from_notes(notes):
     return "Use the most recent human response as the opener, keep the message specific, and ask for one clear next step."
 
 
+def learned_success_route_recommendation(connection):
+    success_outcomes = tuple(dict.fromkeys((*PG_SUCCESS_OUTCOMES, "Positive Response", "Referral Made", "Follow-up Required")))
+    success_placeholders = ",".join("?" for _ in success_outcomes)
+    nbm_placeholders = ",".join("?" for _ in NBM_SUCCESS_OUTCOMES)
+    primary_placeholders = ",".join("?" for _ in PRIMARY_PG_SUCCESS_OUTCOMES)
+    pg_success_placeholders = ",".join("?" for _ in PG_SUCCESS_OUTCOMES)
+    row = connection.execute(f"""
+        SELECT
+            outreach.sales_play,
+            outreach.activity_type,
+            contacts.category,
+            contacts.bmc_relationship,
+            COUNT(outreach.id) AS total,
+            SUM(CASE WHEN outreach.outcome IN ({nbm_placeholders}) THEN 1 ELSE 0 END) AS nbm_total,
+            SUM(CASE WHEN outreach.outcome IN ({primary_placeholders}) THEN 1 ELSE 0 END) AS primary_pg_success_total,
+            SUM(CASE WHEN outreach.outcome IN ({pg_success_placeholders}) THEN 1 ELSE 0 END) AS meeting_total
+        FROM outreach
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
+        WHERE outreach.outcome IN ({success_placeholders})
+          AND (
+                NULLIF(TRIM(COALESCE(outreach.sales_play, '')), '') IS NOT NULL
+             OR NULLIF(TRIM(COALESCE(outreach.activity_type, '')), '') IS NOT NULL
+             OR NULLIF(TRIM(COALESCE(contacts.category, '')), '') IS NOT NULL
+             OR NULLIF(TRIM(COALESCE(contacts.bmc_relationship, '')), '') IS NOT NULL
+          )
+        GROUP BY outreach.sales_play, outreach.activity_type, contacts.category, contacts.bmc_relationship
+        ORDER BY nbm_total DESC, primary_pg_success_total DESC, meeting_total DESC, total DESC
+        LIMIT 1
+    """, (*NBM_SUCCESS_OUTCOMES, *PRIMARY_PG_SUCCESS_OUTCOMES, *PG_SUCCESS_OUTCOMES, *success_outcomes)).fetchone()
+
+    if not row:
+        return "Use a different stakeholder route, value angle or channel, then make the next ask explicitly about Discovery or NBM so the new approach can be measured."
+
+    route_parts = compact_join([
+        row["sales_play"],
+        row["activity_type"],
+        row["category"],
+        row["bmc_relationship"],
+    ], limit=4) or "the strongest successful route in the current database"
+    return (
+        f"Switch to a new approach based on the success pool: {route_parts} has produced "
+        f"{row['nbm_total'] or 0} NBM booking(s), {row['primary_pg_success_total'] or 0} Discovery/NBM success outcome(s), "
+        f"and {row['meeting_total'] or 0} meeting signal(s)."
+    )
+
+
 def deduplicate_execution_insights(insights):
     unique_insights = []
     seen = set()
@@ -3588,13 +3634,28 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
     """)
     for row in campaign_gaps:
         contact_label = ", ".join(part for part in [row["contact_name"], row["contact_title"]] if part) or "No contact assigned"
+        outcome_value = normalise_outreach_outcome(row["outcome"])
+        has_no_response = outcome_value == "No Response"
+        learned_action = learned_success_route_recommendation(connection)
         insights.append({
             "source": "Daily Focus",
             "category": "Campaign Activity",
-            "title": f"{row['account_name'] or 'Unknown account'} campaign has no response signal",
-            "evidence": f"Account: {row['account_name'] or 'Unknown account'}. Contact: {contact_label}. Outreach subject: {row['subject'] or 'No subject'}. Sales play: {row['sales_play'] or 'not entered'}.",
-            "message": "The campaign has activity but no useful response signal, so PipeFlow cannot tell whether the route is working.",
-            "action": "Change the message, stakeholder route or ask, then record a clear response outcome so the campaign can learn what books meetings.",
+            "title": (
+                f"{row['account_name'] or 'Unknown account'} needs a new approach after No Response"
+                if has_no_response
+                else f"{row['account_name'] or 'Unknown account'} campaign needs an outcome"
+            ),
+            "evidence": f"Account: {row['account_name'] or 'Unknown account'}. Contact: {contact_label}. Outreach subject: {row['subject'] or 'No subject'}. Sales play: {row['sales_play'] or 'not entered'}. Outcome: {outcome_value or 'not recorded'}.",
+            "message": (
+                "No Response is a negative signal: this account has activity showing the current message, route or ask is not working."
+                if has_no_response
+                else "The campaign has activity but the outcome is not recorded, so PipeFlow needs the result before it can judge performance."
+            ),
+            "action": (
+                learned_action
+                if has_no_response
+                else "Record the outcome, then use the next touchpoint to test a clear Discovery or NBM ask."
+            ),
             "link": url_for("view_outreach", outreach_id=row["id"]),
             "priority": "medium",
         })
