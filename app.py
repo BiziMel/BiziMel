@@ -5563,6 +5563,18 @@ def create_partner_next_action_outreach(connection, account_id, partner_name, co
 
 def account_sales_play_options(connection, account_id=None):
     options = {}
+
+    def add_option(account_id_value, sales_play_value):
+        sales_play = (sales_play_value or "").strip()
+        if not sales_play:
+            return
+        key = (str(account_id_value or ""), sales_play.casefold())
+        if key not in options:
+            options[key] = {
+                "account_id": account_id_value,
+                "sales_play": sales_play,
+            }
+
     if account_id:
         configured_rows = connection.execute("""
             SELECT
@@ -5590,9 +5602,7 @@ def account_sales_play_options(connection, account_id=None):
                 ORDER BY sales_play
             """, (account_id, account_id)).fetchall()
         for row in rows:
-            sales_play = (row["sales_play"] or "").strip()
-            if sales_play:
-                options[(str(account_id), sales_play)] = {"account_id": account_id, "sales_play": sales_play}
+            add_option(account_id, row["sales_play"])
     else:
         rows = connection.execute("""
             SELECT
@@ -5600,26 +5610,30 @@ def account_sales_play_options(connection, account_id=None):
                 sales_plays.sales_play_title AS sales_play
             FROM account_sales_plays
             JOIN sales_plays ON sales_plays.id = account_sales_plays.sales_play_id
-            UNION
+            UNION ALL
             SELECT DISTINCT outreach.account_id, outreach.sales_play
             FROM outreach
             WHERE outreach.sales_play IS NOT NULL
               AND outreach.sales_play != ''
-            UNION
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM account_sales_plays
+                    WHERE account_sales_plays.account_id = outreach.account_id
+              )
+            UNION ALL
             SELECT accounts.id AS account_id, accounts.sales_play
             FROM accounts
             WHERE sales_play IS NOT NULL
               AND sales_play != ''
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM account_sales_plays
+                    WHERE account_sales_plays.account_id = accounts.id
+              )
             ORDER BY sales_play
         """).fetchall()
         for row in rows:
-            sales_play = (row["sales_play"] or "").strip()
-            account_id_value = row["account_id"]
-            if sales_play:
-                options[(str(account_id_value or ""), sales_play)] = {
-                    "account_id": account_id_value,
-                    "sales_play": sales_play,
-                }
+            add_option(row["account_id"], row["sales_play"])
     return sorted(options.values(), key=lambda item: ((item["sales_play"] or "").lower(), str(item["account_id"] or "")))
 
 

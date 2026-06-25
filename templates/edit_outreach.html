@@ -418,9 +418,13 @@
                 placeholder.value = "";
                 placeholder.textContent = selectedAccountId ? "Select Sales Play" : "Select an account first";
                 salesPlayDatalist.appendChild(placeholder);
+                const renderedSalesPlays = new Set();
                 allSalesPlayOptions
                     .filter((option) => selectedAccountId && option.accountId === selectedAccountId)
                     .forEach((option) => {
+                        const optionKey = String(option.value || "").trim().toLowerCase();
+                        if (!optionKey || renderedSalesPlays.has(optionKey)) return;
+                        renderedSalesPlays.add(optionKey);
                         const element = document.createElement("option");
                         element.value = option.value;
                         element.textContent = option.value;
