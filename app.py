@@ -5601,6 +5601,11 @@ def account_sales_play_options(connection, account_id=None):
             FROM account_sales_plays
             JOIN sales_plays ON sales_plays.id = account_sales_plays.sales_play_id
             UNION
+            SELECT DISTINCT outreach.account_id, outreach.sales_play
+            FROM outreach
+            WHERE outreach.sales_play IS NOT NULL
+              AND outreach.sales_play != ''
+            UNION
             SELECT accounts.id AS account_id, accounts.sales_play
             FROM accounts
             WHERE sales_play IS NOT NULL

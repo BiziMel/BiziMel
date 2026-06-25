@@ -61,18 +61,16 @@
 
             <div class="form-group">
                 <label for="sales_play">Sales Play or Initiative</label>
-                <input type="text"
-                       id="sales_play"
-                       name="sales_play"
-                       value="{{ outreach_item.sales_play or '' }}"
-                       list="sales_play_options"
-                       placeholder="Add or select"
-                       required>
-                <datalist id="sales_play_options">
+                <select id="sales_play" name="sales_play" required>
+                    <option value="">Select Sales Play</option>
                     {% for sales_play in sales_play_options %}
-                        <option value="{{ sales_play.sales_play }}" data-account-id="{{ sales_play.account_id or '' }}"></option>
+                        <option value="{{ sales_play.sales_play }}"
+                                data-account-id="{{ sales_play.account_id or '' }}"
+                                {% if outreach_item.sales_play == sales_play.sales_play %}selected{% endif %}>
+                            {{ sales_play.sales_play }}
+                        </option>
                     {% endfor %}
-                </datalist>
+                </select>
             </div>
 
             <div class="form-group">
@@ -414,14 +412,25 @@
                 });
             }
             if (salesPlayDatalist) {
+                const currentSalesPlay = salesPlayInput ? salesPlayInput.value : "";
                 salesPlayDatalist.innerHTML = "";
+                const placeholder = document.createElement("option");
+                placeholder.value = "";
+                placeholder.textContent = selectedAccountId ? "Select Sales Play" : "Select an account first";
+                salesPlayDatalist.appendChild(placeholder);
                 allSalesPlayOptions
                     .filter((option) => selectedAccountId && option.accountId === selectedAccountId)
                     .forEach((option) => {
                         const element = document.createElement("option");
                         element.value = option.value;
+                        element.textContent = option.value;
                         salesPlayDatalist.appendChild(element);
                     });
+                if (salesPlayInput) {
+                    salesPlayInput.value = Array.from(salesPlayDatalist.options).some((option) => option.value === currentSalesPlay)
+                        ? currentSalesPlay
+                        : "";
+                }
             }
             updateContactSummary();
             renderContactDetails();
