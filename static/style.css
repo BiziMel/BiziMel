@@ -5988,6 +5988,55 @@ body {
     color: #64748b;
 }
 
+.sales-play-table-container {
+    overflow-x: auto;
+}
+
+.sales-play-config-table {
+    min-width: 1180px;
+}
+
+.sales-play-config-table th,
+.sales-play-config-table td {
+    vertical-align: top;
+}
+
+.sales-play-config-table input[type="text"],
+.sales-play-config-table input[type="url"],
+.sales-play-config-table textarea {
+    width: 100%;
+    min-width: 0;
+}
+
+.sales-play-account-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 8px;
+    margin: 8px 0 14px;
+}
+
+.sales-play-account-grid-compact {
+    max-height: 180px;
+    overflow: auto;
+    grid-template-columns: minmax(180px, 1fr);
+    padding-right: 4px;
+}
+
+.sales-play-account-dialog {
+    width: min(860px, calc(100vw - 32px));
+}
+
+.sales-play-account-dialog h4 {
+    margin: 18px 0 8px;
+}
+
+.button-column {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+}
+
 .sales-play-report-filter {
     align-items: stretch;
 }

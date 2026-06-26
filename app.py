@@ -593,333 +593,231 @@ RELEASE_NOTES = [
     }
 ]
 
-USER_GUIDE_SECTIONS = [
-    {
-        "slug": "getting-started",
-        "title": "Getting Started",
-        "summary": "Set up your profile, understand navigation and get your first workspace ready.",
-        "access": "All signed-in users can use the standard navigation. Admin appears only for Application Admin and Company Admin users, and Audit is available inside Admin as an admin-only sub tab.",
-        "navigation": [
-            "Use the top navigation from left to right as your normal workflow: Dashboard, Outreach Tasks, Accounts, Contacts, Partners, Reports, Profile and Release Notes.",
-            "Use the User Guide link in the top right whenever you need help without leaving the application structure.",
-            "Use the global search field in the header when you know the account, contact, partner, campaign or outreach text you want to find.",
-            "Use Sign Out as the final navigation option when you have finished working.",
-        ],
-        "steps": [
-            "The first hosted enterprise profile is registered as the initial Application Admin. After that, profiles are created by an administrator from Admin.",
-            "Sign in with the email address assigned to your tenant user profile.",
-            "Open Profile and confirm your full name, team, job title and working hours.",
-            "Add any non-working date blocks so generated campaigns avoid those days.",
-            "Create accounts first, add contacts to those accounts, then create outreach tasks or generate campaigns.",
-            "Review Dashboard and Reports regularly to check execution progress and accountability.",
-        ],
-        "tips": [
-            "Your workspace data is private unless you explicitly share an account from the account record or Accounts page.",
-            "Use the global search field when you know the account, contact, partner or outreach text you are looking for.",
-            "If a menu item is missing, it is normally because your profile does not have permission for that function.",
-            "Every user must belong to a company tenant before they can use the application.",
-        ],
-    },
-    {
-        "slug": "dashboard",
-        "title": "Dashboard",
-        "summary": "Use the dashboard as your weekly pipeline execution command centre.",
-        "navigation": [
-            "Dashboard is the first tab and should be your starting point each day.",
-            "Click a dashboard task to open the editable outreach task when more detail is needed.",
-            "Use dashboard metrics to decide whether to move into Accounts, Outreach Tasks or Reports next.",
-        ],
-        "steps": [
-            "Review the command centre metrics for this week.",
-            "Due This Week counts open outreach tasks with Activity Due Date between Monday and Sunday of the current week.",
-            "Closed This Week counts outreach tasks moved into a closed status during the current week.",
-            "Overdue Actions counts open outreach tasks whose Activity Due Date and due time have already passed.",
-            "Untouched Accounts counts accounts with no active contacts or no campaign-generated outreach tasks.",
-            "PG Success This Week counts NBM Booked or NBM Meeting outcomes whose scheduled meeting date is this week; if no scheduled date is stored, the activity date is used.",
-            "FY PG Target sums Pipeline Target USD ACV across all accounts.",
-            "Total Accounts and Total Contacts count account and contact records in the workspace.",
-            "Follow-ups Due counts open outreach due up to 7 days from today, including overdue work.",
-            "Open Weekly Wrap Up below the metrics to review the latest Friday-generated success and risk summary.",
-            "Open Next 24 Hours below the metrics to review the daily strategic focus for the immediate work window.",
-            "Work active outreach tasks directly from the dashboard task table.",
-            "Use Execution Insights to decide which account, campaign or sales play needs attention next.",
-            "Update task status and due dates as work progresses so the dashboard stays accurate.",
-        ],
-        "tips": [
-            "Total Outreach has been removed from the command centre because the dashboard now prioritises actionable execution measures.",
-            "Completed, Closed and Cancelled work is removed from active execution views, overdue counts and AI Insights; Completed work can still be reopened for 10 days.",
-            "Execution Insights are recalculated on every dashboard refresh from current account, contact, partner, outreach, outcome and due-date data.",
-            "Insights prioritise executive coverage and PG conversion. NBM Booked and NBM Meeting are treated as the strongest weekly success signals.",
-            "Weekly Wrap Up is refreshed each Friday from 15:00 and covers the previous 7 days.",
-            "Next 24 Hours is refreshed daily from midnight and overwrites the previous focus guidance.",
-            "Overdue logic is time-aware. A blank due time is treated as end of day.",
-            "Click any command centre metric to open the filtered records behind the number.",
-        ],
-    },
-    {
-        "slug": "accounts",
-        "title": "Accounts",
-        "summary": "Create account records that drive pipeline tracking, contact mapping and PG Bible output.",
-        "access": "All users can manage accounts in their workspace. Only the account owner can share that account, revoke access or view account sharing assignments.",
-        "navigation": [
-            "Open Accounts from the navigation when you need to create, cleanse or review account planning data.",
-            "Click the account name in the table to open the account record.",
-            "Use the Back to Accounts button from an account record to return to the list.",
-        ],
-        "steps": [
-            "Add an account with account name, business organisation, industry, geography and website.",
-            "Set Account Tier to 1, 2 or 3 for prioritisation.",
-            "Set PG Bible Order when the account must appear in a specific sequence in exports.",
-            "Enter Pipeline Target USD ACV so the Dashboard can calculate total PG target value.",
-            "Review or reassign the Account Owner on the edit account form when ownership changes.",
-            "Open an account record to review contacts, partner involvement, outreach history and timeline entries.",
-            "Use Org Chart from the account table or account record to build a single-pane stakeholder map for that account.",
-            "Drag each account contact onto the org chart pane once. Drop on the top, bottom, left or right border of another tile to create the hierarchy and draw the relationship arrow.",
-            "Add organisation or business-unit labels directly on the org chart pane when a chart needs free-text grouping.",
-            "Use Account Sharing on the account record to review and revoke access if you own the account.",
-        ],
-        "tips": [
-            "Use business organisation to distinguish large accounts with multiple internal groups.",
-            "Keep PG Bible order numeric and unique for your most important accounts.",
-            "Org chart tiles show the contact photo, name, role and organisation or business unit when populated.",
-            "The org chart only offers contacts associated to the selected account, and each contact can appear on the chart once.",
-            "Changing ownership is stronger than sharing because ownership rights move to the new owner.",
-        ],
-    },
-    {
-        "slug": "contacts",
-        "title": "Contacts",
-        "summary": "Capture stakeholder detail for account coverage and campaign targeting.",
-        "navigation": [
-            "Open Contacts when you need to add, review or clean stakeholder information.",
-            "Click the contact name to open the contact record.",
-            "Use the account link from a contact when you need to return to the wider account context.",
-        ],
-        "steps": [
-            "Add contacts from the Contacts page or from an account context.",
-            "Select the account before entering stakeholder details.",
-            "Capture job title, organisation, relationship, responsibilities and personal context where known.",
-            "Upload or replace the contact photo from the contact edit form when a current profile image is available.",
-            "Print a contact from the contact record when you need a visual contact sheet; blank fields are excluded from the print output.",
-            "Use contact data to make campaign recommendations more accurate over time.",
-            "Keep contact records current when a stakeholder changes role, leaves or becomes more important to the sales play.",
-        ],
-        "tips": [
-            "Accounts must have at least one contact before Campaign Builder can generate a campaign.",
-            "BMC Relationship includes Lead for stakeholders who are leading the account, opportunity or sales motion.",
-            "Richer contact notes improve future sales play recommendations.",
-            "Do not store sensitive personal data that is not relevant to legitimate business outreach.",
-        ],
-    },
-    {
-        "slug": "outreach",
-        "title": "Outreach Tasks",
-        "summary": "Track campaign touchpoints, task status, outcomes, account sharing, assignment and next activity updates.",
-        "access": "All users can work their own outreach tasks. Only account owners can share accounts, revoke account access or see account sharing assignments.",
-        "navigation": [
-            "Open Outreach Tasks when you need to filter, update, assign or review outreach execution.",
-            "Use Campaign Builder from the Outreach Tasks page when you want PipeFlow to generate a sequence.",
-            "Click Edit Outreach on a row to open the task form.",
-            "Use Clear Filters if the table does not show the tasks you expect.",
-        ],
-        "steps": [
-            "Use Add Outreach for one-off activity or Campaign Builder for generated sequences.",
-            "Select the account first so the Contacts dropdown only shows customer and partner contacts associated to that account.",
-            "Use the Share Full Account panel to copy an account package to one or more users and record their access.",
-            "Group outreach by account and campaign to understand execution context.",
-            "Use the Assigned To dropdown in each row and click Save Assignment to commit task ownership.",
-            "Use the compact status filter to show All Open, All Closed, All or specific statuses.",
-            "Add an Activity Update before closing or completing an outreach task.",
-            "Use Complete and Create Follow-on when the current task is done but another task is needed.",
-        ],
-        "tips": [
-            "The due date is the Activity Due Date, based on the next action date.",
-            "The Contacts dropdown supports multiple contacts; the first selected contact remains the primary report contact while all selected recipients are retained against the outreach task.",
-            "Due-date colouring is time-aware: future work is green, work due today is amber, and overdue open work is red after the due date and time have passed.",
-            "Tasks can only be assigned to users who have access to the related account.",
-            "Completed, Closed and Cancelled outreach is hidden unless you explicitly filter for it. Completed records can be reopened for 10 days before the system moves them to Closed.",
-            "If a user is missing from the assignment dropdown, check that the account has been shared with them first and that they belong to the same company tenant.",
-        ],
-    },
-    {
-        "slug": "campaign-builder",
-        "title": "Campaign Builder",
-        "summary": "Generate four-week outreach campaigns from a single sales play.",
-        "navigation": [
-            "Open Campaign Builder from the Outreach Tasks page.",
-            "Return to Outreach Tasks after generation to review the created task rows.",
-            "Use Reports later to compare campaign activity and outcomes.",
-        ],
-        "steps": [
-            "Choose an account that already has contacts.",
-            "Select one or more contacts for the campaign.",
-            "Enter one sales play only.",
-            "Optionally tick the campaign activity types you want PipeFlow to generate.",
-            "Set PG Week, campaign start and campaign end dates.",
-            "Set the total outreach task quantity and how many times per week activities should occur.",
-            "Generate the campaign to create outreach tasks across the selected contacts.",
-            "Review the generated dates and assignee before beginning execution.",
-        ],
-        "tips": [
-            "Generated campaigns avoid weekends and your configured non-working dates.",
-            "Tasks are placed inside your working hours and avoid duplicate time slots where possible.",
-            "Generated campaign tasks will not start earlier than the campaign submit time.",
-            "Every generated campaign starts with VITO. If activity-type checkboxes are selected, later tasks use those selected types. If nothing is selected, PipeFlow uses a varied activity mix rather than repeating one activity.",
-            "Campaign learning favours historic success signals, with NBM Booked carrying the strongest weighting and Discovery Booked also treated as a key PG success outcome.",
-            "If no account appears, add at least one contact to the account first.",
-        ],
-    },
-    {
-        "slug": "shared-outreach",
-        "title": "Sharing and Assignment",
-        "summary": "Share full accounts and reassign outreach tasks from the Outreach Tasks page while preserving privacy.",
-        "access": "Only the account owner can share, revoke or see account sharing assignments. Task assignees can see and update tasks only when they have access to the related account.",
-        "navigation": [
-            "Use Outreach Tasks for sharing and assignment. There is no separate Shared Outreach tab.",
-            "Use the Share Full Account panel to grant access.",
-            "Use Manage Existing Sharing or the Account Sharing panel on an account record to revoke access.",
-        ],
-        "steps": [
-            "Open Outreach Tasks from the top navigation.",
-            "Use Share Full Account to copy an account, contacts, outreach tasks and account details to one or more users.",
-            "Use Sharing Permissions to revoke access when a user no longer needs the account.",
-            "Use the Assigned To dropdown and Save Assignment button in the task table to reassign work.",
-            "Review active follow-up tasks grouped by customer and campaign.",
-            "If access is revoked, tasks assigned to that user return to the account owner.",
-        ],
-        "tips": [
-            "Other users' full names are only displayed in assignment and share dropdowns when tenancy rules allow them to be visible.",
-            "Sharing and assignment remain inside the company tenant; users in another company cannot be selected.",
-            "Sharing grants the selected user access to the account package while the originator retains their own access.",
-            "Revoking an account share moves any tasks assigned to that user back to the account owner.",
-            "Use sharing for collaboration. Use ownership reassignment only when responsibility for the account itself changes.",
-        ],
-    },
-    {
-        "slug": "partners",
-        "title": "Partners",
-        "summary": "Track partner organisations, partner contacts and account involvement.",
-        "navigation": [
-            "Open Partners when you need to manage partner organisations and their contacts.",
-            "Click the partner name to open the partner record.",
-            "Use account mappings inside the partner record to connect a partner to customer accounts.",
-        ],
-        "steps": [
-            "Create partner organisations with type, location, website, managers and notes.",
-            "Add partner contacts who work for the partner organisation.",
-            "Map partner contacts and partner involvement to accounts where they help progress opportunities.",
-            "Review partner metrics and account links from the partner record.",
-            "Keep partner manager and BMC partner manager fields current so ownership is clear.",
-        ],
-        "tips": [
-            "Partner contacts are separate from account contacts and use partner-specific role fields.",
-            "Use partner notes to capture channel context and next actions.",
-            "Partner account mappings help explain who is helping sell into a customer account.",
-        ],
-    },
-    {
-        "slug": "reports",
-        "title": "Reports and PG Bible",
-        "summary": "Review execution data and export account, contact, outreach and PG Bible outputs.",
-        "navigation": [
-            "Open Reports from the main navigation, then select the report type you need.",
-            "Use Back to Reports from report pages to return to the report menu.",
-            "Use exports when you need to review or share data outside PipeFlow.",
-        ],
-        "steps": [
-            "Open Reports from the top navigation.",
-            "Use Account Reports to review account coverage and target values.",
-            "Use Contact Reports to review stakeholder coverage.",
-            "Use Outreach Reports to review activity volume, outcomes, due dates and ownership. It defaults to the last 7 days and can be widened with filters.",
-            "Export PG Bible when you need the formatted workbook output.",
-            "Use filters before exporting when the report supports narrowing by date, account, status or assignee.",
-        ],
-        "tips": [
-            "Reports reflect the same fields used across account, contact and outreach views.",
-            "PG Bible uses account target and ordering fields configured in the account form.",
-            "PG Progress and PG Bible hide contacts with no active engagement for more than 30 days when they also have no open outreach.",
-            "If a contact has no open activity but remains visible, the next activity field shows No next action set.",
-            "PG Progress and PG Bible include open next actions from multi-contact outreach for every selected contact.",
-        ],
-    },
-    {
-        "slug": "profile",
-        "title": "Profile and Scheduling",
-        "summary": "Configure user details, working hours and non-working dates.",
-        "navigation": [
-            "Open Profile from the main navigation when your user details or scheduling availability changes.",
-            "Use the non-working date section to add multiple unavailable blocks.",
-            "Return to Outreach or Campaign Builder after updating scheduling settings.",
-        ],
-        "steps": [
-            "Set full name, team and job title.",
-            "Set work day start and end times.",
-            "Add multiple non-working date blocks for holidays, travel or unavailable periods.",
-            "Delete outdated non-working blocks when they no longer apply.",
-            "Review these settings before using Campaign Builder because auto-scheduling uses them.",
-        ],
-        "tips": [
-            "Saturday and Sunday are non-working by default for auto-scheduling.",
-            "Manual scheduling can still override warnings for non-working dates or times.",
-            "Your full name is used in assignment fields, audit entries and ownership records.",
-        ],
-    },
-    {
-        "slug": "admin",
-        "title": "Admin",
-        "summary": "Manage tenants, users, permissions and broadcasts when signed in as an administrator.",
-        "access": "Admin forms are visible to Application Admin and Company Admin users. Application Admins manage all tenants and application controls. Company Admins manage only users and permissions inside their own company.",
-        "navigation": [
-            "Admin appears near the end of the navigation only for users with administration access.",
-            "Use Admin for user creation, tenant assignment, role changes, access changes and profile administration.",
-            "Application Admins use the Tenant sub tab to create company tenancies before users are assigned to that company.",
-            "Application Admins use the Broadcast Messages sub tab inside Admin to create, pause, edit or delete user messages.",
-            "Use the Audit Trail sub tab inside Admin to review administrative and data-change history.",
-        ],
-        "steps": [
-            "Open Admin from the top navigation when available.",
-            "As an Application Admin, open Tenant and create the company tenancy with Company Name, Country and Company contact.",
-            "Return to Permissions & Controls and use Create User Profile to create users against a preconfigured company tenant.",
-            "For Application Admins, choose any configured tenant from the Company dropdown when creating or editing a user profile.",
-            "For Company Admins, the Company dropdown contains only their own company and cannot be used to move a user to another tenant.",
-            "Use Role to assign User, Manager, Company Admin or Application Admin. Only Application Admins can assign Application Admin.",
-            "Review user profiles and update tenant, role, team or email when required.",
-            "Deactivate users who should no longer access PipeFlow.",
-            "Create broadcast messages with start and stop times for login and dashboard announcements when signed in as an Application Admin.",
-            "Use admin password reset only after confirming the request with the user.",
-        ],
-        "tips": [
-            "Admin actions are recorded in the admin audit trail.",
-            "Application Admin should be limited to a small trusted group so there is no single point of failure.",
-            "Company Admins cannot see another tenant, another tenant's users or another tenant's company values.",
-            "Only admins can access Admin, including its Audit Trail sub tab.",
-            "If a user cannot see an admin form, check their role before troubleshooting the page.",
-        ],
-    },
-    {
-        "slug": "audit-release-notes",
-        "title": "Audit and Release Notes",
-        "summary": "Review change history and understand what has changed between releases.",
-        "access": "Audit is an admin-only sub tab inside Admin. Release Notes are visible to all users so everyone can understand what changed.",
-        "navigation": [
-            "Open Admin from the navigation, then use the Audit Trail sub tab.",
-            "Open Release Notes from the navigation to see product changes.",
-            "Use the accordion controls to expand older release entries when needed.",
-        ],
-        "steps": [
-            "Open Audit as an admin to review structured workspace changes.",
-            "Review date/time, user, action, record, field, old value and new value.",
-            "Open Release Notes to see changes grouped by version.",
-            "Use the accordion layout to keep older releases collapsed while the latest release stays open.",
-            "Use release categories to understand whether a change is New, Enhanced or Fixed.",
-        ],
-        "tips": [
-            "Release Notes always display latest to earliest.",
-            "Profile changes use readable field labels in the audit trail.",
-            "Audit is for accountability and investigation, not everyday task management.",
-        ],
-    },
-]
+USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
+  'title': 'Getting Started and Navigation',
+  'summary': 'Set up your workspace, understand the navigation model and begin the standard PipeFlow workflow.',
+  'access': 'All signed-in users can access the core workflow. Admin, Audit and some team reporting functions appear only when your role '
+            'permits them.',
+  'navigation': ['Use the top navigation as the main workflow: Dashboard, Outreach, Sales Plays, Accounts, Contacts, Partners, Reports, '
+                 'Profile and Release Notes.',
+                 'Use User Guide from the header whenever you need step-by-step guidance without leaving the application.',
+                 'Use global search when you know part of an account, contact, partner, outreach subject or timeline entry.',
+                 'Use Sign Out when your session is finished, especially on a shared machine.'],
+  'steps': ['Sign in using the profile created for your company tenant.',
+            'Open Profile and confirm your name, job title, active team, working hours and non-working dates.',
+            'Create or review Sales Plays before creating accounts and outreach that depend on them.',
+            'Create Accounts with business organisation, owner, tier, target value and Sales Play associations.',
+            'Add Contacts and Partner Contacts so outreach can be targeted to real stakeholders.',
+            'Use Outreach or Campaign Builder to create dated tasks against accounts, contacts and Sales Plays.',
+            'Review Dashboard, PG Progress and Reports to understand what needs action and what is converting.'],
+  'tips': ['PipeFlow is account-led: most functions become more accurate after account, contact and Sales Play data are connected.',
+           'If a menu item is missing, check your role or company admin permissions before troubleshooting the page.',
+           'Dates and times are displayed as dd-mm-yyyy hh:mm where date/time is shown.']},
+ {'slug': 'dashboard',
+  'title': 'Dashboard and Execution Insights',
+  'summary': 'Use the dashboard as the weekly command centre for overdue work, PG success and account focus.',
+  'navigation': ['Dashboard is the first tab and should be checked at the start of each working day.',
+                 'Click metric cards or insight links to open the filtered records behind the guidance.',
+                 'Use Execution Insights to decide which account, contact, campaign or Sales Play needs attention next.'],
+  'steps': ['Review Due This Week, Closed This Week, Overdue Actions and Follow-ups Due to understand task pressure.',
+            'Review Untouched Accounts; this counts accounts with no active contacts or no campaign-generated outreach tasks.',
+            'Review PG Success This Week; this counts NBM Booked or NBM Meeting outcomes scheduled in the current week.',
+            'Read Execution Insights row by row. Each row names the account, contact or outreach subject being referenced.',
+            'Treat No Response as a negative signal: change stakeholder route, message, channel or Sales Play based on success patterns in '
+            'the database.',
+            'Open Weekly Wrap Up and Next 24 Hours guidance to focus the next block of work.',
+            'Open linked records, update outcomes and reschedule next actions so insights remain current.'],
+  'tips': ['Execution Insights are regenerated from current account, contact, partner, outreach, outcome and due-date data.',
+           'No Response is not an absence of data; it means the current approach is not working and needs to change.',
+           'NBM Booked is weighted as the strongest weekly PG success signal.']},
+ {'slug': 'sales-plays',
+  'title': 'Sales Plays',
+  'summary': 'Configure reusable Sales Plays, products, assets and the accounts where each Sales Play applies.',
+  'navigation': ['Open Sales Plays from the top navigation between Outreach and Accounts.',
+                 'Use the configured Sales Plays table to edit titles, descriptions, products, account associations and assets.',
+                 'Click the Accounts link on a Sales Play row to open a dialog showing associated accounts and outreach usage.'],
+  'steps': ['Open Sales Plays and enter a Sales Play title, description and product set.',
+            'Tick each customer account where the Sales Play should be available.',
+            'Add one or more Sales Play Assets with asset name, system and URL.',
+            'Save the Sales Play. PipeFlow records account associations in the same relationship table used by account records.',
+            'Use the configured Sales Plays table to update the Sales Play later.',
+            'Use the Accounts link in a row to confirm which accounts are associated and which accounts have used it in outreach.',
+            'When creating outreach, select the account first; the Sales Play dropdown will show only Sales Plays used for that account or '
+            'associated to that account.'],
+  'tips': ['Duplicate Sales Play titles are collapsed case-insensitively in outreach selection.',
+           'Sales Play asset links appear in outreach forms after a Sales Play is selected, giving users quick access to enablement '
+           'material.',
+           'Associating a Sales Play to an account from this page also updates the account Sales Play summary.']},
+ {'slug': 'accounts',
+  'title': 'Accounts, Sharing and Org Charts',
+  'summary': 'Create customer account records that drive ownership, Sales Play availability, contact coverage, org charts, reports and PG '
+             'Bible output.',
+  'access': 'All users can manage accounts in their workspace. Only the account owner can share or revoke account access.',
+  'navigation': ['Open Accounts to create, edit or review account planning data.',
+                 'Click the account name to open the account record.',
+                 'Use Org Chart from the account table or account record to map stakeholders.'],
+  'steps': ['Create the account with account name, business organisation, tier, industry, country, city and website.',
+            'Upload a customer logo as jpg or png when available.',
+            'Confirm Account Owner. New accounts default to the logged-in user, but the owner can be reassigned where required.',
+            'Set Pipeline Target USD ACV and PG Bible order for dashboard, PG Progress and PG Bible reporting.',
+            'Select one or more Sales Plays from configured Sales Play entries.',
+            'Open the account record to review contacts, partner involvement, outreach history, timeline and sharing.',
+            'Use Account Sharing when another user needs access to the full account package.',
+            'Open Org Chart, drag each contact tile once onto the grid-aligned chart, and place tiles beside existing tiles to draw '
+            'relationship lines.'],
+  'tips': ['Business organisation helps distinguish accounts with the same name or multiple internal groups.',
+           'Account Sales Play associations constrain the Sales Play dropdown in Outreach and Campaign Builder.',
+           'Revoking a share returns assigned tasks for that user back to the account owner.']},
+ {'slug': 'contacts',
+  'title': 'Contacts',
+  'summary': 'Capture customer stakeholders, role context and relationship data for account coverage and outreach targeting.',
+  'navigation': ['Open Contacts to add or maintain stakeholder records.',
+                 'Click the contact name to open the contact profile.',
+                 'Use the linked account name to return to account context.'],
+  'steps': ['Create the contact and select the correct account and business organisation context.',
+            'Capture name, job title, category, relationship, responsibilities, email, phone and LinkedIn where known.',
+            'Upload or replace a contact photo where useful.',
+            'Keep contact status current so inactive contacts do not incorrectly drive PG Progress or reports.',
+            'Use Print Contact when a clean contact sheet is needed.',
+            'Update relationship and role details when outreach shows new influence or decision-making context.'],
+  'tips': ['Accounts need active contacts before campaign generation can be useful.',
+           'Executive category and executive job titles influence PG Progress RAG and PG Bible mapping.',
+           'Avoid storing personal data that is not relevant to legitimate business outreach.']},
+ {'slug': 'outreach',
+  'title': 'Outreach Tasks',
+  'summary': 'Create, update, filter, assign and complete outreach tasks with account-specific Sales Plays and outcomes.',
+  'access': 'Users can work tasks they own or can access through account ownership or sharing.',
+  'navigation': ['Open Outreach to filter the task table, create one-off tasks or launch Campaign Builder.',
+                 'Use the Account filter dropdown to distinguish accounts by account name and business organisation.',
+                 'Click the outreach subject to open and edit the task.'],
+  'steps': ['Click Add Outreach for a single task.',
+            'Select Account first; Contacts and Sales Plays are constrained by the selected account.',
+            'Select a Sales Play already used for that account or associated to that account from the Sales Play form.',
+            'Select one or more contacts. The first selected contact is the primary report contact and additional contacts are retained as '
+            'recipients.',
+            'Set task status, assignee, activity type, activity start date/time, activity due date/time and subject.',
+            'Choose an outcome when known. Scheduled Meeting Date / Time only appears for Meeting Booked, NBM Booked, Discovery Booked or '
+            'Exec Meeting Booked.',
+            'Add an Activity Update before completing, closing or cancelling the task.',
+            'Save the task, or use Complete and Create Follow-on from edit when the next action needs a new task.'],
+  'tips': ['Outreach tasks should never remain unassigned; new tasks default to the logged-in creator unless reassigned.',
+           'Completed tasks can be reopened for 10 days before the system moves them to Closed.',
+           'Sales Play assets appear under contact information when the selected Sales Play has configured assets.',
+           'No Response outcomes are used as negative signals in insights and PG Progress RAG.']},
+ {'slug': 'campaign-builder',
+  'title': 'Campaign Builder',
+  'summary': 'Generate varied multi-touch outreach campaigns for selected contacts on an account.',
+  'navigation': ['Open Campaign Builder from the Outreach page.',
+                 'Return to Outreach after generation to review and adjust created tasks.',
+                 'Use Sales Play and Outreach Reports to compare campaign usage and outcomes later.'],
+  'steps': ['Choose an account that has active contacts.',
+            'Select one or more contacts for the campaign.',
+            'Select one Sales Play that is available for the selected account.',
+            'Optionally tick activity types to constrain the generated campaign mix.',
+            'Set PG Week, campaign start, campaign end, total task quantity and tasks per week.',
+            'Generate the campaign. PipeFlow creates dated tasks across selected contacts.',
+            'Review generated tasks, assignees and due dates in Outreach before starting execution.'],
+  'tips': ['Every generated campaign starts with VITO.',
+           'If no activity types are selected, PipeFlow varies later steps rather than repeating one activity.',
+           'Campaign scheduling avoids weekends, configured non-working dates and duplicate time slots where possible.']},
+ {'slug': 'partners',
+  'title': 'Partners and Partner Contacts',
+  'summary': 'Manage partner organisations, partner contacts and the customer accounts they support.',
+  'navigation': ['Open Partners to manage partner organisations and contacts.',
+                 'Click a partner name to open its partner profile.',
+                 'Use account mapping tables to understand which customer accounts partner contacts support.'],
+  'steps': ['Create the partner organisation with type, geography, website, manager and notes.',
+            'Add partner contacts under the partner organisation.',
+            'Select one or more supported customer accounts for a partner contact.',
+            'Review the relationship table to see account, partner contact and status.',
+            'Use partner contacts in Outreach when partner activity supports the account.',
+            'Update relationship status as partner involvement changes.'],
+  'tips': ['Partner contacts can support multiple accounts.',
+           'Partner activity in PG Progress still shows contact name, job title and partner account context.',
+           'Partner relationships are derived from partner contact account mappings rather than a separate free-entry relationship form.']},
+ {'slug': 'pg-progress',
+  'title': 'PG Progress',
+  'summary': 'Track PG Goals, PG Plan and PG Actions using account, contact, Sales Play and outreach activity data.',
+  'access': 'Managers can see PG Progress for teams they manage, grouped by user before account grouping. Non-managers see their own '
+            'workspace view.',
+  'navigation': ['Open PG Progress from the available dashboard/report entry points when reviewing pipeline generation progress.',
+                 'Managers use the user filter buttons above the PG Progress tables to focus one team member or all team members.',
+                 'Use Reports > PG Progress for a read-only reporting view.'],
+  'steps': ['Review PG Goals for FY target, current pipeline and gap.',
+            'Review PG Plan grouped by user for manager views, then by account, business organisation where present and Sales Play.',
+            'Read PG RAG dots: red means no useful response, amber means positive/negative response or Discovery booked, and green means '
+            'NBM or executive meeting booked.',
+            'Use checkboxes for Completed Discovery Meeting, Exec First and NBM Completed. Checked means Yes; unchecked means No.',
+            'Review Last 30 Days Activity for completed or updated recent activity.',
+            'Review Future Planned Actions for active open outreach tasks due in the future.',
+            'Contacts with no activity in the last 30 days and no open future task do not display in the PG Progress table.'],
+  'tips': ['RAG is calculated per active contact and aggregated to the account level when any active contact meets a stronger metric.',
+           'Inactive contacts are excluded from the live PG Progress metric calculation.',
+           'Deleted tasks are excluded from PG Progress and PG Bible task views.']},
+ {'slug': 'reports',
+  'title': 'Reports, Sales Play Reports and PG Bible',
+  'summary': 'Use reports and exports to review execution, coverage, Sales Play usage, PG Progress and PG Bible output.',
+  'navigation': ['Open Reports from the main navigation and select the report type required.',
+                 'Use report filters before exporting when a report supports account, contact, date, status or activity filters.',
+                 'Use Back to Reports to return to the report menu.'],
+  'steps': ['Open Account Reports to review account coverage, tier, industry, country and target value metrics.',
+            'Open Contact Reports to review stakeholder coverage, relationships and account distribution.',
+            'Open Outreach Reports to review task volume, outcomes, due dates and ownership.',
+            'Open Sales Play Reports to filter Sales Play usage by selected accounts, contacts and dates.',
+            'Use the Sales Play quantity and last-used report to understand adoption and recency.',
+            'Open PG Progress Reports for team or user reporting where permitted.',
+            'Export PG Bible to create the formatted Excel workbook based on the May 2026 template.'],
+  'tips': ['PG Bible export preserves the workbook template formatting, merged cells, formulas, month labels and column widths.',
+           'PG Bible maps PG Goals, left-side PG Plan account rows, monthly plan tracker placeholders and PG Actions rows.',
+           'Reports use the same date/time display format as the application.']},
+ {'slug': 'profile',
+  'title': 'Profile, Teams and Scheduling',
+  'summary': 'Maintain your profile, secret phrase, active team, working hours and non-working dates.',
+  'navigation': ['Open Profile from the main navigation when personal details or scheduling availability changes.',
+                 'Use the reveal button to display your own secret phrase in a dialog.',
+                 'Use the active team selector when you belong to more than one team.'],
+  'steps': ['Confirm your full name, job title, company and active team.',
+            'Update your secret phrase from your own profile when required.',
+            'Set work day start and end times for campaign scheduling.',
+            'Add non-working date blocks for holidays, travel or unavailable periods.',
+            'Delete outdated non-working blocks when they no longer apply.',
+            'Save changes before using Campaign Builder so scheduling logic uses current availability.'],
+  'tips': ['Only the logged-in user can access their own secret phrase data.',
+           'Saturday and Sunday are treated as non-working by auto-scheduling.',
+           'Manual date entry can still be saved after warnings when intentional.']},
+ {'slug': 'admin',
+  'title': 'Admin, Tenants, Users and Teams',
+  'summary': 'Manage tenants, users, roles, teams, broadcasts and company-level controls.',
+  'access': 'Admin is visible to Application Admin and Company Admin users. Application Admins can operate across tenants; Company Admins '
+            'are limited to their company tenant.',
+  'navigation': ['Open Admin from the top navigation when available.',
+                 'Use Tenants for company setup, Permissions & Controls for users and teams, and Audit Trail for admin/data history.',
+                 'Use broadcast controls for application-wide or tenant-visible messages where available.'],
+  'steps': ['Create or review the company tenant with company name, country and company contact.',
+            'Create teams with team name and associated company.',
+            'Create user profiles with company, role and team membership.',
+            'Assign User, Manager, Company Admin or Application Admin role according to responsibility.',
+            'Associate managers to one or more teams when they need team PG Progress visibility.',
+            'Edit a user profile to change role, company, team memberships or active status.',
+            'Deactivate users who should no longer access PipeFlow.',
+            'Use the Audit Trail to investigate administrative and data changes.'],
+  'tips': ['Managers only see team PG Progress when they are assigned as manager/admin on the team.',
+           'Company Admins cannot administer users outside their tenant.',
+           'Admin actions are recorded in the audit trail for accountability.']},
+ {'slug': 'audit-release-notes',
+  'title': 'Audit and Release Notes',
+  'summary': 'Review change history and understand what changed between releases.',
+  'access': 'Audit is admin-only. Release Notes are visible to all users.',
+  'navigation': ['Open Admin and then Audit Trail when you need detailed change history.',
+                 'Open Release Notes from the navigation to see product changes by version.',
+                 'Use expanded and collapsed release sections to move between current and previous releases.'],
+  'steps': ['Open Audit as an admin to review date/time, actor, action, entity and field changes.',
+            'Filter or scan audit rows to understand who changed a record and when.',
+            'Open Release Notes to understand the newest functionality, fixes and known operating changes.',
+            'Use release notes with the User Guide when training users on new features.'],
+  'tips': ['Audit is for accountability and investigation, not daily task management.',
+           'Release Notes are product history; the User Guide is the current operating guide.']}]
+
 
 
 for vendor_base in (
@@ -5576,31 +5474,27 @@ def account_sales_play_options(connection, account_id=None):
             }
 
     if account_id:
-        configured_rows = connection.execute("""
+        rows = connection.execute("""
             SELECT
                 account_sales_plays.account_id,
                 sales_plays.sales_play_title AS sales_play
             FROM account_sales_plays
             JOIN sales_plays ON sales_plays.id = account_sales_plays.sales_play_id
             WHERE account_sales_plays.account_id = ?
-            ORDER BY sales_plays.sales_play_title
-        """, (account_id,)).fetchall()
-        rows = configured_rows
-        if not rows:
-            rows = connection.execute("""
-                SELECT DISTINCT sales_play
-                FROM outreach
-                WHERE account_id = ?
-                  AND sales_play IS NOT NULL
-                  AND sales_play != ''
-                UNION
-                SELECT DISTINCT sales_play
-                FROM accounts
-                WHERE id = ?
-                  AND sales_play IS NOT NULL
-                  AND sales_play != ''
-                ORDER BY sales_play
-            """, (account_id, account_id)).fetchall()
+            UNION ALL
+            SELECT DISTINCT account_id, sales_play
+            FROM outreach
+            WHERE account_id = ?
+              AND sales_play IS NOT NULL
+              AND sales_play != ''
+            UNION ALL
+            SELECT id AS account_id, sales_play
+            FROM accounts
+            WHERE id = ?
+              AND sales_play IS NOT NULL
+              AND sales_play != ''
+            ORDER BY sales_play
+        """, (account_id, account_id, account_id)).fetchall()
         for row in rows:
             add_option(account_id, row["sales_play"])
     else:
@@ -5615,21 +5509,11 @@ def account_sales_play_options(connection, account_id=None):
             FROM outreach
             WHERE outreach.sales_play IS NOT NULL
               AND outreach.sales_play != ''
-              AND NOT EXISTS (
-                    SELECT 1
-                    FROM account_sales_plays
-                    WHERE account_sales_plays.account_id = outreach.account_id
-              )
             UNION ALL
             SELECT accounts.id AS account_id, accounts.sales_play
             FROM accounts
             WHERE sales_play IS NOT NULL
               AND sales_play != ''
-              AND NOT EXISTS (
-                    SELECT 1
-                    FROM account_sales_plays
-                    WHERE account_sales_plays.account_id = accounts.id
-              )
             ORDER BY sales_play
         """).fetchall()
         for row in rows:
@@ -5692,6 +5576,43 @@ def save_account_sales_play_links(connection, account_id, sales_play_ids):
             INSERT OR IGNORE INTO account_sales_plays (account_id, sales_play_id)
             VALUES (?, ?)
         """, (account_id, sales_play_id))
+    return clean_ids
+
+
+def sync_account_sales_play_summary(connection, account_id):
+    titles = sales_play_titles_for_ids(connection, account_selected_sales_play_ids(connection, account_id))
+    connection.execute("""
+        UPDATE accounts
+        SET sales_play = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE id = ?
+    """, (", ".join(titles), account_id))
+
+
+def save_sales_play_account_links(connection, sales_play_id, account_ids):
+    clean_ids = []
+    seen = set()
+    for value in account_ids or []:
+        value = str(value or "").strip()
+        if not value.isdigit() or value in seen:
+            continue
+        seen.add(value)
+        clean_ids.append(value)
+    previous_rows = connection.execute("""
+        SELECT account_id
+        FROM account_sales_plays
+        WHERE sales_play_id = ?
+    """, (sales_play_id,)).fetchall()
+    touched_account_ids = {str(row["account_id"]) for row in previous_rows}
+    touched_account_ids.update(clean_ids)
+    connection.execute("DELETE FROM account_sales_plays WHERE sales_play_id = ?", (sales_play_id,))
+    for account_id in clean_ids:
+        connection.execute("""
+            INSERT OR IGNORE INTO account_sales_plays (account_id, sales_play_id)
+            VALUES (?, ?)
+        """, (account_id, sales_play_id))
+    for account_id in touched_account_ids:
+        sync_account_sales_play_summary(connection, account_id)
     return clean_ids
 
 
@@ -6391,6 +6312,7 @@ def sales_plays():
         description = (request.form.get("sales_play_description") or "").strip()
         products = (request.form.get("sales_play_products") or "").strip()
         assets = sales_play_asset_form_rows(request.form)
+        selected_account_ids = request.form.getlist("account_ids")
         if not title:
             error = "Sales Play title is required."
         else:
@@ -6412,6 +6334,7 @@ def sales_plays():
                 """, (title, description, products))
                 sales_play_id = cursor.lastrowid
                 save_sales_play_assets(connection, sales_play_id, assets)
+                save_sales_play_account_links(connection, sales_play_id, selected_account_ids)
                 audit_record_create(connection, "sales_play", sales_play_id, {
                     "sales_play_title": title,
                     "sales_play_description": description,
@@ -6421,12 +6344,35 @@ def sales_plays():
                 connection.close()
                 return redirect(url_for("sales_plays", message="Sales Play saved."))
 
+    account_rows = connection.execute("""
+        SELECT id, account_name, business_unit, account_tier
+        FROM accounts
+        ORDER BY account_name, business_unit
+    """).fetchall()
     rows = sales_play_catalog(connection)
     sales_play_rows = []
     for row in rows:
+        associated_accounts = connection.execute("""
+            SELECT accounts.id, accounts.account_name, accounts.business_unit, accounts.account_tier
+            FROM account_sales_plays
+            JOIN accounts ON accounts.id = account_sales_plays.account_id
+            WHERE account_sales_plays.sales_play_id = ?
+            ORDER BY accounts.account_name, accounts.business_unit
+        """, (row["id"],)).fetchall()
+        outreach_accounts = connection.execute("""
+            SELECT accounts.id, accounts.account_name, accounts.business_unit, accounts.account_tier, COUNT(outreach.id) AS usage_count
+            FROM outreach
+            JOIN accounts ON accounts.id = outreach.account_id
+            WHERE outreach.sales_play = ?
+            GROUP BY accounts.id, accounts.account_name, accounts.business_unit, accounts.account_tier
+            ORDER BY accounts.account_name, accounts.business_unit
+        """, (row["sales_play_title"],)).fetchall()
         sales_play_rows.append({
             **dict(row),
             "assets": [dict(asset) for asset in sales_play_asset_rows(connection, row["id"])],
+            "associated_account_ids": [str(account["id"]) for account in associated_accounts],
+            "associated_accounts": [dict(account) for account in associated_accounts],
+            "outreach_accounts": [dict(account) for account in outreach_accounts],
             "account_count": dashboard_scalar(connection, """
                 SELECT COUNT(*)
                 FROM account_sales_plays
@@ -6442,7 +6388,8 @@ def sales_plays():
     return render_template(
         "sales_plays.html",
         sales_plays=sales_play_rows,
-        error=error,
+        accounts=account_rows,
+        error=error or request.args.get("error", ""),
         message=request.args.get("message", ""),
     )
 
@@ -6457,6 +6404,7 @@ def edit_sales_play(sales_play_id):
     title = (request.form.get("sales_play_title") or "").strip()
     description = (request.form.get("sales_play_description") or "").strip()
     products = (request.form.get("sales_play_products") or "").strip()
+    selected_account_ids = request.form.getlist("account_ids")
     if not title:
         connection.close()
         return redirect(url_for("sales_plays", error="Sales Play title is required."))
@@ -6485,15 +6433,12 @@ def edit_sales_play(sales_play_id):
         WHERE id = ?
     """, (title, description, products, sales_play_id))
     save_sales_play_assets(connection, sales_play_id, sales_play_asset_form_rows(request.form))
+    save_sales_play_account_links(connection, sales_play_id, selected_account_ids)
     if old_title != title:
-        for row in affected_accounts:
-            titles = sales_play_titles_for_ids(connection, account_selected_sales_play_ids(connection, row["account_id"]))
-            connection.execute("""
-                UPDATE accounts
-                SET sales_play = ?,
-                    last_updated = CURRENT_TIMESTAMP
-                WHERE id = ?
-            """, (", ".join(titles), row["account_id"]))
+        updated_account_ids = set(str(row["account_id"]) for row in affected_accounts)
+        updated_account_ids.update(str(account_id) for account_id in selected_account_ids)
+        for account_id in updated_account_ids:
+            sync_account_sales_play_summary(connection, account_id)
         connection.execute("""
             UPDATE outreach
             SET sales_play = ?,
@@ -9257,7 +9202,7 @@ def add_outreach():
         if not fy_quarter_are_valid(request.form.get("fy"), request.form.get("quarter")):
             error = fy_quarter_required_message()
         elif not sales_play_allowed_for_account(connection, request.form.get("account_id"), sales_play_value):
-            error = "Select a Sales Play configured on the selected account."
+            error = "Select a Sales Play used for or associated to the selected account."
         elif not outreach_recipients_match_account(connection, request.form.get("account_id"), recipients):
             error = "Select a contact or partner contact that belongs to the selected account."
         elif status_requires_activity_update(requested_status) and not activity_update_is_valid(request.form.get("next_action")):
@@ -9353,7 +9298,7 @@ def add_outreach():
           AND contacts.account_id = ?
         ORDER BY contacts.name
     """, (selected_account_id,)).fetchall() if selected_account_id else []
-    sales_play_rows = account_sales_play_options(connection)
+    sales_play_rows = account_sales_play_options(connection, selected_account_id) if selected_account_id else []
     sales_play_assets = sales_play_asset_map(connection)
     partner_activity_options = account_partner_activity_options(connection)
     partner_contacts = partner_contacts_for_outreach(connection, selected_account_id)
@@ -9458,7 +9403,7 @@ def campaign_builder():
         elif not fy_quarter_are_valid(selected_fy, selected_quarter):
             error = fy_quarter_required_message()
         elif not sales_play_allowed_for_account(connection, account_id, sales_play):
-            error = "Select a Sales Play configured on the selected account."
+            error = "Select a Sales Play used for or associated to the selected account."
         elif account_id and pg_week_start_raw and campaign_start_raw and campaign_end_raw and contact_ids:
             today = datetime.now().date()
             pg_week_start = datetime.strptime(pg_week_start_raw, "%Y-%m-%d").date()
@@ -9635,7 +9580,7 @@ def campaign_builder():
             accounts.account_name,
             contacts.name
     """).fetchall()
-    sales_play_rows = account_sales_play_options(connection)
+    sales_play_rows = account_sales_play_options(connection, selected_account_for_contacts) if selected_account_for_contacts else []
     sales_play_assets = sales_play_asset_map(connection)
     partner_activity_options = account_partner_activity_options(connection)
 
@@ -9947,7 +9892,7 @@ def edit_outreach(outreach_id):
           )
         ORDER BY contacts.name
     """, (selected_account_for_contacts, outreach_item["contact_id"])).fetchall() if selected_account_for_contacts else []
-    sales_play_rows = account_sales_play_options(connection)
+    sales_play_rows = account_sales_play_options(connection, selected_account_for_contacts) if selected_account_for_contacts else []
     sales_play_assets = sales_play_asset_map(connection)
     partner_activity_options = account_partner_activity_options(connection)
     partner_contacts = partner_contacts_for_outreach(connection, selected_account_for_contacts)
@@ -10029,7 +9974,7 @@ def edit_outreach(outreach_id):
             )
 
         if not sales_play_allowed_for_account(connection, new_values["account_id"], new_values["sales_play"]):
-            error = "Select a Sales Play configured on the selected account."
+            error = "Select a Sales Play used for or associated to the selected account."
             connection.close()
             return render_template(
                 "edit_outreach.html",
