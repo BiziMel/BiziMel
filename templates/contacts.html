@@ -85,11 +85,15 @@
                         <input type="checkbox" name="selected_ids" value="{{ contact['id'] }}" form="bulk-delete-contacts-form" aria-label="Select {{ contact['name'] }}">
                     </td>
                     <td class="contact-photo-cell">
-                        {% if contact["photo"] %}
-                            <img src="{{ contact['photo'] }}" alt="{{ contact['name'] or 'Contact' }} photo" class="contact-table-photo">
-                        {% else %}
-                            <span class="contact-table-photo contact-table-photo-placeholder">{{ (contact["name"] or "?")[:1] }}</span>
-                        {% endif %}
+                        {% set photo_url = contact_photo_url(contact["photo"]) %}
+                        <span class="contact-table-photo-frame">
+                            {% if photo_url %}
+                                <img src="{{ photo_url }}" alt="{{ contact['name'] or 'Contact' }} photo" class="contact-table-photo" onerror="this.hidden=true; this.nextElementSibling.hidden=false;">
+                                <span class="contact-table-photo contact-table-photo-placeholder" hidden>{{ (contact["name"] or "?")[:1] }}</span>
+                            {% else %}
+                                <span class="contact-table-photo contact-table-photo-placeholder">{{ (contact["name"] or "?")[:1] }}</span>
+                            {% endif %}
+                        </span>
                     </td>
                     <td>
                         <a href="{{ url_for('edit_contact', contact_id=contact['id']) }}"

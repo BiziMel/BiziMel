@@ -204,9 +204,15 @@
                     {% for contact in account_contacts %}
                         <tr>
                             <td>
-                                {% if contact.photo %}
-                                    <img src="{{ contact.photo }}" alt="{{ contact.name }}" class="contact-table-photo">
-                                {% endif %}
+                                {% set photo_url = contact_photo_url(contact.photo) %}
+                                <span class="contact-table-photo-frame">
+                                    {% if photo_url %}
+                                        <img src="{{ photo_url }}" alt="{{ contact.name }}" class="contact-table-photo" onerror="this.hidden=true; this.nextElementSibling.hidden=false;">
+                                        <span class="contact-table-photo contact-table-photo-placeholder" hidden>{{ (contact.name or "?")[:1] }}</span>
+                                    {% else %}
+                                        <span class="contact-table-photo contact-table-photo-placeholder">{{ (contact.name or "?")[:1] }}</span>
+                                    {% endif %}
+                                </span>
                             </td>
                             <td><a href="{{ url_for('view_contact', contact_id=contact.id) }}">{{ contact.name }}</a></td>
                             <td>{{ contact.job_title or "" }}</td>

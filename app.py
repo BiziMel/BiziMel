@@ -21,9 +21,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.6.2"
-APP_RELEASE_DATE = "2026-06-26"
-APP_BUILD = "2026-06-26-v2.6.2-logos-pg-progress-export-search-r1"
+APP_VERSION = "2.6.3"
+APP_RELEASE_DATE = "2026-06-29"
+APP_BUILD = "2026-06-29-v2.6.3-table-image-rendering-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -37,6 +37,16 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.6.3",
+        "release_date": "2026-06-29",
+        "title": "Account and contact table image rendering",
+        "fixed": [
+            "Hardened account logo and contact photo rendering in table views with dedicated image routes and clean fallback initials.",
+            "Moved new contact photo uploads to persistent storage in line with account logos so hosted deployments keep uploaded images.",
+            "Improved account and contact table thumbnail sizing so images remain visible, aligned and undistorted.",
+        ],
+    },
     {
         "version": "2.6.2",
         "release_date": "2026-06-26",
@@ -1043,19 +1053,38 @@ def account_logo_static_dir():
     return Path(resource_path("static")) / "account_logos"
 
 
+def contact_photo_storage_dir():
+    photo_dir = Path(os.environ.get("PIPEFLOW_DATA_DIR", Path(__file__).resolve().parent / "server_data")) / "contact_photos"
+    photo_dir.mkdir(parents=True, exist_ok=True)
+    return photo_dir
+
+
+def contact_photo_static_dir():
+    return Path(resource_path("static")) / "contact_photos"
+
+
+def stored_image_filename(value, static_folder):
+    image_value = (value or "").strip()
+    if not image_value:
+        return ""
+    if image_value.startswith(("http://", "https://", "data:")):
+        return ""
+    if image_value.startswith("/static/"):
+        image_value = image_value.split("/static/", 1)[1]
+    elif image_value.startswith("static/"):
+        image_value = image_value.split("static/", 1)[1]
+    folder_prefix = f"{static_folder.strip('/')}/"
+    if image_value.startswith(folder_prefix):
+        image_value = image_value.split(folder_prefix, 1)[1]
+    return secure_filename(Path(image_value).name)
+
+
 def account_logo_filename(value):
-    logo = (value or "").strip()
-    if not logo:
-        return ""
-    if logo.startswith(("http://", "https://", "data:")):
-        return ""
-    if logo.startswith("/static/"):
-        logo = logo.split("/static/", 1)[1]
-    elif logo.startswith("static/"):
-        logo = logo.split("static/", 1)[1]
-    if logo.startswith("account_logos/"):
-        logo = logo.split("account_logos/", 1)[1]
-    return secure_filename(Path(logo).name)
+    return stored_image_filename(value, "account_logos")
+
+
+def contact_photo_filename(value):
+    return stored_image_filename(value, "contact_photos")
 
 
 def save_contact_photo(upload, existing_photo=""):
@@ -1067,10 +1096,8 @@ def save_contact_photo(upload, existing_photo=""):
     if not upload_has_allowed_image_signature(upload, extension):
         return existing_photo or ""
     filename = secure_filename(f"{secrets.token_hex(12)}{extension}")
-    photo_dir = Path(resource_path("static")) / "contact_photos"
-    photo_dir.mkdir(parents=True, exist_ok=True)
-    upload.save(photo_dir / filename)
-    return url_for("static", filename=f"contact_photos/{filename}")
+    upload.save(contact_photo_storage_dir() / filename)
+    return filename
 
 
 def save_account_logo(upload, existing_logo=""):
@@ -1099,6 +1126,19 @@ def account_logo_url(value):
     return url_for("account_logo_file", filename=filename)
 
 
+def contact_photo_url(value):
+    """Return a browser-safe contact photo URL for legacy and current values."""
+    photo = (value or "").strip()
+    if not photo:
+        return ""
+    if photo.startswith(("http://", "https://", "data:")):
+        return photo
+    filename = contact_photo_filename(photo)
+    if not filename:
+        return ""
+    return url_for("contact_photo_file", filename=filename)
+
+
 @app.route("/account-logos/<path:filename>")
 def account_logo_file(filename):
     safe_filename = secure_filename(Path(filename).name)
@@ -1115,6 +1155,23 @@ def account_logo_file(filename):
     legacy_logo_dir = account_logo_static_dir()
     if (legacy_logo_dir / safe_filename).exists():
         return send_from_directory(legacy_logo_dir, safe_filename)
+
+    abort(404)
+
+
+@app.route("/contact-photos/<path:filename>")
+def contact_photo_file(filename):
+    safe_filename = secure_filename(Path(filename).name)
+    if not safe_filename:
+        abort(404)
+
+    stored_photo = contact_photo_storage_dir() / safe_filename
+    if stored_photo.exists():
+        return send_from_directory(contact_photo_storage_dir(), safe_filename)
+
+    legacy_photo_dir = contact_photo_static_dir()
+    if (legacy_photo_dir / safe_filename).exists():
+        return send_from_directory(legacy_photo_dir, safe_filename)
 
     abort(404)
 
@@ -1154,6 +1211,7 @@ def inject_dropdown_values():
         "app_build": APP_BUILD,
         "app_release_date": APP_RELEASE_DATE,
         "account_logo_url": account_logo_url,
+        "contact_photo_url": contact_photo_url,
         "external_url": normalise_external_url,
         "page_instructions": page_instructions_for_endpoint(request.endpoint),
         "csrf_token": csrf_token,

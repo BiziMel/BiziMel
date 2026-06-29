@@ -156,11 +156,14 @@
                     <td>
                         <div class="account-name-with-logo">
                             {% set logo_url = account_logo_url(account["customer_logo"]) %}
-                            {% if logo_url %}
-                                <img src="{{ logo_url }}" alt="{{ account['account_name'] or 'Account' }} logo" class="account-table-logo">
-                            {% else %}
-                                <span class="account-table-logo account-table-logo-placeholder">{{ (account["account_name"] or "?")[:1] }}</span>
-                            {% endif %}
+                            <span class="account-table-logo-frame">
+                                {% if logo_url %}
+                                    <img src="{{ logo_url }}" alt="{{ account['account_name'] or 'Account' }} logo" class="account-table-logo" onerror="this.hidden=true; this.nextElementSibling.hidden=false;">
+                                    <span class="account-table-logo account-table-logo-placeholder" hidden>{{ (account["account_name"] or "?")[:1] }}</span>
+                                {% else %}
+                                    <span class="account-table-logo account-table-logo-placeholder">{{ (account["account_name"] or "?")[:1] }}</span>
+                                {% endif %}
+                            </span>
                             <a href="{{ url_for('edit_account', account_id=account['id']) }}"
                                class="account-name-link"
                                title="Edit account {{ account['account_name'] or 'Unknown' }}"

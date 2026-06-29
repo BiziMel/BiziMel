@@ -1225,11 +1225,17 @@ a:hover {
 }
 
 .contact-table-photo {
-    display: inline-block;
-    width: 42px;
-    height: 42px;
+    display: block;
+    width: 46px;
+    height: 46px;
+    min-width: 46px;
+    max-width: 46px;
+    min-height: 46px;
+    max-height: 46px;
+    aspect-ratio: 1 / 1;
     border-radius: 6px;
     object-fit: cover;
+    object-position: center;
     background: #e2e8f0;
     color: #244524;
     font-size: 15px;
@@ -1238,7 +1244,7 @@ a:hover {
 }
 
 .contact-photo-col {
-    width: 62px;
+    width: 70px;
 }
 
 .contact-photo-cell {
@@ -4319,6 +4325,17 @@ body {
     display: flex;
     align-items: center;
     gap: 12px;
+    min-width: 0;
+}
+
+.account-table-logo-frame,
+.contact-table-photo-frame {
+    display: inline-grid;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    min-width: 46px;
+    overflow: hidden;
 }
 
 .account-table-logo,
@@ -4337,8 +4354,14 @@ body {
 }
 
 .account-table-logo {
-    width: 42px;
-    height: 42px;
+    display: block;
+    width: 46px;
+    height: 46px;
+    min-width: 46px;
+    max-width: 46px;
+    min-height: 46px;
+    max-height: 46px;
+    aspect-ratio: 1 / 1;
 }
 
 .account-page-logo {
