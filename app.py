@@ -9873,6 +9873,7 @@ def campaign_builder():
             accounts.account_name,
             contacts.name
     """).fetchall()
+    selected_account_for_contacts = selected_account_id
     sales_play_rows = account_sales_play_options(connection, selected_account_for_contacts) if selected_account_for_contacts else []
     sales_play_assets = sales_play_asset_map(connection)
     partner_activity_options = account_partner_activity_options(connection)
