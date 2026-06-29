@@ -175,9 +175,10 @@
                             <a href="{{ url_for('account_org_chart', account_id=account['id']) }}" class="account-text-link">
                                 Org Chart
                             </a>
-                            {% if account["website"] %}
+                            {% set website_url = external_url(account["website"]) %}
+                            {% if website_url %}
                                 <span class="account-link-separator"></span>
-                                <a href="{{ account['website'] }}" target="_blank" class="account-text-link">Website</a>
+                                <a href="{{ website_url }}" target="_blank" rel="noopener noreferrer" class="account-text-link">Website</a>
                             {% endif %}
                         </div>
                     </td>

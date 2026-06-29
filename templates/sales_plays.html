@@ -141,8 +141,9 @@
                                                    form="sales-play-form-{{ sales_play.id }}"
                                                    value="{{ asset.asset_url or '' }}"
                                                    placeholder="https://">
-                                            {% if asset.asset_url %}
-                                                <a href="{{ asset.asset_url }}" target="_blank" rel="noopener" class="btn btn-secondary btn-small">Open</a>
+                                            {% set asset_url = external_url(asset.asset_url) %}
+                                            {% if asset_url %}
+                                                <a href="{{ asset_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-small">Open</a>
                                             {% endif %}
                                         </div>
                                     {% else %}

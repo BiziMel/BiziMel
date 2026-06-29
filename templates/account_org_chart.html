@@ -256,14 +256,33 @@ document.addEventListener("DOMContentLoaded", function () {
         return origin + Math.round((value - origin) / step) * step;
     }
 
+    function escapeHtml(value) {
+        const span = document.createElement("span");
+        span.textContent = value || "";
+        return span.innerHTML;
+    }
+
+    function safeImageUrl(value) {
+        try {
+            const raw = (value || "").trim();
+            if (raw.startsWith("/static/")) return raw;
+            if (!/^https?:\/\//i.test(raw)) return "";
+            const url = new URL(raw);
+            return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+        } catch (error) {
+            return "";
+        }
+    }
+
     function tileHtml(item) {
         const initials = (item.name || "?").trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join("").toUpperCase();
-        const photo = item.photo ? `<img src="${item.photo}" alt="">` : `<span class="org-person-initials">${initials || "?"}</span>`;
-        const title = item.title ? `<span>${item.title}</span>` : "";
-        const group = item.group ? `<small>${item.group}</small>` : "";
+        const photoUrl = safeImageUrl(item.photo);
+        const photo = photoUrl ? `<img src="${photoUrl}" alt="">` : `<span class="org-person-initials">${escapeHtml(initials || "?")}</span>`;
+        const title = item.title ? `<span>${escapeHtml(item.title)}</span>` : "";
+        const group = item.group ? `<small>${escapeHtml(item.group)}</small>` : "";
         return `
             <span class="org-person-image">${photo}</span>
-            <strong>${item.name}</strong>
+            <strong>${escapeHtml(item.name || "Contact")}</strong>
             ${title}
             ${group}
         `;

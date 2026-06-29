@@ -1,11 +1,14 @@
 import sqlite3
 import os
+import base64
+import hashlib
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from functools import wraps
 from pathlib import Path
 
 from flask import redirect, session, url_for
+from cryptography.fernet import Fernet, InvalidToken
 from werkzeug.security import check_password_hash, generate_password_hash
 from db_compat import get_connection, postgres_identifier, using_postgres
 
@@ -15,6 +18,55 @@ VALID_ROLES = {"admin", "company_admin", "manager", "user"}
 VALID_ACCOUNT_FIELD_TYPES = {"text", "number", "date", "textarea"}
 VALID_BROADCAST_SEVERITIES = {"info", "success", "warning", "urgent"}
 DEFAULT_ADMIN_TENANT = "PipeFlow Administration"
+
+
+def auth_secret_material() -> str:
+    return (
+        os.environ.get("PIPEFLOW_SECRET_KEY")
+        or os.environ.get("SECRET_KEY")
+        or os.environ.get("DATABASE_URL")
+        or "pipeflow-local-dev-secret-change-me"
+    )
+
+
+def phrase_cipher() -> Fernet:
+    key = base64.urlsafe_b64encode(hashlib.sha256(auth_secret_material().encode("utf-8")).digest())
+    return Fernet(key)
+
+
+def encrypt_secret_phrase(phrase: str) -> str:
+    phrase = (phrase or "").strip()
+    if not phrase:
+        return ""
+    return phrase_cipher().encrypt(phrase.encode("utf-8")).decode("utf-8")
+
+
+def decrypt_secret_phrase(encrypted_phrase: str) -> str:
+    encrypted_phrase = (encrypted_phrase or "").strip()
+    if not encrypted_phrase:
+        return ""
+    try:
+        return phrase_cipher().decrypt(encrypted_phrase.encode("utf-8")).decode("utf-8")
+    except (InvalidToken, ValueError):
+        return ""
+
+
+def migrate_plain_secret_phrases(connection):
+    rows = connection.execute("""
+        SELECT id, reset_phrase_plain, reset_phrase_encrypted
+        FROM users
+        WHERE COALESCE(reset_phrase_plain, '') != ''
+    """).fetchall()
+    for row in rows:
+        encrypted = row["reset_phrase_encrypted"] if "reset_phrase_encrypted" in row.keys() else ""
+        encrypted = encrypted or encrypt_secret_phrase(row["reset_phrase_plain"])
+        connection.execute("""
+            UPDATE users
+            SET reset_phrase_encrypted = ?,
+                reset_phrase_plain = NULL,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (encrypted, row["id"]))
 
 
 
@@ -69,6 +121,7 @@ def initialise_auth_database() -> None:
                 role TEXT DEFAULT 'user',
                 reset_phrase_hash TEXT,
                 reset_phrase_plain TEXT,
+                reset_phrase_encrypted TEXT,
                 is_active INTEGER DEFAULT 1,
                 date_created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -85,6 +138,7 @@ def initialise_auth_database() -> None:
                 role TEXT DEFAULT 'user',
                 reset_phrase_hash TEXT,
                 reset_phrase_plain TEXT,
+                reset_phrase_encrypted TEXT,
                 is_active INTEGER DEFAULT 1,
                 date_created TEXT DEFAULT CURRENT_TIMESTAMP,
                 last_updated TEXT DEFAULT CURRENT_TIMESTAMP
@@ -182,6 +236,7 @@ def initialise_auth_database() -> None:
     """)
     add_column_if_missing(connection, "users", "reset_phrase_hash", "TEXT")
     add_column_if_missing(connection, "users", "reset_phrase_plain", "TEXT")
+    add_column_if_missing(connection, "users", "reset_phrase_encrypted", "TEXT")
     add_column_if_missing(connection, "users", "company", "TEXT")
     add_column_if_missing(connection, "users", "team", "TEXT")
     add_column_if_missing(connection, "users", "workspace_schema", "TEXT")
@@ -226,6 +281,7 @@ def initialise_auth_database() -> None:
         """,
         (DEFAULT_ADMIN_TENANT,),
     )
+    migrate_plain_secret_phrases(connection)
     connection.commit()
     connection.close()
 
@@ -390,21 +446,21 @@ def create_user(email: str, password: str, full_name: str, reset_phrase: str = "
         if using_postgres():
             cursor = connection.execute(
                 """
-                INSERT INTO users (email, password_hash, full_name, company, role, reset_phrase_hash, reset_phrase_plain)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO users (email, password_hash, full_name, company, role, reset_phrase_hash, reset_phrase_plain, reset_phrase_encrypted)
+                VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
                 RETURNING id
                 """,
-                (email, generate_password_hash(password), full_name, company, role, generate_password_hash(reset_phrase), reset_phrase),
+                (email, generate_password_hash(password), full_name, company, role, generate_password_hash(reset_phrase), encrypt_secret_phrase(reset_phrase)),
             )
             row = cursor.fetchone()
             user_id = row["id"]
         else:
             cursor = connection.execute(
                 """
-                INSERT INTO users (email, password_hash, full_name, company, role, reset_phrase_hash, reset_phrase_plain)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO users (email, password_hash, full_name, company, role, reset_phrase_hash, reset_phrase_plain, reset_phrase_encrypted)
+                VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
                 """,
-                (email, generate_password_hash(password), full_name, company, role, generate_password_hash(reset_phrase), reset_phrase),
+                (email, generate_password_hash(password), full_name, company, role, generate_password_hash(reset_phrase), encrypt_secret_phrase(reset_phrase)),
             )
             user_id = cursor.lastrowid
         connection.commit()
@@ -485,13 +541,48 @@ def update_current_user_secret_phrase(user_id: int, new_phrase: str, confirm_phr
             """
             UPDATE users
             SET reset_phrase_hash = ?,
-                reset_phrase_plain = ?,
+                reset_phrase_plain = NULL,
+                reset_phrase_encrypted = ?,
                 last_updated = CURRENT_TIMESTAMP
             WHERE id = ?
             """,
-            (generate_password_hash(new_phrase), new_phrase, user_id),
+            (generate_password_hash(new_phrase), encrypt_secret_phrase(new_phrase), user_id),
         )
         connection.commit()
+        return ""
+    finally:
+        connection.close()
+
+
+def reveal_user_secret_phrase(user_id: int):
+    connection = get_auth_connection()
+    try:
+        row = connection.execute(
+            """
+            SELECT id, reset_phrase_plain, reset_phrase_encrypted
+            FROM users
+            WHERE id = ?
+              AND is_active = 1
+            """,
+            (user_id,),
+        ).fetchone()
+        if not row:
+            return ""
+        decrypted = decrypt_secret_phrase(row["reset_phrase_encrypted"] if "reset_phrase_encrypted" in row.keys() else "")
+        if decrypted:
+            return decrypted
+        legacy_plain = row["reset_phrase_plain"] if "reset_phrase_plain" in row.keys() else ""
+        if legacy_plain:
+            encrypted = encrypt_secret_phrase(legacy_plain)
+            connection.execute("""
+                UPDATE users
+                SET reset_phrase_encrypted = ?,
+                    reset_phrase_plain = NULL,
+                    last_updated = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (encrypted, user_id))
+            connection.commit()
+            return legacy_plain
         return ""
     finally:
         connection.close()

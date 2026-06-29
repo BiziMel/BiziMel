@@ -286,6 +286,23 @@
         const contactSystemFields = document.getElementById("contact_system_fields");
         if (!accountSelect || !contactPicker || !contactToggle || !contactPanel) return;
 
+        function escapeHtml(value) {
+            const span = document.createElement("span");
+            span.textContent = value || "";
+            return span.innerHTML;
+        }
+
+        function safeExternalUrl(value) {
+            try {
+                const raw = (value || "").trim();
+                if (!/^https?:\/\//i.test(raw)) return "";
+                const url = new URL(raw);
+                return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+            } catch (error) {
+                return "";
+            }
+        }
+
         function selectedContacts() {
             return contactInputs.filter((input) => input.checked && !input.disabled);
         }
@@ -326,16 +343,16 @@
                 return;
             }
             contactSystemFields.innerHTML = selected.map((contact) => {
-                const partnerName = contact.dataset.partnerName || "";
+                const partnerName = escapeHtml(contact.dataset.partnerName || "");
                 const source = partnerName ? `Partner contact: ${partnerName}` : "Customer contact";
                 return `
                     <div class="selected-contact-row">
-                        <strong>${contact.dataset.contactLabel || "Selected contact"}</strong>
+                        <strong>${escapeHtml(contact.dataset.contactLabel || "Selected contact")}</strong>
                         <span>${source}</span>
-                        <span>Job title: ${contact.dataset.jobTitle || "Not set"}</span>
-                        <span>Email: ${contact.dataset.email || "Not set"}</span>
-                        <span>Phone: ${contact.dataset.phone || "Not set"}</span>
-                        <span>LinkedIn: ${contact.dataset.linkedin || "Not set"}</span>
+                        <span>Job title: ${escapeHtml(contact.dataset.jobTitle || "Not set")}</span>
+                        <span>Email: ${escapeHtml(contact.dataset.email || "Not set")}</span>
+                        <span>Phone: ${escapeHtml(contact.dataset.phone || "Not set")}</span>
+                        <span>LinkedIn: ${escapeHtml(contact.dataset.linkedin || "Not set")}</span>
                     </div>
                 `;
             }).join("");
@@ -351,9 +368,10 @@
                 return;
             }
             salesPlayAssetPanel.innerHTML = assets.map((asset) => {
-                const system = asset.system ? `<span>System: ${asset.system}</span>` : "<span>System: Not set</span>";
-                const link = asset.url ? `<a href="${asset.url}" target="_blank" rel="noopener" class="btn btn-secondary btn-small">Open</a>` : "<span>No URL</span>";
-                return `<div class="selected-contact-row"><strong>${asset.name || "Sales Play asset"}</strong>${system}${link}</div>`;
+                const system = asset.system ? `<span>System: ${escapeHtml(asset.system)}</span>` : "<span>System: Not set</span>";
+                const assetUrl = safeExternalUrl(asset.url);
+                const link = assetUrl ? `<a href="${assetUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-small">Open</a>` : "<span>No URL</span>";
+                return `<div class="selected-contact-row"><strong>${escapeHtml(asset.name || "Sales Play asset")}</strong>${system}${link}</div>`;
             }).join("");
         }
 

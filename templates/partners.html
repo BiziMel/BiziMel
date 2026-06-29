@@ -154,8 +154,9 @@
                         </td>
 
                         <td>
-                            {% if partner.website %}
-                                <a href="{% if partner.website.startswith('www.') %}https://{{ partner.website }}{% else %}{{ partner.website }}{% endif %}" target="_blank" class="btn btn-secondary">Website</a>
+                            {% set partner_website_url = external_url(partner.website) %}
+                            {% if partner_website_url %}
+                                <a href="{{ partner_website_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">Website</a>
                             {% else %}
                                 <small>Not added</small>
                             {% endif %}

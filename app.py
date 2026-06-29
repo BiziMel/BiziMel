@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session, abort
 from werkzeug.utils import secure_filename
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
@@ -889,6 +889,7 @@ app.config["SESSION_COOKIE_SECURE"] = os.environ.get(
     "1" if using_postgres() or os.environ.get("RENDER") else "0",
 ) == "1"
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=12)
+app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("PIPEFLOW_MAX_UPLOAD_BYTES", str(8 * 1024 * 1024)))
 
 initialise_auth_database()
 
@@ -992,11 +993,52 @@ def redirect_with_query(target, **params):
     return redirect(urlunparse(("", "", parsed.path, parsed.params, urlencode(query_items), parsed.fragment)))
 
 
+def normalise_external_url(value, allow_www=True):
+    url = (value or "").strip()
+    if not url:
+        return ""
+    if allow_www and url.lower().startswith("www."):
+        url = f"https://{url}"
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return urlunparse((parsed.scheme.lower(), parsed.netloc, parsed.path, parsed.params, parsed.query, ""))
+
+
+def csv_safe(value):
+    if value is None:
+        return ""
+    text = str(value)
+    if text and text[0] in ("=", "+", "-", "@"):
+        return "'" + text
+    return text
+
+
+def csv_safe_row(values):
+    return [csv_safe(value) for value in values]
+
+
+def upload_has_allowed_image_signature(upload, extension):
+    try:
+        position = upload.stream.tell()
+    except Exception:
+        position = 0
+    header = upload.stream.read(16)
+    upload.stream.seek(position)
+    if extension == ".png":
+        return header.startswith(b"\x89PNG\r\n\x1a\n")
+    if extension in {".jpg", ".jpeg"}:
+        return header.startswith(b"\xff\xd8\xff")
+    return False
+
+
 def save_contact_photo(upload, existing_photo=""):
     if not upload or not upload.filename:
         return existing_photo or ""
     extension = Path(upload.filename).suffix.lower()
     if extension not in {".png", ".jpg", ".jpeg"}:
+        return existing_photo or ""
+    if not upload_has_allowed_image_signature(upload, extension):
         return existing_photo or ""
     filename = secure_filename(f"{secrets.token_hex(12)}{extension}")
     photo_dir = Path(resource_path("static")) / "contact_photos"
@@ -1010,6 +1052,8 @@ def save_account_logo(upload, existing_logo=""):
         return existing_logo or ""
     extension = Path(upload.filename).suffix.lower()
     if extension not in {".png", ".jpg", ".jpeg"}:
+        return existing_logo or ""
+    if not upload_has_allowed_image_signature(upload, extension):
         return existing_logo or ""
     filename = secure_filename(f"{secrets.token_hex(12)}{extension}")
     logo_dir = Path(resource_path("static")) / "account_logos"
@@ -1069,6 +1113,7 @@ def inject_dropdown_values():
         "app_build": APP_BUILD,
         "app_release_date": APP_RELEASE_DATE,
         "account_logo_url": account_logo_url,
+        "external_url": normalise_external_url,
         "page_instructions": page_instructions_for_endpoint(request.endpoint),
         "csrf_token": csrf_token,
     }
@@ -1402,6 +1447,8 @@ def page_instructions_for_endpoint(endpoint):
 def require_login_and_prepare_database():
     public_endpoints = {"login", "register", "forgot_password", "reset_password", "release_notes", "user_guide", "user_guide_section", "version_health", "storage_health", "static"}
     if request.endpoint in public_endpoints:
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            validate_csrf_token()
         return None
 
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
@@ -1439,25 +1486,17 @@ def apply_security_headers(response):
 
 @app.route("/health/version")
 def version_health():
-    from db_compat import translate_sql
-    sample = "datetime(next_action_date || ' ' || COALESCE(NULLIF(next_action_time, ''), '23:59:59')) < datetime(?)"
     lines = [
+        "status=ok",
         f"pipeflow_version={APP_VERSION}",
-        f"pipeflow_release_date={APP_RELEASE_DATE}",
-        f"pipeflow_server_build={APP_BUILD}",
-        f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
-        f"translation_check={translate_sql(sample)}",
     ]
     return Response("\n".join(lines), mimetype="text/plain")
 
 
 @app.route("/health/storage")
 def storage_health():
-    backend = "supabase_postgres" if using_postgres() else "temporary_sqlite"
     lines = [
-        f"backend={backend}",
-        f"database_url_configured={str(bool(os.environ.get('DATABASE_URL'))).lower()}",
-        f"authenticated={str(bool(session.get('user_id'))).lower()}",
+        "status=ok",
     ]
     return Response("\n".join(lines), mimetype="text/plain")
 
@@ -1597,7 +1636,7 @@ def register():
     return render_template("register.html", error=error)
 
 
-@app.route("/logout")
+@app.route("/logout", methods=("POST",))
 def logout():
     session.clear()
     return redirect(url_for("login"))
@@ -5668,7 +5707,7 @@ def sales_play_asset_form_rows(form):
         asset = {
             "asset_name": (name or "").strip(),
             "asset_system": (systems[index] if index < len(systems) else "").strip(),
-            "asset_url": (urls[index] if index < len(urls) else "").strip(),
+            "asset_url": normalise_external_url(urls[index] if index < len(urls) else ""),
             "sort_order": index,
         }
         if asset["asset_name"] or asset["asset_system"] or asset["asset_url"]:
@@ -5716,7 +5755,7 @@ def sales_play_asset_map(connection):
         asset_map.setdefault(title, []).append({
             "name": row["asset_name"] or "Sales Play asset",
             "system": row["asset_system"] or "",
-            "url": row["asset_url"] or "",
+            "url": normalise_external_url(row["asset_url"]),
         })
     return asset_map
 
@@ -6998,7 +7037,7 @@ def add_partner_contact(partner_id):
             request.form.get("email"),
             request.form.get("phone"),
             request.form.get("location"),
-            request.form.get("linkedin"),
+            normalise_external_url(request.form.get("linkedin")),
             request.form.get("relationship_status"),
             request.form.get("next_action"),
             request.form.get("notes")
@@ -7078,7 +7117,7 @@ def edit_partner_contact(partner_id, contact_id):
             "office_phone": request.form.get("office_phone"),
             "mobile_phone": request.form.get("mobile_phone"),
             "location": request.form.get("location"),
-            "linkedin": request.form.get("linkedin"),
+            "linkedin": normalise_external_url(request.form.get("linkedin")),
             "relationship_status": request.form.get("relationship_status"),
             "next_action": "",
             "notes": request.form.get("notes"),
@@ -7260,7 +7299,7 @@ def add_account():
                 request.form.get("business_unit"),
                 request.form.get("country"),
                 request.form.get("city"),
-                request.form.get("website"),
+                normalise_external_url(request.form.get("website")),
                 customer_logo,
                 request.form.get("pipeline_target") or None,
                 request.form.get("nbm_target"),
@@ -7279,7 +7318,7 @@ def add_account():
                 "business_unit": request.form.get("business_unit"),
                 "country": request.form.get("country"),
                 "city": request.form.get("city"),
-                "website": request.form.get("website"),
+                "website": normalise_external_url(request.form.get("website")),
                 "customer_logo": customer_logo,
                 "pipeline_target": request.form.get("pipeline_target"),
                 "nbm_target": request.form.get("nbm_target"),
@@ -7701,7 +7740,7 @@ def edit_account(account_id):
             "business_unit": request.form.get("business_unit"),
             "country": request.form.get("country"),
             "city": request.form.get("city"),
-            "website": request.form.get("website"),
+            "website": normalise_external_url(request.form.get("website")),
             "customer_logo": save_account_logo(
                 request.files.get("customer_logo"),
                 account["customer_logo"] if "customer_logo" in account.keys() else "",
@@ -8851,7 +8890,7 @@ def add_contact():
             request.form.get("office_phone"),
             request.form.get("mobile_phone"),
             request.form.get("location"),
-            request.form.get("linkedin"),
+            normalise_external_url(request.form.get("linkedin")),
             request.form.get("bmc_relationship"),
             request.form.get("characteristics"),
             request.form.get("background"),
@@ -8983,7 +9022,7 @@ def edit_contact(contact_id):
             "office_phone": request.form.get("office_phone"),
             "mobile_phone": request.form.get("mobile_phone"),
             "location": request.form.get("location"),
-            "linkedin": request.form.get("linkedin"),
+            "linkedin": normalise_external_url(request.form.get("linkedin")),
             "status": request.form.get("status") or "Active",
             "bmc_relationship": request.form.get("bmc_relationship"),
             "characteristics": request.form.get("characteristics"),
@@ -11317,13 +11356,8 @@ def profile():
             WHERE team_memberships.user_id = ?
             ORDER BY teams.team_name
         """, (user["id"],)).fetchall()
-        auth_row = auth_connection.execute("""
-            SELECT reset_phrase_plain
-            FROM users
-            WHERE id = ?
-        """, (user["id"],)).fetchone()
         auth_connection.close()
-        secret_phrase = auth_row["reset_phrase_plain"] if auth_row and "reset_phrase_plain" in auth_row.keys() and auth_row["reset_phrase_plain"] else ""
+        secret_phrase = reveal_user_secret_phrase(user["id"])
         secret_phrase_available = bool(secret_phrase)
 
     return render_template(
@@ -11505,7 +11539,7 @@ def export_partner_reports():
     writer = csv.writer(output)
     writer.writerow(["Partner", "Partner Type", "Partner Engagement", "Account", "Partner Contact", "Job Title", "Contact Engagement"])
     for row in rows:
-        writer.writerow([
+        writer.writerow(csv_safe_row([
             row["partner_name"],
             row["partner_type"],
             row["involvement_status"],
@@ -11513,7 +11547,7 @@ def export_partner_reports():
             row["partner_contact_name"],
             row["job_title"],
             row["relationship_status"],
-        ])
+        ]))
     response = Response(output.getvalue(), mimetype="text/csv")
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
     response.headers["Content-Disposition"] = f"attachment; filename=partner_reports_{timestamp}.csv"
@@ -11608,17 +11642,25 @@ def normalise_audit_row(row, source, workspace_owner=""):
 def collect_audit_entries():
     cleanup_audit_retention()
     rows = []
+    actor = current_user()
     auth_connection = get_auth_connection()
-    admin_rows = auth_connection.execute("""
-        SELECT *
+    admin_params = []
+    admin_company_clause = ""
+    if actor and not is_application_admin(actor):
+        admin_company_clause = "WHERE LOWER(COALESCE(users.company, '')) = LOWER(?)"
+        admin_params.append(actor["company"] if "company" in actor.keys() and actor["company"] else "")
+    admin_rows = auth_connection.execute(f"""
+        SELECT admin_audit_entries.*
         FROM admin_audit_entries
-        ORDER BY date_created DESC, id DESC
-    """).fetchall()
+        LEFT JOIN users ON users.id = admin_audit_entries.actor_user_id
+        {admin_company_clause}
+        ORDER BY admin_audit_entries.date_created DESC, admin_audit_entries.id DESC
+    """, admin_params).fetchall()
     auth_connection.close()
     rows.extend(normalise_audit_row(row, "admin") for row in admin_rows)
 
     if using_postgres():
-        for user in list_users(current_user()):
+        for user in list_users(actor):
             schema = user["workspace_schema"] if "workspace_schema" in user.keys() else ""
             if not schema:
                 continue
@@ -11750,7 +11792,7 @@ def export_audit_trail():
         "Value To",
     ])
     for entry in entries:
-        writer.writerow([
+        writer.writerow(csv_safe_row([
             entry["date_created"],
             entry["source"],
             entry["workspace_owner"],
@@ -11761,7 +11803,7 @@ def export_audit_trail():
             entry["field"],
             entry["value_from"],
             entry["value_to"],
-        ])
+        ]))
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return Response(
         output.getvalue(),
@@ -12285,7 +12327,7 @@ def export_account_reports():
     ])
 
     for account in accounts:
-        writer.writerow([
+        writer.writerow(csv_safe_row([
             account["pg_bible_order"],
             account["account_name"],
             account["account_tier"],
@@ -12293,7 +12335,7 @@ def export_account_reports():
             account["country"],
             account["city"],
             account["pipeline_target"]
-        ])
+        ]))
 
     response = Response(
         output.getvalue(),
@@ -12540,7 +12582,7 @@ def export_task_reports():
     ])
 
     for task in tasks:
-        writer.writerow([
+        writer.writerow(csv_safe_row([
             task["next_action"],
             task["next_action_date"],
             task["next_action_time"],
@@ -12555,7 +12597,7 @@ def export_task_reports():
             task["outcome"],
             task["activity_type"],
             task["activity_date"]
-        ])
+        ]))
 
     response = Response(
         output.getvalue(),
@@ -12899,7 +12941,7 @@ def export_outreach_reports():
     ])
 
     for item in outreach_items:
-        writer.writerow([
+        writer.writerow(csv_safe_row([
             item["activity_date"],
             item["activity_time"],
             item["next_action_date"],
@@ -12915,7 +12957,7 @@ def export_outreach_reports():
             item["outcome"],
             item["next_action"],
             item["notes"]
-        ])
+        ]))
 
     response = Response(
         output.getvalue(),
@@ -13084,7 +13126,7 @@ def export_contact_reports():
     ])
 
     for contact in contacts:
-        writer.writerow([
+        writer.writerow(csv_safe_row([
             contact["name"],
             contact["job_title"],
             contact["category"],
@@ -13106,7 +13148,7 @@ def export_contact_reports():
             contact["additional_notes"],
             contact["account_name"],
             contact["account_tier"]
-        ])
+        ]))
 
     response = Response(
         output.getvalue(),
@@ -13208,7 +13250,7 @@ def export_inactive_contacts_for_archive():
     writer = csv.writer(output)
     writer.writerow(["Name", "Job Title", "Email", "Phone", "Account", "Status", "Last Updated"])
     for contact in contacts:
-        writer.writerow([
+        writer.writerow(csv_safe_row([
             contact["name"],
             contact["job_title"],
             contact["email"],
@@ -13216,7 +13258,7 @@ def export_inactive_contacts_for_archive():
             contact["account_name"],
             contact["status"],
             contact["last_updated"],
-        ])
+        ]))
     response = Response(output.getvalue(), mimetype="text/csv")
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
     response.headers["Content-Disposition"] = (
@@ -13276,7 +13318,7 @@ def export_outreach():
     ])
 
     for row in outreach_records:
-        writer.writerow([
+        writer.writerow(csv_safe_row([
             row["fy"],
             row["quarter"],
             row["sales_play"],
@@ -13292,7 +13334,7 @@ def export_outreach():
             row["next_action"],
             row["next_action_date"],
             row["next_action_time"]
-        ])
+        ]))
 
     response = Response(output.getvalue(), mimetype="text/csv")
     response.headers["Content-Disposition"] = "attachment; filename=pipeflow_outreach_export.csv"

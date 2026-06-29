@@ -105,8 +105,9 @@
 
     <p>
         <strong>Website:</strong>
-        {% if account["website"] %}
-            <a href="{{ account['website'] }}" target="_blank" class="button-link">Website Link</a>
+        {% set website_url = external_url(account["website"]) %}
+        {% if website_url %}
+            <a href="{{ website_url }}" target="_blank" rel="noopener noreferrer" class="button-link">Website Link</a>
         {% else %}
             Not added
         {% endif %}

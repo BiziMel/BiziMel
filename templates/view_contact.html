@@ -41,8 +41,9 @@
     <p><strong>Location:</strong> {{ contact.location }}</p>
     <p>
         <strong>LinkedIn:</strong>
-        {% if contact.linkedin %}
-            <a href="{{ contact.linkedin }}" target="_blank">LinkedIn profile</a>
+        {% set linkedin_url = external_url(contact.linkedin) %}
+        {% if linkedin_url %}
+            <a href="{{ linkedin_url }}" target="_blank" rel="noopener noreferrer">LinkedIn profile</a>
         {% else %}
             Not added
         {% endif %}
