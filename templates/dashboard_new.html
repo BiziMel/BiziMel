@@ -9,6 +9,12 @@
         <h1>PG Progress</h1>
         <p>Track PG Goals, PG Plan and PG Actions using your account and outreach data.</p>
     </div>
+    {% if pg_progress_read_only %}
+        <div class="button-group">
+            <a href="{{ url_for('export_pg_progress_xls', user_id=selected_team_user_id or '') }}" class="btn btn-secondary">Export XLS</a>
+            <a href="{{ url_for('export_pg_progress_pdf', user_id=selected_team_user_id or '') }}" class="btn btn-primary">Export PDF</a>
+        </div>
+    {% endif %}
 </div>
 
 {% if message %}
@@ -276,9 +282,11 @@
         </div>
     </section>
 
-    <div class="form-actions sticky-dashboard-save">
-        <button type="submit" class="btn btn-primary">Save PG Goals Dashboard</button>
-    </div>
+    {% if not is_team_pg_progress and not pg_progress_read_only %}
+        <div class="form-actions sticky-dashboard-save">
+            <button type="submit" class="btn btn-primary">Save PG Goals Dashboard</button>
+        </div>
+    {% endif %}
 </form>
 
 {% endblock %}

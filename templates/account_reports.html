@@ -135,8 +135,9 @@
                                class="record-primary-link"
                                title="Edit account {{ account['account_name'] }}"
                                aria-label="Edit account {{ account['account_name'] }}">
-                                {% if account["customer_logo"] %}
-                                    <img src="{{ account['customer_logo'] }}" alt="{{ account['account_name'] }} logo" class="account-mini-logo">
+                                {% set logo_url = account_logo_url(account["customer_logo"]) %}
+                                {% if logo_url %}
+                                    <img src="{{ logo_url }}" alt="{{ account['account_name'] }} logo" class="account-mini-logo">
                                 {% endif %}
                                 {{ account["account_name"] }}
                             </a>

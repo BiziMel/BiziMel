@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
-Version: 2.6.1
-Release date: 2026-06-19
-Build: 2026-06-19-v2.6.1-team-pg-progress-sales-play-assets-r1
+Version: 2.6.2
+Release date: 2026-06-26
+Build: 2026-06-26-v2.6.2-logos-pg-progress-export-search-r1
 Package purpose: Hosted enterprise deployment only.

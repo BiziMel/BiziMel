@@ -8,6 +8,7 @@ import traceback
 import json
 import secrets
 import hashlib
+import html
 from datetime import date, datetime, time, timedelta
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -20,9 +21,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.6.1"
-APP_RELEASE_DATE = "2026-06-19"
-APP_BUILD = "2026-06-19-v2.6.1-team-pg-progress-sales-play-assets-r1"
+APP_VERSION = "2.6.2"
+APP_RELEASE_DATE = "2026-06-26"
+APP_BUILD = "2026-06-26-v2.6.2-logos-pg-progress-export-search-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -36,6 +37,21 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.6.2",
+        "release_date": "2026-06-26",
+        "title": "Account logo rendering, PG Progress exports and header search sizing",
+        "new": [
+            "Added PG Progress report exports in Excel-compatible .xls and .pdf formats.",
+        ],
+        "enhanced": [
+            "Constrained the global PipeFlow search field to a compact desktop width while keeping it usable on smaller screens.",
+        ],
+        "fixed": [
+            "Normalised stored account logo paths so uploaded customer logos render consistently across account pages, account tables and account reports.",
+            "Improved account logo image styling so logos are contained, visible and aligned beside account names.",
+        ],
+    },
     {
         "version": "2.6.1",
         "release_date": "2026-06-19",
@@ -742,7 +758,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
             'workspace view.',
   'navigation': ['Open PG Progress from the available dashboard/report entry points when reviewing pipeline generation progress.',
                  'Managers use the user filter buttons above the PG Progress tables to focus one team member or all team members.',
-                 'Use Reports > PG Progress for a read-only reporting view.'],
+                 'Use Reports > PG Progress for a read-only reporting view with XLS and PDF export buttons.'],
   'steps': ['Review PG Goals for FY target, current pipeline and gap.',
             'Review PG Plan grouped by user for manager views, then by account, business organisation where present and Sales Play.',
             'Read PG RAG dots: red means no useful response, amber means positive/negative response or Discovery booked, and green means '
@@ -765,7 +781,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
             'Open Outreach Reports to review task volume, outcomes, due dates and ownership.',
             'Open Sales Play Reports to filter Sales Play usage by selected accounts, contacts and dates.',
             'Use the Sales Play quantity and last-used report to understand adoption and recency.',
-            'Open PG Progress Reports for team or user reporting where permitted.',
+            'Open PG Progress Reports for team or user reporting where permitted and export the visible report to XLS or PDF.',
             'Export PG Bible to create the formatted Excel workbook based on the May 2026 template.'],
   'tips': ['PG Bible export preserves the workbook template formatting, merged cells, formulas, month labels and column widths.',
            'PG Bible maps PG Goals, left-side PG Plan account rows, monthly plan tracker placeholders and PG Actions rows.',
@@ -1002,6 +1018,22 @@ def save_account_logo(upload, existing_logo=""):
     return url_for("static", filename=f"account_logos/{filename}")
 
 
+def account_logo_url(value):
+    """Return a browser-safe logo URL for legacy and current account logo values."""
+    logo = (value or "").strip()
+    if not logo:
+        return ""
+    if logo.startswith(("http://", "https://", "data:")):
+        return logo
+    if logo.startswith("/static/"):
+        return logo
+    if logo.startswith("static/"):
+        return url_for("static", filename=logo.split("static/", 1)[1].lstrip("/"))
+    if logo.startswith("account_logos/"):
+        return url_for("static", filename=logo)
+    return url_for("static", filename=f"account_logos/{Path(logo).name}")
+
+
 def pluralise(count, singular, plural=None):
     return singular if int(count or 0) == 1 else (plural or f"{singular}s")
 
@@ -1036,6 +1068,7 @@ def inject_dropdown_values():
         "app_version": APP_VERSION,
         "app_build": APP_BUILD,
         "app_release_date": APP_RELEASE_DATE,
+        "account_logo_url": account_logo_url,
         "page_instructions": page_instructions_for_endpoint(request.endpoint),
         "csrf_token": csrf_token,
     }
@@ -6095,6 +6128,186 @@ def manager_pg_dashboard_context(selected_user_id=""):
     team_context["pg_plan_rows"].sort(key=lambda row: (row.get("owner_name") or "", row.get("account_name") or "", row.get("sales_play") or ""))
     team_context["pg_action_rows"].sort(key=lambda row: (row.get("owner_name") or "", row.get("account_name") or "", row.get("business_org") or "", row.get("sales_play") or ""))
     return team_context
+
+
+def pg_progress_report_context(selected_user_id=""):
+    context = manager_pg_dashboard_context(selected_user_id)
+    if not context:
+        connection = get_db_connection()
+        context = pg_dashboard_context(connection)
+        context["is_team_pg_progress"] = False
+        connection.close()
+    context["pg_progress_read_only"] = True
+    return context
+
+
+def pg_progress_activity_text(entries):
+    lines = []
+    for entry in entries or []:
+        if not entry:
+            continue
+        if isinstance(entry, dict):
+            prefix = entry.get("date") or entry.get("due") or ""
+            detail = entry.get("activity_update") or entry.get("subject") or ""
+            activity_type = entry.get("activity_type") or ""
+            text = " - ".join(part for part in (prefix, activity_type, detail) if part)
+        else:
+            text = str(entry)
+        if text:
+            lines.append(text)
+    return "\n".join(lines)
+
+
+def pg_progress_export_rows(context):
+    plan_headers = ["Owner", "PG RAG", "Sales Play", "Account", "Business Org", "Estimated Value"]
+    plan_rows = []
+    for row in context.get("pg_plan_rows", []):
+        plan_rows.append([
+            row.get("owner_name", ""),
+            row.get("rag_label") or row.get("rag_status", ""),
+            row.get("sales_play", ""),
+            row.get("account_name", ""),
+            row.get("business_org", ""),
+            f"${money_value(row.get('estimated_value')):,.0f}",
+        ])
+
+    action_headers = [
+        "Owner",
+        "Account",
+        "Business Org",
+        "Sales Play",
+        "PG RAG",
+        "Contact",
+        "Job Title",
+        "Completed Discovery Meeting",
+        "Exec First",
+        "NBM Completed",
+        "Last 30 Days Activity",
+        "Future Planned Actions",
+    ]
+    action_rows = []
+    for row in context.get("pg_action_rows", []):
+        action_rows.append([
+            row.get("owner_name", ""),
+            row.get("account_name", ""),
+            row.get("business_org", ""),
+            row.get("sales_play", ""),
+            row.get("rag_label") or row.get("rag_status", ""),
+            row.get("targeted_discovery", ""),
+            row.get("contact_job_title", ""),
+            row.get("completed_discovery_meeting", ""),
+            row.get("exec_first", ""),
+            row.get("nbm_completed", ""),
+            pg_progress_activity_text(row.get("last_7_days_activity_entries", [])),
+            pg_progress_activity_text(row.get("next_7_days_actions", [])),
+        ])
+    return plan_headers, plan_rows, action_headers, action_rows
+
+
+def pg_progress_xls_table(title, headers, rows):
+    cells = "".join(f"<th>{html.escape(str(header))}</th>" for header in headers)
+    body = []
+    for row in rows:
+        body.append("<tr>" + "".join(f"<td>{html.escape(str(value or '')).replace(chr(10), '<br>')}</td>" for value in row) + "</tr>")
+    if not body:
+        body.append(f"<tr><td colspan=\"{len(headers)}\">No rows found.</td></tr>")
+    return f"""
+        <h2>{html.escape(title)}</h2>
+        <table>
+            <thead><tr>{cells}</tr></thead>
+            <tbody>{''.join(body)}</tbody>
+        </table>
+    """
+
+
+def render_pg_progress_xls(context):
+    plan_headers, plan_rows, action_headers, action_rows = pg_progress_export_rows(context)
+    exported = datetime.now().strftime("%d-%m-%Y %H:%M")
+    html_output = f"""<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {{ font-family: Arial, sans-serif; color: #1f2933; }}
+        table {{ border-collapse: collapse; width: 100%; margin-bottom: 24px; }}
+        th {{ background: #dfead8; font-weight: 700; }}
+        th, td {{ border: 1px solid #9fb29d; padding: 6px; vertical-align: top; white-space: normal; }}
+    </style>
+</head>
+<body>
+    <h1>PipeFlow PG Progress Report</h1>
+    <p>Exported {html.escape(exported)}</p>
+    <p>FY Pipeline Target: ${money_value(context.get("fy_pipeline_target")):,.0f}<br>
+       Current Pipeline: ${money_value(context.get("current_pipeline")):,.0f}<br>
+       Pipeline Gap: ${money_value(context.get("pipeline_gap")):,.0f}</p>
+    {pg_progress_xls_table("PG Plan", plan_headers, plan_rows)}
+    {pg_progress_xls_table("PG Actions", action_headers, action_rows)}
+</body>
+</html>"""
+    return html_output
+
+
+def render_pg_progress_pdf(context):
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    plan_headers, plan_rows, action_headers, action_rows = pg_progress_export_rows(context)
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        leftMargin=8 * mm,
+        rightMargin=8 * mm,
+        topMargin=8 * mm,
+        bottomMargin=8 * mm,
+    )
+    styles = getSampleStyleSheet()
+    normal = styles["BodyText"]
+    normal.fontSize = 7
+    normal.leading = 8
+    header = styles["Heading2"]
+    header.fontSize = 12
+    elements = [
+        Paragraph("PipeFlow PG Progress Report", styles["Title"]),
+        Paragraph(
+            f"Exported {datetime.now().strftime('%d-%m-%Y %H:%M')} | "
+            f"FY Pipeline Target ${money_value(context.get('fy_pipeline_target')):,.0f} | "
+            f"Current Pipeline ${money_value(context.get('current_pipeline')):,.0f} | "
+            f"Pipeline Gap ${money_value(context.get('pipeline_gap')):,.0f}",
+            normal,
+        ),
+        Spacer(1, 6),
+    ]
+
+    def paragraph_cell(value):
+        return Paragraph(html.escape(str(value or "")).replace("\n", "<br/>"), normal)
+
+    def add_table(title, headers, rows, widths):
+        elements.append(Paragraph(title, header))
+        data = [[paragraph_cell(header_text) for header_text in headers]]
+        table_rows = rows or [["No rows found."] + [""] * (len(headers) - 1)]
+        data.extend([[paragraph_cell(value) for value in row] for row in table_rows])
+        table = Table(data, colWidths=widths, repeatRows=1)
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#dfead8")),
+            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#9fb29d")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 3),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ]))
+        elements.append(table)
+        elements.append(Spacer(1, 8))
+
+    add_table("PG Plan", plan_headers, plan_rows, [24 * mm, 18 * mm, 58 * mm, 54 * mm, 42 * mm, 28 * mm])
+    add_table("PG Actions", action_headers, action_rows, [15 * mm, 24 * mm, 20 * mm, 25 * mm, 10 * mm, 25 * mm, 24 * mm, 16 * mm, 12 * mm, 14 * mm, 48 * mm, 48 * mm])
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
 
 
 @app.route("/dashboard-new")
@@ -11212,17 +11425,32 @@ def reports():
 
 @app.route("/reports/pg-progress")
 def pg_progress_report():
-    context = manager_pg_dashboard_context(request.args.get("user_id", ""))
-    if not context:
-        connection = get_db_connection()
-        context = pg_dashboard_context(connection)
-        context["is_team_pg_progress"] = False
-        connection.close()
-    context["pg_progress_read_only"] = True
+    context = pg_progress_report_context(request.args.get("user_id", ""))
     return render_template(
         "dashboard_new.html",
         message="",
         **context,
+    )
+
+
+@app.route("/reports/pg-progress/export.xls")
+def export_pg_progress_xls():
+    context = pg_progress_report_context(request.args.get("user_id", ""))
+    response = Response(render_pg_progress_xls(context), mimetype="application/vnd.ms-excel; charset=utf-8")
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    response.headers["Content-Disposition"] = f"attachment; filename=pg_progress_report_{timestamp}.xls"
+    return response
+
+
+@app.route("/reports/pg-progress/export.pdf")
+def export_pg_progress_pdf():
+    context = pg_progress_report_context(request.args.get("user_id", ""))
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    return send_file(
+        render_pg_progress_pdf(context),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"pg_progress_report_{timestamp}.pdf",
     )
 
 
