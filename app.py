@@ -8893,7 +8893,11 @@ def contacts():
         params.append(status_filter)
     query += " ORDER BY contacts.name"
     contacts = connection.execute(query, params).fetchall()
-    accounts = connection.execute("SELECT id, account_name FROM accounts ORDER BY account_name").fetchall()
+    accounts = connection.execute("""
+        SELECT id, account_name, business_unit
+        FROM accounts
+        ORDER BY account_name, business_unit
+    """).fetchall()
     connection.close()
     return render_template(
         "contacts.html",
