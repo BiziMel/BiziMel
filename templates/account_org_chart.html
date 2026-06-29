@@ -110,10 +110,11 @@
                                  data-person-name="{{ person.name }}"
                                  data-person-title="{{ person.title or '' }}"
                                  data-person-group="{{ person.group_name or '' }}"
-                                 data-person-photo="{{ person.photo or '' }}">
+                                 data-person-photo="{{ contact_photo_url(person.photo) }}">
                                 <span class="org-person-image">
-                                    {% if person.photo %}
-                                        <img src="{{ person.photo }}" alt="{{ person.name }}">
+                                    {% set person_photo_url = contact_photo_url(person.photo) %}
+                                    {% if person_photo_url %}
+                                        <img src="{{ person_photo_url }}" alt="{{ person.name }}" onerror="this.hidden=true;">
                                     {% endif %}
                                 </span>
                                 <strong>{{ person.name }}</strong>
@@ -181,13 +182,15 @@
                              data-person-name="{{ node.name }}"
                              data-person-title="{{ node.title or '' }}"
                              data-person-group="{{ node.group_name or '' }}"
+                             data-person-photo="{{ contact_photo_url(node.photo) }}"
                              data-related-node-id="{{ node.related_node_id or node.manager_node_id or '' }}"
                              data-relationship="{{ node.relationship_type or 'with' }}"
                              style="left: {{ node.x_position or (60 + (loop.index0 % 4) * 240) }}px; top: {{ node.y_position or (70 + (loop.index0 // 4) * 150) }}px;">
                             <a href="{{ node.link }}" class="org-person-view">
                                 <span class="org-person-image">
-                                    {% if node.photo %}
-                                        <img src="{{ node.photo }}" alt="{{ node.name }}">
+                                    {% set node_photo_url = contact_photo_url(node.photo) %}
+                                    {% if node_photo_url %}
+                                        <img src="{{ node_photo_url }}" alt="{{ node.name }}" onerror="this.hidden=true;">
                                     {% endif %}
                                 </span>
                                 <strong>{{ node.name }}</strong>
@@ -265,7 +268,8 @@ document.addEventListener("DOMContentLoaded", function () {
     function safeImageUrl(value) {
         try {
             const raw = (value || "").trim();
-            if (raw.startsWith("/static/")) return raw;
+            if (raw.startsWith("/static/") || raw.startsWith("/contact-photos/")) return raw;
+            if (/^data:image\/(png|jpeg);base64,/i.test(raw)) return raw;
             if (!/^https?:\/\//i.test(raw)) return "";
             const url = new URL(raw);
             return ["http:", "https:"].includes(url.protocol) ? url.href : "";

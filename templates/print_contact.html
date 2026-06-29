@@ -8,8 +8,9 @@
 <body class="print-page">
     <main class="print-contact-sheet">
         <header class="print-contact-header">
-            {% if contact.photo %}
-                <img src="{{ contact.photo }}" alt="{{ contact.name }}">
+            {% set photo_url = contact_photo_url(contact.photo) %}
+            {% if photo_url %}
+                <img src="{{ photo_url }}" alt="{{ contact.name }}">
             {% endif %}
             <div>
                 <h1>{{ contact.name }}</h1>

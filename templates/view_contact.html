@@ -17,9 +17,10 @@
 <div class="detail-card">
     <h2>Contact Details</h2>
 
-    {% if contact.photo %}
+    {% set photo_url = contact_photo_url(contact.photo) %}
+    {% if photo_url %}
         <div class="contact-photo-preview">
-            <img src="{{ contact.photo }}" alt="{{ contact.name }}">
+            <img src="{{ photo_url }}" alt="{{ contact.name }}" onerror="this.hidden=true;">
         </div>
     {% endif %}
 

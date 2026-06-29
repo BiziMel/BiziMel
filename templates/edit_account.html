@@ -64,8 +64,11 @@
     {% set logo_url = account_logo_url(account['customer_logo']) %}
     {% if logo_url %}
         <div class="account-logo-preview-row">
-            <img src="{{ logo_url }}" alt="{{ account['account_name'] }} logo" class="account-logo-preview">
-            <span class="muted">Current logo</span>
+            <img src="{{ logo_url }}" alt="{{ account['account_name'] }} logo" class="account-logo-preview" onerror="this.hidden=true;">
+            <label class="checkbox-row">
+                <input type="checkbox" name="remove_customer_logo" value="1">
+                <span>Remove current logo</span>
+            </label>
         </div>
     {% endif %}
     <input type="file" name="customer_logo" accept=".jpg,.jpeg,.png,image/jpeg,image/png">

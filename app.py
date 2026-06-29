@@ -9,6 +9,7 @@ import json
 import secrets
 import hashlib
 import html
+import base64
 from datetime import date, datetime, time, timedelta
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -23,7 +24,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.3"
 APP_RELEASE_DATE = "2026-06-29"
-APP_BUILD = "2026-06-29-v2.6.3-table-image-rendering-r1"
+APP_BUILD = "2026-06-29-v2.6.3-persistent-images-remove-r2"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -44,6 +45,8 @@ RELEASE_NOTES = [
         "fixed": [
             "Hardened account logo and contact photo rendering in table views with dedicated image routes and clean fallback initials.",
             "Moved new contact photo uploads to persistent storage in line with account logos so hosted deployments keep uploaded images.",
+            "Stored new account logo and contact photo uploads with the database record so images remain visible after hosted app rebuilds.",
+            "Added remove controls for account logos and contact photos.",
             "Improved account and contact table thumbnail sizing so images remain visible, aligned and undistorted.",
         ],
     },
@@ -1042,6 +1045,22 @@ def upload_has_allowed_image_signature(upload, extension):
     return False
 
 
+def upload_image_data_uri(upload, extension):
+    try:
+        upload.stream.seek(0)
+    except Exception:
+        pass
+    data = upload.stream.read()
+    try:
+        upload.stream.seek(0)
+    except Exception:
+        pass
+    if not data:
+        return ""
+    mime_type = "image/png" if extension == ".png" else "image/jpeg"
+    return f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"
+
+
 def account_logo_storage_dir():
     """Store uploaded logos outside packaged static files so hosted deployments keep them."""
     logo_dir = Path(os.environ.get("PIPEFLOW_DATA_DIR", Path(__file__).resolve().parent / "server_data")) / "account_logos"
@@ -1087,7 +1106,9 @@ def contact_photo_filename(value):
     return stored_image_filename(value, "contact_photos")
 
 
-def save_contact_photo(upload, existing_photo=""):
+def save_contact_photo(upload, existing_photo="", remove_photo=False):
+    if remove_photo:
+        return ""
     if not upload or not upload.filename:
         return existing_photo or ""
     extension = Path(upload.filename).suffix.lower()
@@ -1095,12 +1116,14 @@ def save_contact_photo(upload, existing_photo=""):
         return existing_photo or ""
     if not upload_has_allowed_image_signature(upload, extension):
         return existing_photo or ""
-    filename = secure_filename(f"{secrets.token_hex(12)}{extension}")
-    upload.save(contact_photo_storage_dir() / filename)
-    return filename
+    # Store new uploads in the database so hosted deployments do not lose images
+    # when the app filesystem is rebuilt. Legacy filename/path values still work.
+    return upload_image_data_uri(upload, extension)
 
 
-def save_account_logo(upload, existing_logo=""):
+def save_account_logo(upload, existing_logo="", remove_logo=False):
+    if remove_logo:
+        return ""
     if not upload or not upload.filename:
         return existing_logo or ""
     extension = Path(upload.filename).suffix.lower()
@@ -1108,9 +1131,9 @@ def save_account_logo(upload, existing_logo=""):
         return existing_logo or ""
     if not upload_has_allowed_image_signature(upload, extension):
         return existing_logo or ""
-    filename = secure_filename(f"{secrets.token_hex(12)}{extension}")
-    upload.save(account_logo_storage_dir() / filename)
-    return filename
+    # Store new uploads in the database so hosted deployments do not lose images
+    # when the app filesystem is rebuilt. Legacy filename/path values still work.
+    return upload_image_data_uri(upload, extension)
 
 
 def account_logo_url(value):
@@ -7843,6 +7866,7 @@ def edit_account(account_id):
             "customer_logo": save_account_logo(
                 request.files.get("customer_logo"),
                 account["customer_logo"] if "customer_logo" in account.keys() else "",
+                request.form.get("remove_customer_logo") == "1",
             ),
             "pipeline_target": request.form.get("pipeline_target"),
             "nbm_target": request.form.get("nbm_target"),
@@ -9111,7 +9135,11 @@ def edit_contact(contact_id):
     """).fetchall()
 
     if request.method == "POST":
-        photo_path = save_contact_photo(request.files.get("photo"), contact["photo"] if "photo" in contact.keys() else "")
+        photo_path = save_contact_photo(
+            request.files.get("photo"),
+            contact["photo"] if "photo" in contact.keys() else "",
+            request.form.get("remove_photo") == "1",
+        )
         new_values = {
             "account_id": request.form.get("account_id"),
             "category": request.form.get("category"),
