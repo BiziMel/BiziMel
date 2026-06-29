@@ -13,7 +13,7 @@ from datetime import date, datetime, time, timedelta
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from flask import Flask, render_template, request, redirect, url_for, Response, send_file, session, abort
+from flask import Flask, render_template, request, redirect, url_for, Response, send_file, send_from_directory, session, abort
 from werkzeug.utils import secure_filename
 from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members
 from database import get_db_connection, initialise_database
@@ -1032,6 +1032,32 @@ def upload_has_allowed_image_signature(upload, extension):
     return False
 
 
+def account_logo_storage_dir():
+    """Store uploaded logos outside packaged static files so hosted deployments keep them."""
+    logo_dir = Path(os.environ.get("PIPEFLOW_DATA_DIR", Path(__file__).resolve().parent / "server_data")) / "account_logos"
+    logo_dir.mkdir(parents=True, exist_ok=True)
+    return logo_dir
+
+
+def account_logo_static_dir():
+    return Path(resource_path("static")) / "account_logos"
+
+
+def account_logo_filename(value):
+    logo = (value or "").strip()
+    if not logo:
+        return ""
+    if logo.startswith(("http://", "https://", "data:")):
+        return ""
+    if logo.startswith("/static/"):
+        logo = logo.split("/static/", 1)[1]
+    elif logo.startswith("static/"):
+        logo = logo.split("static/", 1)[1]
+    if logo.startswith("account_logos/"):
+        logo = logo.split("account_logos/", 1)[1]
+    return secure_filename(Path(logo).name)
+
+
 def save_contact_photo(upload, existing_photo=""):
     if not upload or not upload.filename:
         return existing_photo or ""
@@ -1056,10 +1082,8 @@ def save_account_logo(upload, existing_logo=""):
     if not upload_has_allowed_image_signature(upload, extension):
         return existing_logo or ""
     filename = secure_filename(f"{secrets.token_hex(12)}{extension}")
-    logo_dir = Path(resource_path("static")) / "account_logos"
-    logo_dir.mkdir(parents=True, exist_ok=True)
-    upload.save(logo_dir / filename)
-    return url_for("static", filename=f"account_logos/{filename}")
+    upload.save(account_logo_storage_dir() / filename)
+    return filename
 
 
 def account_logo_url(value):
@@ -1069,13 +1093,30 @@ def account_logo_url(value):
         return ""
     if logo.startswith(("http://", "https://", "data:")):
         return logo
-    if logo.startswith("/static/"):
-        return logo
-    if logo.startswith("static/"):
-        return url_for("static", filename=logo.split("static/", 1)[1].lstrip("/"))
-    if logo.startswith("account_logos/"):
-        return url_for("static", filename=logo)
-    return url_for("static", filename=f"account_logos/{Path(logo).name}")
+    filename = account_logo_filename(logo)
+    if not filename:
+        return ""
+    return url_for("account_logo_file", filename=filename)
+
+
+@app.route("/account-logos/<path:filename>")
+def account_logo_file(filename):
+    safe_filename = secure_filename(Path(filename).name)
+    if not safe_filename:
+        abort(404)
+
+    stored_logo = account_logo_storage_dir() / safe_filename
+    if stored_logo.exists():
+        return send_from_directory(account_logo_storage_dir(), safe_filename)
+
+    # Previous releases wrote uploaded logos into static/account_logos and stored
+    # the generated /static URL. Keep that path readable so existing accounts do
+    # not lose their logos after the storage fix.
+    legacy_logo_dir = account_logo_static_dir()
+    if (legacy_logo_dir / safe_filename).exists():
+        return send_from_directory(legacy_logo_dir, safe_filename)
+
+    abort(404)
 
 
 def pluralise(count, singular, plural=None):
