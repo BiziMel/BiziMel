@@ -4945,10 +4945,14 @@ body {
     max-width: 100%;
 }
 
+.contact-table-container {
+    overflow-x: auto;
+}
+
 .contact-list-table,
 .contact-report-table {
-    table-layout: auto;
-    min-width: 0;
+    table-layout: fixed;
+    min-width: 1180px;
 }
 
 .contact-list-table th,
@@ -4958,17 +4962,57 @@ body {
     vertical-align: top;
     white-space: normal;
     word-break: normal;
-    overflow-wrap: anywhere;
+    overflow-wrap: normal;
     line-height: 1.35;
 }
 
-.contact-list-table td:nth-child(2),
-.contact-list-table td:nth-child(3),
-.contact-report-table td:nth-child(1),
-.contact-report-table td:nth-child(2),
-.contact-report-table td:nth-child(6) {
-    min-width: 150px;
+.contact-list-table th,
+.contact-list-table td {
+    padding: 12px 14px;
 }
+
+.contact-select-col {
+    width: 52px;
+}
+
+.contact-photo-col {
+    width: 74px;
+}
+
+.contact-name-col {
+    width: 190px;
+}
+
+.contact-account-col {
+    width: 220px;
+}
+
+.contact-tier-col,
+.contact-status-col {
+    width: 110px;
+}
+
+.contact-role-col {
+    width: 210px;
+}
+
+.contact-relationship-col {
+    width: 150px;
+}
+
+.contact-email-col {
+    width: 210px;
+}
+
+.contact-list-table .record-primary-link,
+.contact-list-table small,
+.contact-list-table a,
+.contact-list-table td {
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
+}
+
 
 .inline-edit-panel {
     margin-top: 12px;
