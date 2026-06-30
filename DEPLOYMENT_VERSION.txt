@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
 Version: 2.6.3
-Release date: 2026-06-29
-Build: 2026-06-29-v2.6.3-persistent-images-remove-r2
+Release date: 2026-06-30
+Build: 2026-06-30-v2.6.3-pg-plan-admin-team-select-r3
 Package purpose: Hosted enterprise deployment only.

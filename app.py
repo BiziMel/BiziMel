@@ -23,8 +23,8 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 
 APP_VERSION = "2.6.3"
-APP_RELEASE_DATE = "2026-06-29"
-APP_BUILD = "2026-06-29-v2.6.3-persistent-images-remove-r2"
+APP_RELEASE_DATE = "2026-06-30"
+APP_BUILD = "2026-06-30-v2.6.3-pg-plan-admin-team-select-r3"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -40,7 +40,7 @@ except ZoneInfoNotFoundError:
 RELEASE_NOTES = [
     {
         "version": "2.6.3",
-        "release_date": "2026-06-29",
+        "release_date": "2026-06-30",
         "title": "Account and contact table image rendering",
         "fixed": [
             "Hardened account logo and contact photo rendering in table views with dedicated image routes and clean fallback initials.",
@@ -48,6 +48,8 @@ RELEASE_NOTES = [
             "Stored new account logo and contact photo uploads with the database record so images remain visible after hosted app rebuilds.",
             "Added remove controls for account logos and contact photos.",
             "Improved account and contact table thumbnail sizing so images remain visible, aligned and undistorted.",
+            "Updated PG Plan account cells to show business org below the company name where available.",
+            "Changed Admin create/update profile team assignment into compact dropdown multi-select fields.",
         ],
     },
     {
@@ -6323,11 +6325,14 @@ def pg_progress_export_rows(context):
     plan_headers = ["Owner", "PG RAG", "Sales Play", "Account", "Business Org", "Estimated Value"]
     plan_rows = []
     for row in context.get("pg_plan_rows", []):
+        account_label = row.get("account_name", "")
+        if row.get("business_org"):
+            account_label = f"{account_label} - {row.get('business_org')}"
         plan_rows.append([
             row.get("owner_name", ""),
             row.get("rag_label") or row.get("rag_status", ""),
             row.get("sales_play", ""),
-            row.get("account_name", ""),
+            account_label,
             row.get("business_org", ""),
             f"${money_value(row.get('estimated_value')):,.0f}",
         ])

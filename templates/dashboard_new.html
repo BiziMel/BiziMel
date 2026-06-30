@@ -112,7 +112,12 @@
                                 <span class="pg-rag-dot pg-rag-{{ row.rag_status }}" title="{{ row.rag_reason }}"></span>
                             </td>
                             <td class="pg-plan-sales-play-cell">{{ row.sales_play or "No sales play entered" }}</td>
-                            <td class="pg-plan-account-cell">{{ row.account_name }}</td>
+                            <td class="pg-plan-account-cell">
+                                <strong>{{ row.account_name }}</strong>
+                                {% if row.business_org %}
+                                    <span class="pg-plan-account-org">{{ row.business_org }}</span>
+                                {% endif %}
+                            </td>
                             <td class="pg-plan-value-cell money-cell">${{ "{:,.0f}".format(row.estimated_value or 0) }}</td>
                         </tr>
                     {% else %}

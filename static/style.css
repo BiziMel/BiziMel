@@ -3314,6 +3314,21 @@ a:hover {
     vertical-align: middle;
 }
 
+.pg-plan-account-cell strong {
+    display: block;
+    color: #102810;
+    font-weight: 900;
+}
+
+.pg-plan-account-org {
+    display: block;
+    margin-top: 3px;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
 .pg-status-cell {
     text-align: center;
     vertical-align: middle !important;
@@ -6136,6 +6151,27 @@ body {
 
 .admin-team-checkboxes-wide {
     grid-column: 1 / -1;
+}
+
+.admin-team-multiselect {
+    min-width: 180px;
+    width: 100%;
+}
+
+.admin-team-multiselect-wide {
+    grid-column: 1 / -1;
+}
+
+.admin-team-multiselect .checkbox-dropdown-panel {
+    max-height: 190px;
+    background: #ffffff;
+}
+
+.admin-team-multiselect .checkbox-row {
+    align-items: flex-start;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
 }
 
 .pg-team-filter-card {
