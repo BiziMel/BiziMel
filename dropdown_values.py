@@ -61,6 +61,7 @@ DROPDOWN_VALUES = {
         "Procurement",
         "Security",
         "Project/Programme Management",
+        "EA/PA",
     ],
     "bmc_relationships": [
         "Champion",
