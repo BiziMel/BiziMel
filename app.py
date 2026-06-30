@@ -24,7 +24,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.3"
 APP_RELEASE_DATE = "2026-06-30"
-APP_BUILD = "2026-06-30-v2.6.3-contacts-table-layout-r4"
+APP_BUILD = "2026-06-30-v2.6.3-contacts-table-balance-r5"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -51,6 +51,7 @@ RELEASE_NOTES = [
             "Updated PG Plan account cells to show business org below the company name where available.",
             "Changed Admin create/update profile team assignment into compact dropdown multi-select fields.",
             "Restructured the Contacts page table with explicit columns and horizontal scrolling so text remains readable and words are not split across lines.",
+            "Reduced the Contacts table name column and removed the green edit tile styling from contact names to give more space to account, role and email values.",
         ],
     },
     {

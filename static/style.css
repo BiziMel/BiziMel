@@ -4952,7 +4952,7 @@ body {
 .contact-list-table,
 .contact-report-table {
     table-layout: fixed;
-    min-width: 1180px;
+    min-width: 1240px;
 }
 
 .contact-list-table th,
@@ -4980,11 +4980,11 @@ body {
 }
 
 .contact-name-col {
-    width: 190px;
+    width: 140px;
 }
 
 .contact-account-col {
-    width: 220px;
+    width: 250px;
 }
 
 .contact-tier-col,
@@ -4993,7 +4993,7 @@ body {
 }
 
 .contact-role-col {
-    width: 210px;
+    width: 260px;
 }
 
 .contact-relationship-col {
@@ -5001,7 +5001,7 @@ body {
 }
 
 .contact-email-col {
-    width: 210px;
+    width: 240px;
 }
 
 .contact-list-table .record-primary-link,
@@ -5011,6 +5011,33 @@ body {
     overflow-wrap: normal;
     word-break: normal;
     hyphens: none;
+}
+
+.contact-list-table .record-primary-link {
+    display: inline;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #102810 !important;
+    font-weight: 900;
+    line-height: 1.25;
+    box-shadow: none;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.contact-list-table .record-primary-link:hover,
+.contact-list-table .record-primary-link:focus {
+    background: transparent;
+    border-color: transparent;
+    color: #1f7a35 !important;
+    text-decoration: underline;
+}
+
+.contact-list-table .record-primary-link::before {
+    content: none;
 }
 
 
