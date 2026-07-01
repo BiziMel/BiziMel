@@ -6266,6 +6266,34 @@ body {
     margin-bottom: 8px;
 }
 
+.contact-import-card {
+    margin-bottom: 22px;
+}
+
+.contact-import-mapping-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+}
+
+.contact-import-preview {
+    max-height: 460px;
+    overflow: auto;
+}
+
+.contact-import-preview table {
+    min-width: 980px;
+}
+
+.contact-import-preview th,
+.contact-import-preview td {
+    min-width: 140px;
+    vertical-align: top;
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: break-word;
+}
+
 .report-filter-checkbox-grid {
     max-height: 220px;
     overflow: auto;

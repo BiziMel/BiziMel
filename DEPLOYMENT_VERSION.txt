@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
 Version: 2.6.3
 Release date: 2026-07-01
-Build: 2026-07-01-v2.6.3-sales-play-table-form-r8
+Build: 2026-07-01-v2.6.3-contact-ingestion-r9
 Package purpose: Hosted enterprise deployment only.

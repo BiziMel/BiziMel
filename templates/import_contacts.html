@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block title %}Import Contacts | PipeFlow{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Import Contacts</h1>
+        <p>{{ account.account_name }}{% if account.business_unit %} - {{ account.business_unit }}{% endif %}</p>
+    </div>
+
+    <a href="{{ url_for('view_account', account_id=account.id) }}" class="btn btn-secondary">Back to Account</a>
+</div>
+
+{% if message %}
+    <div class="alert-success">{{ message }}</div>
+{% endif %}
+{% if error %}
+    <div class="alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="form-card contact-import-card">
+    <div class="section-header">
+        <div>
+            <h2>Upload Spreadsheet</h2>
+            <p>Use a header row, then map each spreadsheet column to a PipeFlow contact field.</p>
+        </div>
+    </div>
+
+    <form method="POST" enctype="multipart/form-data" class="pipeflow-form">
+        <input type="hidden" name="action" value="preview">
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="contact_file">Contact spreadsheet</label>
+                <input type="file" id="contact_file" name="contact_file" accept=".xlsx,.xlsm,.csv" required>
+                <p class="field-help">Supported formats: .xlsx, .xlsm and .csv.</p>
+            </div>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Preview Mapping</button>
+        </div>
+    </form>
+</div>
+
+{% if headers %}
+    <div class="form-card contact-import-card">
+        <div class="section-header">
+            <div>
+                <h2>Map Contact Fields</h2>
+                <p>Only mapped fields will be imported. Name is required.</p>
+            </div>
+        </div>
+
+        <form method="POST" class="pipeflow-form">
+            <input type="hidden" name="action" value="import">
+            <input type="hidden" name="import_token" value="{{ import_token }}">
+
+            <div class="contact-import-mapping-grid">
+                {% for field in contact_import_fields %}
+                    <div class="form-group">
+                        <label for="map_{{ field.key }}">
+                            {{ field.label }}{% if field.required %} *{% endif %}
+                        </label>
+                        <select id="map_{{ field.key }}" name="map_{{ field.key }}" {% if field.required %}required{% endif %}>
+                            <option value="">Do not import</option>
+                            {% for header in headers %}
+                                <option value="{{ header }}" {% if mapping.get(field.key) == header %}selected{% endif %}>{{ header }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                {% endfor %}
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Import Contacts</button>
+                <a href="{{ url_for('import_account_contacts', account_id=account.id) }}" class="btn btn-secondary">Cancel Import</a>
+            </div>
+        </form>
+    </div>
+
+    <div class="report-table-section">
+        <div class="section-header">
+            <div>
+                <h2>Spreadsheet Preview</h2>
+                <p>Showing the first {{ preview_rows|length }} row(s) from the uploaded spreadsheet.</p>
+            </div>
+        </div>
+
+        <div class="table-container contact-import-preview">
+            <table class="report-table">
+                <thead>
+                    <tr>
+                        {% for header in headers %}
+                            <th>{{ header }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in preview_rows %}
+                        <tr>
+                            {% for header in headers %}
+                                <td>{{ row.get(header, "") }}</td>
+                            {% endfor %}
+                        </tr>
+                    {% else %}
+                        <tr>
+                            <td colspan="{{ headers|length }}">No data rows found under the header row.</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+{% endif %}
+
+{% if import_result and import_result.errors %}
+    <div class="form-card contact-import-card">
+        <h2>Import Notes</h2>
+        <ul class="compact-list">
+            {% for note in import_result.errors[:25] %}
+                <li>{{ note }}</li>
+            {% endfor %}
+        </ul>
+        {% if import_result.errors|length > 25 %}
+            <p class="muted">{{ import_result.errors|length - 25 }} additional note(s) not shown.</p>
+        {% endif %}
+    </div>
+{% endif %}
+
+{% endblock %}

@@ -185,7 +185,10 @@
             <p>Relationship coverage linked to this account.</p>
         </div>
 
-        <a href="{{ url_for('add_contact') }}" class="btn btn-secondary">Add Contact</a>
+        <div class="button-group">
+            <a href="{{ url_for('import_account_contacts', account_id=account.id) }}" class="btn btn-secondary">Import Contacts</a>
+            <a href="{{ url_for('add_contact') }}" class="btn btn-secondary">Add Contact</a>
+        </div>
     </div>
 
     {% if account_contacts %}

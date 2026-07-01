@@ -24,7 +24,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.3"
 APP_RELEASE_DATE = "2026-07-01"
-APP_BUILD = "2026-07-01-v2.6.3-sales-play-table-form-r8"
+APP_BUILD = "2026-07-01-v2.6.3-contact-ingestion-r9"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -55,6 +55,9 @@ RELEASE_NOTES = [
             "Added EA/PA as a Contact category option.",
             "Hardened Campaign Builder generation so invalid dates or malformed contact selections show a form error instead of an internal server error.",
             "Changed the configured Sales Plays area into a clean clickable table that opens each Sales Play in the management form.",
+        ],
+        "new": [
+            "Added account-level contact ingestion from mapped spreadsheet files with preview, column mapping and duplicate update handling.",
         ],
     },
     {
@@ -5901,6 +5904,292 @@ def normalise_selected_account_ids(values):
     return account_ids
 
 
+CONTACT_IMPORT_FIELDS = [
+    {"key": "name", "label": "Name", "required": True},
+    {"key": "job_title", "label": "Job Title"},
+    {"key": "category", "label": "Category"},
+    {"key": "status", "label": "Status"},
+    {"key": "org_dept", "label": "Org / Dept"},
+    {"key": "email", "label": "Email"},
+    {"key": "office_phone", "label": "Office Phone"},
+    {"key": "mobile_phone", "label": "Mobile Phone"},
+    {"key": "location", "label": "Location"},
+    {"key": "linkedin", "label": "LinkedIn"},
+    {"key": "bmc_relationship", "label": "BMC Relationship"},
+    {"key": "responsibilities", "label": "Responsibilities"},
+    {"key": "characteristics", "label": "Characteristics"},
+    {"key": "background", "label": "Background"},
+    {"key": "personal_interests", "label": "Personal Interests"},
+    {"key": "personal_win", "label": "Personal Win"},
+    {"key": "education", "label": "Education"},
+    {"key": "social_media", "label": "Social Media"},
+    {"key": "additional_notes", "label": "Additional Notes"},
+]
+
+CONTACT_IMPORT_FIELD_KEYS = {field["key"] for field in CONTACT_IMPORT_FIELDS}
+CONTACT_IMPORT_ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xlsm"}
+CONTACT_IMPORT_ALIASES = {
+    "name": {"name", "full name", "contact", "contact name", "person", "stakeholder"},
+    "job_title": {"job title", "title", "role", "position", "job role"},
+    "category": {"category", "contact category", "type", "stakeholder category"},
+    "status": {"status", "contact status"},
+    "org_dept": {"org", "org / dept", "org dept", "department", "dept", "business unit", "organisation", "organization"},
+    "email": {"email", "email address", "e-mail", "mail"},
+    "office_phone": {"office phone", "phone", "telephone", "desk phone", "work phone"},
+    "mobile_phone": {"mobile", "mobile phone", "cell", "cell phone"},
+    "location": {"location", "city", "country", "region"},
+    "linkedin": {"linkedin", "linkedin url", "linkedin profile"},
+    "bmc_relationship": {"bmc relationship", "relationship", "relationship status"},
+    "responsibilities": {"responsibilities", "responsibility", "remit"},
+    "characteristics": {"characteristics", "style", "persona"},
+    "background": {"background", "bio", "biography", "history"},
+    "personal_interests": {"personal interests", "interests"},
+    "personal_win": {"personal win", "win"},
+    "education": {"education", "university", "school"},
+    "social_media": {"social media", "social"},
+    "additional_notes": {"additional notes", "notes", "comments"},
+}
+
+
+def contact_import_storage_dir():
+    import_dir = Path(os.environ.get("PIPEFLOW_DATA_DIR", Path(__file__).resolve().parent / "server_data")) / "contact_imports"
+    import_dir.mkdir(parents=True, exist_ok=True)
+    return import_dir
+
+
+def normalise_import_header(value):
+    return re.sub(r"[^a-z0-9]+", " ", str(value or "").strip().lower()).strip()
+
+
+def contact_import_file_path(token):
+    filename = secure_filename(str(token or ""))
+    if not filename:
+        return None
+    path = contact_import_storage_dir() / filename
+    try:
+        path.relative_to(contact_import_storage_dir())
+    except ValueError:
+        return None
+    return path
+
+
+def save_contact_import_upload(upload):
+    if not upload or not upload.filename:
+        return None, "Upload a spreadsheet before previewing the import."
+    extension = Path(upload.filename).suffix.lower()
+    if extension not in CONTACT_IMPORT_ALLOWED_EXTENSIONS:
+        return None, "Upload a .xlsx, .xlsm or .csv contact spreadsheet."
+    token = f"{secrets.token_urlsafe(18)}{extension}"
+    path = contact_import_storage_dir() / token
+    upload.save(path)
+    return token, ""
+
+
+def cell_to_text(value):
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return format_display_datetime(value)
+    if isinstance(value, date):
+        return format_display_date(value)
+    return str(value).strip()
+
+
+def read_contact_import_rows(path):
+    extension = path.suffix.lower()
+    if extension == ".csv":
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.reader(handle)
+            rows = [[cell_to_text(cell) for cell in row] for row in reader]
+    else:
+        try:
+            from openpyxl import load_workbook
+        except ModuleNotFoundError:
+            raise RuntimeError("Excel import requires openpyxl. Install dependencies with python3 -m pip install -r requirements.txt.")
+        workbook = load_workbook(path, read_only=True, data_only=True)
+        worksheet = workbook.active
+        rows = [
+            [cell_to_text(cell) for cell in row]
+            for row in worksheet.iter_rows(values_only=True)
+        ]
+        workbook.close()
+
+    rows = [row for row in rows if any(cell.strip() for cell in row)]
+    if not rows:
+        return [], []
+    headers = [header.strip() or f"Column {index + 1}" for index, header in enumerate(rows[0])]
+    data_rows = []
+    for row in rows[1:]:
+        padded = list(row) + [""] * max(0, len(headers) - len(row))
+        data_rows.append({headers[index]: padded[index].strip() for index in range(len(headers))})
+    return headers, data_rows
+
+
+def auto_contact_import_mapping(headers):
+    normalised_headers = {normalise_import_header(header): header for header in headers}
+    mapping = {}
+    for field in CONTACT_IMPORT_FIELDS:
+        match = ""
+        for alias in CONTACT_IMPORT_ALIASES.get(field["key"], set()):
+            match = normalised_headers.get(normalise_import_header(alias), "")
+            if match:
+                break
+        mapping[field["key"]] = match
+    return mapping
+
+
+def contact_import_mapping_from_form(form, headers):
+    valid_headers = set(headers)
+    mapping = {}
+    for key in CONTACT_IMPORT_FIELD_KEYS:
+        selected = form.get(f"map_{key}", "")
+        mapping[key] = selected if selected in valid_headers else ""
+    return mapping
+
+
+def mapped_contact_payload(row, mapping):
+    payload = {}
+    for field in CONTACT_IMPORT_FIELDS:
+        key = field["key"]
+        header = mapping.get(key)
+        payload[key] = (row.get(header, "") if header else "").strip()
+    payload["status"] = payload.get("status") or "Active"
+    payload["linkedin"] = normalise_external_url(payload.get("linkedin"))
+    payload["phone"] = combined_contact_phone(payload.get("office_phone"), payload.get("mobile_phone"), "")
+    return payload
+
+
+def ingest_mapped_contact_rows(connection, account_id, data_rows, mapping):
+    result = {"created": 0, "updated": 0, "skipped": 0, "errors": []}
+    valid_categories = set(DROPDOWN_VALUES.get("contact_categories", []))
+    valid_relationships = set(DROPDOWN_VALUES.get("bmc_relationships", []))
+    valid_statuses = {"Active", "Inactive"}
+
+    for row_number, row in enumerate(data_rows, start=2):
+        payload = mapped_contact_payload(row, mapping)
+        if not payload["name"]:
+            result["skipped"] += 1
+            result["errors"].append(f"Row {row_number}: skipped because no contact name was mapped.")
+            continue
+        if payload["category"] and payload["category"] not in valid_categories:
+            result["errors"].append(f"Row {row_number}: category '{payload['category']}' is not configured, so it was left blank.")
+            payload["category"] = ""
+        if payload["bmc_relationship"] and payload["bmc_relationship"] not in valid_relationships:
+            result["errors"].append(f"Row {row_number}: BMC Relationship '{payload['bmc_relationship']}' is not configured, so it was left blank.")
+            payload["bmc_relationship"] = ""
+        if payload["status"] not in valid_statuses:
+            payload["status"] = "Active"
+
+        existing = None
+        if payload["email"]:
+            existing = connection.execute("""
+                SELECT *
+                FROM contacts
+                WHERE account_id = ?
+                  AND LOWER(COALESCE(email, '')) = LOWER(?)
+                  AND COALESCE(status, 'Active') != 'Archived'
+            """, (account_id, payload["email"])).fetchone()
+        if not existing:
+            existing = connection.execute("""
+                SELECT *
+                FROM contacts
+                WHERE account_id = ?
+                  AND LOWER(COALESCE(name, '')) = LOWER(?)
+                  AND COALESCE(status, 'Active') != 'Archived'
+            """, (account_id, payload["name"])).fetchone()
+
+        if existing:
+            connection.execute("""
+                UPDATE contacts
+                SET category = ?,
+                    name = ?,
+                    job_title = ?,
+                    org_dept = ?,
+                    responsibilities = ?,
+                    email = ?,
+                    phone = ?,
+                    office_phone = ?,
+                    mobile_phone = ?,
+                    location = ?,
+                    linkedin = ?,
+                    bmc_relationship = ?,
+                    characteristics = ?,
+                    background = ?,
+                    personal_interests = ?,
+                    personal_win = ?,
+                    education = ?,
+                    social_media = ?,
+                    additional_notes = ?,
+                    status = ?,
+                    last_updated = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (
+                payload["category"],
+                payload["name"],
+                payload["job_title"],
+                payload["org_dept"],
+                payload["responsibilities"],
+                payload["email"],
+                payload["phone"],
+                payload["office_phone"],
+                payload["mobile_phone"],
+                payload["location"],
+                payload["linkedin"],
+                payload["bmc_relationship"],
+                payload["characteristics"],
+                payload["background"],
+                payload["personal_interests"],
+                payload["personal_win"],
+                payload["education"],
+                payload["social_media"],
+                payload["additional_notes"],
+                payload["status"],
+                existing["id"],
+            ))
+            result["updated"] += 1
+        else:
+            cursor = connection.execute("""
+                INSERT INTO contacts (
+                    account_id, category, photo, name, job_title, org_dept, responsibilities,
+                    email, phone, office_phone, mobile_phone, location, linkedin, bmc_relationship, characteristics,
+                    background, personal_interests, personal_win, education,
+                    social_media, additional_notes, status
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                account_id,
+                payload["category"],
+                "",
+                payload["name"],
+                payload["job_title"],
+                payload["org_dept"],
+                payload["responsibilities"],
+                payload["email"],
+                payload["phone"],
+                payload["office_phone"],
+                payload["mobile_phone"],
+                payload["location"],
+                payload["linkedin"],
+                payload["bmc_relationship"],
+                payload["characteristics"],
+                payload["background"],
+                payload["personal_interests"],
+                payload["personal_win"],
+                payload["education"],
+                payload["social_media"],
+                payload["additional_notes"],
+                payload["status"],
+            ))
+            audit_record_create(connection, "contact", cursor.lastrowid, {
+                "account_id": account_id,
+                "name": payload["name"],
+                "email": payload["email"],
+                "source": "spreadsheet_import",
+            })
+            result["created"] += 1
+    return result
+
+
 def save_partner_contact_accounts(connection, partner_id, contact_id, account_ids, relationship_status=""):
     account_ids = normalise_selected_account_ids(account_ids)
     connection.execute(
@@ -9122,6 +9411,80 @@ def add_contact():
     connection.close()
 
     return render_template("add_contact.html", accounts=accounts)
+
+
+@app.route("/accounts/<int:account_id>/contacts/import", methods=("GET", "POST"))
+def import_account_contacts(account_id):
+    connection = get_db_connection()
+    account = connection.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    if not account:
+        connection.close()
+        return redirect(url_for("accounts", error="Account could not be found."))
+
+    error = ""
+    message = ""
+    headers = []
+    preview_rows = []
+    mapping = {}
+    import_token = ""
+    import_result = None
+
+    if request.method == "POST":
+        action = request.form.get("action", "preview")
+        if action == "preview":
+            import_token, error = save_contact_import_upload(request.files.get("contact_file"))
+            if not error:
+                path = contact_import_file_path(import_token)
+                try:
+                    headers, data_rows = read_contact_import_rows(path)
+                    if not headers:
+                        error = "The spreadsheet does not contain a header row."
+                    else:
+                        mapping = auto_contact_import_mapping(headers)
+                        preview_rows = data_rows[:10]
+                        message = f"Spreadsheet loaded with {len(data_rows)} contact row(s). Review the mapping before importing."
+                except Exception as exc:
+                    error = f"Unable to read the spreadsheet: {exc}"
+        elif action == "import":
+            import_token = request.form.get("import_token", "")
+            path = contact_import_file_path(import_token)
+            if not path or not path.exists():
+                error = "The uploaded spreadsheet could not be found. Upload it again before importing."
+            else:
+                try:
+                    headers, data_rows = read_contact_import_rows(path)
+                    mapping = contact_import_mapping_from_form(request.form, headers)
+                    preview_rows = data_rows[:10]
+                    if not mapping.get("name"):
+                        error = "Map the contact Name field before importing."
+                    else:
+                        import_result = ingest_mapped_contact_rows(connection, account_id, data_rows, mapping)
+                        connection.commit()
+                        message = (
+                            f"Import complete. Created {import_result['created']} contact(s), "
+                            f"updated {import_result['updated']} and skipped {import_result['skipped']}."
+                        )
+                        try:
+                            path.unlink()
+                        except OSError:
+                            pass
+                except Exception as exc:
+                    connection.rollback()
+                    error = f"Unable to import contacts: {exc}"
+
+    connection.close()
+    return render_template(
+        "import_contacts.html",
+        account=account,
+        contact_import_fields=CONTACT_IMPORT_FIELDS,
+        headers=headers,
+        preview_rows=preview_rows,
+        mapping=mapping,
+        import_token=import_token,
+        import_result=import_result,
+        error=error,
+        message=message,
+    )
 
 
 @app.route("/contacts/<int:contact_id>")
