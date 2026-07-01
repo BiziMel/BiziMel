@@ -23,8 +23,8 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 
 APP_VERSION = "2.6.3"
-APP_RELEASE_DATE = "2026-06-30"
-APP_BUILD = "2026-06-30-v2.6.3-contacts-table-balance-r5"
+APP_RELEASE_DATE = "2026-07-01"
+APP_BUILD = "2026-07-01-v2.6.3-campaign-builder-resilience-r7"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -40,7 +40,7 @@ except ZoneInfoNotFoundError:
 RELEASE_NOTES = [
     {
         "version": "2.6.3",
-        "release_date": "2026-06-30",
+        "release_date": "2026-07-01",
         "title": "Account and contact table image rendering",
         "fixed": [
             "Hardened account logo and contact photo rendering in table views with dedicated image routes and clean fallback initials.",
@@ -52,6 +52,8 @@ RELEASE_NOTES = [
             "Changed Admin create/update profile team assignment into compact dropdown multi-select fields.",
             "Restructured the Contacts page table with explicit columns and horizontal scrolling so text remains readable and words are not split across lines.",
             "Reduced the Contacts table name column and removed the green edit tile styling from contact names to give more space to account, role and email values.",
+            "Added EA/PA as a Contact category option.",
+            "Hardened Campaign Builder generation so invalid dates or malformed contact selections show a form error instead of an internal server error.",
         ],
     },
     {
@@ -9772,7 +9774,10 @@ def campaign_builder():
             times_per_week = 2
         selected_total_tasks = str(total_tasks)
         selected_times_per_week = str(times_per_week)
-        contact_ids = request.form.getlist("contact_ids")
+        contact_ids = [
+            contact_id for contact_id in request.form.getlist("contact_ids")
+            if str(contact_id or "").isdigit()
+        ]
         sales_play = (request.form.get("sales_play") or request.form.get("sales_plays", "")).strip()
         if "\n" in sales_play:
             sales_play = next((line.strip() for line in sales_play.splitlines() if line.strip()), "")
@@ -9796,15 +9801,19 @@ def campaign_builder():
             error = "Select a Sales Play used for or associated to the selected account."
         elif account_id and pg_week_start_raw and campaign_start_raw and campaign_end_raw and contact_ids:
             today = datetime.now().date()
-            pg_week_start = datetime.strptime(pg_week_start_raw, "%Y-%m-%d").date()
-            campaign_start = datetime.strptime(campaign_start_raw, "%Y-%m-%d").date()
-            campaign_end = datetime.strptime(campaign_end_raw, "%Y-%m-%d").date()
-            if campaign_end < campaign_start:
+            try:
+                pg_week_start = datetime.strptime(pg_week_start_raw, "%Y-%m-%d").date()
+                campaign_start = datetime.strptime(campaign_start_raw, "%Y-%m-%d").date()
+                campaign_end = datetime.strptime(campaign_end_raw, "%Y-%m-%d").date()
+            except ValueError:
+                error = "Enter valid PG week, campaign start and campaign end dates before generating a campaign."
+                contacts = []
+            if not error and campaign_end < campaign_start:
                 campaign_start, campaign_end = campaign_end, campaign_start
-            if campaign_start < today:
+            if not error and campaign_start < today:
                 campaign_start = today
                 selected_campaign_start = campaign_start.isoformat()
-            if campaign_end < campaign_start:
+            if not error and campaign_end < campaign_start:
                 error = "Campaign end date cannot be earlier than the campaign start date."
             if error:
                 contacts = []

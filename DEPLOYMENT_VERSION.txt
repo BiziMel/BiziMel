@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
 Version: 2.6.3
-Release date: 2026-06-30
-Build: 2026-06-30-v2.6.3-contacts-table-balance-r5
+Release date: 2026-07-01
+Build: 2026-07-01-v2.6.3-campaign-builder-resilience-r7
 Package purpose: Hosted enterprise deployment only.
