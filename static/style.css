@@ -6140,12 +6140,81 @@ body {
 }
 
 .sales-play-config-table {
-    min-width: 1180px;
+    min-width: 980px;
+    table-layout: fixed;
+    width: 100%;
 }
 
 .sales-play-config-table th,
 .sales-play-config-table td {
     vertical-align: top;
+    word-break: normal;
+    overflow-wrap: break-word;
+}
+
+.sales-play-config-table th:nth-child(1),
+.sales-play-config-table td:nth-child(1) {
+    width: 19%;
+}
+
+.sales-play-config-table th:nth-child(2),
+.sales-play-config-table td:nth-child(2) {
+    width: 24%;
+}
+
+.sales-play-config-table th:nth-child(3),
+.sales-play-config-table td:nth-child(3) {
+    width: 18%;
+}
+
+.sales-play-config-table th:nth-child(4),
+.sales-play-config-table td:nth-child(4),
+.sales-play-config-table th:nth-child(5),
+.sales-play-config-table td:nth-child(5),
+.sales-play-config-table th:nth-child(6),
+.sales-play-config-table td:nth-child(6) {
+    width: 11%;
+}
+
+.sales-play-config-table th:nth-child(7),
+.sales-play-config-table td:nth-child(7) {
+    width: 6%;
+}
+
+.sales-play-config-table tbody tr {
+    transition: background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.sales-play-config-table tbody tr:hover {
+    background: #f8fafc;
+}
+
+.sales-play-config-table tbody tr.is-selected {
+    background: #eef6f2;
+    box-shadow: inset 4px 0 0 #2f855a;
+}
+
+.sales-play-title-cell {
+    font-weight: 700;
+}
+
+.table-muted-text {
+    color: #475569;
+    display: block;
+    line-height: 1.45;
+    max-height: 4.4em;
+    overflow: hidden;
+}
+
+.table-status-pill {
+    display: inline-flex;
+    margin-top: 8px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #d9f2e4;
+    color: #17623a;
+    font-size: 0.78rem;
+    font-weight: 700;
 }
 
 .sales-play-config-table input[type="text"],

@@ -24,7 +24,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.3"
 APP_RELEASE_DATE = "2026-07-01"
-APP_BUILD = "2026-07-01-v2.6.3-campaign-builder-resilience-r7"
+APP_BUILD = "2026-07-01-v2.6.3-sales-play-table-form-r8"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -54,6 +54,7 @@ RELEASE_NOTES = [
             "Reduced the Contacts table name column and removed the green edit tile styling from contact names to give more space to account, role and email values.",
             "Added EA/PA as a Contact category option.",
             "Hardened Campaign Builder generation so invalid dates or malformed contact selections show a form error instead of an internal server error.",
+            "Changed the configured Sales Plays area into a clean clickable table that opens each Sales Play in the management form.",
         ],
     },
     {
@@ -6772,18 +6773,73 @@ def sales_plays():
         "sales_plays.html",
         sales_plays=sales_play_rows,
         accounts=account_rows,
+        editing_sales_play=None,
         error=error or request.args.get("error", ""),
         message=request.args.get("message", ""),
     )
 
 
-@app.route("/sales-plays/<int:sales_play_id>/edit", methods=("POST",))
+@app.route("/sales-plays/<int:sales_play_id>/edit", methods=("GET", "POST"))
 def edit_sales_play(sales_play_id):
     connection = get_db_connection()
     sales_play = connection.execute("SELECT * FROM sales_plays WHERE id = ?", (sales_play_id,)).fetchone()
     if not sales_play:
         connection.close()
         return redirect(url_for("sales_plays", error="Sales Play could not be found."))
+    if request.method == "GET":
+        account_rows = connection.execute("""
+            SELECT id, account_name, business_unit, account_tier
+            FROM accounts
+            ORDER BY account_name, business_unit
+        """).fetchall()
+        rows = sales_play_catalog(connection)
+        sales_play_rows = []
+        editing_sales_play = None
+        for row in rows:
+            associated_accounts = connection.execute("""
+                SELECT accounts.id, accounts.account_name, accounts.business_unit, accounts.account_tier
+                FROM account_sales_plays
+                JOIN accounts ON accounts.id = account_sales_plays.account_id
+                WHERE account_sales_plays.sales_play_id = ?
+                ORDER BY accounts.account_name, accounts.business_unit
+            """, (row["id"],)).fetchall()
+            outreach_accounts = connection.execute("""
+                SELECT accounts.id, accounts.account_name, accounts.business_unit, accounts.account_tier, COUNT(outreach.id) AS usage_count
+                FROM outreach
+                JOIN accounts ON accounts.id = outreach.account_id
+                WHERE outreach.sales_play = ?
+                GROUP BY accounts.id, accounts.account_name, accounts.business_unit, accounts.account_tier
+                ORDER BY accounts.account_name, accounts.business_unit
+            """, (row["sales_play_title"],)).fetchall()
+            row_payload = {
+                **dict(row),
+                "assets": [dict(asset) for asset in sales_play_asset_rows(connection, row["id"])],
+                "associated_account_ids": [str(account["id"]) for account in associated_accounts],
+                "associated_accounts": [dict(account) for account in associated_accounts],
+                "outreach_accounts": [dict(account) for account in outreach_accounts],
+                "account_count": dashboard_scalar(connection, """
+                    SELECT COUNT(*)
+                    FROM account_sales_plays
+                    WHERE sales_play_id = ?
+                """, (row["id"],)),
+                "usage_count": dashboard_scalar(connection, """
+                    SELECT COUNT(*)
+                    FROM outreach
+                    WHERE sales_play = ?
+                """, (row["sales_play_title"],)),
+            }
+            if row["id"] == sales_play_id:
+                editing_sales_play = row_payload
+            sales_play_rows.append(row_payload)
+        connection.close()
+        return render_template(
+            "sales_plays.html",
+            sales_plays=sales_play_rows,
+            accounts=account_rows,
+            editing_sales_play=editing_sales_play,
+            error=request.args.get("error", ""),
+            message=request.args.get("message", ""),
+        )
     title = (request.form.get("sales_play_title") or "").strip()
     description = (request.form.get("sales_play_description") or "").strip()
     products = (request.form.get("sales_play_products") or "").strip()

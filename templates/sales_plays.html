@@ -18,22 +18,37 @@
 {% endif %}
 
 <div class="form-card sales-play-form-card">
-    <h2>Add Sales Play</h2>
-    <form method="POST" class="pipeflow-form sales-play-form">
+    {% if editing_sales_play %}
+        <div class="section-header">
+            <div>
+                <h2>Edit Sales Play</h2>
+                <p>Manage the selected Sales Play, account associations and enablement assets.</p>
+            </div>
+            <a href="{{ url_for('sales_plays') }}" class="btn btn-secondary">Add New Sales Play</a>
+        </div>
+    {% else %}
+        <h2>Add Sales Play</h2>
+    {% endif %}
+    <form method="POST"
+          action="{% if editing_sales_play %}{{ url_for('edit_sales_play', sales_play_id=editing_sales_play.id) }}{% else %}{{ url_for('sales_plays') }}{% endif %}"
+          class="pipeflow-form sales-play-form">
         <label>Sales Play title</label>
-        <input type="text" name="sales_play_title" required>
+        <input type="text" name="sales_play_title" value="{{ editing_sales_play.sales_play_title if editing_sales_play else '' }}" required>
 
         <label>Sales Play description</label>
-        <textarea name="sales_play_description" rows="4"></textarea>
+        <textarea name="sales_play_description" rows="4">{{ editing_sales_play.sales_play_description if editing_sales_play else '' }}</textarea>
 
         <label>Sales Play products</label>
-        <textarea name="sales_play_products" rows="3"></textarea>
+        <textarea name="sales_play_products" rows="3">{{ editing_sales_play.sales_play_products if editing_sales_play else '' }}</textarea>
 
         <h3>Associate Accounts</h3>
         <div class="sales-play-account-grid">
             {% for account in accounts %}
                 <label class="checkbox-row">
-                    <input type="checkbox" name="account_ids" value="{{ account.id }}">
+                    <input type="checkbox"
+                           name="account_ids"
+                           value="{{ account.id }}"
+                           {% if editing_sales_play and account.id|string in editing_sales_play.associated_account_ids %}checked{% endif %}>
                     <span>{{ account.account_name }}{% if account.business_unit %} - {{ account.business_unit }}{% endif %}</span>
                 </label>
             {% else %}
@@ -43,16 +58,38 @@
 
         <h3>Sales Play Assets</h3>
         <div class="sales-play-assets" data-asset-list>
-            <div class="sales-play-asset-row">
-                <input type="text" name="asset_name" placeholder="Asset name">
-                <input type="text" name="asset_system" placeholder="System">
-                <input type="url" name="asset_url" placeholder="https://">
-            </div>
+            {% if editing_sales_play and editing_sales_play.assets %}
+                {% for asset in editing_sales_play.assets %}
+                    <div class="sales-play-asset-row">
+                        <input type="text" name="asset_name" value="{{ asset.asset_name or '' }}" placeholder="Asset name">
+                        <input type="text" name="asset_system" value="{{ asset.asset_system or '' }}" placeholder="System">
+                        <input type="url" name="asset_url" value="{{ asset.asset_url or '' }}" placeholder="https://">
+                        {% set asset_url = external_url(asset.asset_url) %}
+                        {% if asset_url %}
+                            <a href="{{ asset_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-small">Open</a>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            {% else %}
+                <div class="sales-play-asset-row">
+                    <input type="text" name="asset_name" placeholder="Asset name">
+                    <input type="text" name="asset_system" placeholder="System">
+                    <input type="url" name="asset_url" placeholder="https://">
+                </div>
+            {% endif %}
         </div>
         <button type="button" class="btn btn-secondary btn-small" data-add-asset>Add asset row</button>
 
         <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Save Sales Play</button>
+            <button type="submit" class="btn btn-primary">{% if editing_sales_play %}Update Sales Play{% else %}Save Sales Play{% endif %}</button>
+            {% if editing_sales_play %}
+                <button type="submit"
+                        formaction="{{ url_for('delete_sales_play', sales_play_id=editing_sales_play.id) }}"
+                        class="btn btn-danger"
+                        onclick="return confirm('Delete this Sales Play configuration? Existing outreach history is not deleted.');">
+                    Delete
+                </button>
+            {% endif %}
         </div>
     </form>
 </div>
@@ -61,7 +98,7 @@
     <div class="section-header">
         <div>
             <h2>Configured Sales Plays</h2>
-            <p>Each row can be edited and associated to the accounts where it applies.</p>
+            <p>Click a Sales Play to open it in the form above and manage the stored fields.</p>
         </div>
     </div>
 
@@ -75,33 +112,26 @@
                         <th>Products</th>
                         <th>Accounts</th>
                         <th>Assets</th>
+                        <th>Outreach Use</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for sales_play in sales_plays %}
-                        <tr>
-                            <td>
-                                <form id="sales-play-form-{{ sales_play.id }}"
-                                      method="POST"
-                                      action="{{ url_for('edit_sales_play', sales_play_id=sales_play.id) }}"
-                                      class="sales-play-row-form"></form>
-                                <input type="text"
-                                       name="sales_play_title"
-                                       form="sales-play-form-{{ sales_play.id }}"
-                                       value="{{ sales_play.sales_play_title }}"
-                                       required>
-                                <div class="muted">{{ sales_play.usage_count }} outreach use(s)</div>
+                        <tr class="{% if editing_sales_play and editing_sales_play.id == sales_play.id %}is-selected{% endif %}">
+                            <td class="sales-play-title-cell">
+                                <a href="{{ url_for('edit_sales_play', sales_play_id=sales_play.id) }}" class="table-primary-link">
+                                    {{ sales_play.sales_play_title }}
+                                </a>
+                                {% if editing_sales_play and editing_sales_play.id == sales_play.id %}
+                                    <div class="table-status-pill">Editing</div>
+                                {% endif %}
                             </td>
                             <td>
-                                <textarea name="sales_play_description"
-                                          form="sales-play-form-{{ sales_play.id }}"
-                                          rows="5">{{ sales_play.sales_play_description or "" }}</textarea>
+                                <span class="table-muted-text">{{ sales_play.sales_play_description or "No description added" }}</span>
                             </td>
                             <td>
-                                <textarea name="sales_play_products"
-                                          form="sales-play-form-{{ sales_play.id }}"
-                                          rows="5">{{ sales_play.sales_play_products or "" }}</textarea>
+                                <span class="table-muted-text">{{ sales_play.sales_play_products or "No products added" }}</span>
                             </td>
                             <td>
                                 <button type="button"
@@ -109,64 +139,15 @@
                                         data-dialog-target="sales-play-accounts-{{ sales_play.id }}">
                                     {{ sales_play.account_count }} account(s)
                                 </button>
-                                <div class="sales-play-account-grid sales-play-account-grid-compact">
-                                    {% for account in accounts %}
-                                        <label class="checkbox-row">
-                                            <input type="checkbox"
-                                                   name="account_ids"
-                                                   form="sales-play-form-{{ sales_play.id }}"
-                                                   value="{{ account.id }}"
-                                                   {% if account.id|string in sales_play.associated_account_ids %}checked{% endif %}>
-                                            <span>{{ account.account_name }}{% if account.business_unit %} - {{ account.business_unit }}{% endif %}</span>
-                                        </label>
-                                    {% endfor %}
-                                </div>
                             </td>
                             <td>
-                                <div class="sales-play-assets" data-asset-list>
-                                    {% for asset in sales_play.assets %}
-                                        <div class="sales-play-asset-row">
-                                            <input type="text"
-                                                   name="asset_name"
-                                                   form="sales-play-form-{{ sales_play.id }}"
-                                                   value="{{ asset.asset_name or '' }}"
-                                                   placeholder="Asset name">
-                                            <input type="text"
-                                                   name="asset_system"
-                                                   form="sales-play-form-{{ sales_play.id }}"
-                                                   value="{{ asset.asset_system or '' }}"
-                                                   placeholder="System">
-                                            <input type="url"
-                                                   name="asset_url"
-                                                   form="sales-play-form-{{ sales_play.id }}"
-                                                   value="{{ asset.asset_url or '' }}"
-                                                   placeholder="https://">
-                                            {% set asset_url = external_url(asset.asset_url) %}
-                                            {% if asset_url %}
-                                                <a href="{{ asset_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-small">Open</a>
-                                            {% endif %}
-                                        </div>
-                                    {% else %}
-                                        <div class="sales-play-asset-row">
-                                            <input type="text" name="asset_name" form="sales-play-form-{{ sales_play.id }}" placeholder="Asset name">
-                                            <input type="text" name="asset_system" form="sales-play-form-{{ sales_play.id }}" placeholder="System">
-                                            <input type="url" name="asset_url" form="sales-play-form-{{ sales_play.id }}" placeholder="https://">
-                                        </div>
-                                    {% endfor %}
-                                </div>
-                                <button type="button" class="btn btn-secondary btn-small" data-add-asset>Add asset row</button>
+                                {{ sales_play.assets|length }} asset(s)
                             </td>
                             <td>
-                                <div class="button-column">
-                                    <button type="submit" form="sales-play-form-{{ sales_play.id }}" class="btn btn-primary btn-small">Save</button>
-                                    <button type="submit"
-                                            form="sales-play-form-{{ sales_play.id }}"
-                                            formaction="{{ url_for('delete_sales_play', sales_play_id=sales_play.id) }}"
-                                            class="btn btn-danger btn-small"
-                                            onclick="return confirm('Delete this Sales Play configuration? Existing outreach history is not deleted.');">
-                                        Delete
-                                    </button>
-                                </div>
+                                {{ sales_play.usage_count }} outreach use(s)
+                            </td>
+                            <td>
+                                <a href="{{ url_for('edit_sales_play', sales_play_id=sales_play.id) }}" class="btn btn-primary btn-small">Open</a>
                             </td>
                         </tr>
                     {% endfor %}
@@ -250,11 +231,10 @@
 
     document.querySelectorAll("[data-add-asset]").forEach((button) => {
         button.addEventListener("click", () => {
-            const container = button.closest("td") || button.closest("form");
+            const container = button.closest("form");
             const list = container ? container.querySelector("[data-asset-list]") : null;
             if (list) {
-                const formId = button.closest("td") ? button.closest("tr").querySelector("form[id]")?.id : "";
-                list.appendChild(newAssetRow(formId));
+                list.appendChild(newAssetRow(""));
             }
         });
     });
