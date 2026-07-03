@@ -23,8 +23,8 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 
 APP_VERSION = "2.6.3"
-APP_RELEASE_DATE = "2026-07-01"
-APP_BUILD = "2026-07-01-v2.6.3-contact-ingestion-r9"
+APP_RELEASE_DATE = "2026-07-03"
+APP_BUILD = "2026-07-03-v2.6.3-full-data-workbook-export-r10"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -40,7 +40,7 @@ except ZoneInfoNotFoundError:
 RELEASE_NOTES = [
     {
         "version": "2.6.3",
-        "release_date": "2026-07-01",
+        "release_date": "2026-07-03",
         "title": "Account and contact table image rendering",
         "fixed": [
             "Hardened account logo and contact photo rendering in table views with dedicated image routes and clean fallback initials.",
@@ -58,6 +58,7 @@ RELEASE_NOTES = [
         ],
         "new": [
             "Added account-level contact ingestion from mapped spreadsheet files with preview, column mapping and duplicate update handling.",
+            "Added a full PipeFlow data workbook export with separate sheets for Accounts, Contacts, Outreach, PG Progress Plan and PG Progress Actions.",
         ],
     },
     {
@@ -6707,6 +6708,272 @@ def render_pg_progress_xls(context):
     return html_output
 
 
+def workbook_safe_value(value):
+    if value is None:
+        return ""
+    if isinstance(value, (int, float, date, datetime)):
+        return value
+    return str(value)
+
+
+def add_export_worksheet(workbook, title, headers, rows):
+    worksheet = workbook.create_sheet(title=title[:31])
+    header_fill = None
+    header_font = None
+    border = None
+    alignment = None
+    try:
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+        header_fill = PatternFill("solid", fgColor="DDEAD6")
+        header_font = Font(bold=True, color="1F2933")
+        side = Side(style="thin", color="B8C4B0")
+        border = Border(left=side, right=side, top=side, bottom=side)
+        alignment = Alignment(vertical="top", wrap_text=True)
+    except ModuleNotFoundError:
+        pass
+
+    worksheet.append(headers)
+    for row in rows:
+        worksheet.append([workbook_safe_value(value) for value in row])
+
+    worksheet.freeze_panes = "A2"
+    if headers:
+        worksheet.auto_filter.ref = worksheet.dimensions
+
+    for cell in worksheet[1]:
+        if header_fill:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.border = border
+            cell.alignment = alignment
+
+    for row in worksheet.iter_rows(min_row=2):
+        for cell in row:
+            if border:
+                cell.border = border
+                cell.alignment = alignment
+
+    for column_cells in worksheet.columns:
+        header = str(column_cells[0].value or "")
+        max_length = len(header)
+        for cell in column_cells[1:]:
+            value = str(cell.value or "")
+            max_length = max(max_length, min(max((len(part) for part in value.splitlines()), default=0), 60))
+        width = min(max(max_length + 2, 12), 48)
+        worksheet.column_dimensions[column_cells[0].column_letter].width = width
+
+    for row in worksheet.iter_rows(min_row=2):
+        if any("\n" in str(cell.value or "") for cell in row):
+            worksheet.row_dimensions[row[0].row].height = 42
+
+    return worksheet
+
+
+def outreach_recipient_summary(connection, outreach_id):
+    recipients = connection.execute("""
+        SELECT
+            contacts.name AS contact_name,
+            contacts.job_title AS contact_job_title,
+            partner_contacts.name AS partner_contact_name,
+            partner_contacts.job_title AS partner_contact_job_title,
+            partners.partner_name
+        FROM outreach_recipients
+        LEFT JOIN contacts ON outreach_recipients.contact_id = contacts.id
+        LEFT JOIN partner_contacts ON outreach_recipients.partner_contact_id = partner_contacts.id
+        LEFT JOIN partners ON partner_contacts.partner_id = partners.id
+        WHERE outreach_recipients.outreach_id = ?
+        ORDER BY outreach_recipients.sort_order, outreach_recipients.id
+    """, (outreach_id,)).fetchall()
+    labels = []
+    for recipient in recipients:
+        if recipient["contact_name"]:
+            labels.append(" - ".join(part for part in [recipient["contact_name"], recipient["contact_job_title"]] if part))
+        elif recipient["partner_contact_name"]:
+            partner_bits = [
+                recipient["partner_contact_name"],
+                recipient["partner_contact_job_title"],
+                recipient["partner_name"],
+            ]
+            labels.append(" - ".join(part for part in partner_bits if part))
+    return "\n".join(labels)
+
+
+def render_full_data_workbook():
+    try:
+        from openpyxl import Workbook
+    except ModuleNotFoundError:
+        raise RuntimeError("Full workbook export requires openpyxl. Install dependencies with python3 -m pip install -r requirements.txt.")
+
+    initialise_database(force=True)
+    connection = get_db_connection()
+    workbook = Workbook()
+    workbook.remove(workbook.active)
+    exported_at = current_app_datetime().strftime("%d-%m-%Y %H:%M")
+
+    accounts = connection.execute("""
+        SELECT
+            id,
+            pg_bible_order,
+            account_name,
+            business_unit,
+            account_tier,
+            industry,
+            country,
+            city,
+            website,
+            pipeline_target,
+            current_pipeline,
+            nbm_target,
+            sales_play,
+            owner_name,
+            owner_email,
+            notes,
+            date_created,
+            last_updated
+        FROM accounts
+        ORDER BY
+            CASE WHEN pg_bible_order IS NULL THEN 1 ELSE 0 END,
+            pg_bible_order,
+            account_name,
+            business_unit
+    """).fetchall()
+    add_export_worksheet(workbook, "Accounts", [
+        "Account ID", "PG Bible Order", "Account Name", "Business Org", "Tier", "Industry", "Country", "City",
+        "Website", "Pipeline Target", "Current Pipeline", "NBM Target", "Sales Play(s)", "Owner Name",
+        "Owner Email", "Notes", "Date Created", "Last Updated", "Exported At"
+    ], [[
+        row["id"], row["pg_bible_order"], row["account_name"], row["business_unit"], row["account_tier"],
+        row["industry"], row["country"], row["city"], row["website"], row["pipeline_target"],
+        row["current_pipeline"], row["nbm_target"], row["sales_play"], row["owner_name"],
+        row["owner_email"], row["notes"], row["date_created"], row["last_updated"], exported_at
+    ] for row in accounts])
+
+    contacts = connection.execute("""
+        SELECT
+            contacts.id,
+            contacts.account_id,
+            accounts.account_name,
+            accounts.business_unit,
+            contacts.name,
+            contacts.job_title,
+            contacts.category,
+            contacts.status,
+            contacts.bmc_relationship,
+            contacts.email,
+            contacts.phone,
+            contacts.office_phone,
+            contacts.mobile_phone,
+            contacts.location,
+            contacts.linkedin,
+            contacts.org_dept,
+            contacts.responsibilities,
+            contacts.characteristics,
+            contacts.background,
+            contacts.personal_interests,
+            contacts.personal_win,
+            contacts.education,
+            contacts.social_media,
+            contacts.additional_notes,
+            contacts.archived_at,
+            contacts.date_created,
+            contacts.last_updated
+        FROM contacts
+        LEFT JOIN accounts ON contacts.account_id = accounts.id
+        ORDER BY accounts.account_name, accounts.business_unit, contacts.name
+    """).fetchall()
+    add_export_worksheet(workbook, "Contacts", [
+        "Contact ID", "Account ID", "Account", "Business Org", "Name", "Job Title", "Category", "Status",
+        "BMC Relationship", "Email", "Phone", "Office Phone", "Mobile Phone", "Location", "LinkedIn",
+        "Org / Dept", "Responsibilities", "Characteristics", "Background", "Personal Interests",
+        "Personal Win", "Education", "Social Media", "Additional Notes", "Archived At",
+        "Date Created", "Last Updated"
+    ], [[
+        row["id"], row["account_id"], row["account_name"], row["business_unit"], row["name"], row["job_title"],
+        row["category"], row["status"], row["bmc_relationship"], row["email"], row["phone"], row["office_phone"],
+        row["mobile_phone"], row["location"], row["linkedin"], row["org_dept"], row["responsibilities"],
+        row["characteristics"], row["background"], row["personal_interests"], row["personal_win"], row["education"],
+        row["social_media"], row["additional_notes"], row["archived_at"], row["date_created"], row["last_updated"]
+    ] for row in contacts])
+
+    outreach_rows = connection.execute("""
+        SELECT
+            outreach.id,
+            outreach.account_id,
+            accounts.account_name,
+            accounts.business_unit,
+            outreach.contact_id,
+            contacts.name AS primary_contact_name,
+            contacts.job_title AS primary_contact_job_title,
+            outreach.partner_contact_id,
+            partner_contacts.name AS primary_partner_contact_name,
+            partner_contacts.job_title AS primary_partner_contact_job_title,
+            partners.partner_name AS primary_partner_name,
+            outreach.fy,
+            outreach.quarter,
+            outreach.campaign,
+            outreach.sales_play,
+            outreach.campaign_start_date,
+            outreach.campaign_end_date,
+            outreach.campaign_tasks_per_week,
+            outreach.campaign_total_tasks,
+            outreach.activity_date,
+            outreach.activity_time,
+            outreach.activity_type,
+            outreach.subject,
+            outreach.notes,
+            outreach.outcome,
+            outreach.scheduled_meeting_date,
+            outreach.scheduled_meeting_time,
+            outreach.next_action,
+            outreach.next_action_date,
+            outreach.next_action_time,
+            outreach.task_status,
+            outreach.completed_at,
+            outreach.assigned_to,
+            outreach.date_created,
+            outreach.last_updated
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
+        LEFT JOIN partner_contacts ON outreach.partner_contact_id = partner_contacts.id
+        LEFT JOIN partners ON partner_contacts.partner_id = partners.id
+        ORDER BY outreach.activity_date DESC, outreach.activity_time DESC, outreach.id DESC
+    """).fetchall()
+    outreach_export_rows = []
+    for row in outreach_rows:
+        primary_contact = " - ".join(part for part in [row["primary_contact_name"], row["primary_contact_job_title"]] if part)
+        primary_partner = " - ".join(part for part in [row["primary_partner_contact_name"], row["primary_partner_contact_job_title"], row["primary_partner_name"]] if part)
+        outreach_export_rows.append([
+            row["id"], row["account_id"], row["account_name"], row["business_unit"],
+            primary_contact, primary_partner, outreach_recipient_summary(connection, row["id"]),
+            row["fy"], row["quarter"], row["campaign"], row["sales_play"], row["campaign_start_date"],
+            row["campaign_end_date"], row["campaign_tasks_per_week"], row["campaign_total_tasks"],
+            row["activity_date"], row["activity_time"], row["activity_type"], row["subject"], row["notes"],
+            row["outcome"], row["scheduled_meeting_date"], row["scheduled_meeting_time"], row["next_action"],
+            row["next_action_date"], row["next_action_time"], row["task_status"], row["completed_at"],
+            row["assigned_to"], row["date_created"], row["last_updated"]
+        ])
+    add_export_worksheet(workbook, "Outreach", [
+        "Outreach ID", "Account ID", "Account", "Business Org", "Primary Contact", "Primary Partner Contact",
+        "All Recipients", "FY", "Quarter", "Campaign", "Sales Play", "Campaign Start", "Campaign End",
+        "Tasks Per Week", "Total Campaign Tasks", "Activity Date", "Activity Time", "Activity Type",
+        "Subject", "Activity Update / Notes", "Outcome", "Scheduled Meeting Date", "Scheduled Meeting Time",
+        "Next Action", "Next Action Date", "Next Action Time", "Task Status", "Completed At",
+        "Assigned To", "Date Created", "Last Updated"
+    ], outreach_export_rows)
+
+    pg_context = pg_progress_report_context("")
+    plan_headers, plan_rows, action_headers, action_rows = pg_progress_export_rows(pg_context)
+    add_export_worksheet(workbook, "PG Progress Plan", plan_headers, plan_rows)
+    add_export_worksheet(workbook, "PG Progress Actions", action_headers, action_rows)
+
+    connection.close()
+    output = io.BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return output
+
+
 def render_pg_progress_pdf(context):
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
@@ -12022,6 +12289,21 @@ def delete_profile_data():
 @app.route("/reports")
 def reports():
     return render_template("reports.html")
+
+
+@app.route("/reports/full-export.xlsx")
+def export_full_data_workbook():
+    try:
+        output = render_full_data_workbook()
+    except RuntimeError as exc:
+        return Response(str(exc), status=500, mimetype="text/plain")
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    return send_file(
+        output,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=f"pipeflow_full_data_export_{timestamp}.xlsx",
+    )
 
 
 @app.route("/reports/pg-progress")

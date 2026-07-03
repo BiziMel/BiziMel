@@ -12,6 +12,17 @@
 <div class="report-grid">
 
     <div class="report-card">
+        <h3>Full Data Export</h3>
+        <p>Download one Excel workbook with Accounts, Contacts, Outreach and PG Progress worksheets.</p>
+
+        <div class="button-group">
+            <a href="{{ url_for('export_full_data_workbook') }}" class="btn btn-primary">
+                Export Full Workbook
+            </a>
+        </div>
+    </div>
+
+    <div class="report-card">
         <h3>Account Reports</h3>
         <p>Review account coverage, pipeline target, industry spread and geography.</p>
 
