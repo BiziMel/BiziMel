@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
 Version: 2.6.4
 Release date: 2026-07-06
-Build: 2026-07-06-v2.6.4-navigation-outreach-resilience-r2
+Build: 2026-07-06-v2.6.4-navigation-schema-resilience-r3
 Package purpose: Hosted enterprise deployment only.

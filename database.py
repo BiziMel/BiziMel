@@ -478,9 +478,15 @@ def initialise_database(force=False):
 
     # Safe migrations for accounts
     add_column_if_missing(cursor, "accounts", "team_id", "INTEGER DEFAULT 1")
+    add_column_if_missing(cursor, "accounts", "account_name", "TEXT")
     add_column_if_missing(cursor, "accounts", "business_unit", "TEXT")
     add_column_if_missing(cursor, "accounts", "account_tier", "TEXT")
     add_column_if_missing(cursor, "accounts", "pg_bible_order", "INTEGER")
+    add_column_if_missing(cursor, "accounts", "industry", "TEXT")
+    add_column_if_missing(cursor, "accounts", "country", "TEXT")
+    add_column_if_missing(cursor, "accounts", "city", "TEXT")
+    add_column_if_missing(cursor, "accounts", "website", "TEXT")
+    add_column_if_missing(cursor, "accounts", "pipeline_target", "REAL")
     add_column_if_missing(cursor, "accounts", "current_pipeline", "REAL")
     add_column_if_missing(cursor, "accounts", "nbm_target", "TEXT")
     add_column_if_missing(cursor, "accounts", "sales_play", "TEXT")
@@ -488,6 +494,9 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "accounts", "owner_user_id", "INTEGER")
     add_column_if_missing(cursor, "accounts", "owner_name", "TEXT")
     add_column_if_missing(cursor, "accounts", "owner_email", "TEXT")
+    add_column_if_missing(cursor, "accounts", "notes", "TEXT")
+    add_column_if_missing(cursor, "accounts", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "accounts", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
 
     # Safe migrations for configured sales plays
     add_column_if_missing(cursor, "sales_plays", "sales_play_title", "TEXT")
@@ -512,6 +521,8 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "dashboard_settings", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "pg_action_updates", "account_id", "INTEGER")
     add_column_if_missing(cursor, "pg_action_updates", "completed_discovery_meeting", "TEXT")
+    add_column_if_missing(cursor, "pg_action_updates", "exec_first", "TEXT")
+    add_column_if_missing(cursor, "pg_action_updates", "nbm_completed", "TEXT")
     add_column_if_missing(cursor, "pg_action_updates", "next_action_override", "TEXT")
     add_column_if_missing(cursor, "pg_action_updates", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "pg_action_updates", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
@@ -533,11 +544,31 @@ def initialise_database(force=False):
 
     # Safe migrations for contacts
     add_column_if_missing(cursor, "contacts", "team_id", "INTEGER DEFAULT 1")
+    add_column_if_missing(cursor, "contacts", "account_id", "INTEGER")
+    add_column_if_missing(cursor, "contacts", "category", "TEXT")
     add_column_if_missing(cursor, "contacts", "photo", "TEXT")
+    add_column_if_missing(cursor, "contacts", "name", "TEXT")
+    add_column_if_missing(cursor, "contacts", "job_title", "TEXT")
+    add_column_if_missing(cursor, "contacts", "org_dept", "TEXT")
+    add_column_if_missing(cursor, "contacts", "responsibilities", "TEXT")
+    add_column_if_missing(cursor, "contacts", "email", "TEXT")
+    add_column_if_missing(cursor, "contacts", "phone", "TEXT")
     add_column_if_missing(cursor, "contacts", "office_phone", "TEXT")
     add_column_if_missing(cursor, "contacts", "mobile_phone", "TEXT")
+    add_column_if_missing(cursor, "contacts", "location", "TEXT")
+    add_column_if_missing(cursor, "contacts", "linkedin", "TEXT")
+    add_column_if_missing(cursor, "contacts", "bmc_relationship", "TEXT")
+    add_column_if_missing(cursor, "contacts", "characteristics", "TEXT")
+    add_column_if_missing(cursor, "contacts", "background", "TEXT")
+    add_column_if_missing(cursor, "contacts", "personal_interests", "TEXT")
+    add_column_if_missing(cursor, "contacts", "personal_win", "TEXT")
+    add_column_if_missing(cursor, "contacts", "education", "TEXT")
+    add_column_if_missing(cursor, "contacts", "social_media", "TEXT")
+    add_column_if_missing(cursor, "contacts", "additional_notes", "TEXT")
     add_column_if_missing(cursor, "contacts", "status", "TEXT DEFAULT 'Active'")
     add_column_if_missing(cursor, "contacts", "archived_at", "TEXT")
+    add_column_if_missing(cursor, "contacts", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "contacts", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "pg_action_contact_updates", "exec_first", "TEXT")
     add_column_if_missing(cursor, "pg_action_contact_updates", "nbm_completed", "TEXT")
 
@@ -545,6 +576,8 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "outreach", "team_id", "INTEGER DEFAULT 1")
     add_column_if_missing(cursor, "outreach", "fy", "TEXT")
     add_column_if_missing(cursor, "outreach", "quarter", "TEXT")
+    add_column_if_missing(cursor, "outreach", "account_id", "INTEGER")
+    add_column_if_missing(cursor, "outreach", "contact_id", "INTEGER")
     add_column_if_missing(cursor, "outreach", "partner_contact_id", "INTEGER")
     add_column_if_missing(cursor, "outreach", "campaign", "TEXT")
     add_column_if_missing(cursor, "outreach", "sales_play", "TEXT")
@@ -552,15 +585,27 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "outreach", "campaign_end_date", "TEXT")
     add_column_if_missing(cursor, "outreach", "campaign_tasks_per_week", "INTEGER")
     add_column_if_missing(cursor, "outreach", "campaign_total_tasks", "INTEGER")
+    add_column_if_missing(cursor, "outreach", "activity_date", "TEXT")
     add_column_if_missing(cursor, "outreach", "activity_time", "TEXT")
+    add_column_if_missing(cursor, "outreach", "activity_type", "TEXT")
+    add_column_if_missing(cursor, "outreach", "subject", "TEXT")
+    add_column_if_missing(cursor, "outreach", "notes", "TEXT")
+    add_column_if_missing(cursor, "outreach", "outcome", "TEXT")
     add_column_if_missing(cursor, "outreach", "scheduled_meeting_date", "TEXT")
     add_column_if_missing(cursor, "outreach", "scheduled_meeting_time", "TEXT")
+    add_column_if_missing(cursor, "outreach", "next_action", "TEXT")
+    add_column_if_missing(cursor, "outreach", "next_action_date", "TEXT")
     add_column_if_missing(cursor, "outreach", "next_action_time", "TEXT")
     add_column_if_missing(cursor, "outreach", "task_status", "TEXT DEFAULT 'Not Started'")
     add_column_if_missing(cursor, "outreach", "completed_at", "TEXT")
     add_column_if_missing(cursor, "outreach", "assigned_to", "TEXT")
+    add_column_if_missing(cursor, "outreach", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "outreach", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "outreach_recipients", "outreach_id", "INTEGER")
+    add_column_if_missing(cursor, "outreach_recipients", "contact_id", "INTEGER")
     add_column_if_missing(cursor, "outreach_recipients", "partner_contact_id", "INTEGER")
     add_column_if_missing(cursor, "outreach_recipients", "sort_order", "INTEGER DEFAULT 0")
+    add_column_if_missing(cursor, "outreach_recipients", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
 
     # Safe migrations for account partners
     add_column_if_missing(cursor, "account_partners", "team_id", "INTEGER DEFAULT 1")
@@ -612,6 +657,17 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "partner_contacts", "notes", "TEXT")
     add_column_if_missing(cursor, "partner_contacts", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "partner_contacts", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
+
+    # Partner contact account links were added after the original partner tables.
+    # Keep every column migratable so upgraded hosted workspaces do not fail on
+    # partner, account, PG Progress or report navigation when this table already
+    # exists in an older partial shape.
+    add_column_if_missing(cursor, "partner_contact_accounts", "partner_contact_id", "INTEGER")
+    add_column_if_missing(cursor, "partner_contact_accounts", "partner_id", "INTEGER")
+    add_column_if_missing(cursor, "partner_contact_accounts", "account_id", "INTEGER")
+    add_column_if_missing(cursor, "partner_contact_accounts", "relationship_status", "TEXT")
+    add_column_if_missing(cursor, "partner_contact_accounts", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "partner_contact_accounts", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
 
     cursor.execute("""
         INSERT OR IGNORE INTO partner_contact_accounts (

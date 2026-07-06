@@ -24,7 +24,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.4"
 APP_RELEASE_DATE = "2026-07-06"
-APP_BUILD = "2026-07-06-v2.6.4-navigation-outreach-resilience-r2"
+APP_BUILD = "2026-07-06-v2.6.4-navigation-schema-resilience-r3"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -47,6 +47,7 @@ RELEASE_NOTES = [
             "Prevented duplicate Outreach tasks for the same contact, date/time, activity type and subject combination.",
             "Included overdue planned actions in PG Progress Future Planned Actions and highlighted them in red.",
             "Hardened Outreach update validation and navigation SQL so validation errors show on the form instead of becoming internal server errors.",
+            "Added defensive hosted-workspace migrations for PG Progress, partner-account links and outreach recipients to prevent internal server errors after upgrades.",
         ],
         "enhanced": [
             "Improved Insights guidance so stale or failing activity recommends a go-to-market route based on successful activity patterns from other accounts.",
