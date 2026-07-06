@@ -3593,6 +3593,12 @@ a:hover {
     color: #164f2b;
 }
 
+.scheduled-action-entry.scheduled-action-overdue,
+.scheduled-action-entry.scheduled-action-overdue span {
+    color: #b42318;
+    font-weight: 700;
+}
+
 [data-scheduled-meeting-field][hidden] {
     display: none !important;
 }

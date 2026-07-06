@@ -22,9 +22,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.6.3"
+APP_VERSION = "2.6.4"
 APP_RELEASE_DATE = "2026-07-06"
-APP_BUILD = "2026-07-06-v2.6.3-pg-progress-relapse-r11"
+APP_BUILD = "2026-07-06-v2.6.4-insights-dedupe-pg-actions-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -38,6 +38,19 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.6.4",
+        "release_date": "2026-07-06",
+        "title": "Strategic insights, outreach dedupe and overdue PG actions",
+        "fixed": [
+            "Added business-unit context to account-specific Insights so accounts with the same name do not look duplicated.",
+            "Prevented duplicate Outreach tasks for the same contact, date/time, activity type and subject combination.",
+            "Included overdue planned actions in PG Progress Future Planned Actions and highlighted them in red.",
+        ],
+        "enhanced": [
+            "Improved Insights guidance so stale or failing activity recommends a go-to-market route based on successful activity patterns from other accounts.",
+        ],
+    },
     {
         "version": "2.6.3",
         "release_date": "2026-07-03",
@@ -3500,6 +3513,59 @@ def learned_success_route_recommendation(connection):
     )
 
 
+def account_context_label(row_or_name, business_unit=None):
+    if hasattr(row_or_name, "keys"):
+        account_name = row_or_name["account_name"] if "account_name" in row_or_name.keys() else "Unknown account"
+        business_unit = (row_or_name["business_unit"] if "business_unit" in row_or_name.keys() else "") or business_unit
+    elif isinstance(row_or_name, dict):
+        account_name = row_or_name.get("account_name") or "Unknown account"
+        business_unit = row_or_name.get("business_unit") or business_unit
+    else:
+        account_name = row_or_name or "Unknown account"
+    return f"{account_name} - {business_unit}" if business_unit else account_name
+
+
+def strategic_gtm_recommendation(connection, account_label, failed_activity_type="", failed_sales_play=""):
+    success_outcomes = tuple(dict.fromkeys((*PG_SUCCESS_OUTCOMES, "Positive Response", "Referral Made", "Follow-up Required")))
+    placeholders = ",".join("?" for _ in success_outcomes)
+    row = connection.execute(f"""
+        SELECT
+            outreach.sales_play,
+            outreach.activity_type,
+            contacts.category,
+            contacts.bmc_relationship,
+            COUNT(*) AS total,
+            SUM(CASE WHEN outreach.outcome IN ('NBM Booked', 'NBM Meeting') THEN 1 ELSE 0 END) AS nbm_total,
+            SUM(CASE WHEN outreach.outcome IN ('Discovery Booked', 'NBM Booked', 'NBM Meeting', 'Exec Meeting Booked', 'Meeting Booked') THEN 1 ELSE 0 END) AS meeting_total
+        FROM outreach
+        LEFT JOIN contacts ON contacts.id = outreach.contact_id
+        WHERE outreach.outcome IN ({placeholders})
+          AND (
+                COALESCE(outreach.activity_type, '') != COALESCE(?, '')
+             OR COALESCE(outreach.sales_play, '') != COALESCE(?, '')
+          )
+        GROUP BY outreach.sales_play, outreach.activity_type, contacts.category, contacts.bmc_relationship
+        ORDER BY nbm_total DESC, meeting_total DESC, total DESC
+        LIMIT 1
+    """, (*success_outcomes, failed_activity_type or "", failed_sales_play or "")).fetchone()
+    if not row:
+        return (
+            f"For {account_label}, stop repeating the current route and build a fresh meeting-led sequence: "
+            "try a different stakeholder level, a new channel mix, and a direct Discovery or NBM ask with two clear time options."
+        )
+    route = compact_join([
+        row["sales_play"],
+        row["activity_type"],
+        row["category"],
+        row["bmc_relationship"],
+    ], 4)
+    return (
+        f"For {account_label}, pivot to a go-to-market route that is working elsewhere: {route}. "
+        f"That pattern has produced {row['nbm_total'] or 0} NBM booking(s) and {row['meeting_total'] or 0} meeting signal(s). "
+        "Use it to create a new contact angle or campaign touchpoint aimed specifically at booking a customer meeting."
+    )
+
+
 def deduplicate_execution_insights(insights):
     unique_insights = []
     seen = set()
@@ -3691,6 +3757,7 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
             SELECT
                 accounts.id,
                 accounts.account_name,
+                accounts.business_unit,
                 COALESCE(accounts.pipeline_target, 0) AS pipeline_target,
                 COALESCE(accounts.sales_play, '') AS sales_play,
                 (
@@ -3720,6 +3787,7 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
         LIMIT 4
     """)
     for row in untouched_accounts:
+        account_label = account_context_label(row)
         reasons = []
         if int(row["active_contact_total"] or 0) == 0:
             reasons.append("no active contacts")
@@ -3729,10 +3797,10 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
         insights.append({
             "source": "Daily Focus",
             "category": "Account Activity",
-            "title": f"{row['account_name']} is untouched: {reason_text}",
-            "evidence": f"Account: {row['account_name']}. Active contacts: {row['active_contact_total'] or 0}. Campaign tasks: {row['campaign_task_total'] or 0}. Sales play: {row['sales_play'] or 'not entered'}. Pipeline target: ${float(row['pipeline_target'] or 0):,.0f}.",
+            "title": f"{account_label} is untouched: {reason_text}",
+            "evidence": f"Account: {account_label}. Active contacts: {row['active_contact_total'] or 0}. Campaign tasks: {row['campaign_task_total'] or 0}. Sales play: {row['sales_play'] or 'not entered'}. Pipeline target: ${float(row['pipeline_target'] or 0):,.0f}.",
             "message": "This account cannot create reliable campaign learning or meeting conversion until contact coverage and campaign tasks exist.",
-            "action": f"Add contacts or build campaign tasks for {row['account_name']}, then make the first ask point toward an NBM meeting.",
+            "action": strategic_gtm_recommendation(connection, account_label, "", row["sales_play"]),
             "link": url_for("view_account", account_id=row["id"]),
             "priority": "high",
         })
@@ -3741,24 +3809,26 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
         SELECT
             accounts.id,
             accounts.account_name,
+            accounts.business_unit,
             COALESCE(accounts.pipeline_target, 0) AS pipeline_target
         FROM accounts
         LEFT JOIN contacts
           ON contacts.account_id = accounts.id
          AND COALESCE(contacts.status, 'Active') = 'Active'
-        GROUP BY accounts.id, accounts.account_name, accounts.pipeline_target
+        GROUP BY accounts.id, accounts.account_name, accounts.business_unit, accounts.pipeline_target
         HAVING COUNT(contacts.id) = 0
         ORDER BY pipeline_target DESC, accounts.account_name
         LIMIT 4
     """)
     for row in no_contact_accounts:
+        account_label = account_context_label(row)
         insights.append({
             "source": "Daily Focus",
             "category": "Contact Activity",
-            "title": f"{row['account_name']} has no active contacts",
-            "evidence": f"Account: {row['account_name']}. Active contacts: 0. Pipeline target: ${float(row['pipeline_target'] or 0):,.0f}.",
+            "title": f"{account_label} has no active contacts",
+            "evidence": f"Account: {account_label}. Active contacts: 0. Pipeline target: ${float(row['pipeline_target'] or 0):,.0f}.",
             "message": "No contact coverage means there is no person to progress toward Discovery, NBM or executive meetings.",
-            "action": f"Add at least one executive buyer, assistant or senior stakeholder for {row['account_name']}, then create the first meeting-led outreach task.",
+            "action": f"Add at least one executive buyer, assistant or senior stakeholder for {account_label}, then use the strongest successful route from other accounts to create the first meeting-led outreach task.",
             "link": url_for("view_account", account_id=row["id"]),
             "priority": "high",
         })
@@ -3771,6 +3841,7 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
             outreach.next_action_date,
             outreach.next_action_time,
             accounts.account_name,
+            accounts.business_unit,
             COALESCE(contacts.name, partner_contacts.name) AS contact_name,
             COALESCE(contacts.job_title, partner_contacts.job_title) AS contact_title
         FROM outreach
@@ -3782,13 +3853,14 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
         LIMIT 6
     """, overdue_task_params())
     for row in overdue_outreach:
+        account_label = account_context_label(row)
         contact_label = ", ".join(part for part in [row["contact_name"], row["contact_title"]] if part) or "No contact assigned"
         insight_link = url_for("view_outreach", outreach_id=row["id"])
         insights.append({
             "source": "Daily Focus",
             "category": "Overdue Outreach",
-            "title": f"{row['account_name'] or 'Unknown account'} overdue: {row['subject'] or 'No subject'}",
-            "evidence": f"Account: {row['account_name'] or 'Unknown account'}. Contact: {contact_label}. Subject: {row['subject'] or 'No subject'}. Due: {display_date(row['next_action_date'])} {row['next_action_time'] or ''}.",
+            "title": f"{account_label} overdue: {row['subject'] or 'No subject'}",
+            "evidence": f"Account: {account_label}. Contact: {contact_label}. Subject: {row['subject'] or 'No subject'}. Due: {display_date(row['next_action_date'])} {row['next_action_time'] or ''}.",
             "message": "This specific overdue activity is blocking momentum because the next meeting-led step has not been completed or rescheduled.",
             "action": f"Open the outreach item, update the outcome, and reset '{row['next_action'] or row['subject'] or 'the next action'}' toward a Discovery or NBM meeting.",
             "link": insight_link,
@@ -3803,6 +3875,7 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
             outreach.outcome,
             outreach.activity_type,
             accounts.account_name,
+            accounts.business_unit,
             COALESCE(contacts.name, partner_contacts.name) AS contact_name,
             COALESCE(contacts.job_title, partner_contacts.job_title) AS contact_title
         FROM outreach
@@ -3814,26 +3887,26 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
         LIMIT 6
     """)
     for row in campaign_gaps:
+        account_label = account_context_label(row)
         contact_label = ", ".join(part for part in [row["contact_name"], row["contact_title"]] if part) or "No contact assigned"
         outcome_value = normalise_outreach_outcome(row["outcome"])
         has_no_response = outcome_value == "No Response"
-        learned_action = learned_success_route_recommendation(connection)
         insights.append({
             "source": "Daily Focus",
             "category": "Campaign Activity",
             "title": (
-                f"{row['account_name'] or 'Unknown account'} needs a new approach after No Response"
+                f"{account_label} needs a new approach after No Response"
                 if has_no_response
-                else f"{row['account_name'] or 'Unknown account'} campaign needs an outcome"
+                else f"{account_label} campaign needs an outcome"
             ),
-            "evidence": f"Account: {row['account_name'] or 'Unknown account'}. Contact: {contact_label}. Outreach subject: {row['subject'] or 'No subject'}. Sales play: {row['sales_play'] or 'not entered'}. Outcome: {outcome_value or 'not recorded'}.",
+            "evidence": f"Account: {account_label}. Contact: {contact_label}. Outreach subject: {row['subject'] or 'No subject'}. Sales play: {row['sales_play'] or 'not entered'}. Outcome: {outcome_value or 'not recorded'}.",
             "message": (
                 "No Response is a negative signal: this account has activity showing the current message, route or ask is not working."
                 if has_no_response
                 else "The campaign has activity but the outcome is not recorded, so PipeFlow needs the result before it can judge performance."
             ),
             "action": (
-                learned_action
+                strategic_gtm_recommendation(connection, account_label, row["activity_type"], row["sales_play"])
                 if has_no_response
                 else "Record the outcome, then use the next touchpoint to test a clear Discovery or NBM ask."
             ),
@@ -3843,9 +3916,7 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
 
     relapse_accounts = dashboard_relapsed_pg_progress_accounts(connection)
     for row in relapse_accounts:
-        account_label = row["account_name"]
-        if row.get("business_unit"):
-            account_label = f"{account_label} - {row['business_unit']}"
+        account_label = account_context_label(row["account_name"], row.get("business_unit"))
         contact_clause = f" Contact route: {row['latest_contact_name']}." if row.get("latest_contact_name") else ""
         insights.append({
             "source": "Daily Focus",
@@ -3858,8 +3929,7 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
             ),
             "message": "The account had momentum, but there has been no positive response or future meeting scheduled inside the last 30 days.",
             "action": (
-                f"Create urgency on {account_label}: try a different engagement route with the existing contact, "
-                "find a new stakeholder in the organisation, or use another channel/message to book a customer meeting."
+                strategic_gtm_recommendation(connection, account_label, "", row.get("sales_play", ""))
             ),
             "link": url_for("view_account", account_id=row["account_id"]),
             "priority": "high",
@@ -5755,6 +5825,56 @@ def save_outreach_recipients(connection, outreach_id, recipients):
         )
 
 
+def outreach_duplicate_exists(connection, account_id, recipients, activity_date="", activity_time="", next_action_date="", next_action_time="", activity_type="", subject="", exclude_outreach_id=None):
+    if not recipients:
+        return False
+    subject_key = (subject or "").strip().casefold()
+    activity_type_key = (activity_type or "").strip().casefold()
+    for contact_id, partner_contact_id in recipients:
+        rows = connection.execute("""
+            SELECT outreach.id, outreach.subject, outreach.activity_type
+            FROM outreach
+            WHERE outreach.account_id = ?
+              AND COALESCE(outreach.activity_date, '') = COALESCE(?, '')
+              AND COALESCE(outreach.activity_time, '') = COALESCE(?, '')
+              AND COALESCE(outreach.next_action_date, '') = COALESCE(?, '')
+              AND COALESCE(outreach.next_action_time, '') = COALESCE(?, '')
+              AND (? IS NULL OR outreach.id != ?)
+              AND (
+                    (? IS NOT NULL AND outreach.contact_id = ?)
+                 OR (? IS NOT NULL AND outreach.partner_contact_id = ?)
+                 OR outreach.id IN (
+                        SELECT outreach_id
+                        FROM outreach_recipients
+                        WHERE (
+                                (? IS NOT NULL AND contact_id = ?)
+                             OR (? IS NOT NULL AND partner_contact_id = ?)
+                        )
+                    )
+              )
+        """, (
+            account_id,
+            activity_date or "",
+            activity_time or "",
+            next_action_date or "",
+            next_action_time or "",
+            exclude_outreach_id,
+            exclude_outreach_id,
+            contact_id,
+            contact_id,
+            partner_contact_id,
+            partner_contact_id,
+            contact_id,
+            contact_id,
+            partner_contact_id,
+            partner_contact_id,
+        )).fetchall()
+        for row in rows:
+            if (row["subject"] or "").strip().casefold() == subject_key and (row["activity_type"] or "").strip().casefold() == activity_type_key:
+                return True
+    return False
+
+
 def selected_outreach_contact_values(connection, outreach_item):
     rows = connection.execute(
         """
@@ -6522,10 +6642,9 @@ def pg_dashboard_context(connection):
                   )
                   AND next_action_date IS NOT NULL
                   AND next_action_date != ''
-                  AND next_action_date >= ?
                   AND {report_scheduled_task_sql("outreach")}
                 ORDER BY next_action_date ASC, next_action_time ASC, id DESC
-            """, (account_id, contact_id, contact_id, today_key, *report_scheduled_task_params())).fetchall()
+            """, (account_id, contact_id, contact_id, *report_scheduled_task_params())).fetchall()
             recent_activity_rows = connection.execute(f"""
                 SELECT activity_date, activity_time, activity_type, subject, outcome, next_action, last_updated, completed_at, task_status
                 FROM outreach
@@ -6565,6 +6684,7 @@ def pg_dashboard_context(connection):
                     "subject": subject,
                     "activity_type": action_row["activity_type"] or "",
                     "due": format_display_datetime(action_row["next_action_date"], action_row["next_action_time"]),
+                    "is_overdue": bool(action_row["next_action_date"] and action_row["next_action_date"] < today_key),
                 })
             last_30_days_activity_entries = []
             for row in recent_activity_rows:
@@ -6688,7 +6808,7 @@ def pg_dashboard_context(connection):
                         "activity": f"Partner activity - {partner_name}",
                         "activity_update": f"{partner_contact_name}: {row['partner_notes']}",
                     })
-            if is_report_scheduled_task and row["next_action_date"] and row["next_action_date"] >= today_key:
+            if is_report_scheduled_task and row["next_action_date"]:
                 key = ("scheduled", row["next_action_date"], row["next_action_time"], row["subject"])
                 if key not in seen_partner_entries:
                     seen_partner_entries.add(key)
@@ -6696,6 +6816,7 @@ def pg_dashboard_context(connection):
                         "subject": row["subject"] or f"Partner activity - {partner_name}",
                         "activity_type": row["activity_type"] or "Partner Touchpoint",
                         "due": format_display_datetime(row["next_action_date"], row["next_action_time"]),
+                        "is_overdue": bool(row["next_action_date"] and row["next_action_date"] < today_key),
                     })
         if partner_activity_entries or partner_scheduled_actions:
             partner_rag = pg_progress_rag_status(partner_outcomes, [], [], partner_scheduled_meetings, partner_progress_signals)
@@ -10480,6 +10601,18 @@ def add_outreach():
             error = activity_update_required_message()
         elif outcome_requires_scheduled_meeting(normalise_outreach_outcome(request.form.get("outcome"))) and not request.form.get("scheduled_meeting_at"):
             error = "Add the scheduled meeting date and time before saving this meeting outcome."
+        elif outreach_duplicate_exists(
+            connection,
+            request.form.get("account_id"),
+            recipients,
+            request.form.get("activity_date"),
+            request.form.get("activity_time"),
+            request.form.get("next_action_date"),
+            request.form.get("next_action_time"),
+            request.form.get("activity_type"),
+            request.form.get("subject"),
+        ):
+            error = "This contact already has the same outreach task at this date and time. Update the existing task or choose a different timestamp."
         else:
             outcome_value = normalise_outreach_outcome(request.form.get("outcome"))
             scheduled_meeting_date, scheduled_meeting_time = split_scheduled_meeting_datetime(
@@ -10777,6 +10910,18 @@ def campaign_builder():
                             f"Sales play: {sales_play}. Contact: {contact['name']}. "
                             f"{success_context_summary}"
                         )
+                        if outreach_duplicate_exists(
+                            connection,
+                            account_id,
+                            [(contact["id"], None)],
+                            action_date.isoformat(),
+                            step["time"],
+                            action_date.isoformat(),
+                            step["time"],
+                            step["activity_type"],
+                            subject,
+                        ):
+                            continue
                         connection.execute("""
                             INSERT INTO outreach (
                                 fy,
@@ -11320,6 +11465,38 @@ def edit_outreach(outreach_id):
 
         if status_requires_activity_update(new_values["task_status"]) and not activity_update_is_valid(new_values["next_action"]):
             error = activity_update_required_message()
+            connection.close()
+            return render_template(
+                "edit_outreach.html",
+                outreach_item=outreach_item,
+                accounts=accounts,
+                contacts=contacts,
+                profile=profile,
+                non_working_blocks=non_working_block_rows,
+                sales_play_options=sales_play_rows,
+                partner_activity_options=partner_activity_options,
+                partner_contacts=partner_contacts,
+                selected_contact_values=recipient_values,
+                selected_account_id=new_values["account_id"],
+                scheduled_meeting_at=request.form.get("scheduled_meeting_at", ""),
+                error=error,
+                task_locked=task_locked_value,
+                task_lock_message=task_lock_message_value
+            )
+
+        if outreach_duplicate_exists(
+            connection,
+            new_values["account_id"],
+            recipients,
+            new_values["activity_date"],
+            new_values["activity_time"],
+            new_values["next_action_date"],
+            new_values["next_action_time"],
+            new_values["activity_type"],
+            new_values["subject"],
+            exclude_outreach_id=outreach_id,
+        ):
+            error = "This contact already has the same outreach task at this date and time. Update the existing task or choose a different timestamp."
             connection.close()
             return render_template(
                 "edit_outreach.html",

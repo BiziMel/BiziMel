@@ -265,7 +265,7 @@
                                 {% if row.next_7_days_actions %}
                                     <div class="scheduled-action-list">
                                         {% for action in row.next_7_days_actions %}
-                                            <div class="scheduled-action-entry">
+                                            <div class="scheduled-action-entry {% if action.is_overdue %}scheduled-action-overdue{% endif %}">
                                                 <span>
                                                     {% if action.due %}{{ action.due }} - {% endif %}
                                                     {% if action.activity_type %}{{ action.activity_type }} - {% endif %}
