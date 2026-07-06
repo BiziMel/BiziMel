@@ -23,8 +23,8 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 
 APP_VERSION = "2.6.3"
-APP_RELEASE_DATE = "2026-07-03"
-APP_BUILD = "2026-07-03-v2.6.3-full-data-workbook-export-r10"
+APP_RELEASE_DATE = "2026-07-06"
+APP_BUILD = "2026-07-06-v2.6.3-pg-progress-relapse-r11"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -59,6 +59,10 @@ RELEASE_NOTES = [
         "new": [
             "Added account-level contact ingestion from mapped spreadsheet files with preview, column mapping and duplicate update handling.",
             "Added a full PipeFlow data workbook export with separate sheets for Accounts, Contacts, Outreach, PG Progress Plan and PG Progress Actions.",
+        ],
+        "enhanced": [
+            "Changed PG Progress RAG scoring so positive and meeting progress relapses after 30 days unless fresh progress or a future customer meeting is recorded.",
+            "Added relapse-driven Insights guidance so accounts losing PG momentum are called out with urgency to re-engage, find new contacts or book customer meetings.",
         ],
     },
     {
@@ -3599,6 +3603,80 @@ def dashboard_follow_ups_due_count(connection, today):
     """, ((today + timedelta(days=7)).isoformat(), *open_task_params()))
 
 
+def dashboard_relapsed_pg_progress_accounts(connection, limit=6):
+    today = current_app_datetime().date()
+    cutoff_date = today - timedelta(days=30)
+    progress_outcomes = set(PG_SUCCESS_OUTCOMES) | {"Positive Response", "Referral Made", "Follow-up Required"}
+    rows = dashboard_rows(connection, """
+        SELECT
+            accounts.id AS account_id,
+            accounts.account_name,
+            accounts.business_unit,
+            COALESCE(accounts.pipeline_target, 0) AS pipeline_target,
+            COALESCE(accounts.sales_play, '') AS sales_play,
+            outreach.outcome,
+            outreach.activity_type,
+            outreach.scheduled_meeting_date,
+            outreach.completed_at,
+            outreach.last_updated,
+            outreach.activity_date,
+            outreach.subject,
+            COALESCE(contacts.name, partner_contacts.name) AS contact_name
+        FROM accounts
+        JOIN outreach ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
+        LEFT JOIN partner_contacts ON outreach.partner_contact_id = partner_contacts.id
+        WHERE COALESCE(outreach.outcome, '') != ''
+           OR COALESCE(outreach.activity_type, '') = 'Meeting'
+           OR COALESCE(outreach.scheduled_meeting_date, '') != ''
+        ORDER BY accounts.account_name, outreach.last_updated DESC, outreach.id DESC
+    """)
+    account_payloads = {}
+    for row in rows:
+        account_id = row["account_id"]
+        payload = account_payloads.setdefault(account_id, {
+            "account_id": account_id,
+            "account_name": row["account_name"] or "Unknown account",
+            "business_unit": row["business_unit"] or "",
+            "pipeline_target": money_value(row["pipeline_target"]),
+            "sales_play": row["sales_play"] or "",
+            "latest_progress_date": None,
+            "latest_progress_label": "",
+            "latest_contact_name": "",
+            "has_future_meeting": False,
+        })
+        scheduled_date = parse_progress_date(row["scheduled_meeting_date"])
+        if scheduled_date and scheduled_date >= today:
+            payload["has_future_meeting"] = True
+        outcome = normalise_outreach_outcome(row["outcome"])
+        is_progress = (
+            outcome in progress_outcomes
+            or row["activity_type"] == "Meeting"
+            or bool(scheduled_date)
+        )
+        if not is_progress:
+            continue
+        progress_date = scheduled_date or parse_progress_date(row["completed_at"]) or parse_progress_date(row["last_updated"]) or parse_progress_date(row["activity_date"])
+        if not progress_date:
+            continue
+        if not payload["latest_progress_date"] or progress_date > payload["latest_progress_date"]:
+            payload["latest_progress_date"] = progress_date
+            payload["latest_progress_label"] = outcome or row["activity_type"] or row["subject"] or "Progress signal"
+            payload["latest_contact_name"] = row["contact_name"] or ""
+
+    relapsed = []
+    for payload in account_payloads.values():
+        latest_date = payload["latest_progress_date"]
+        if payload["has_future_meeting"] or not latest_date or latest_date >= cutoff_date:
+            continue
+        payload["days_since_progress"] = (today - latest_date).days
+        relapsed.append(payload)
+    return sorted(
+        relapsed,
+        key=lambda item: (-item["pipeline_target"], item["days_since_progress"], item["account_name"].lower()),
+    )[:limit]
+
+
 def build_dashboard_strategy_insights(connection, metric_values, account_health_rows=None, learning_insights=None):
     account_health_rows = account_health_rows or []
     learning_insights = learning_insights or []
@@ -3761,6 +3839,30 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
             ),
             "link": url_for("view_outreach", outreach_id=row["id"]),
             "priority": "medium",
+        })
+
+    relapse_accounts = dashboard_relapsed_pg_progress_accounts(connection)
+    for row in relapse_accounts:
+        account_label = row["account_name"]
+        if row.get("business_unit"):
+            account_label = f"{account_label} - {row['business_unit']}"
+        contact_clause = f" Contact route: {row['latest_contact_name']}." if row.get("latest_contact_name") else ""
+        insights.append({
+            "source": "Daily Focus",
+            "category": "PG Progress Relapse",
+            "title": f"{account_label} has relapsed from PG progress",
+            "evidence": (
+                f"Account: {account_label}. Last progress signal: {row['latest_progress_label'] or 'progress'} "
+                f"on {display_date(row['latest_progress_date'])}, {row['days_since_progress']} days ago. "
+                f"No future customer meeting is scheduled.{contact_clause}"
+            ),
+            "message": "The account had momentum, but there has been no positive response or future meeting scheduled inside the last 30 days.",
+            "action": (
+                f"Create urgency on {account_label}: try a different engagement route with the existing contact, "
+                "find a new stakeholder in the organisation, or use another channel/message to book a customer meeting."
+            ),
+            "link": url_for("view_account", account_id=row["account_id"]),
+            "priority": "high",
         })
 
     if overdue_count:
@@ -5314,34 +5416,99 @@ PG_PROGRESS_POSITIVE_OUTCOMES = (
 )
 
 
-def pg_progress_rag_status(outcomes, discovery_values=None, nbm_values=None, scheduled_meetings=None):
+def parse_progress_date(value):
+    parsed = parse_app_datetime(value)
+    if parsed:
+        return parsed.date()
+    if isinstance(value, date):
+        return value
+    return None
+
+
+def progress_signal_is_recent(value, cutoff_date):
+    signal_date = parse_progress_date(value)
+    return bool(signal_date and signal_date >= cutoff_date)
+
+
+def pg_progress_rag_status(outcomes, discovery_values=None, nbm_values=None, scheduled_meetings=None, progress_signals=None):
     discovery_values = [str(value or "").strip() for value in (discovery_values or [])]
     nbm_values = [str(value or "").strip() for value in (nbm_values or [])]
-    scheduled_meetings = [str(value or "").strip() for value in (scheduled_meetings or [])]
+    scheduled_meetings = [parse_progress_date(value) for value in (scheduled_meetings or []) if parse_progress_date(value)]
+    progress_signals = progress_signals or []
+    today = current_app_datetime().date()
+    cutoff_date = today - timedelta(days=30)
     normalised = [normalise_outreach_outcome(outcome) for outcome in outcomes if str(outcome or "").strip()]
-    if any(scheduled_meetings) or any(value == "Yes" for value in nbm_values):
+
+    has_future_meeting = any(meeting_date >= today for meeting_date in scheduled_meetings)
+    has_recent_meeting_signal = any(cutoff_date <= meeting_date < today for meeting_date in scheduled_meetings)
+    has_stale_meeting_signal = any(meeting_date < cutoff_date for meeting_date in scheduled_meetings)
+    has_recent_positive_signal = False
+    has_stale_positive_signal = False
+    has_any_historic_progress = bool(scheduled_meetings)
+
+    for signal in progress_signals:
+        outcome = normalise_outreach_outcome(signal.get("outcome", ""))
+        signal_type = signal.get("type", "")
+        signal_date = parse_progress_date(signal.get("date", ""))
+        if not outcome and not signal_type:
+            continue
+        is_progress = (
+            outcome in PG_PROGRESS_POSITIVE_OUTCOMES
+            or outcome in PG_SUCCESS_OUTCOMES
+            or signal_type in {"manual_discovery", "manual_nbm", "meeting"}
+        )
+        if not is_progress:
+            continue
+        has_any_historic_progress = True
+        if signal_date and signal_date >= cutoff_date:
+            if outcome in PG_SUCCESS_OUTCOMES or signal_type in {"manual_nbm", "meeting"}:
+                has_recent_meeting_signal = True
+            else:
+                has_recent_positive_signal = True
+        else:
+            if outcome in PG_SUCCESS_OUTCOMES or signal_type in {"manual_nbm", "meeting"}:
+                has_stale_meeting_signal = True
+            else:
+                has_stale_positive_signal = True
+
+    # A future booked meeting is the only durable green state. Once that meeting
+    # date passes, the account/contact must show fresh follow-on progress within
+    # 30 days or the RAG deliberately relapses.
+    if has_future_meeting:
         return {
             "status": "green",
             "label": "Green",
-            "reason": "Meeting scheduled",
+            "reason": "Future meeting scheduled",
         }
-    if any(value == "Yes" for value in nbm_values):
+    if any(value == "Yes" for value in nbm_values) and has_recent_meeting_signal:
         return {
             "status": "green",
             "label": "Green",
-            "reason": "NBM meeting marked as completed",
+            "reason": "Recent NBM meeting progress recorded within 30 days",
         }
-    if any(value == "Yes" for value in discovery_values) or any(outcome in PG_PROGRESS_POSITIVE_OUTCOMES for outcome in normalised):
+    if has_recent_meeting_signal:
         return {
             "status": "amber",
             "label": "Amber",
-            "reason": "Positive response recorded",
+            "reason": "Meeting progress is recent but no future meeting is scheduled",
+        }
+    if (any(value == "Yes" for value in discovery_values) and any(signal.get("type") == "manual_discovery" and progress_signal_is_recent(signal.get("date"), cutoff_date) for signal in progress_signals)) or has_recent_positive_signal:
+        return {
+            "status": "amber",
+            "label": "Amber",
+            "reason": "Positive response or Discovery progress recorded within 30 days",
         }
     if any(value == "No" for value in (*discovery_values, *nbm_values)):
         return {
             "status": "red",
             "label": "Red",
             "reason": "Meeting progression marked as no",
+        }
+    if has_any_historic_progress or has_stale_positive_signal or has_stale_meeting_signal:
+        return {
+            "status": "red",
+            "label": "Red",
+            "reason": "Previous progress has relapsed because no positive response or future meeting has been recorded in 30 days",
         }
     return {
         "status": "red",
@@ -5401,7 +5568,7 @@ def contact_pg_progress_rag(connection, account_id, contact_id, legacy_action_up
         else (legacy_action_update["completed_discovery_meeting"] if legacy_action_update else "")
     )
     contact_outcome_rows = connection.execute("""
-        SELECT outcome, scheduled_meeting_date, scheduled_meeting_time
+        SELECT outcome, scheduled_meeting_date, scheduled_meeting_time, activity_date, completed_at, last_updated, activity_type
         FROM outreach
         WHERE account_id = ?
           AND (
@@ -5415,6 +5582,25 @@ def contact_pg_progress_rag(connection, account_id, contact_id, legacy_action_up
     """, (account_id, contact_id, contact_id)).fetchall()
     completed_discovery = manual_completed_discovery or ("Yes" if discovery_meeting_count else "")
     nbm_completed = action_update["nbm_completed"] if action_update and "nbm_completed" in action_update.keys() else ""
+    progress_signals = []
+    for row in contact_outcome_rows:
+        progress_date = row["scheduled_meeting_date"] or row["completed_at"] or row["last_updated"] or row["activity_date"]
+        progress_signals.append({
+            "outcome": row["outcome"],
+            "date": progress_date,
+            "type": "meeting" if row["activity_type"] == "Meeting" else "",
+        })
+    manual_update_source = action_update or legacy_action_update
+    if completed_discovery == "Yes" and manual_update_source and "last_updated" in manual_update_source.keys():
+        progress_signals.append({
+            "type": "manual_discovery",
+            "date": manual_update_source["last_updated"],
+        })
+    if nbm_completed == "Yes" and action_update and "last_updated" in action_update.keys():
+        progress_signals.append({
+            "type": "manual_nbm",
+            "date": action_update["last_updated"],
+        })
     return {
         "action_update": action_update,
         "completed_discovery": completed_discovery,
@@ -5424,10 +5610,11 @@ def contact_pg_progress_rag(connection, account_id, contact_id, legacy_action_up
             [completed_discovery],
             [nbm_completed],
             [
-                format_display_datetime(row["scheduled_meeting_date"], row["scheduled_meeting_time"])
+                row["scheduled_meeting_date"]
                 for row in contact_outcome_rows
                 if row["scheduled_meeting_date"]
             ],
+            progress_signals,
         ),
     }
 
@@ -6452,6 +6639,7 @@ def pg_dashboard_context(connection):
         partner_scheduled_actions = []
         partner_outcomes = []
         partner_scheduled_meetings = []
+        partner_progress_signals = []
         seen_partner_entries = set()
         partner_group_names = []
         partner_contact_names = []
@@ -6464,8 +6652,13 @@ def pg_dashboard_context(connection):
                 partner_group_names.append(partner_name)
             if row["outcome"] and (is_report_visible_task or is_report_scheduled_task):
                 partner_outcomes.append(row["outcome"])
+                partner_progress_signals.append({
+                    "outcome": row["outcome"],
+                    "date": row["scheduled_meeting_date"] or row["completed_at"] or row["last_updated"] or row["activity_date"],
+                    "type": "meeting" if row["activity_type"] == "Meeting" else "",
+                })
             if row["scheduled_meeting_date"] and (is_report_visible_task or is_report_scheduled_task):
-                partner_scheduled_meetings.append(format_display_datetime(row["scheduled_meeting_date"], row["scheduled_meeting_time"]))
+                partner_scheduled_meetings.append(row["scheduled_meeting_date"])
             contact_label = partner_contact_name
             if row["partner_contact_job_title"]:
                 contact_label = f"{contact_label} - {row['partner_contact_job_title']}"
@@ -6505,7 +6698,7 @@ def pg_dashboard_context(connection):
                         "due": format_display_datetime(row["next_action_date"], row["next_action_time"]),
                     })
         if partner_activity_entries or partner_scheduled_actions:
-            partner_rag = pg_progress_rag_status(partner_outcomes, [], [], partner_scheduled_meetings)
+            partner_rag = pg_progress_rag_status(partner_outcomes, [], [], partner_scheduled_meetings, partner_progress_signals)
             partner_group_label = "Partner Account: " + compact_join(partner_group_names, 3) if partner_group_names else "Partner activity"
             pg_action_rows.append({
                 "is_partner_row": True,
