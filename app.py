@@ -24,7 +24,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.4"
 APP_RELEASE_DATE = "2026-07-06"
-APP_BUILD = "2026-07-06-v2.6.4-insights-dedupe-pg-actions-r1"
+APP_BUILD = "2026-07-06-v2.6.4-navigation-outreach-resilience-r2"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -46,6 +46,7 @@ RELEASE_NOTES = [
             "Added business-unit context to account-specific Insights so accounts with the same name do not look duplicated.",
             "Prevented duplicate Outreach tasks for the same contact, date/time, activity type and subject combination.",
             "Included overdue planned actions in PG Progress Future Planned Actions and highlighted them in red.",
+            "Hardened Outreach update validation and navigation SQL so validation errors show on the form instead of becoming internal server errors.",
         ],
         "enhanced": [
             "Improved Insights guidance so stale or failing activity recommends a go-to-market route based on successful activity patterns from other accounts.",
@@ -3541,8 +3542,8 @@ def strategic_gtm_recommendation(connection, account_label, failed_activity_type
         LEFT JOIN contacts ON contacts.id = outreach.contact_id
         WHERE outreach.outcome IN ({placeholders})
           AND (
-                COALESCE(outreach.activity_type, '') != COALESCE(?, '')
-             OR COALESCE(outreach.sales_play, '') != COALESCE(?, '')
+                COALESCE(outreach.activity_type, '') != ?
+             OR COALESCE(outreach.sales_play, '') != ?
           )
         GROUP BY outreach.sales_play, outreach.activity_type, contacts.category, contacts.bmc_relationship
         ORDER BY nbm_total DESC, meeting_total DESC, total DESC
@@ -5831,7 +5832,24 @@ def outreach_duplicate_exists(connection, account_id, recipients, activity_date=
     subject_key = (subject or "").strip().casefold()
     activity_type_key = (activity_type or "").strip().casefold()
     for contact_id, partner_contact_id in recipients:
-        rows = connection.execute("""
+        recipient_clauses = []
+        recipient_params = []
+        if contact_id:
+            recipient_clauses.extend([
+                "outreach.contact_id = ?",
+                "outreach.id IN (SELECT outreach_id FROM outreach_recipients WHERE contact_id = ?)",
+            ])
+            recipient_params.extend([contact_id, contact_id])
+        if partner_contact_id:
+            recipient_clauses.extend([
+                "outreach.partner_contact_id = ?",
+                "outreach.id IN (SELECT outreach_id FROM outreach_recipients WHERE partner_contact_id = ?)",
+            ])
+            recipient_params.extend([partner_contact_id, partner_contact_id])
+        if not recipient_clauses:
+            continue
+        recipient_sql = " OR ".join(recipient_clauses)
+        rows = connection.execute(f"""
             SELECT outreach.id, outreach.subject, outreach.activity_type
             FROM outreach
             WHERE outreach.account_id = ?
@@ -5840,18 +5858,7 @@ def outreach_duplicate_exists(connection, account_id, recipients, activity_date=
               AND COALESCE(outreach.next_action_date, '') = COALESCE(?, '')
               AND COALESCE(outreach.next_action_time, '') = COALESCE(?, '')
               AND (? IS NULL OR outreach.id != ?)
-              AND (
-                    (? IS NOT NULL AND outreach.contact_id = ?)
-                 OR (? IS NOT NULL AND outreach.partner_contact_id = ?)
-                 OR outreach.id IN (
-                        SELECT outreach_id
-                        FROM outreach_recipients
-                        WHERE (
-                                (? IS NOT NULL AND contact_id = ?)
-                             OR (? IS NOT NULL AND partner_contact_id = ?)
-                        )
-                    )
-              )
+              AND ({recipient_sql})
         """, (
             account_id,
             activity_date or "",
@@ -5860,14 +5867,7 @@ def outreach_duplicate_exists(connection, account_id, recipients, activity_date=
             next_action_time or "",
             exclude_outreach_id,
             exclude_outreach_id,
-            contact_id,
-            contact_id,
-            partner_contact_id,
-            partner_contact_id,
-            contact_id,
-            contact_id,
-            partner_contact_id,
-            partner_contact_id,
+            *recipient_params,
         )).fetchall()
         for row in rows:
             if (row["subject"] or "").strip().casefold() == subject_key and (row["activity_type"] or "").strip().casefold() == activity_type_key:
@@ -11474,6 +11474,7 @@ def edit_outreach(outreach_id):
                 profile=profile,
                 non_working_blocks=non_working_block_rows,
                 sales_play_options=sales_play_rows,
+                sales_play_assets=sales_play_assets,
                 partner_activity_options=partner_activity_options,
                 partner_contacts=partner_contacts,
                 selected_contact_values=recipient_values,
@@ -11506,6 +11507,7 @@ def edit_outreach(outreach_id):
                 profile=profile,
                 non_working_blocks=non_working_block_rows,
                 sales_play_options=sales_play_rows,
+                sales_play_assets=sales_play_assets,
                 partner_activity_options=partner_activity_options,
                 partner_contacts=partner_contacts,
                 selected_contact_values=recipient_values,
