@@ -22,9 +22,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.6.5"
+APP_VERSION = "2.6.6"
 APP_RELEASE_DATE = "2026-07-07"
-APP_BUILD = "2026-07-07-v2.6.5-pg-progress-logo-broadcast-r1"
+APP_BUILD = "2026-07-07-v2.6.6-contact-insights-outreach-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -38,6 +38,20 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.6.6",
+        "release_date": "2026-07-07",
+        "title": "Contact table readability, insight evidence lists and Outreach save resilience",
+        "fixed": [
+            "Reduced Contacts table density and column widths so the page stays within the desktop view more cleanly.",
+            "Changed Execution Insights Evidence and Recommended Move cells into readable bullet lists.",
+            "Hardened new Outreach creation so validation or database errors return a clear form message instead of an internal server error.",
+        ],
+        "enhanced": [
+            "Made account names clickable from the Contacts table.",
+            "Added a clickable Outreach total per contact that opens a filtered Outreach list across all task statuses.",
+        ],
+    },
     {
         "version": "2.6.5",
         "release_date": "2026-07-07",
@@ -9965,7 +9979,21 @@ def contacts():
     name_filter = request.args.get("contact_name", "").strip()
     status_filter = request.args.get("status", "")
     query = """
-        SELECT contacts.*, accounts.account_name, accounts.account_tier, accounts.business_unit
+        SELECT
+            contacts.*,
+            accounts.account_name,
+            accounts.account_tier,
+            accounts.business_unit,
+            (
+                SELECT COUNT(DISTINCT outreach.id)
+                FROM outreach
+                WHERE outreach.contact_id = contacts.id
+                   OR outreach.id IN (
+                        SELECT outreach_id
+                        FROM outreach_recipients
+                        WHERE outreach_recipients.contact_id = contacts.id
+                   )
+            ) AS outreach_total
         FROM contacts
         LEFT JOIN accounts ON contacts.account_id = accounts.id
         WHERE COALESCE(contacts.status, 'Active') != 'Archived'
@@ -10404,6 +10432,7 @@ def outreach():
     sales_play_filter = request.args.get("sales_play")
     account_filter = request.args.get("account_id")
     outcome_filter = request.args.get("outcome")
+    contact_filter = request.args.get("contact_id", "")
     due_start_filter = request.args.get("due_start", "")
     due_end_filter = request.args.get("due_end", "")
     activity_start_filter = request.args.get("activity_start", "")
@@ -10480,6 +10509,19 @@ def outreach():
     if account_filter:
         query += " AND outreach.account_id = ?"
         params.append(account_filter)
+
+    if contact_filter:
+        query += """
+            AND (
+                    outreach.contact_id = ?
+                 OR outreach.id IN (
+                        SELECT outreach_id
+                        FROM outreach_recipients
+                        WHERE outreach_recipients.contact_id = ?
+                    )
+            )
+        """
+        params.extend([contact_filter, contact_filter])
 
     if outcome_filter:
         query += " AND outreach.outcome = ?"
@@ -10628,6 +10670,7 @@ def outreach():
         quarter_filter=quarter_filter,
         sales_play_filter=sales_play_filter,
         account_filter=account_filter,
+        contact_filter=contact_filter,
         outcome_filter=outcome_filter,
         nbm_success_week_filter=nbm_success_week_filter,
         selected_statuses=selected_statuses,
@@ -10686,72 +10729,78 @@ def add_outreach():
         ):
             error = "This contact already has the same outreach task at this date and time. Update the existing task or choose a different timestamp."
         else:
-            outcome_value = normalise_outreach_outcome(request.form.get("outcome"))
-            scheduled_meeting_date, scheduled_meeting_time = split_scheduled_meeting_datetime(
-                request.form.get("scheduled_meeting_at") if outcome_requires_scheduled_meeting(outcome_value) else ""
-            )
-            assigned_to = request.form.get("assigned_to") or default_outreach_assignee()
-            cursor = connection.execute("""
-                INSERT INTO outreach (
-                    fy, quarter, campaign, sales_play, account_id, contact_id, partner_contact_id, activity_type,
-                    activity_date, activity_time, subject, notes, outcome,
-                    scheduled_meeting_date, scheduled_meeting_time,
-                    next_action, next_action_date, next_action_time,
-                    task_status, completed_at, assigned_to
+            try:
+                outcome_value = normalise_outreach_outcome(request.form.get("outcome"))
+                scheduled_meeting_date, scheduled_meeting_time = split_scheduled_meeting_datetime(
+                    request.form.get("scheduled_meeting_at") if outcome_requires_scheduled_meeting(outcome_value) else ""
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                request.form.get("fy"),
-                request.form.get("quarter"),
-                sales_play_value,
-                sales_play_value,
-                request.form.get("account_id"),
-                contact_id,
-                partner_contact_id,
-                request.form.get("activity_type"),
-                request.form.get("activity_date"),
-                request.form.get("activity_time"),
-                request.form.get("subject"),
-                request.form.get("notes", ""),
-                outcome_value,
-                scheduled_meeting_date,
-                scheduled_meeting_time,
-                request.form.get("next_action"),
-                request.form.get("next_action_date"),
-                request.form.get("next_action_time"),
-                requested_status,
-                app_datetime_key() if requested_status == "Completed" else "",
-                assigned_to
-            ))
-            outreach_id = cursor.lastrowid
-            save_outreach_recipients(connection, outreach_id, recipients)
-            audit_record_create(connection, "outreach", outreach_id, {
-                "fy": request.form.get("fy"),
-                "quarter": request.form.get("quarter"),
-                "campaign": sales_play_value,
-                "sales_play": sales_play_value,
-                "account_id": request.form.get("account_id"),
-                "contact_id": contact_id,
-                "partner_contact_id": partner_contact_id,
-                "activity_type": request.form.get("activity_type"),
-                "activity_date": request.form.get("activity_date"),
-                "activity_time": request.form.get("activity_time"),
-                "subject": request.form.get("subject"),
-                "outcome": outcome_value,
-                "scheduled_meeting_date": scheduled_meeting_date,
-                "scheduled_meeting_time": scheduled_meeting_time,
-                "next_action": request.form.get("next_action"),
-                "next_action_date": request.form.get("next_action_date"),
-                "next_action_time": request.form.get("next_action_time"),
-                "task_status": requested_status,
-                "completed_at": app_datetime_key() if requested_status == "Completed" else "",
-                "assigned_to": assigned_to,
-            })
+                assigned_to = request.form.get("assigned_to") or default_outreach_assignee()
+                completed_at = app_datetime_key() if requested_status == "Completed" else ""
+                cursor = connection.execute("""
+                    INSERT INTO outreach (
+                        fy, quarter, campaign, sales_play, account_id, contact_id, partner_contact_id, activity_type,
+                        activity_date, activity_time, subject, notes, outcome,
+                        scheduled_meeting_date, scheduled_meeting_time,
+                        next_action, next_action_date, next_action_time,
+                        task_status, completed_at, assigned_to
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    request.form.get("fy"),
+                    request.form.get("quarter"),
+                    sales_play_value,
+                    sales_play_value,
+                    request.form.get("account_id"),
+                    contact_id,
+                    partner_contact_id,
+                    request.form.get("activity_type"),
+                    request.form.get("activity_date"),
+                    request.form.get("activity_time"),
+                    request.form.get("subject"),
+                    request.form.get("notes", ""),
+                    outcome_value,
+                    scheduled_meeting_date,
+                    scheduled_meeting_time,
+                    request.form.get("next_action"),
+                    request.form.get("next_action_date"),
+                    request.form.get("next_action_time"),
+                    requested_status,
+                    completed_at,
+                    assigned_to
+                ))
+                outreach_id = cursor.lastrowid
+                save_outreach_recipients(connection, outreach_id, recipients)
+                audit_record_create(connection, "outreach", outreach_id, {
+                    "fy": request.form.get("fy"),
+                    "quarter": request.form.get("quarter"),
+                    "campaign": sales_play_value,
+                    "sales_play": sales_play_value,
+                    "account_id": request.form.get("account_id"),
+                    "contact_id": contact_id,
+                    "partner_contact_id": partner_contact_id,
+                    "activity_type": request.form.get("activity_type"),
+                    "activity_date": request.form.get("activity_date"),
+                    "activity_time": request.form.get("activity_time"),
+                    "subject": request.form.get("subject"),
+                    "outcome": outcome_value,
+                    "scheduled_meeting_date": scheduled_meeting_date,
+                    "scheduled_meeting_time": scheduled_meeting_time,
+                    "next_action": request.form.get("next_action"),
+                    "next_action_date": request.form.get("next_action_date"),
+                    "next_action_time": request.form.get("next_action_time"),
+                    "task_status": requested_status,
+                    "completed_at": completed_at,
+                    "assigned_to": assigned_to,
+                })
 
-            connection.commit()
-            connection.close()
+                connection.commit()
+                connection.close()
 
-            return redirect(url_for("outreach"))
+                return redirect(url_for("outreach"))
+            except Exception:
+                traceback.print_exc()
+                connection.rollback()
+                error = "Outreach could not be saved. Check the selected account, contacts, Sales Play and schedule, then try again."
 
     if request.method == "POST":
         selected_contact_values = outreach_contact_form_values(request.form)

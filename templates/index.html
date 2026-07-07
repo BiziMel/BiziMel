@@ -3,6 +3,19 @@
 {% block title %}Insights Dashboard | PipeFlow{% endblock %}
 
 {% block content %}
+{% macro insight_bullets(value, fallback) -%}
+    {% set text = value or fallback %}
+    {% set normalised = text.replace('\n', '. ').replace('; ', '. ') %}
+    {% set parts = normalised.split('. ') %}
+    <ul class="insight-cell-list">
+        {% for part in parts %}
+            {% set item = part.strip() %}
+            {% if item %}
+                <li>{{ item }}{% if not item.endswith('.') and not item.endswith('?') and not item.endswith('!') %}.{% endif %}</li>
+            {% endif %}
+        {% endfor %}
+    </ul>
+{%- endmacro %}
 
 <div class="page-header">
     <div>
@@ -154,14 +167,13 @@
                                 <tr>
                                     <td><strong>{{ insight.source or "AI Insight" }}</strong></td>
                                     <td>{{ insight.category or "PG Focus" }}</td>
-                                    <td>{{ insight.evidence or insight.message or "Current account, contact and outreach data." }}</td>
+                                    <td>{{ insight_bullets(insight.evidence, insight.message or "Current account, contact and outreach data.") }}</td>
                                     <td>
                                         <strong>{{ insight.title or "Review PG execution" }}</strong><br>
                                         <span class="muted">{{ insight.message or "Add executive contacts, outreach activity and Discovery or NBM outcomes so PipeFlow can generate more specific guidance." }}</span>
                                     </td>
                                     <td>
-                                        {{ insight.action or "Open the related record and set the next action toward an executive Discovery or NBM step." }}
-                                        <br><br>
+                                        {{ insight_bullets(insight.action, "Open the related record and set the next action toward an executive Discovery or NBM step.") }}
                                         <a href="{{ insight.link or url_for('accounts') }}" class="btn btn-secondary btn-small">Open</a>
                                     </td>
                                 </tr>

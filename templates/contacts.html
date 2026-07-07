@@ -69,6 +69,7 @@
             <col class="contact-account-col">
             <col class="contact-tier-col">
             <col class="contact-status-col">
+            <col class="contact-outreach-col">
             <col class="contact-role-col">
             <col class="contact-relationship-col">
             <col class="contact-email-col">
@@ -83,6 +84,7 @@
                 <th>Account</th>
                 <th>Account Tier</th>
                 <th>Status</th>
+                <th>Outreach</th>
                 <th>Role</th>
                 <th>Relationship</th>
                 <th>Email</th>
@@ -118,7 +120,13 @@
                     </td>
 
                     <td>
-                        {{ contact["account_name"] or "Unknown account" }}
+                        {% if contact["account_id"] %}
+                            <a href="{{ url_for('view_account', account_id=contact['account_id']) }}" class="table-primary-link">
+                                {{ contact["account_name"] or "Unknown account" }}
+                            </a>
+                        {% else %}
+                            {{ contact["account_name"] or "Unknown account" }}
+                        {% endif %}
                         {% if contact["business_unit"] %}
                             <br>
                             <small>{{ contact["business_unit"] }}</small>
@@ -137,6 +145,14 @@
 
                     <td>
                         <span class="status-pill">{{ contact["status"] or "Active" }}</span>
+                    </td>
+
+                    <td>
+                        <a href="{{ url_for('outreach', contact_id=contact['id'], task_status='All') }}"
+                           class="metric-pill-link"
+                           title="Open outreach activity for {{ contact['name'] or 'this contact' }}">
+                            {{ contact["outreach_total"] or 0 }}
+                        </a>
                     </td>
 
                     <td>
