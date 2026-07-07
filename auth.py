@@ -2,6 +2,7 @@ import sqlite3
 import os
 import base64
 import hashlib
+import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from functools import wraps
@@ -187,6 +188,7 @@ def initialise_auth_database() -> None:
             title TEXT NOT NULL,
             message TEXT NOT NULL,
             severity TEXT NOT NULL DEFAULT 'info',
+            target_companies TEXT,
             start_at TEXT,
             stop_at TEXT,
             is_active INTEGER DEFAULT 1,
@@ -242,6 +244,7 @@ def initialise_auth_database() -> None:
     add_column_if_missing(connection, "users", "workspace_schema", "TEXT")
     add_column_if_missing(connection, "users", "active_team_id", "INTEGER")
     add_column_if_missing(connection, "teams", "company", "TEXT")
+    add_column_if_missing(connection, "broadcast_messages", "target_companies", "TEXT")
     add_column_if_missing(connection, "broadcast_messages", "start_at", "TEXT")
     add_column_if_missing(connection, "broadcast_messages", "stop_at", "TEXT")
     add_column_if_missing(connection, "team_memberships", "role", "TEXT DEFAULT 'member'")
@@ -1197,6 +1200,46 @@ def normalise_broadcast_datetime(value: str) -> str:
     return parsed.strftime("%Y-%m-%dT%H:%M")
 
 
+def normalise_broadcast_companies(companies):
+    if isinstance(companies, str):
+        raw_values = [companies]
+    else:
+        raw_values = list(companies or [])
+    cleaned = []
+    seen = set()
+    for company in raw_values:
+        company_name = normalise_company_name(company)
+        key = company_name.casefold()
+        if company_name and key not in seen:
+            cleaned.append(company_name)
+            seen.add(key)
+    return cleaned
+
+
+def encode_broadcast_companies(companies):
+    cleaned = normalise_broadcast_companies(companies)
+    return json.dumps(cleaned)
+
+
+def decode_broadcast_companies(value):
+    value = (value or "").strip()
+    if not value:
+        return []
+    try:
+        decoded = json.loads(value)
+    except (TypeError, ValueError):
+        decoded = [part.strip() for part in value.split(",")]
+    return normalise_broadcast_companies(decoded)
+
+
+def broadcast_visible_to_company(row, company):
+    target_companies = decode_broadcast_companies(row["target_companies"] if "target_companies" in row.keys() else "")
+    if not target_companies:
+        return True
+    company_key = normalise_company_name(company).casefold()
+    return bool(company_key and company_key in {item.casefold() for item in target_companies})
+
+
 def broadcast_timezone():
     timezone_name = os.environ.get("PIPEFLOW_TIMEZONE", "Europe/London")
     try:
@@ -1258,7 +1301,7 @@ def cleanup_expired_broadcast_messages(connection=None):
         connection.close()
 
 
-def list_broadcast_messages(active_only: bool = False):
+def list_broadcast_messages(active_only: bool = False, actor=None, company: str = ""):
     connection = get_auth_connection()
     cleanup_expired_broadcast_messages(connection)
     query = """
@@ -1291,6 +1334,15 @@ def list_broadcast_messages(active_only: bool = False):
     """
     rows = connection.execute(query, params).fetchall()
     connection.close()
+    target_company = company
+    if actor and "company" in actor.keys():
+        target_company = actor["company"]
+    if target_company:
+        return [row for row in rows if broadcast_visible_to_company(row, target_company)]
+    if active_only:
+        # Before sign-in the app cannot know a user's company. Only global
+        # broadcasts are safe to show on the login page.
+        return [row for row in rows if not decode_broadcast_companies(row["target_companies"] if "target_companies" in row.keys() else "")]
     return rows
 
 
@@ -1319,7 +1371,7 @@ def validate_broadcast_schedule(start_at: str, stop_at: str):
     return start_at, stop_at, ""
 
 
-def create_broadcast_message(title: str, message: str, severity: str, start_at: str, stop_at: str, is_active: bool):
+def create_broadcast_message(title: str, message: str, severity: str, start_at: str, stop_at: str, is_active: bool, target_companies=None):
     title = (title or "").strip()
     message = (message or "").strip()
     severity = normalise_broadcast_severity(severity)
@@ -1328,6 +1380,10 @@ def create_broadcast_message(title: str, message: str, severity: str, start_at: 
         return "Broadcast title and message are required."
     if error:
         return error
+    target_companies = normalise_broadcast_companies(target_companies)
+    if not target_companies:
+        return "Select at least one company for this broadcast."
+    target_companies_value = encode_broadcast_companies(target_companies)
 
     connection = get_auth_connection()
     cleanup_expired_broadcast_messages(connection)
@@ -1338,11 +1394,12 @@ def create_broadcast_message(title: str, message: str, severity: str, start_at: 
         WHERE title = ?
           AND message = ?
           AND severity = ?
+          AND COALESCE(target_companies, '') = ?
           AND start_at = ?
           AND stop_at = ?
         LIMIT 1
         """,
-        (title, message, severity, start_at, stop_at),
+        (title, message, severity, target_companies_value, start_at, stop_at),
     ).fetchone()
     if existing:
         connection.execute(
@@ -1360,17 +1417,17 @@ def create_broadcast_message(title: str, message: str, severity: str, start_at: 
 
     connection.execute(
         """
-        INSERT INTO broadcast_messages (title, message, severity, start_at, stop_at, is_active)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO broadcast_messages (title, message, severity, target_companies, start_at, stop_at, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (title, message, severity, start_at, stop_at, 1 if is_active else 0),
+        (title, message, severity, target_companies_value, start_at, stop_at, 1 if is_active else 0),
     )
     connection.commit()
     connection.close()
     return ""
 
 
-def update_broadcast_message(message_id: int, title: str, message: str, severity: str, start_at: str, stop_at: str, is_active: bool):
+def update_broadcast_message(message_id: int, title: str, message: str, severity: str, start_at: str, stop_at: str, is_active: bool, target_companies=None):
     title = (title or "").strip()
     message = (message or "").strip()
     severity = normalise_broadcast_severity(severity)
@@ -1379,6 +1436,9 @@ def update_broadcast_message(message_id: int, title: str, message: str, severity
         return "Broadcast title and message are required."
     if error:
         return error
+    target_companies = normalise_broadcast_companies(target_companies)
+    if not target_companies:
+        return "Select at least one company for this broadcast."
 
     connection = get_auth_connection()
     cleanup_expired_broadcast_messages(connection)
@@ -1388,13 +1448,14 @@ def update_broadcast_message(message_id: int, title: str, message: str, severity
         SET title = ?,
             message = ?,
             severity = ?,
+            target_companies = ?,
             start_at = ?,
             stop_at = ?,
             is_active = ?,
             last_updated = CURRENT_TIMESTAMP
         WHERE id = ?
         """,
-        (title, message, severity, start_at, stop_at, 1 if is_active else 0, message_id),
+        (title, message, severity, encode_broadcast_companies(target_companies), start_at, stop_at, 1 if is_active else 0, message_id),
     )
     connection.commit()
     connection.close()

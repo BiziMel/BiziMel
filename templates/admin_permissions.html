@@ -20,6 +20,8 @@
         <a href="{{ url_for('admin_permissions') }}" class="btn btn-primary btn-small">Permissions & Controls</a>
         {% if is_app_admin %}
             <a href="{{ url_for('admin_tenants') }}" class="btn btn-secondary btn-small">Tenant</a>
+        {% endif %}
+        {% if can_manage_broadcasts %}
             <a href="{{ url_for('admin_permissions') }}#broadcast-messages" class="btn btn-secondary btn-small">Broadcast Messages</a>
         {% endif %}
         <a href="{{ url_for('audit_trail') }}" class="btn btn-secondary btn-small">Audit Trail</a>
@@ -283,18 +285,18 @@
     </div>
 </div>
 
-{% if is_app_admin %}
+{% if can_manage_broadcasts %}
 <div class="card admin-broadcast-card" id="broadcast-messages">
     <div class="section-header">
         <div>
             <h3>Broadcast Messages</h3>
-            <p class="muted-text">Create, edit, pause or delete messages shown on the sign-in screen and dashboard ticker during the chosen time window.</p>
+            <p class="muted-text">Create, edit, pause or delete company-scoped messages shown during the chosen time window.</p>
         </div>
     </div>
 
     <div class="broadcast-purpose">
         <strong>Scheduled visibility</strong>
-        <p>Broadcasts are only visible between their start and stop times. Expired messages are removed automatically, and duplicate clicks are cleaned up so users do not see repeated messages.</p>
+        <p>Broadcasts are only visible between their start and stop times. Application Admins can target multiple companies. Company Admins can only target their own company.</p>
     </div>
 
     <section class="broadcast-create-panel">
@@ -323,6 +325,22 @@
                     <option value="urgent">Urgent</option>
                 </select>
             </div>
+
+            {% if is_app_admin %}
+                <div class="form-group">
+                    <label>Companies</label>
+                    <select name="target_companies" multiple size="4" required>
+                        {% for tenant in broadcast_company_options %}
+                            <option value="{{ tenant.company_name }}">{{ tenant.company_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            {% else %}
+                <div class="form-group">
+                    <label>Company</label>
+                    <input type="text" value="{{ current_user.company }}" readonly>
+                </div>
+            {% endif %}
 
             <div class="form-group">
                 <label>Start Date & Time</label>
@@ -363,6 +381,7 @@
                                 <span class="broadcast-type-pill">{{ broadcast['severity']|capitalize }}</span>
                             </div>
                             <small>{{ broadcast['start_at'] or 'Not scheduled' }} to {{ broadcast['stop_at'] or 'Not scheduled' }}</small>
+                            <small>Company: {{ broadcast.target_company_label }}</small>
                         </div>
 
                         <form method="POST" action="{{ url_for('admin_update_broadcast', message_id=broadcast['id']) }}" class="broadcast-edit-form js-single-submit">
@@ -385,6 +404,25 @@
                                     <option value="urgent" {% if broadcast['severity'] == 'urgent' %}selected{% endif %}>Urgent</option>
                                 </select>
                             </div>
+
+                            {% if is_app_admin %}
+                                <div class="form-group">
+                                    <label>Companies</label>
+                                    <select name="target_companies" multiple size="4" required>
+                                        {% for tenant in broadcast_company_options %}
+                                            <option value="{{ tenant.company_name }}"
+                                                    {% if tenant.company_name in broadcast.target_company_names %}selected{% endif %}>
+                                                {{ tenant.company_name }}
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            {% else %}
+                                <div class="form-group">
+                                    <label>Company</label>
+                                    <input type="text" value="{{ current_user.company }}" readonly>
+                                </div>
+                            {% endif %}
 
                             <div class="form-group">
                                 <label>Start Date & Time</label>

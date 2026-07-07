@@ -16,15 +16,15 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, send_from_directory, session, abort
 from werkzeug.utils import secure_filename
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members, decode_broadcast_companies
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.6.4"
-APP_RELEASE_DATE = "2026-07-06"
-APP_BUILD = "2026-07-06-v2.6.4-navigation-schema-resilience-r3"
+APP_VERSION = "2.6.5"
+APP_RELEASE_DATE = "2026-07-07"
+APP_BUILD = "2026-07-07-v2.6.5-pg-progress-logo-broadcast-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -38,6 +38,20 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.6.5",
+        "release_date": "2026-07-07",
+        "title": "PG Progress resilience, logo rendering and company broadcasts",
+        "fixed": [
+            "Hardened PG Progress and Outreach Sales Play save paths to prevent internal server errors on upgraded workspaces.",
+            "Improved account logo rendering so uploaded logos and legacy logo paths display consistently across account screens.",
+            "Scoped broadcast visibility by company so users only see broadcasts targeted to their company.",
+        ],
+        "enhanced": [
+            "Application Admins can create broadcasts for one or more configured companies.",
+            "Company Admins can create and manage broadcasts for their own company only.",
+        ],
+    },
     {
         "version": "2.6.4",
         "release_date": "2026-07-06",
@@ -1796,14 +1810,18 @@ def logout():
 
 def render_admin_permissions():
     actor = current_user()
+    tenant_options = list_tenants(actor, active_only=True)
     return render_template(
         "admin_permissions.html",
         users=list_users(actor),
-        tenant_options=list_tenants(actor, active_only=True),
+        tenant_options=tenant_options,
         team_options=list_teams(actor),
         user_team_ids={str(user["id"]): user_team_ids(user["id"]) for user in list_users(actor)},
         is_app_admin=is_application_admin(actor),
-        broadcast_messages=list_broadcast_messages(active_only=False),
+        is_company_admin=is_company_admin(actor),
+        can_manage_broadcasts=is_application_admin(actor) or is_company_admin(actor),
+        broadcast_company_options=tenant_options if is_application_admin(actor) else [],
+        broadcast_messages=broadcast_rows_for_admin(actor),
         audit_retention_enabled=audit_retention_enabled(),
         message=request.args.get("message", ""),
         error=request.args.get("error", "")
@@ -1823,6 +1841,32 @@ def require_application_admin_redirect():
     if is_application_admin(current_user()):
         return None
     return redirect(url_for("admin_users", error="Only application administrators can change application-level settings."))
+
+
+def require_broadcast_admin_redirect():
+    actor = current_user()
+    if is_application_admin(actor) or is_company_admin(actor):
+        return None
+    return redirect(url_for("admin_users", error="Only admins and company admins can manage broadcasts."))
+
+
+def broadcast_target_companies_from_form(actor):
+    if is_application_admin(actor):
+        return request.form.getlist("target_companies")
+    if is_company_admin(actor):
+        return [actor["company"] if "company" in actor.keys() else ""]
+    return []
+
+
+def broadcast_rows_for_admin(actor):
+    rows = list_broadcast_messages(active_only=False, actor=actor)
+    enriched = []
+    for row in rows:
+        item = dict(row)
+        item["target_company_names"] = decode_broadcast_companies(item.get("target_companies", ""))
+        item["target_company_label"] = ", ".join(item["target_company_names"]) or "All companies"
+        enriched.append(item)
+    return enriched
 
 
 @app.route("/admin/users")
@@ -1951,7 +1995,8 @@ def admin_create_user():
 @app.route("/admin/broadcasts/add", methods=("POST",))
 @admin_required
 def admin_add_broadcast():
-    guard = require_application_admin_redirect()
+    actor = current_user()
+    guard = require_broadcast_admin_redirect()
     if guard:
         return guard
     error = create_broadcast_message(
@@ -1960,7 +2005,8 @@ def admin_add_broadcast():
         request.form.get("severity", "info"),
         request.form.get("start_at", ""),
         request.form.get("stop_at", ""),
-        bool(request.form.get("is_active"))
+        bool(request.form.get("is_active")),
+        broadcast_target_companies_from_form(actor),
     )
     if error:
         return redirect(url_for("admin_users", error=error))
@@ -1970,9 +2016,15 @@ def admin_add_broadcast():
 @app.route("/admin/broadcasts/<int:message_id>/update", methods=("POST",))
 @admin_required
 def admin_update_broadcast(message_id):
-    guard = require_application_admin_redirect()
+    actor = current_user()
+    guard = require_broadcast_admin_redirect()
     if guard:
         return guard
+    existing = get_broadcast_message(message_id)
+    if is_company_admin(actor):
+        target_companies = decode_broadcast_companies(existing["target_companies"] if existing and "target_companies" in existing.keys() else "")
+        if target_companies and actor["company"] not in target_companies:
+            return redirect(url_for("admin_users", error="You can only update broadcasts for your own company."))
     error = update_broadcast_message(
         message_id,
         request.form.get("title", ""),
@@ -1980,7 +2032,8 @@ def admin_update_broadcast(message_id):
         request.form.get("severity", "info"),
         request.form.get("start_at", ""),
         request.form.get("stop_at", ""),
-        bool(request.form.get("is_active"))
+        bool(request.form.get("is_active")),
+        broadcast_target_companies_from_form(actor),
     )
     if error:
         return redirect(url_for("admin_users", error=error))
@@ -1990,9 +2043,15 @@ def admin_update_broadcast(message_id):
 @app.route("/admin/broadcasts/<int:message_id>/deactivate", methods=("POST",))
 @admin_required
 def admin_deactivate_broadcast(message_id):
-    guard = require_application_admin_redirect()
+    guard = require_broadcast_admin_redirect()
     if guard:
         return guard
+    actor = current_user()
+    existing = get_broadcast_message(message_id)
+    if is_company_admin(actor):
+        target_companies = decode_broadcast_companies(existing["target_companies"] if existing and "target_companies" in existing.keys() else "")
+        if target_companies and actor["company"] not in target_companies:
+            return redirect(url_for("admin_users", error="You can only pause broadcasts for your own company."))
     set_broadcast_message_active(message_id, False)
     return redirect(url_for("admin_users", message="Broadcast message hidden."))
 
@@ -2000,9 +2059,15 @@ def admin_deactivate_broadcast(message_id):
 @app.route("/admin/broadcasts/<int:message_id>/reactivate", methods=("POST",))
 @admin_required
 def admin_reactivate_broadcast(message_id):
-    guard = require_application_admin_redirect()
+    guard = require_broadcast_admin_redirect()
     if guard:
         return guard
+    actor = current_user()
+    existing = get_broadcast_message(message_id)
+    if is_company_admin(actor):
+        target_companies = decode_broadcast_companies(existing["target_companies"] if existing and "target_companies" in existing.keys() else "")
+        if target_companies and actor["company"] not in target_companies:
+            return redirect(url_for("admin_users", error="You can only reactivate broadcasts for your own company."))
     set_broadcast_message_active(message_id, True)
     return redirect(url_for("admin_users", message="Broadcast message restored."))
 
@@ -2010,9 +2075,15 @@ def admin_reactivate_broadcast(message_id):
 @app.route("/admin/broadcasts/<int:message_id>/delete", methods=("POST",))
 @admin_required
 def admin_delete_broadcast(message_id):
-    guard = require_application_admin_redirect()
+    guard = require_broadcast_admin_redirect()
     if guard:
         return guard
+    actor = current_user()
+    existing = get_broadcast_message(message_id)
+    if is_company_admin(actor):
+        target_companies = decode_broadcast_companies(existing["target_companies"] if existing and "target_companies" in existing.keys() else "")
+        if target_companies and actor["company"] not in target_companies:
+            return redirect(url_for("admin_users", error="You can only delete broadcasts for your own company."))
     delete_broadcast_message(message_id)
     return redirect(url_for("admin_users", message="Broadcast message deleted."))
 
@@ -4064,7 +4135,7 @@ def format_dashboard_guidance(title, lead, bullets, subtitle=""):
 
 def active_pg_week_broadcast():
     try:
-        broadcasts = list_broadcast_messages(active_only=True)
+        broadcasts = list_broadcast_messages(active_only=True, actor=current_user())
     except Exception:
         traceback.print_exc()
         return None
@@ -4873,7 +4944,7 @@ def render_dashboard_fallback(connection=None):
         dashboard_tasks=[],
         task_statuses=DROPDOWN_VALUES["task_statuses"],
         outreach_outcomes=DROPDOWN_VALUES["outreach_outcomes"],
-        broadcast_messages=list_broadcast_messages(active_only=True)
+        broadcast_messages=list_broadcast_messages(active_only=True, actor=current_user())
     )
 
 
@@ -5408,7 +5479,7 @@ def build_dashboard_response(connection):
         dashboard_tasks=dashboard_tasks,
         task_statuses=DROPDOWN_VALUES["task_statuses"],
         outreach_outcomes=DROPDOWN_VALUES["outreach_outcomes"],
-        broadcast_messages=list_broadcast_messages(active_only=True)
+        broadcast_messages=list_broadcast_messages(active_only=True, actor=current_user())
     )
 
 
