@@ -460,6 +460,76 @@ def main():
         assert_ok(edited_outreach["outcome"] == "Exec Meeting Booked", "Exec Meeting Booked outcome was not saved")
         assert_ok(edited_recipient_count == 1, "edited outreach recipients were not replaced")
 
+        response = client.post(
+            "/outreach/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "fy": "27",
+                "quarter": "Q1",
+                "account_id": str(account_id),
+                "sales_play": "Smoke Test Play",
+                "contact_ids": [str(contact_id)],
+                "task_status": "Not Started",
+                "assigned_to": "Smoke Test Admin",
+                "activity_type": "Email",
+                "activity_date": "2026-05-14",
+                "activity_time": "08:30",
+                "next_action_date": "2026-05-15",
+                "next_action_time": "09:45",
+                "subject": "Smoke complete follow-on source",
+                "outcome": "No Response",
+                "next_action": "Prepare completion update",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "complete follow-on source outreach add failed")
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        follow_source = connection.execute(
+            "SELECT id FROM outreach WHERE subject = ?",
+            ("Smoke complete follow-on source",),
+        ).fetchone()
+        connection.execute("ALTER TABLE outreach DROP COLUMN scheduled_meeting_time")
+        connection.commit()
+        connection.close()
+        assert_ok(follow_source is not None, "complete follow-on source outreach was not saved")
+
+        response = client.post(
+            f"/outreach/{follow_source['id']}/edit",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "submit_action": "complete_and_follow",
+                "fy": "27",
+                "quarter": "Q1",
+                "account_id": str(account_id),
+                "sales_play": "Smoke Test Play",
+                "contact_ids": [str(contact_id)],
+                "task_status": "In Progress",
+                "assigned_to": "Smoke Test Admin",
+                "activity_type": "Email",
+                "activity_date": "2026-05-14",
+                "activity_time": "08:30",
+                "next_action_date": "2026-05-15",
+                "next_action_time": "09:45",
+                "subject": "Smoke complete follow-on source",
+                "outcome": "No Response",
+                "next_action": "Completed and creating follow on",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(
+            response.status_code in (302, 303) and f"/outreach/add?prefill_from={follow_source['id']}" in response.headers.get("Location", ""),
+            "complete and create follow-on did not redirect to the prefilled new Outreach form",
+        )
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        completed_follow_source = connection.execute(
+            "SELECT task_status, scheduled_meeting_time FROM outreach WHERE id = ?",
+            (follow_source["id"],),
+        ).fetchone()
+        connection.close()
+        assert_ok(completed_follow_source["task_status"] == "Completed", "complete and follow-on source was not completed")
+
         response = client.get("/outreach")
         outreach_html = response.get_data(as_text=True)
         assert_ok("bulk_next_action_date" in outreach_html, "bulk Outreach due-date control missing")

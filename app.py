@@ -44,6 +44,7 @@ RELEASE_NOTES = [
         "title": "Quick outreach creation and admin company targeting",
         "fixed": [
             "Hardened new Outreach save so workspace schema drift is refreshed and retried instead of causing an internal server error.",
+            "Hardened existing Outreach update and Complete and Create Follow-on so older workspace schemas do not crash during audit logging or follow-on creation.",
         ],
         "new": [
             "Added Create Outreach links from account and contact records with account/contact prefilled into the new Outreach form.",
@@ -2588,9 +2589,10 @@ def delete_partner_records(connection, partner_ids):
 
 def build_change_log(existing_record, new_values, labels):
     changes = []
+    existing_keys = set(existing_record.keys()) if existing_record and hasattr(existing_record, "keys") else set()
 
     for field_name, new_value in new_values.items():
-        old_value = existing_record[field_name] if existing_record[field_name] is not None else ""
+        old_value = existing_record[field_name] if field_name in existing_keys and existing_record[field_name] is not None else ""
         new_value = new_value if new_value is not None else ""
 
         if str(old_value) != str(new_value):
@@ -6406,6 +6408,104 @@ def save_new_outreach_with_recovery(connection, form, requested_status, sales_pl
             except Exception:
                 pass
             return connection, "Outreach could not be saved after refreshing the workspace schema. Please check the selected account, contacts, Sales Play and schedule, then try again."
+
+
+def persist_outreach_update(connection, outreach_id, outreach_item, new_values, recipients, labels):
+    changes = build_change_log(outreach_item, new_values, labels)
+    connection.execute("""
+        UPDATE outreach
+        SET fy = ?,
+            quarter = ?,
+            campaign = ?,
+            sales_play = ?,
+            account_id = ?,
+            contact_id = ?,
+            partner_contact_id = ?,
+            activity_type = ?,
+            activity_date = ?,
+            activity_time = ?,
+            subject = ?,
+            notes = ?,
+            outcome = ?,
+            scheduled_meeting_date = ?,
+            scheduled_meeting_time = ?,
+            next_action = ?,
+            next_action_date = ?,
+            next_action_time = ?,
+            task_status = ?,
+            completed_at = ?,
+            assigned_to = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE id = ?
+    """, (
+        new_values["fy"],
+        new_values["quarter"],
+        new_values["campaign"],
+        new_values["sales_play"],
+        new_values["account_id"],
+        new_values["contact_id"],
+        new_values["partner_contact_id"],
+        new_values["activity_type"],
+        new_values["activity_date"],
+        new_values["activity_time"],
+        new_values["subject"],
+        new_values["notes"],
+        new_values["outcome"],
+        new_values["scheduled_meeting_date"],
+        new_values["scheduled_meeting_time"],
+        new_values["next_action"],
+        new_values["next_action_date"],
+        new_values["next_action_time"],
+        new_values["task_status"],
+        new_values["completed_at"],
+        new_values["assigned_to"],
+        outreach_id
+    ))
+    save_outreach_recipients(connection, outreach_id, recipients)
+    if changes:
+        audit_record_update(connection, "outreach", outreach_id, outreach_item, new_values, labels)
+        add_timeline_entry(
+            connection,
+            "outreach",
+            outreach_id,
+            "Auto Audit",
+            "Outreach updated: " + "; ".join(changes)
+        )
+
+
+def save_outreach_update_with_recovery(connection, outreach_id, outreach_item, new_values, recipients, labels):
+    try:
+        persist_outreach_update(connection, outreach_id, outreach_item, new_values, recipients, labels)
+        connection.commit()
+        return connection, ""
+    except Exception as exc:
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+        if not database_error_looks_like_schema_drift(exc):
+            traceback.print_exc()
+            return connection, "Outreach could not be updated. Check the selected account, contacts, Sales Play and schedule, then try again."
+        try:
+            connection.close()
+        except Exception:
+            pass
+        initialise_database(force=True)
+        connection = get_db_connection()
+        refreshed_item = connection.execute("SELECT * FROM outreach WHERE id = ?", (outreach_id,)).fetchone()
+        if not refreshed_item:
+            return connection, "The selected outreach task could not be found after refreshing the workspace schema."
+        try:
+            persist_outreach_update(connection, outreach_id, refreshed_item, new_values, recipients, labels)
+            connection.commit()
+            return connection, ""
+        except Exception:
+            traceback.print_exc()
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            return connection, "Outreach could not be updated after refreshing the workspace schema. Please review the fields and try again."
 
 
 def sales_play_asset_form_rows(form):
@@ -11795,70 +11895,34 @@ def edit_outreach(outreach_id):
             "assigned_to": "Assigned to"
         }
 
-        changes = build_change_log(outreach_item, new_values, labels)
-
-        connection.execute("""
-            UPDATE outreach
-            SET fy = ?,
-                quarter = ?,
-                campaign = ?,
-                sales_play = ?,
-                account_id = ?,
-                contact_id = ?,
-                partner_contact_id = ?,
-                activity_type = ?,
-                activity_date = ?,
-                activity_time = ?,
-                subject = ?,
-                notes = ?,
-                outcome = ?,
-                scheduled_meeting_date = ?,
-                scheduled_meeting_time = ?,
-                next_action = ?,
-                next_action_date = ?,
-                next_action_time = ?,
-                task_status = ?,
-                completed_at = ?,
-                assigned_to = ?,
-                last_updated = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """, (
-            new_values["fy"],
-            new_values["quarter"],
-            new_values["campaign"],
-            new_values["sales_play"],
-            new_values["account_id"],
-            new_values["contact_id"],
-            new_values["partner_contact_id"],
-            new_values["activity_type"],
-            new_values["activity_date"],
-            new_values["activity_time"],
-            new_values["subject"],
-            new_values["notes"],
-            new_values["outcome"],
-            new_values["scheduled_meeting_date"],
-            new_values["scheduled_meeting_time"],
-            new_values["next_action"],
-            new_values["next_action_date"],
-            new_values["next_action_time"],
-            new_values["task_status"],
-            new_values["completed_at"],
-            new_values["assigned_to"],
-            outreach_id
-        ))
-        save_outreach_recipients(connection, outreach_id, recipients)
-
-        if changes:
-            audit_record_update(connection, "outreach", outreach_id, outreach_item, new_values, labels)
-            add_timeline_entry(
-                connection,
-                "outreach",
-                outreach_id,
-                "Auto Audit",
-                "Outreach updated: " + "; ".join(changes)
+        connection, error = save_outreach_update_with_recovery(
+            connection,
+            outreach_id,
+            outreach_item,
+            new_values,
+            recipients,
+            labels,
+        )
+        if error:
+            connection.close()
+            return render_template(
+                "edit_outreach.html",
+                outreach_item=outreach_item,
+                accounts=accounts,
+                contacts=contacts,
+                profile=profile,
+                non_working_blocks=non_working_block_rows,
+                sales_play_options=sales_play_rows,
+                sales_play_assets=sales_play_assets,
+                partner_activity_options=partner_activity_options,
+                partner_contacts=partner_contacts,
+                selected_contact_values=recipient_values,
+                selected_account_id=new_values["account_id"],
+                scheduled_meeting_at=request.form.get("scheduled_meeting_at", ""),
+                error=error,
+                task_locked=task_locked_value,
+                task_lock_message=task_lock_message_value
             )
-
-        connection.commit()
         connection.close()
 
         if follow_on_requested:
