@@ -487,6 +487,42 @@ def main():
         assert_ok(inline_due["next_action_date"] == "2026-05-09", "inline due date was not saved")
         assert_ok(inline_due["next_action_time"] == "12:15", "inline due time was not saved")
 
+        connection = sqlite3.connect(db_path)
+        connection.execute("ALTER TABLE outreach DROP COLUMN scheduled_meeting_time")
+        connection.commit()
+        connection.close()
+        response = client.post(
+            "/outreach/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "fy": "27",
+                "quarter": "Q1",
+                "account_id": str(account_id),
+                "sales_play": "Smoke Test Play",
+                "contact_ids": [str(contact_id)],
+                "task_status": "Not Started",
+                "assigned_to": "Smoke Test Admin",
+                "activity_type": "Email",
+                "activity_date": "2026-05-11",
+                "activity_time": "08:45",
+                "next_action_date": "2026-05-12",
+                "next_action_time": "09:15",
+                "subject": "Smoke schema recovery outreach",
+                "outcome": "No Response",
+                "next_action": "Try a different route",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "schema recovery outreach add failed")
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        recovered_outreach = connection.execute(
+            "SELECT scheduled_meeting_time FROM outreach WHERE subject = ?",
+            ("Smoke schema recovery outreach",),
+        ).fetchone()
+        connection.close()
+        assert_ok(recovered_outreach is not None, "schema recovery outreach was not saved")
+
         response = client.post(
             "/outreach/bulk-action",
             data={
