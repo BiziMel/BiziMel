@@ -1901,6 +1901,17 @@ a:hover {
     text-decoration: underline;
 }
 
+.table-secondary-link {
+    color: #2563eb;
+    font-size: 11px;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.table-secondary-link:hover {
+    text-decoration: underline;
+}
+
 .outreach-main-row td {
     border-bottom: 1px solid #dbe4f0;
 }
@@ -3798,6 +3809,16 @@ a:hover {
     color: #64748b;
     font-size: 12px;
     font-weight: 700;
+}
+
+.broadcast-company-dropdown,
+.admin-company-multiselect {
+    min-width: 220px;
+}
+
+.broadcast-company-dropdown .checkbox-dropdown-panel,
+.admin-company-multiselect .checkbox-dropdown-panel {
+    max-height: 220px;
 }
 
 .broadcast-message-topline,

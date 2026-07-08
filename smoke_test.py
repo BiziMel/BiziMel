@@ -155,7 +155,6 @@ def main():
             "/reports/accounts": "Account Reports",
             "/reports/contacts": "Contact Reports",
             "/reports/outreach": "Outreach Reports",
-            "/reports/tasks": "Task Reports",
             "/search?q=Smoke": "Global Search",
             "/profile": "Profile",
             "/admin/permissions": "Admin",
@@ -193,6 +192,126 @@ def main():
         for outcome in ("NBM Booked", "Discovery Booked", "Exec Meeting Booked"):
             assert_ok(outcome in add_html, f"{outcome} outcome missing from Outreach form")
 
+        response = client.get(f"/outreach/add?account_id={account_id}")
+        prefill_account_html = response.get_data(as_text=True)
+        assert_ok(
+            response.status_code == 200
+            and f'value="{account_id}" selected' in prefill_account_html,
+            "account quick-create Outreach prefill missing",
+        )
+
+        response = client.get(f"/outreach/add?account_id={account_id}&contact_id={contact_id}")
+        prefill_contact_html = response.get_data(as_text=True)
+        assert_ok(
+            response.status_code == 200
+            and f'value="{account_id}" selected' in prefill_contact_html
+            and f'value="{contact_id}"' in prefill_contact_html
+            and "checked" in prefill_contact_html,
+            "contact quick-create Outreach prefill missing",
+        )
+
+        response = client.get("/admin/permissions")
+        admin_html = response.get_data(as_text=True)
+        assert_ok(
+            response.status_code == 200
+            and "broadcast-company-dropdown" in admin_html
+            and "admin-company-multiselect" in admin_html,
+            "admin company membership or broadcast controls missing",
+        )
+
+        response = client.post(
+            "/admin/tenants",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "company_name": "Smoke Other Company",
+                "country": "United Kingdom",
+                "company_contact": "Smoke Tenant Owner",
+            },
+            follow_redirects=True,
+        )
+        assert_ok(response.status_code == 200, "tenant create failed")
+
+        response = client.post(
+            "/admin/users/create",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "full_name": "Smoke Multi Company Admin",
+                "email": "smoke-multi-admin@example.com",
+                "password": "Password123!",
+                "reset_phrase": "multi company phrase",
+                "company": "PipeFlow Administration",
+                "company_memberships": ["PipeFlow Administration", "Smoke Other Company"],
+                "role": "admin",
+                "team_ids": [],
+            },
+            follow_redirects=True,
+        )
+        assert_ok(response.status_code == 200, "multi-company admin create failed")
+
+        response = client.post(
+            "/admin/broadcasts/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "title": "Smoke broadcast",
+                "message": "Smoke test message",
+                "severity": "info",
+                "target_companies": ["PipeFlow Administration", "Smoke Other Company"],
+                "start_at": "2026-07-08T09:00",
+                "stop_at": "2026-07-09T09:00",
+                "is_active": "1",
+            },
+            follow_redirects=True,
+        )
+        broadcast_create_html = response.get_data(as_text=True)
+        assert_ok(response.status_code == 200 and "Smoke broadcast" in broadcast_create_html, "broadcast create failed")
+        assert_ok(
+            "Save Changes" in broadcast_create_html
+            and "Pause Broadcast" in broadcast_create_html
+            and "Delete Broadcast" in broadcast_create_html,
+            "broadcast edit action buttons are not grouped on existing broadcasts",
+        )
+
+        import auth as pipeflow_auth
+
+        auth_connection = pipeflow_auth.get_auth_connection()
+        multi_admin = auth_connection.execute(
+            "SELECT id FROM users WHERE email = ?",
+            ("smoke-multi-admin@example.com",),
+        ).fetchone()
+        smoke_broadcast = auth_connection.execute(
+            "SELECT id, target_companies FROM broadcast_messages WHERE title = ?",
+            ("Smoke broadcast",),
+        ).fetchone()
+        auth_connection.close()
+        assert_ok(multi_admin is not None, "multi-company admin user not found")
+        assert_ok(
+            set(pipeflow_auth.user_company_names(multi_admin["id"], include_primary=True)) >= {"PipeFlow Administration", "Smoke Other Company"},
+            "multi-company admin memberships were not saved",
+        )
+        assert_ok(smoke_broadcast is not None, "created broadcast not found")
+
+        response = client.post(
+            f"/admin/broadcasts/{smoke_broadcast['id']}/update",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "title": "Smoke broadcast updated",
+                "message": "Smoke test message updated",
+                "severity": "warning",
+                "target_companies": ["Smoke Other Company"],
+                "start_at": "2026-07-08T10:00",
+                "stop_at": "2026-07-09T10:00",
+                "is_active": "1",
+            },
+            follow_redirects=True,
+        )
+        assert_ok(response.status_code == 200 and "Smoke broadcast updated" in response.get_data(as_text=True), "broadcast update failed")
+
+        updated_broadcast = pipeflow_auth.get_broadcast_message(smoke_broadcast["id"])
+        assert_ok(
+            pipeflow_auth.decode_broadcast_companies(updated_broadcast["target_companies"]) == ["Smoke Other Company"],
+            "broadcast company targets were not updated",
+        )
+
         response = client.post(
             "/outreach/add",
             data={
@@ -200,7 +319,7 @@ def main():
                 "fy": "27",
                 "quarter": "Q1",
                 "account_id": str(account_id),
-                "sales_play": "Smoke Multi Contact Play",
+                "sales_play": "Smoke Test Play",
                 "contact_ids": [str(contact_id), str(second_contact_id)],
                 "task_status": "Not Started",
                 "assigned_to": "Smoke Test Admin",
@@ -211,6 +330,7 @@ def main():
                 "next_action_time": "10:00",
                 "subject": "Smoke multi-contact outreach",
                 "outcome": "NBM Booked",
+                "scheduled_meeting_at": "2026-05-12T09:30",
                 "next_action": "",
             },
             follow_redirects=False,
@@ -268,7 +388,7 @@ def main():
                 "fy": "27",
                 "quarter": "Q1",
                 "account_id": str(account_id),
-                "sales_play": "Smoke Mismatched Contact Play",
+                "sales_play": "Smoke Test Play",
                 "contact_ids": [str(other_contact_id)],
                 "task_status": "Not Started",
                 "assigned_to": "Smoke Test Admin",
@@ -307,7 +427,7 @@ def main():
                 "fy": "27",
                 "quarter": "Q1",
                 "account_id": str(account_id),
-                "sales_play": "Smoke Multi Contact Play",
+                "sales_play": "Smoke Test Play",
                 "contact_ids": [str(second_contact_id)],
                 "task_status": "In Progress",
                 "assigned_to": "Smoke Test Admin",
@@ -318,6 +438,7 @@ def main():
                 "next_action_time": "10:00",
                 "subject": "Smoke multi-contact outreach",
                 "outcome": "Exec Meeting Booked",
+                "scheduled_meeting_at": "2026-05-13T10:30",
                 "next_action": "",
             },
             follow_redirects=False,
@@ -396,7 +517,6 @@ def main():
             "/reports/accounts/export",
             "/reports/contacts/export",
             "/reports/outreach/export",
-            "/reports/tasks/export",
             "/outreach/export",
         ):
             response = client.get(path)

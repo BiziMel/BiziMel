@@ -26,6 +26,10 @@
             Edit Account
         </a>
 
+        <a href="{{ url_for('add_outreach', account_id=account.id) }}" class="btn btn-primary">
+            Create Outreach
+        </a>
+
         {% if current_user and current_user["role"] == "admin" %}
             <form method="POST"
                   action="{{ url_for('delete_account', account_id=account.id) }}"

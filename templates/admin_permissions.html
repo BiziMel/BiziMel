@@ -144,6 +144,19 @@
                     <option value="admin">Application Admin</option>
                 {% endif %}
             </select>
+            {% if is_app_admin %}
+                <details class="checkbox-dropdown admin-company-multiselect">
+                    <summary>Company memberships</summary>
+                    <div class="checkbox-dropdown-panel">
+                        {% for tenant in tenant_options %}
+                            <label class="checkbox-row">
+                                <input type="checkbox" name="company_memberships" value="{{ tenant['company_name'] }}">
+                                <span>{{ tenant['company_name'] }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                </details>
+            {% endif %}
             <details class="checkbox-dropdown admin-team-multiselect">
                 <summary>Select team(s)</summary>
                 <div class="checkbox-dropdown-panel">
@@ -188,7 +201,7 @@
                             </button>
                         </td>
                         <td class="admin-user-email">{{ user["email"] }}</td>
-                        <td>{{ user["company"] or "Not set" }}</td>
+                        <td>{{ user["company_membership_label"] or user["company"] or "Not set" }}</td>
                         <td>{{ user["team"] or "Not set" }}</td>
                         <td><span class="permission-badge">{{ user["role"]|replace("_", " ")|title }}</span></td>
                         <td>
@@ -213,6 +226,23 @@
                                         </select>
                                         {% if not is_app_admin %}
                                             <input type="hidden" name="company" value="{{ user['company'] }}">
+                                        {% endif %}
+                                        {% if is_app_admin %}
+                                            <details class="checkbox-dropdown admin-company-multiselect admin-team-multiselect-wide">
+                                                <summary>Company memberships</summary>
+                                                <div class="checkbox-dropdown-panel">
+                                                {% set selected_companies = user_company_memberships.get(user['id']|string, []) %}
+                                                {% for tenant in tenant_options %}
+                                                    <label class="checkbox-row">
+                                                        <input type="checkbox"
+                                                               name="company_memberships"
+                                                               value="{{ tenant['company_name'] }}"
+                                                               {% if tenant['company_name'] in selected_companies %}checked{% endif %}>
+                                                        <span>{{ tenant['company_name'] }}</span>
+                                                    </label>
+                                                {% endfor %}
+                                                </div>
+                                            </details>
                                         {% endif %}
                                         <details class="checkbox-dropdown admin-team-multiselect admin-team-multiselect-wide">
                                             <summary>Update team(s)</summary>
@@ -329,11 +359,17 @@
             {% if is_app_admin %}
                 <div class="form-group">
                     <label>Companies</label>
-                    <select name="target_companies" multiple size="4" required>
-                        {% for tenant in broadcast_company_options %}
-                            <option value="{{ tenant.company_name }}">{{ tenant.company_name }}</option>
-                        {% endfor %}
-                    </select>
+                    <details class="checkbox-dropdown broadcast-company-dropdown">
+                        <summary>Select companies</summary>
+                        <div class="checkbox-dropdown-panel">
+                            {% for tenant in broadcast_company_options %}
+                                <label class="checkbox-row">
+                                    <input type="checkbox" name="target_companies" value="{{ tenant.company_name }}">
+                                    <span>{{ tenant.company_name }}</span>
+                                </label>
+                            {% endfor %}
+                        </div>
+                    </details>
                 </div>
             {% else %}
                 <div class="form-group">
@@ -384,7 +420,7 @@
                             <small>Company: {{ broadcast.target_company_label }}</small>
                         </div>
 
-                        <form method="POST" action="{{ url_for('admin_update_broadcast', message_id=broadcast['id']) }}" class="broadcast-edit-form js-single-submit">
+                        <form method="POST" action="{{ url_for('admin_update_broadcast', message_id=broadcast['id']) }}" id="broadcast-edit-form-{{ broadcast['id'] }}" class="broadcast-edit-form js-single-submit">
                             <div class="form-group">
                                 <label>Title</label>
                                 <input type="text" name="title" value="{{ broadcast['title'] }}" required>
@@ -408,14 +444,20 @@
                             {% if is_app_admin %}
                                 <div class="form-group">
                                     <label>Companies</label>
-                                    <select name="target_companies" multiple size="4" required>
-                                        {% for tenant in broadcast_company_options %}
-                                            <option value="{{ tenant.company_name }}"
-                                                    {% if tenant.company_name in broadcast.target_company_names %}selected{% endif %}>
-                                                {{ tenant.company_name }}
-                                            </option>
-                                        {% endfor %}
-                                    </select>
+                                    <details class="checkbox-dropdown broadcast-company-dropdown">
+                                        <summary>{{ broadcast.target_company_label or "Select companies" }}</summary>
+                                        <div class="checkbox-dropdown-panel">
+                                            {% for tenant in broadcast_company_options %}
+                                                <label class="checkbox-row">
+                                                    <input type="checkbox"
+                                                           name="target_companies"
+                                                           value="{{ tenant.company_name }}"
+                                                           {% if tenant.company_name in broadcast.target_company_names %}checked{% endif %}>
+                                                    <span>{{ tenant.company_name }}</span>
+                                                </label>
+                                            {% endfor %}
+                                        </div>
+                                    </details>
                                 </div>
                             {% else %}
                                 <div class="form-group">
@@ -439,12 +481,10 @@
                                 Active
                             </label>
 
-                            <div class="broadcast-form-actions full-width">
-                                <button type="submit" class="btn btn-secondary">Save Changes</button>
-                            </div>
                         </form>
 
                         <div class="broadcast-secondary-actions">
+                            <button type="submit" form="broadcast-edit-form-{{ broadcast['id'] }}" class="btn btn-secondary">Save Changes</button>
                             {% if broadcast["is_active"] %}
                                 <form method="POST" action="{{ url_for('admin_deactivate_broadcast', message_id=broadcast['id']) }}" class="inline-form">
                                     <button type="submit" class="btn btn-secondary">Pause Broadcast</button>
@@ -513,7 +553,7 @@
 
     document.querySelectorAll(".js-single-submit").forEach((form) => {
         form.addEventListener("submit", () => {
-            const button = form.querySelector("button[type='submit']");
+            const button = form.querySelector("button[type='submit']") || document.querySelector(`button[form="${form.id}"][type="submit"]`);
             if (button) {
                 button.disabled = true;
                 button.textContent = "Saving...";

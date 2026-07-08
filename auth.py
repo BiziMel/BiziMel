@@ -225,6 +225,16 @@ def initialise_auth_database() -> None:
         )
     """)
     connection.execute("""
+        CREATE TABLE IF NOT EXISTS user_company_memberships (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            company_name TEXT NOT NULL,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, company_name)
+        )
+    """)
+    connection.execute("""
         CREATE TABLE IF NOT EXISTS team_invites (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             team_id INTEGER NOT NULL,
@@ -249,6 +259,10 @@ def initialise_auth_database() -> None:
     add_column_if_missing(connection, "broadcast_messages", "stop_at", "TEXT")
     add_column_if_missing(connection, "team_memberships", "role", "TEXT DEFAULT 'member'")
     add_column_if_missing(connection, "team_invites", "status", "TEXT DEFAULT 'pending'")
+    add_column_if_missing(connection, "user_company_memberships", "user_id", "INTEGER")
+    add_column_if_missing(connection, "user_company_memberships", "company_name", "TEXT")
+    add_column_if_missing(connection, "user_company_memberships", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(connection, "user_company_memberships", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
     connection.execute(
         """
         INSERT INTO tenants (company_name, country, company_contact, is_active)
@@ -317,7 +331,80 @@ def same_company(left, right):
         return False
     left_company = left["company"] if "company" in left.keys() and left["company"] else ""
     right_company = right["company"] if "company" in right.keys() and right["company"] else ""
-    return normalise_company_name(left_company).lower() == normalise_company_name(right_company).lower()
+    left_key = normalise_company_name(left_company).lower()
+    right_companies = user_company_names(right, include_primary=True)
+    return bool(left_key and left_key in {company.lower() for company in right_companies})
+
+
+def user_company_names(user_or_id, include_primary: bool = True):
+    if not user_or_id:
+        return []
+    user_id = user_or_id
+    primary_company = ""
+    if hasattr(user_or_id, "keys"):
+        user_id = user_or_id["id"]
+        primary_company = user_or_id["company"] if "company" in user_or_id.keys() and user_or_id["company"] else ""
+    elif isinstance(user_or_id, dict):
+        user_id = user_or_id.get("id")
+        primary_company = user_or_id.get("company") or ""
+
+    companies = []
+    if include_primary:
+        primary_company = normalise_company_name(primary_company)
+        if primary_company:
+            companies.append(primary_company)
+    if not user_id:
+        return companies
+
+    connection = get_auth_connection()
+    rows = connection.execute("""
+        SELECT company_name
+        FROM user_company_memberships
+        WHERE user_id = ?
+        ORDER BY company_name
+    """, (user_id,)).fetchall()
+    connection.close()
+    seen = {company.casefold() for company in companies}
+    for row in rows:
+        company = normalise_company_name(row["company_name"])
+        key = company.casefold()
+        if company and key not in seen:
+            companies.append(company)
+            seen.add(key)
+    return companies
+
+
+def user_company_label(user):
+    companies = user_company_names(user, include_primary=True)
+    return ", ".join(companies) if companies else ""
+
+
+def set_user_company_memberships(user_id: int, companies):
+    user = get_user_for_admin(user_id)
+    if not user:
+        return "User was not found."
+    if user["role"] != "admin":
+        companies = [user["company"] if "company" in user.keys() else ""]
+    cleaned = normalise_broadcast_companies(companies)
+    primary_company = normalise_company_name(user["company"] if "company" in user.keys() else "")
+    if primary_company and primary_company not in cleaned:
+        cleaned.insert(0, primary_company)
+    if not cleaned:
+        return "Select at least one company."
+    invalid = [company for company in cleaned if not tenant_exists(company)]
+    if invalid:
+        return "Select valid configured companies only."
+
+    connection = get_auth_connection()
+    connection.execute("DELETE FROM user_company_memberships WHERE user_id = ?", (user_id,))
+    for company in cleaned:
+        connection.execute("""
+            INSERT OR IGNORE INTO user_company_memberships (user_id, company_name)
+            VALUES (?, ?)
+        """, (user_id, company))
+    connection.commit()
+    connection.close()
+    return ""
 
 
 def tenant_exists(company_name: str) -> bool:
@@ -772,12 +859,14 @@ def set_user_team_memberships(user_id, team_ids, membership_role="member"):
     valid_rows = []
     if team_ids:
         placeholders = ",".join("?" for _ in team_ids)
+        company_names = user_company_names(user, include_primary=True)
+        company_placeholders = ",".join("?" for _ in company_names) if company_names else "?"
         valid_rows = connection.execute(f"""
             SELECT id, team_name
             FROM teams
             WHERE id IN ({placeholders})
-              AND LOWER(COALESCE(company, '')) = LOWER(?)
-        """, (*team_ids, user["company"] or "")).fetchall()
+              AND LOWER(COALESCE(company, '')) IN ({",".join("LOWER(?)" for _ in (company_names or [""]))})
+        """, (*team_ids, *(company_names or [""]))).fetchall()
     valid_ids = [str(row["id"]) for row in valid_rows]
     connection.execute("DELETE FROM team_memberships WHERE user_id = ?", (user_id,))
     for team_id in valid_ids:
@@ -943,7 +1032,17 @@ def list_users(actor=None):
     params = []
     company_clause = ""
     if actor and not is_application_admin(actor):
-        company_clause = "WHERE LOWER(company) = LOWER(?)"
+        company_clause = """
+        WHERE (
+            LOWER(company) = LOWER(?)
+            OR id IN (
+                SELECT user_id
+                FROM user_company_memberships
+                WHERE LOWER(company_name) = LOWER(?)
+            )
+        )
+        """
+        params.append(actor["company"] if "company" in actor.keys() and actor["company"] else "")
         params.append(actor["company"] if "company" in actor.keys() and actor["company"] else "")
     users = connection.execute(
         f"""
@@ -968,7 +1067,7 @@ def list_users(actor=None):
         params,
     ).fetchall()
     connection.close()
-    return users
+    return enrich_user_rows(users)
 
 
 def list_assignable_users(actor=None):
@@ -977,7 +1076,17 @@ def list_assignable_users(actor=None):
     params = []
     company_clause = ""
     if actor:
-        company_clause = "AND LOWER(company) = LOWER(?)"
+        company_clause = """
+          AND (
+                LOWER(company) = LOWER(?)
+             OR id IN (
+                    SELECT user_id
+                    FROM user_company_memberships
+                    WHERE LOWER(company_name) = LOWER(?)
+                )
+          )
+        """
+        params.append(actor["company"] if "company" in actor.keys() and actor["company"] else "")
         params.append(actor["company"] if "company" in actor.keys() and actor["company"] else "")
     users = connection.execute(
         f"""
@@ -1008,7 +1117,17 @@ def list_assignable_users(actor=None):
         params,
     ).fetchall()
     connection.close()
-    return users
+    return enrich_user_rows(users)
+
+
+def enrich_user_rows(users):
+    enriched = []
+    for user in users:
+        item = dict(user)
+        item["company_memberships"] = user_company_names(item, include_primary=True)
+        item["company_membership_label"] = ", ".join(item["company_memberships"]) or item.get("company", "")
+        enriched.append(item)
+    return enriched
 
 
 def set_user_active(user_id: int, is_active: bool):
@@ -1334,9 +1453,20 @@ def list_broadcast_messages(active_only: bool = False, actor=None, company: str 
     """
     rows = connection.execute(query, params).fetchall()
     connection.close()
+    if actor and is_application_admin(actor) and not active_only:
+        return rows
     target_company = company
+    actor_companies = []
     if actor and "company" in actor.keys():
+        actor_companies = user_company_names(actor, include_primary=True)
         target_company = actor["company"]
+    if actor_companies:
+        return [
+            row
+            for row in rows
+            if not decode_broadcast_companies(row["target_companies"] if "target_companies" in row.keys() else "")
+            or any(broadcast_visible_to_company(row, company_name) for company_name in actor_companies)
+        ]
     if target_company:
         return [row for row in rows if broadcast_visible_to_company(row, target_company)]
     if active_only:

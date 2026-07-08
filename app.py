@@ -16,15 +16,15 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, send_from_directory, session, abort
 from werkzeug.utils import secure_filename
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members, decode_broadcast_companies
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members, decode_broadcast_companies, set_user_company_memberships, user_company_names
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.6.6"
-APP_RELEASE_DATE = "2026-07-07"
-APP_BUILD = "2026-07-07-v2.6.6-contact-insights-outreach-r1"
+APP_VERSION = "2.6.7"
+APP_RELEASE_DATE = "2026-07-08"
+APP_BUILD = "2026-07-08-v2.6.7-quick-outreach-broadcast-admin-companies-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -38,6 +38,19 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.6.7",
+        "release_date": "2026-07-08",
+        "title": "Quick outreach creation and admin company targeting",
+        "new": [
+            "Added Create Outreach links from account and contact records with account/contact prefilled into the new Outreach form.",
+            "Added Application Admin company memberships so admin users can be associated with more than one configured company.",
+        ],
+        "enhanced": [
+            "Changed broadcast company targeting from a large multi-select box to a compact checkbox dropdown.",
+            "Broadcast target companies can now be edited directly on existing broadcast records.",
+        ],
+    },
     {
         "version": "2.6.6",
         "release_date": "2026-07-07",
@@ -1825,12 +1838,14 @@ def logout():
 def render_admin_permissions():
     actor = current_user()
     tenant_options = list_tenants(actor, active_only=True)
+    users = list_users(actor)
     return render_template(
         "admin_permissions.html",
-        users=list_users(actor),
+        users=users,
         tenant_options=tenant_options,
         team_options=list_teams(actor),
-        user_team_ids={str(user["id"]): user_team_ids(user["id"]) for user in list_users(actor)},
+        user_team_ids={str(user["id"]): user_team_ids(user["id"]) for user in users},
+        user_company_memberships={str(user["id"]): user_company_names(user, include_primary=True) for user in users},
         is_app_admin=is_application_admin(actor),
         is_company_admin=is_company_admin(actor),
         can_manage_broadcasts=is_application_admin(actor) or is_company_admin(actor),
@@ -1870,6 +1885,15 @@ def broadcast_target_companies_from_form(actor):
     if is_company_admin(actor):
         return [actor["company"] if "company" in actor.keys() else ""]
     return []
+
+
+def user_company_memberships_from_form(actor, primary_company):
+    if is_application_admin(actor):
+        values = request.form.getlist("company_memberships")
+        if primary_company and primary_company not in values:
+            values.insert(0, primary_company)
+        return values
+    return [primary_company]
 
 
 def broadcast_rows_for_admin(actor):
@@ -1991,6 +2015,9 @@ def admin_create_user():
     role_error = set_user_role(user_id, role)
     if role_error:
         return redirect(url_for("admin_users", error=role_error))
+    company_error = set_user_company_memberships(user_id, user_company_memberships_from_form(actor, company))
+    if company_error:
+        return redirect(url_for("admin_users", error=company_error))
     team_ids = request.form.getlist("team_ids")
     membership_role = "manager" if role == "manager" else "admin" if role in ("admin", "company_admin") else "member"
     team_error = set_user_team_memberships(user_id, team_ids, membership_role)
@@ -2001,7 +2028,7 @@ def admin_create_user():
         "User created",
         "User",
         request.form.get("email", "").strip().lower(),
-        f"Company: {company}; Role: {role}."
+        f"Company: {company}; Companies: {', '.join(user_company_names(user_id))}; Role: {role}."
     )
     return redirect(url_for("admin_users", message="User profile created."))
 
@@ -2221,6 +2248,7 @@ def admin_update_user_identity(user_id):
     old_name = user["full_name"]
     old_team = user["team"] if "team" in user.keys() and user["team"] else ""
     old_company = user["company"] if "company" in user.keys() and user["company"] else ""
+    old_companies = user_company_names(user, include_primary=True)
     new_email = request.form.get("email", "")
     new_name = request.form.get("full_name", "")
     new_company = request.form.get("company", old_company) if is_application_admin(actor) else old_company
@@ -2230,6 +2258,9 @@ def admin_update_user_identity(user_id):
     error = update_user_identity(user_id, new_email, new_name, new_team, new_company)
     if error:
         return redirect(url_for("admin_users", error=error))
+    company_error = set_user_company_memberships(user_id, user_company_memberships_from_form(actor, new_company))
+    if company_error:
+        return redirect(url_for("admin_users", error=company_error))
     membership_role = "manager" if user["role"] == "manager" else "admin" if user["role"] in ("admin", "company_admin") else "member"
     team_error = set_user_team_memberships(user_id, selected_team_ids, membership_role)
     if team_error:
@@ -2244,6 +2275,9 @@ def admin_update_user_identity(user_id):
         changes.append(f"Team changed from {old_team or 'Not set'} to {new_team.strip() or 'Not set'}")
     if old_company != new_company.strip():
         changes.append(f"Company changed from {old_company or 'Not set'} to {new_company.strip() or 'Not set'}")
+    new_companies = user_company_names(user_id, include_primary=True)
+    if old_companies != new_companies:
+        changes.append(f"Company memberships changed from {', '.join(old_companies) or 'Not set'} to {', '.join(new_companies) or 'Not set'}")
     log_admin_audit(
         current_user(),
         "Profile details updated",
@@ -10686,6 +10720,8 @@ def add_outreach():
     prefill = {}
     error = ""
     prefill_from_id = request.args.get("prefill_from")
+    prefill_account_id = request.args.get("account_id", "")
+    prefill_contact_id = request.args.get("contact_id", "")
     if prefill_from_id:
         source = connection.execute(
             "SELECT * FROM outreach WHERE id = ?",
@@ -10698,6 +10734,18 @@ def add_outreach():
                 "contact_ids": source_contact_values,
                 "notes": f"Follow-on task from completed outreach #{source['id']}.",
             }
+    elif prefill_contact_id:
+        contact = connection.execute(
+            "SELECT id, account_id FROM contacts WHERE id = ?",
+            (prefill_contact_id,),
+        ).fetchone()
+        if contact:
+            prefill = {
+                "account_id": contact["account_id"],
+                "contact_ids": [str(contact["id"])],
+            }
+    elif prefill_account_id:
+        prefill = {"account_id": prefill_account_id}
 
     if request.method == "POST":
         prefill = dict(request.form)

@@ -10,6 +10,7 @@
         <a href="{{ url_for('contacts') }}" class="btn btn-secondary">Back to Contacts</a>
         <a href="{{ url_for('print_contact', contact_id=contact.id) }}" target="_blank" class="btn btn-secondary">Print Contact</a>
         <a href="{{ url_for('edit_contact', contact_id=contact.id) }}" class="btn btn-primary">Edit Contact</a>
+        <a href="{{ url_for('add_outreach', account_id=contact.account_id, contact_id=contact.id) }}" class="btn btn-primary">Create Outreach</a>
     </div>
 </div>
 
