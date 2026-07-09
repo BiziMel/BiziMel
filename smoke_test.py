@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import tempfile
+from datetime import date, timedelta
 from pathlib import Path
 
 
@@ -138,6 +139,9 @@ def main():
 
         db_path = Path(tmp) / "users" / "1" / "pipeflow.db"
         account_id, contact_id, second_contact_id, partner_id, outreach_id = seed_validation_data(db_path)
+        today = date.today()
+        yesterday = (today - timedelta(days=1)).isoformat()
+        tomorrow = (today + timedelta(days=1)).isoformat()
 
         pages = {
             "/": "Dashboard",
@@ -256,8 +260,8 @@ def main():
                 "message": "Smoke test message",
                 "severity": "info",
                 "target_companies": ["PipeFlow Administration", "Smoke Other Company"],
-                "start_at": "2026-07-08T09:00",
-                "stop_at": "2026-07-09T09:00",
+                "start_at": f"{yesterday}T09:00",
+                "stop_at": f"{tomorrow}T09:00",
                 "is_active": "1",
             },
             follow_redirects=True,
@@ -298,8 +302,8 @@ def main():
                 "message": "Smoke test message updated",
                 "severity": "warning",
                 "target_companies": ["Smoke Other Company"],
-                "start_at": "2026-07-08T10:00",
-                "stop_at": "2026-07-09T10:00",
+                "start_at": f"{yesterday}T10:00",
+                "stop_at": f"{tomorrow}T10:00",
                 "is_active": "1",
             },
             follow_redirects=True,
@@ -535,6 +539,10 @@ def main():
         assert_ok("bulk_next_action_date" in outreach_html, "bulk Outreach due-date control missing")
         assert_ok("next_action_date_" in outreach_html, "inline Outreach due-date control missing")
 
+        connection = sqlite3.connect(db_path)
+        connection.execute("DROP TABLE timeline_entries")
+        connection.commit()
+        connection.close()
         response = client.post(
             f"/outreach/{multi_outreach['id']}/due-date",
             data={

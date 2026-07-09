@@ -15,6 +15,7 @@ from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, send_from_directory, session, abort
+from werkzeug.exceptions import HTTPException
 from werkzeug.utils import secure_filename
 from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members, decode_broadcast_companies, set_user_company_memberships, user_company_names
 from database import get_db_connection, initialise_database
@@ -45,6 +46,8 @@ RELEASE_NOTES = [
         "fixed": [
             "Hardened new Outreach save so workspace schema drift is refreshed and retried instead of causing an internal server error.",
             "Hardened existing Outreach update and Complete and Create Follow-on so older workspace schemas do not crash during audit logging or follow-on creation.",
+            "Hardened Outreach table due-date updates, dashboard task updates and task completion so audit/timeline schema drift is refreshed and retried instead of causing an internal server error.",
+            "Added a global application safety net so unexpected write errors redirect with a clear PipeFlow message instead of exposing a generic internal server error page.",
         ],
         "new": [
             "Added Create Outreach links from account and contact records with account/contact prefilled into the new Outreach form.",
@@ -1676,6 +1679,25 @@ def apply_security_headers(response):
     if request.is_secure or app.config.get("SESSION_COOKIE_SECURE"):
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
+
+
+@app.errorhandler(Exception)
+def handle_unexpected_exception(exc):
+    if isinstance(exc, HTTPException):
+        return exc
+    traceback.print_exc()
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        target = request.form.get("return_to") or request.referrer or url_for("home")
+        return redirect_with_query(
+            safe_redirect_target(target, "home"),
+            error="PipeFlow could not complete that save. The page has been kept available so you can review the data and try again.",
+        )
+    return (
+        "<!doctype html><title>PipeFlow</title>"
+        "<h1>PipeFlow could not load this page</h1>"
+        "<p>Please go back, refresh, and try again. The error has been logged for review.</p>",
+        500,
+    )
 
 
 
@@ -11521,21 +11543,16 @@ def bulk_outreach_action():
         next_action_date = request.form.get("bulk_next_action_date", "")
         next_action_time = request.form.get("bulk_next_action_time", "")
         connection = get_db_connection()
-        try:
-            updated_count = update_outreach_due_date_records(
-                connection,
-                outreach_ids,
-                next_action_date,
-                next_action_time,
-                "Bulk due date update from Outreach table",
-            )
-            connection.commit()
-        except Exception:
-            connection.rollback()
-            traceback.print_exc()
-            connection.close()
-            return redirect_with_query(return_to, error="Selected outreach due dates could not be updated. Refresh the table and try again.")
+        connection, updated_count, error = save_outreach_due_dates_with_recovery(
+            connection,
+            outreach_ids,
+            next_action_date,
+            next_action_time,
+            "Bulk due date update from Outreach table",
+        )
         connection.close()
+        if error:
+            return redirect_with_query(return_to, error=error)
         if updated_count:
             return redirect_with_query(return_to, message=f"Updated the due date for {updated_count} outreach task(s).")
         return redirect_with_query(return_to, error="No selected open outreach tasks could be updated.")
@@ -11583,27 +11600,204 @@ def update_outreach_due_date_records(connection, outreach_ids, next_action_date,
     return updated_count
 
 
+def save_outreach_due_dates_with_recovery(connection, outreach_ids, next_action_date, next_action_time, actor_label):
+    try:
+        updated_count = update_outreach_due_date_records(
+            connection,
+            outreach_ids,
+            next_action_date,
+            next_action_time,
+            actor_label,
+        )
+        connection.commit()
+        return connection, updated_count, ""
+    except Exception as exc:
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+        if not database_error_looks_like_schema_drift(exc):
+            traceback.print_exc()
+            return connection, 0, "Activity due date could not be updated. Refresh the table and try again."
+        try:
+            connection.close()
+        except Exception:
+            pass
+        initialise_database(force=True)
+        connection = get_db_connection()
+        try:
+            updated_count = update_outreach_due_date_records(
+                connection,
+                outreach_ids,
+                next_action_date,
+                next_action_time,
+                actor_label,
+            )
+            connection.commit()
+            return connection, updated_count, ""
+        except Exception:
+            traceback.print_exc()
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            return connection, 0, "Activity due date could not be updated after refreshing the workspace schema. Refresh the table and try again."
+
+
+def persist_dashboard_task_update(connection, outreach_id, outreach_item, new_values, labels):
+    changes = build_change_log(outreach_item, new_values, labels)
+    connection.execute(
+        """
+        UPDATE outreach
+        SET outcome = ?,
+            task_status = ?,
+            next_action = ?,
+            next_action_date = ?,
+            next_action_time = ?,
+            completed_at = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (
+            new_values["outcome"],
+            new_values["task_status"],
+            new_values["next_action"],
+            new_values["next_action_date"],
+            new_values["next_action_time"],
+            new_values["completed_at"],
+            outreach_id,
+        ),
+    )
+    if changes:
+        audit_record_update(connection, "outreach", outreach_id, outreach_item, new_values, labels)
+        add_timeline_entry(
+            connection,
+            "outreach",
+            outreach_id,
+            "Task Updated",
+            "Task updated from Tasks page: " + "; ".join(changes),
+        )
+
+
+def save_dashboard_task_update_with_recovery(connection, outreach_id, outreach_item, new_values, labels):
+    try:
+        persist_dashboard_task_update(connection, outreach_id, outreach_item, new_values, labels)
+        connection.commit()
+        return connection, ""
+    except Exception as exc:
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+        if not database_error_looks_like_schema_drift(exc):
+            traceback.print_exc()
+            return connection, "Task update could not be saved. Refresh and try again."
+        try:
+            connection.close()
+        except Exception:
+            pass
+        initialise_database(force=True)
+        connection = get_db_connection()
+        refreshed_item = connection.execute("SELECT * FROM outreach WHERE id = ?", (outreach_id,)).fetchone()
+        if not refreshed_item:
+            return connection, "The selected task could not be found after refreshing the workspace schema."
+        try:
+            persist_dashboard_task_update(connection, outreach_id, refreshed_item, new_values, labels)
+            connection.commit()
+            return connection, ""
+        except Exception:
+            traceback.print_exc()
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            return connection, "Task update could not be saved after refreshing the workspace schema. Refresh and try again."
+
+
+def persist_dashboard_task_complete(connection, outreach_id, outreach_item, outcome, activity_update, completed_at):
+    connection.execute(
+        """
+        UPDATE outreach
+        SET task_status = 'Completed',
+            outcome = ?,
+            next_action = ?,
+            completed_at = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (outcome, activity_update, completed_at, outreach_id),
+    )
+    audit_record_update(connection, "outreach", outreach_id, outreach_item, {
+        "task_status": "Completed",
+        "outcome": outcome,
+        "next_action": activity_update,
+        "completed_at": completed_at,
+    }, {
+        "task_status": "Task status",
+        "outcome": "Outcome",
+        "next_action": "Activity update",
+        "completed_at": "Completed at",
+    })
+    add_timeline_entry(
+        connection,
+        "outreach",
+        outreach_id,
+        "Task Completed",
+        f"Task marked Completed from dashboard with outcome: {outcome}. It can be reopened for 10 days before the system moves it to Closed.",
+    )
+
+
+def save_dashboard_task_complete_with_recovery(connection, outreach_id, outreach_item, outcome, activity_update, completed_at):
+    try:
+        persist_dashboard_task_complete(connection, outreach_id, outreach_item, outcome, activity_update, completed_at)
+        connection.commit()
+        return connection, ""
+    except Exception as exc:
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+        if not database_error_looks_like_schema_drift(exc):
+            traceback.print_exc()
+            return connection, "Task could not be completed. Refresh and try again."
+        try:
+            connection.close()
+        except Exception:
+            pass
+        initialise_database(force=True)
+        connection = get_db_connection()
+        refreshed_item = connection.execute("SELECT * FROM outreach WHERE id = ?", (outreach_id,)).fetchone()
+        if not refreshed_item:
+            return connection, "The selected task could not be found after refreshing the workspace schema."
+        try:
+            persist_dashboard_task_complete(connection, outreach_id, refreshed_item, outcome, activity_update, completed_at)
+            connection.commit()
+            return connection, ""
+        except Exception:
+            traceback.print_exc()
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            return connection, "Task could not be completed after refreshing the workspace schema. Refresh and try again."
+
+
 @app.route("/outreach/<int:outreach_id>/due-date", methods=("POST",))
 def update_outreach_due_date(outreach_id):
     return_to = safe_redirect_target(request.form.get("return_to") or request.referrer or url_for("outreach"), "outreach")
     next_action_date = request.form.get("next_action_date", "")
     next_action_time = request.form.get("next_action_time", "")
     connection = get_db_connection()
-    try:
-        updated_count = update_outreach_due_date_records(
-            connection,
-            [outreach_id],
-            next_action_date,
-            next_action_time,
-            "Due date updated from Outreach table",
-        )
-        connection.commit()
-    except Exception:
-        connection.rollback()
-        traceback.print_exc()
-        connection.close()
-        return redirect_with_query(return_to, error="Activity due date could not be updated. Refresh the table and try again.")
+    connection, updated_count, error = save_outreach_due_dates_with_recovery(
+        connection,
+        [outreach_id],
+        next_action_date,
+        next_action_time,
+        "Due date updated from Outreach table",
+    )
     connection.close()
+    if error:
+        return redirect_with_query(return_to, error=error)
     if updated_count:
         return redirect_with_query(return_to, message="Activity due date updated.")
     return redirect_with_query(return_to, error="This outreach task is locked and cannot have its due date changed.")
@@ -11618,21 +11812,16 @@ def bulk_update_outreach_due_date():
     next_action_date = request.form.get("bulk_next_action_date", "")
     next_action_time = request.form.get("bulk_next_action_time", "")
     connection = get_db_connection()
-    try:
-        updated_count = update_outreach_due_date_records(
-            connection,
-            outreach_ids,
-            next_action_date,
-            next_action_time,
-            "Bulk due date update from Outreach table",
-        )
-        connection.commit()
-    except Exception:
-        connection.rollback()
-        traceback.print_exc()
-        connection.close()
-        return redirect_with_query(return_to, error="Selected outreach due dates could not be updated. Refresh the table and try again.")
+    connection, updated_count, error = save_outreach_due_dates_with_recovery(
+        connection,
+        outreach_ids,
+        next_action_date,
+        next_action_time,
+        "Bulk due date update from Outreach table",
+    )
     connection.close()
+    if error:
+        return redirect_with_query(return_to, error=error)
     if updated_count:
         return redirect_with_query(return_to, message=f"Updated the due date for {updated_count} outreach task(s).")
     return redirect_with_query(return_to, error="No selected open outreach tasks could be updated.")
@@ -12677,41 +12866,10 @@ def update_task_from_tasks(outreach_id):
         "notes": "System metadata",
         "completed_at": "Completed at",
     }
-    changes = build_change_log(outreach_item, new_values, labels)
-
-    connection.execute(
-        """
-        UPDATE outreach
-        SET outcome = ?,
-            task_status = ?,
-            next_action = ?,
-            next_action_date = ?,
-            next_action_time = ?,
-            completed_at = ?,
-            last_updated = CURRENT_TIMESTAMP
-        WHERE id = ?
-        """,
-        (
-            new_values["outcome"],
-            new_values["task_status"],
-            new_values["next_action"],
-            new_values["next_action_date"],
-            new_values["next_action_time"],
-            new_values["completed_at"],
-            outreach_id,
-        ),
-    )
-    if changes:
-        audit_record_update(connection, "outreach", outreach_id, outreach_item, new_values, labels)
-        add_timeline_entry(
-            connection,
-            "outreach",
-            outreach_id,
-            "Task Updated",
-            "Task updated from Tasks page: " + "; ".join(changes),
-        )
-    connection.commit()
+    connection, error = save_dashboard_task_update_with_recovery(connection, outreach_id, outreach_item, new_values, labels)
     connection.close()
+    if error:
+        return redirect_with_query(return_target, error=error)
     return redirect(return_target)
 
 
@@ -12738,38 +12896,17 @@ def complete_task_from_tasks(outreach_id):
 
     outcome = normalise_outreach_outcome(request.form.get("outcome")) or outreach_item["outcome"] or "Follow-up Required"
     completed_at = completed_status_timestamp(outreach_item, "Completed")
-    connection.execute(
-        """
-        UPDATE outreach
-        SET task_status = 'Completed',
-            outcome = ?,
-            next_action = ?,
-            completed_at = ?,
-            last_updated = CURRENT_TIMESTAMP
-        WHERE id = ?
-        """,
-        (outcome, activity_update, completed_at, outreach_id),
-    )
-    audit_record_update(connection, "outreach", outreach_id, outreach_item, {
-        "task_status": "Completed",
-        "outcome": outcome,
-        "next_action": activity_update,
-        "completed_at": completed_at,
-    }, {
-        "task_status": "Task status",
-        "outcome": "Outcome",
-        "next_action": "Activity update",
-        "completed_at": "Completed at",
-    })
-    add_timeline_entry(
+    connection, error = save_dashboard_task_complete_with_recovery(
         connection,
-        "outreach",
         outreach_id,
-        "Task Completed",
-        f"Task marked Completed from dashboard with outcome: {outcome}. It can be reopened for 10 days before the system moves it to Closed.",
+        outreach_item,
+        outcome,
+        activity_update,
+        completed_at,
     )
-    connection.commit()
     connection.close()
+    if error:
+        return redirect_with_query(return_target, error=error)
     return redirect(return_target)
 
 
