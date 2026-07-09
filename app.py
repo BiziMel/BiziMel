@@ -56,6 +56,7 @@ RELEASE_NOTES = [
         "enhanced": [
             "Changed broadcast company targeting from a large multi-select box to a compact checkbox dropdown.",
             "Broadcast target companies can now be edited directly on existing broadcast records.",
+            "Added single and bulk automatic Outreach rescheduling from the Outreach table, using the next available working, non-clashing date and time.",
         ],
     },
     {
@@ -3099,6 +3100,46 @@ def available_campaign_time(action_date, preferred_time, profile=None, reserved_
     slot = (action_date.isoformat(), fallback.strftime("%H:%M"))
     reserved_slots.add(slot)
     return fallback.strftime("%H:%M")
+
+
+def round_datetime_to_next_slot(value, minutes=15):
+    value = value.replace(second=0, microsecond=0)
+    remainder = value.minute % minutes
+    if remainder:
+        value += timedelta(minutes=minutes - remainder)
+    return value
+
+
+def profile_work_bounds(profile=None):
+    start_time = parse_time_value(profile["work_day_start"] if profile and profile["work_day_start"] else "", "09:00")
+    end_time = parse_time_value(profile["work_day_end"] if profile and profile["work_day_end"] else "", "17:00")
+    if end_time < start_time:
+        end_time = start_time
+    return start_time, end_time
+
+
+def next_available_outreach_slot(start_at, profile=None, reserved_slots=None, non_working_blocks=None):
+    reserved_slots = reserved_slots or set()
+    start_time, end_time = profile_work_bounds(profile)
+    candidate = round_datetime_to_next_slot(start_at)
+    for _ in range(0, 366 * 24 * 4):
+        candidate_date = candidate.date()
+        if is_non_working_date(candidate_date, profile, non_working_blocks):
+            next_day = candidate_date + timedelta(days=1)
+            candidate = datetime.combine(next_day, start_time)
+            continue
+        if candidate.time() < start_time:
+            candidate = datetime.combine(candidate_date, start_time)
+        if candidate.time() > end_time:
+            next_day = candidate_date + timedelta(days=1)
+            candidate = datetime.combine(next_day, start_time)
+            continue
+        slot = (candidate.date().isoformat(), candidate.strftime("%H:%M"))
+        if slot not in reserved_slots:
+            reserved_slots.add(slot)
+            return slot
+        candidate += timedelta(minutes=15)
+    raise RuntimeError("Unable to find an available Outreach slot in the next year.")
 
 
 def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per_week, templates=None, profile=None, reserved_slots=None, non_working_blocks=None, submitted_at=None):
@@ -11556,6 +11597,19 @@ def bulk_outreach_action():
         if updated_count:
             return redirect_with_query(return_to, message=f"Updated the due date for {updated_count} outreach task(s).")
         return redirect_with_query(return_to, error="No selected open outreach tasks could be updated.")
+    if action == "auto_reschedule":
+        connection = get_db_connection()
+        connection, updated_count, error = auto_reschedule_outreach_with_recovery(
+            connection,
+            outreach_ids,
+            "Bulk auto reschedule from Outreach table",
+        )
+        connection.close()
+        if error:
+            return redirect_with_query(return_to, error=error)
+        if updated_count:
+            return redirect_with_query(return_to, message=f"Automatically rescheduled {updated_count} outreach task(s) to the next available non-clashing slot.")
+        return redirect_with_query(return_to, error="No selected open outreach tasks could be rescheduled.")
     return redirect_with_query(return_to, error="Select a valid bulk action.")
 
 
@@ -11598,6 +11652,123 @@ def update_outreach_due_date_records(connection, outreach_ids, next_action_date,
             )
         updated_count += 1
     return updated_count
+
+
+def existing_open_outreach_slots(connection, exclude_ids=None):
+    exclude_ids = {str(value) for value in (exclude_ids or []) if str(value or "").isdigit()}
+    rows = connection.execute(f"""
+        SELECT id, next_action_date, next_action_time
+        FROM outreach
+        WHERE next_action_date IS NOT NULL
+          AND next_action_date != ''
+          AND COALESCE(task_status, '') NOT IN ({",".join("?" for _ in INACTIVE_TASK_STATUSES)})
+    """, open_task_params()).fetchall()
+    slots = set()
+    for row in rows:
+        if str(row["id"]) in exclude_ids:
+            continue
+        if row["next_action_date"]:
+            slots.add((row["next_action_date"], (row["next_action_time"] or "09:00")[:5]))
+    return slots
+
+
+def outreach_reschedule_start(outreach_item, now=None):
+    now = round_datetime_to_next_slot(now or current_app_datetime())
+    due_at = task_due_datetime(outreach_item["next_action_date"], outreach_item["next_action_time"])
+    if due_at and due_at >= now:
+        return round_datetime_to_next_slot(due_at + timedelta(minutes=15))
+    return now
+
+
+def auto_reschedule_outreach_records(connection, outreach_ids, actor_label):
+    profile = connection.execute("SELECT * FROM user_profile WHERE id = 1").fetchone()
+    non_working_rows = connection.execute("""
+        SELECT *
+        FROM non_working_blocks
+        ORDER BY start_date, end_date, id
+    """).fetchall()
+    non_working_blocks = parse_non_working_blocks(non_working_rows)
+    reserved_slots = existing_open_outreach_slots(connection, outreach_ids)
+    updated_count = 0
+    labels = {
+        "next_action_date": "Activity due date",
+        "next_action_time": "Activity due time",
+    }
+    rows = []
+    for outreach_id in outreach_ids:
+        outreach_item = connection.execute("SELECT * FROM outreach WHERE id = ?", (outreach_id,)).fetchone()
+        if outreach_item and task_can_be_modified(outreach_item):
+            rows.append(outreach_item)
+    rows.sort(key=lambda row: (
+        row["next_action_date"] or "9999-12-31",
+        row["next_action_time"] or "99:99",
+        row["id"],
+    ))
+    for outreach_item in rows:
+        next_action_date, next_action_time = next_available_outreach_slot(
+            outreach_reschedule_start(outreach_item),
+            profile=profile,
+            reserved_slots=reserved_slots,
+            non_working_blocks=non_working_blocks,
+        )
+        new_values = {
+            "next_action_date": next_action_date,
+            "next_action_time": next_action_time,
+        }
+        changes = build_change_log(outreach_item, new_values, labels)
+        connection.execute(
+            """
+            UPDATE outreach
+            SET next_action_date = ?,
+                next_action_time = ?,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (next_action_date, next_action_time, outreach_item["id"]),
+        )
+        if changes:
+            audit_record_update(connection, "outreach", outreach_item["id"], outreach_item, new_values, labels)
+            add_timeline_entry(
+                connection,
+                "outreach",
+                outreach_item["id"],
+                "Task Rescheduled",
+                f"{actor_label}: automatically rescheduled to {format_display_datetime(next_action_date, next_action_time)}.",
+            )
+        updated_count += 1
+    return updated_count
+
+
+def auto_reschedule_outreach_with_recovery(connection, outreach_ids, actor_label):
+    try:
+        updated_count = auto_reschedule_outreach_records(connection, outreach_ids, actor_label)
+        connection.commit()
+        return connection, updated_count, ""
+    except Exception as exc:
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+        if not database_error_looks_like_schema_drift(exc):
+            traceback.print_exc()
+            return connection, 0, "Outreach could not be automatically rescheduled. Refresh the table and try again."
+        try:
+            connection.close()
+        except Exception:
+            pass
+        initialise_database(force=True)
+        connection = get_db_connection()
+        try:
+            updated_count = auto_reschedule_outreach_records(connection, outreach_ids, actor_label)
+            connection.commit()
+            return connection, updated_count, ""
+        except Exception:
+            traceback.print_exc()
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            return connection, 0, "Outreach could not be automatically rescheduled after refreshing the workspace schema. Refresh the table and try again."
 
 
 def save_outreach_due_dates_with_recovery(connection, outreach_ids, next_action_date, next_action_time, actor_label):
@@ -11801,6 +11972,23 @@ def update_outreach_due_date(outreach_id):
     if updated_count:
         return redirect_with_query(return_to, message="Activity due date updated.")
     return redirect_with_query(return_to, error="This outreach task is locked and cannot have its due date changed.")
+
+
+@app.route("/outreach/<int:outreach_id>/auto-reschedule", methods=("POST",))
+def auto_reschedule_outreach(outreach_id):
+    return_to = safe_redirect_target(request.form.get("return_to") or request.referrer or url_for("outreach"), "outreach")
+    connection = get_db_connection()
+    connection, updated_count, error = auto_reschedule_outreach_with_recovery(
+        connection,
+        [outreach_id],
+        "Auto reschedule from Outreach table",
+    )
+    connection.close()
+    if error:
+        return redirect_with_query(return_to, error=error)
+    if updated_count:
+        return redirect_with_query(return_to, message="Outreach task automatically rescheduled to the next available non-clashing slot.")
+    return redirect_with_query(return_to, error="This outreach task is locked and cannot be rescheduled.")
 
 
 @app.route("/outreach/bulk-due-date", methods=("POST",))

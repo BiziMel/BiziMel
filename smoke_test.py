@@ -565,6 +565,47 @@ def main():
         assert_ok(inline_due["next_action_date"] == "2026-05-09", "inline due date was not saved")
         assert_ok(inline_due["next_action_time"] == "12:15", "inline due time was not saved")
 
+        response = client.post(
+            f"/outreach/{multi_outreach['id']}/auto-reschedule",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "return_to": "/outreach",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "single Outreach auto-reschedule failed")
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        auto_due = connection.execute(
+            "SELECT next_action_date, next_action_time FROM outreach WHERE id = ?",
+            (multi_outreach["id"],),
+        ).fetchone()
+        connection.close()
+        assert_ok(auto_due["next_action_date"] and auto_due["next_action_time"], "single auto-reschedule did not set a due slot")
+        assert_ok(date.fromisoformat(auto_due["next_action_date"]).weekday() < 5, "single auto-reschedule selected a weekend")
+
+        response = client.post(
+            "/outreach/bulk-action",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "return_to": "/outreach",
+                "bulk_action": "auto_reschedule",
+                "selected_ids": [str(outreach_id), str(multi_outreach["id"])],
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "bulk Outreach auto-reschedule failed")
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        auto_bulk_rows = connection.execute(
+            "SELECT id, next_action_date, next_action_time FROM outreach WHERE id IN (?, ?) ORDER BY id",
+            (outreach_id, multi_outreach["id"]),
+        ).fetchall()
+        connection.close()
+        auto_bulk_slots = {(row["next_action_date"], row["next_action_time"]) for row in auto_bulk_rows}
+        assert_ok(len(auto_bulk_rows) == 2 and len(auto_bulk_slots) == 2, "bulk auto-reschedule created clashing due slots")
+        assert_ok(all(date.fromisoformat(row["next_action_date"]).weekday() < 5 for row in auto_bulk_rows), "bulk auto-reschedule selected a weekend")
+
         connection = sqlite3.connect(db_path)
         connection.execute("ALTER TABLE outreach DROP COLUMN scheduled_meeting_time")
         connection.commit()

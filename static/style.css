@@ -5213,6 +5213,15 @@ body {
     margin-top: 4px;
 }
 
+.outreach-auto-reschedule-form {
+    margin-top: 4px;
+}
+
+.outreach-auto-reschedule-form .btn {
+    white-space: normal;
+    line-height: 1.1;
+}
+
 .outreach-due-editor summary {
     display: inline-flex;
     width: fit-content;
