@@ -11170,6 +11170,7 @@ def add_outreach():
 def campaign_builder():
     connection = get_db_connection()
     generated_count = 0
+    skipped_duplicate_count = 0
     error = ""
     selected_account_id = request.form.get("account_id") or request.args.get("account_id") or ""
     selected_contact_ids = request.form.getlist("contact_ids")
@@ -11236,7 +11237,9 @@ def campaign_builder():
             error = fy_quarter_required_message()
         elif not sales_play_allowed_for_account(connection, account_id, sales_play):
             error = "Select a Sales Play used for or associated to the selected account."
-        elif account_id and pg_week_start_raw and campaign_start_raw and campaign_end_raw and contact_ids:
+        elif not pg_week_start_raw or not campaign_start_raw or not campaign_end_raw:
+            error = "Enter PG week start, campaign start and campaign end dates before generating a campaign."
+        else:
             today = datetime.now().date()
             try:
                 pg_week_start = datetime.strptime(pg_week_start_raw, "%Y-%m-%d").date()
@@ -11346,6 +11349,7 @@ def campaign_builder():
                             step["activity_type"],
                             subject,
                         ):
+                            skipped_duplicate_count += 1
                             continue
                         connection.execute("""
                             INSERT INTO outreach (
@@ -11397,14 +11401,24 @@ def campaign_builder():
                         ))
                         generated_count += 1
 
-                add_timeline_entry(
-                    connection,
-                    "account",
-                    account_id,
-                    "Campaign Built",
-                    f"Generated {generated_count} campaign outreach step(s) for sales play {sales_play} from {campaign_start.isoformat()} to {campaign_end.isoformat()} with {total_tasks} task(s) at {times_per_week} time(s) per week. {success_context_summary}"
-                )
-                connection.commit()
+                if generated_count:
+                    add_timeline_entry(
+                        connection,
+                        "account",
+                        account_id,
+                        "Campaign Built",
+                        f"Generated {generated_count} campaign outreach step(s) for sales play {sales_play} from {campaign_start.isoformat()} to {campaign_end.isoformat()} with {total_tasks} task(s) at {times_per_week} time(s) per week. {success_context_summary}"
+                    )
+                    connection.commit()
+                elif skipped_duplicate_count:
+                    connection.rollback()
+                    error = (
+                        "No campaign tasks were created because matching outreach tasks already exist "
+                        "for the selected contact, dates, times, activity types and subjects."
+                    )
+                else:
+                    connection.rollback()
+                    error = "No campaign tasks were created. Extend the campaign date range or increase the activity quantity."
 
     accounts = connection.execute("""
         SELECT
@@ -11445,6 +11459,7 @@ def campaign_builder():
         profile=profile,
         default_assignee=default_outreach_assignee(),
         generated_count=generated_count,
+        skipped_duplicate_count=skipped_duplicate_count,
         selected_account_id=selected_account_id,
         selected_contact_ids=selected_contact_ids,
         selected_pg_week_start=selected_pg_week_start,

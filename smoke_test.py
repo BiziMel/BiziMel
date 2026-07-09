@@ -173,6 +173,41 @@ def main():
             "Smoke Test Play" in campaign_builder_html,
             "Campaign Builder sales play options missing on first load",
         )
+        connection = sqlite3.connect(db_path)
+        campaign_count_before = connection.execute(
+            "SELECT COUNT(*) FROM outreach WHERE campaign = ?",
+            ("Smoke Test Play",),
+        ).fetchone()[0]
+        connection.close()
+        campaign_start = (today + timedelta(days=3)).isoformat()
+        campaign_end = (today + timedelta(days=14)).isoformat()
+        pg_week_start = (today + timedelta(days=21)).isoformat()
+        response = client.post(
+            "/outreach/campaign-builder",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "account_id": str(account_id),
+                "contact_ids": [str(second_contact_id)],
+                "pg_week_start": pg_week_start,
+                "campaign_start_date": campaign_start,
+                "campaign_end_date": campaign_end,
+                "total_outreach_tasks": "3",
+                "times_per_week": "2",
+                "sales_play": "Smoke Test Play",
+                "fy": "27",
+                "quarter": "Q1",
+                "assigned_to": "Smoke Test Admin",
+            },
+        )
+        campaign_html = response.get_data(as_text=True)
+        assert_ok(response.status_code == 200 and "Campaign Generated" in campaign_html, "Campaign Builder save failed")
+        connection = sqlite3.connect(db_path)
+        campaign_count_after = connection.execute(
+            "SELECT COUNT(*) FROM outreach WHERE campaign = ?",
+            ("Smoke Test Play",),
+        ).fetchone()[0]
+        connection.close()
+        assert_ok(campaign_count_after > campaign_count_before, "Campaign Builder did not save generated outreach")
 
         dashboard_html = client.get("/").get_data(as_text=True)
         assert_ok("header-action-stack" in dashboard_html, "header action stack missing")
