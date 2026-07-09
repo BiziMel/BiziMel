@@ -11428,8 +11428,11 @@ def campaign_builder():
             accounts.account_name,
             contacts.name
     """).fetchall()
+    # Campaign Builder filters Sales Plays client-side when the Account changes.
+    # Load the complete account/play map so a first-load page can reveal valid
+    # options immediately after the user selects an account.
     selected_account_for_contacts = selected_account_id
-    sales_play_rows = account_sales_play_options(connection, selected_account_for_contacts) if selected_account_for_contacts else []
+    sales_play_rows = account_sales_play_options(connection)
     sales_play_assets = sales_play_asset_map(connection)
     partner_activity_options = account_partner_activity_options(connection)
 

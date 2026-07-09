@@ -168,6 +168,12 @@ def main():
             html = response.get_data(as_text=True)
             assert_ok(response.status_code == 200 and marker in html, f"{path} failed")
 
+        campaign_builder_html = client.get("/outreach/campaign-builder").get_data(as_text=True)
+        assert_ok(
+            "Smoke Test Play" in campaign_builder_html,
+            "Campaign Builder sales play options missing on first load",
+        )
+
         dashboard_html = client.get("/").get_data(as_text=True)
         assert_ok("header-action-stack" in dashboard_html, "header action stack missing")
         assert_ok(
