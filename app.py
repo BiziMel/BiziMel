@@ -11229,10 +11229,23 @@ def campaign_builder():
             if activity_type in {template["activity_type"] for template in campaign_activity_options}
         ]
 
+        if account_id and not contact_ids:
+            contact_ids = [
+                str(row["id"])
+                for row in connection.execute("""
+                    SELECT id
+                    FROM contacts
+                    WHERE account_id = ?
+                      AND COALESCE(status, 'Active') = 'Active'
+                    ORDER BY name
+                """, (account_id,)).fetchall()
+            ]
+            selected_contact_ids = contact_ids
+
         if not account_id:
             error = "Select an account before generating a campaign."
         elif not contact_ids:
-            error = "Select at least one contact for the selected account before generating a campaign."
+            error = "The selected account has no active contacts for campaign generation."
         elif not fy_quarter_are_valid(selected_fy, selected_quarter):
             error = fy_quarter_required_message()
         elif not sales_play_allowed_for_account(connection, account_id, sales_play):
@@ -11351,7 +11364,7 @@ def campaign_builder():
                         ):
                             skipped_duplicate_count += 1
                             continue
-                        connection.execute("""
+                        cursor = connection.execute("""
                             INSERT INTO outreach (
                                 fy,
                                 quarter,
@@ -11399,6 +11412,13 @@ def campaign_builder():
                                 "Not Started",
                                 assigned_to
                         ))
+                        outreach_id = cursor.lastrowid
+                        if not outreach_id:
+                            row = connection.execute("SELECT MAX(id) AS id FROM outreach").fetchone()
+                            outreach_id = row["id"] if row and "id" in row.keys() else None
+                        if not outreach_id:
+                            raise RuntimeError("Campaign outreach save completed without returning a record id.")
+                        save_outreach_recipients(connection, outreach_id, [(contact["id"], None)])
                         generated_count += 1
 
                 if generated_count:

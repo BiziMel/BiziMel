@@ -187,7 +187,6 @@ def main():
             data={
                 "csrf_token": csrf_from_session(client),
                 "account_id": str(account_id),
-                "contact_ids": [str(second_contact_id)],
                 "pg_week_start": pg_week_start,
                 "campaign_start_date": campaign_start,
                 "campaign_end_date": campaign_end,
@@ -206,8 +205,21 @@ def main():
             "SELECT COUNT(*) FROM outreach WHERE campaign = ?",
             ("Smoke Test Play",),
         ).fetchone()[0]
+        campaign_recipient_count = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM outreach_recipients
+            WHERE outreach_id IN (
+                SELECT id
+                FROM outreach
+                WHERE campaign = ?
+            )
+            """,
+            ("Smoke Test Play",),
+        ).fetchone()[0]
         connection.close()
         assert_ok(campaign_count_after > campaign_count_before, "Campaign Builder did not save generated outreach")
+        assert_ok(campaign_recipient_count > 0, "Campaign Builder did not save outreach recipients")
 
         dashboard_html = client.get("/").get_data(as_text=True)
         assert_ok("header-action-stack" in dashboard_html, "header action stack missing")
