@@ -56,7 +56,7 @@ RELEASE_NOTES = [
         "enhanced": [
             "Changed broadcast company targeting from a large multi-select box to a compact checkbox dropdown.",
             "Broadcast target companies can now be edited directly on existing broadcast records.",
-            "Added single and bulk automatic Outreach rescheduling from the Outreach table, using the next available working, non-clashing date and time.",
+            "Added compact single and bulk automatic Outreach rescheduling from the Outreach table, using the next available working date where the same contact has no other scheduled activity.",
         ],
     },
     {
@@ -3118,13 +3118,20 @@ def profile_work_bounds(profile=None):
     return start_time, end_time
 
 
-def next_available_outreach_slot(start_at, profile=None, reserved_slots=None, non_working_blocks=None):
+def next_available_outreach_slot(start_at, profile=None, reserved_slots=None, non_working_blocks=None, contact_keys=None, reserved_contact_dates=None):
     reserved_slots = reserved_slots or set()
+    contact_keys = set(contact_keys or [])
+    reserved_contact_dates = reserved_contact_dates or {}
     start_time, end_time = profile_work_bounds(profile)
     candidate = round_datetime_to_next_slot(start_at)
     for _ in range(0, 366 * 24 * 4):
         candidate_date = candidate.date()
         if is_non_working_date(candidate_date, profile, non_working_blocks):
+            next_day = candidate_date + timedelta(days=1)
+            candidate = datetime.combine(next_day, start_time)
+            continue
+        candidate_date_key = candidate_date.isoformat()
+        if any(candidate_date_key in reserved_contact_dates.get(contact_key, set()) for contact_key in contact_keys):
             next_day = candidate_date + timedelta(days=1)
             candidate = datetime.combine(next_day, start_time)
             continue
@@ -3137,6 +3144,8 @@ def next_available_outreach_slot(start_at, profile=None, reserved_slots=None, no
         slot = (candidate.date().isoformat(), candidate.strftime("%H:%M"))
         if slot not in reserved_slots:
             reserved_slots.add(slot)
+            for contact_key in contact_keys:
+                reserved_contact_dates.setdefault(contact_key, set()).add(slot[0])
             return slot
         candidate += timedelta(minutes=15)
     raise RuntimeError("Unable to find an available Outreach slot in the next year.")
@@ -11672,6 +11681,48 @@ def existing_open_outreach_slots(connection, exclude_ids=None):
     return slots
 
 
+def outreach_contact_schedule_keys(connection, outreach_item):
+    keys = set()
+    contact_id = outreach_item["contact_id"] if "contact_id" in outreach_item.keys() else None
+    partner_contact_id = outreach_item["partner_contact_id"] if "partner_contact_id" in outreach_item.keys() else None
+    if contact_id:
+        keys.add(f"contact:{contact_id}")
+    if partner_contact_id:
+        keys.add(f"partner:{partner_contact_id}")
+    rows = connection.execute("""
+        SELECT contact_id, partner_contact_id
+        FROM outreach_recipients
+        WHERE outreach_id = ?
+    """, (outreach_item["id"],)).fetchall()
+    for row in rows:
+        if row["contact_id"]:
+            keys.add(f"contact:{row['contact_id']}")
+        if row["partner_contact_id"]:
+            keys.add(f"partner:{row['partner_contact_id']}")
+    return keys
+
+
+def existing_contact_scheduled_dates(connection, exclude_ids=None):
+    exclude_ids = {str(value) for value in (exclude_ids or []) if str(value or "").isdigit()}
+    rows = connection.execute(f"""
+        SELECT id, contact_id, partner_contact_id, next_action_date
+        FROM outreach
+        WHERE next_action_date IS NOT NULL
+          AND next_action_date != ''
+          AND COALESCE(task_status, '') NOT IN ({",".join("?" for _ in INACTIVE_TASK_STATUSES)})
+    """, open_task_params()).fetchall()
+    scheduled_dates = {}
+    for row in rows:
+        if str(row["id"]) in exclude_ids:
+            continue
+        date_key = row["next_action_date"]
+        if not date_key:
+            continue
+        for contact_key in outreach_contact_schedule_keys(connection, row):
+            scheduled_dates.setdefault(contact_key, set()).add(date_key)
+    return scheduled_dates
+
+
 def outreach_reschedule_start(outreach_item, now=None):
     now = round_datetime_to_next_slot(now or current_app_datetime())
     due_at = task_due_datetime(outreach_item["next_action_date"], outreach_item["next_action_time"])
@@ -11689,6 +11740,7 @@ def auto_reschedule_outreach_records(connection, outreach_ids, actor_label):
     """).fetchall()
     non_working_blocks = parse_non_working_blocks(non_working_rows)
     reserved_slots = existing_open_outreach_slots(connection, outreach_ids)
+    reserved_contact_dates = existing_contact_scheduled_dates(connection, outreach_ids)
     updated_count = 0
     labels = {
         "next_action_date": "Activity due date",
@@ -11705,11 +11757,14 @@ def auto_reschedule_outreach_records(connection, outreach_ids, actor_label):
         row["id"],
     ))
     for outreach_item in rows:
+        contact_keys = outreach_contact_schedule_keys(connection, outreach_item)
         next_action_date, next_action_time = next_available_outreach_slot(
             outreach_reschedule_start(outreach_item),
             profile=profile,
             reserved_slots=reserved_slots,
             non_working_blocks=non_working_blocks,
+            contact_keys=contact_keys,
+            reserved_contact_dates=reserved_contact_dates,
         )
         new_values = {
             "next_action_date": next_action_date,

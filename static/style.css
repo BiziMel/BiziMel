@@ -5214,10 +5214,20 @@ body {
 }
 
 .outreach-auto-reschedule-form {
-    margin-top: 4px;
+    display: none;
 }
 
-.outreach-auto-reschedule-form .btn {
+.outreach-due-button-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: stretch;
+}
+
+.outreach-auto-reschedule-button {
+    min-height: 26px;
+    padding: 3px 6px;
+    font-size: 10px;
     white-space: normal;
     line-height: 1.1;
 }

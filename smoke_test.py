@@ -565,6 +565,44 @@ def main():
         assert_ok(inline_due["next_action_date"] == "2026-05-09", "inline due date was not saved")
         assert_ok(inline_due["next_action_time"] == "12:15", "inline due time was not saved")
 
+        blocked_contact_dates = []
+        candidate_day = date.today()
+        while len(blocked_contact_dates) < 3:
+            if candidate_day.weekday() < 5:
+                blocked_contact_dates.append(candidate_day.isoformat())
+            candidate_day += timedelta(days=1)
+        connection = sqlite3.connect(db_path)
+        for index, blocked_date in enumerate(blocked_contact_dates, start=1):
+            connection.execute(
+                """
+                INSERT INTO outreach (
+                    fy, quarter, account_id, contact_id, campaign, sales_play,
+                    activity_date, activity_time, activity_type, subject, outcome,
+                    next_action, next_action_date, next_action_time, task_status, assigned_to
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "27",
+                    "Q1",
+                    account_id,
+                    second_contact_id,
+                    "Smoke Test Play",
+                    "Smoke Test Play",
+                    blocked_date,
+                    "09:00",
+                    "Email",
+                    f"Smoke contact date blocker {index}",
+                    "No Response",
+                    "Blocking same-contact date",
+                    blocked_date,
+                    "09:00",
+                    "Not Started",
+                    "Smoke Test Admin",
+                ),
+            )
+        connection.commit()
+        connection.close()
+
         response = client.post(
             f"/outreach/{multi_outreach['id']}/auto-reschedule",
             data={
@@ -583,6 +621,7 @@ def main():
         connection.close()
         assert_ok(auto_due["next_action_date"] and auto_due["next_action_time"], "single auto-reschedule did not set a due slot")
         assert_ok(date.fromisoformat(auto_due["next_action_date"]).weekday() < 5, "single auto-reschedule selected a weekend")
+        assert_ok(auto_due["next_action_date"] not in blocked_contact_dates, "single auto-reschedule selected a date already used by the same contact")
 
         response = client.post(
             "/outreach/bulk-action",
