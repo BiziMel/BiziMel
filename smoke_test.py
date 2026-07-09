@@ -538,6 +538,8 @@ def main():
         outreach_html = response.get_data(as_text=True)
         assert_ok("bulk_next_action_date" in outreach_html, "bulk Outreach due-date control missing")
         assert_ok("next_action_date_" in outreach_html, "inline Outreach due-date control missing")
+        assert_ok('data-select-all="bulk-outreach-form"' in outreach_html, "bulk Outreach select-all control missing")
+        assert_ok("outreach-auto-reschedule-form" in outreach_html, "row Outreach auto-reschedule control missing")
 
         connection = sqlite3.connect(db_path)
         connection.execute("DROP TABLE timeline_entries")

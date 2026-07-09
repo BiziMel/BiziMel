@@ -164,7 +164,12 @@
                 </colgroup>
                 <thead>
                     <tr>
-                        <th class="bulk-select-col">Select</th>
+                        <th class="bulk-select-col">
+                            <input type="checkbox"
+                                   data-select-all="bulk-outreach-form"
+                                   aria-label="Select all outreach records">
+                            <span class="table-field-label">Select</span>
+                        </th>
                         <th>Activity</th>
                         <th>Account / Contact</th>
                         <th>Sales Play / Initiative</th>
@@ -240,23 +245,18 @@
                                                            name="next_action_time"
                                                            value="{{ item.next_action_time or '' }}"
                                                            aria-label="Activity due time">
-                                                    <div class="outreach-due-button-stack">
-                                                        <button type="submit" class="btn btn-primary btn-small">Save</button>
-                                                        <button type="submit"
-                                                                form="auto_reschedule_{{ item.id }}"
-                                                                class="btn btn-secondary btn-small outreach-auto-reschedule-button">
-                                                            Auto Reschedule
-                                                        </button>
-                                                    </div>
+                                                    <button type="submit" class="btn btn-primary btn-small">Save</button>
                                                 </div>
                                             </form>
-                                            <form method="POST"
-                                                  id="auto_reschedule_{{ item.id }}"
-                                                  action="{{ url_for('auto_reschedule_outreach', outreach_id=item.id) }}"
-                                                  class="inline-form outreach-auto-reschedule-form">
-                                                <input type="hidden" name="return_to" value="{{ request.full_path }}">
-                                            </form>
                                         </details>
+                                        <form method="POST"
+                                              action="{{ url_for('auto_reschedule_outreach', outreach_id=item.id) }}"
+                                              class="inline-form outreach-auto-reschedule-form">
+                                            <input type="hidden" name="return_to" value="{{ request.full_path }}">
+                                            <button type="submit" class="btn btn-secondary btn-small outreach-auto-reschedule-button">
+                                                Auto Reschedule
+                                            </button>
+                                        </form>
                                     {% endif %}
                                 </div>
                             </td>
