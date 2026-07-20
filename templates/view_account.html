@@ -6,7 +6,7 @@
 
 <div class="page-header">
     <div class="account-page-title">
-        {% set logo_url = account_logo_url(account["customer_logo"]) %}
+        {% set logo_url = account_logo_src(account) %}
         {% if logo_url %}
             <img src="{{ logo_url }}" alt="{{ account['account_name'] }} logo" class="account-page-logo" onerror="this.hidden=true; this.nextElementSibling.hidden=false;">
             <span class="account-page-logo account-page-logo-placeholder" hidden>{{ (account["account_name"] or "?")[:1] }}</span>
@@ -192,7 +192,7 @@
 
         <div class="button-group">
             <a href="{{ url_for('import_account_contacts', account_id=account.id) }}" class="btn btn-secondary">Import Contacts</a>
-            <a href="{{ url_for('add_contact') }}" class="btn btn-secondary">Add Contact</a>
+            <a href="{{ url_for('add_contact', account_id=account.id) }}" class="btn btn-secondary">Add Contact</a>
         </div>
     </div>
 
@@ -323,7 +323,7 @@
     {% endif %}
 </div>
 
-<div class="form-card">
+<div class="form-card account-timeline-card">
     <h2>Timeline</h2>
 
     {% if timeline_entries %}

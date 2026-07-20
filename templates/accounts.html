@@ -155,7 +155,7 @@
 
                     <td>
                         <div class="account-name-with-logo">
-                            {% set logo_url = account_logo_url(account["customer_logo"]) %}
+                            {% set logo_url = account_logo_src(account) %}
                             <span class="account-table-logo-frame">
                                 {% if logo_url %}
                                     <img src="{{ logo_url }}" alt="{{ account['account_name'] or 'Account' }} logo" class="account-table-logo" onerror="this.hidden=true; this.nextElementSibling.hidden=false;">

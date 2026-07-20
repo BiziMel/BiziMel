@@ -683,6 +683,19 @@ a:hover {
     margin-bottom: 16px;
     background-color: #f7faf7;
     border-radius: 8px;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: normal;
+}
+
+.account-timeline-card,
+.account-timeline-card .timeline-entry,
+.account-timeline-card .timeline-entry p {
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: normal;
 }
 /* Dashboard polish */
 .metric-subtext {
