@@ -5095,8 +5095,9 @@ def render_dashboard_fallback(connection=None):
     if connection:
         try:
             weekly_guidance = load_dashboard_weekly_guidance(connection, metric_values, fallback_insights)
-        except Exception:
-            traceback.print_exc()
+        except Exception as exc:
+            if not database_error_looks_like_schema_drift(exc):
+                traceback.print_exc()
     if not weekly_guidance:
         weekly_guidance = {
             "weekly_wrap_up": format_dashboard_guidance(
@@ -6525,8 +6526,9 @@ def save_new_outreach_with_recovery(connection, form, requested_status, sales_pl
             persist_new_outreach(connection, form, requested_status, sales_play_value, recipients)
             connection.commit()
             return connection, ""
-        except Exception:
-            traceback.print_exc()
+        except Exception as exc:
+            if not database_error_looks_like_schema_drift(exc):
+                traceback.print_exc()
             try:
                 connection.rollback()
             except Exception:
@@ -11145,8 +11147,9 @@ def add_outreach():
                 if not error:
                     connection.close()
                     return redirect(url_for("outreach"))
-        except Exception:
-            traceback.print_exc()
+        except Exception as exc:
+            if not database_error_looks_like_schema_drift(exc):
+                traceback.print_exc()
             try:
                 connection.rollback()
             except Exception:
@@ -11161,7 +11164,26 @@ def add_outreach():
             except Exception:
                 traceback.print_exc()
                 connection = get_db_connection()
-            error = "Outreach could not be saved. The workspace was refreshed; please review the fields and try again."
+            try:
+                error = validate_new_outreach(connection, request.form, requested_status, sales_play_value, recipients)
+                if not error:
+                    connection, error = save_new_outreach_with_recovery(
+                        connection,
+                        request.form,
+                        requested_status,
+                        sales_play_value,
+                        recipients,
+                    )
+                    if not error:
+                        connection.close()
+                        return redirect(url_for("outreach"))
+            except Exception:
+                traceback.print_exc()
+                try:
+                    connection.rollback()
+                except Exception:
+                    pass
+                error = "Outreach could not be saved after refreshing the workspace. Check the selected account, contacts, Sales Play and schedule, then try again."
 
     if request.method == "POST":
         selected_contact_values = outreach_contact_form_values(request.form)

@@ -460,6 +460,47 @@ def main():
         connection.close()
         assert_ok(recipient_count == 2, "multi-contact outreach recipients were not saved")
 
+        connection = sqlite3.connect(db_path)
+        connection.execute("DROP TABLE outreach_recipients")
+        connection.commit()
+        connection.close()
+        response = client.post(
+            "/outreach/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "fy": "27",
+                "quarter": "Q1",
+                "account_id": str(account_id),
+                "sales_play": "Smoke Test Play",
+                "contact_ids": [str(contact_id)],
+                "task_status": "Not Started",
+                "assigned_to": "Smoke Test Admin",
+                "activity_type": "Email",
+                "activity_date": "2026-05-09",
+                "activity_time": "08:15",
+                "next_action_date": "2026-05-10",
+                "next_action_time": "09:15",
+                "subject": "Smoke schema-refresh outreach",
+                "outcome": "No Response",
+                "next_action": "Retry after schema refresh",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "schema-refresh Outreach add failed")
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        recovered_outreach = connection.execute(
+            "SELECT id FROM outreach WHERE subject = ?",
+            ("Smoke schema-refresh outreach",),
+        ).fetchone()
+        recovered_recipients = connection.execute(
+            "SELECT COUNT(*) FROM outreach_recipients WHERE outreach_id = ?",
+            (recovered_outreach["id"] if recovered_outreach else None,),
+        ).fetchone()[0]
+        connection.close()
+        assert_ok(recovered_outreach is not None, "schema-refresh Outreach was not saved")
+        assert_ok(recovered_recipients == 1, "schema-refresh Outreach recipient was not saved")
+
         response = client.post(
             "/outreach/add",
             data={
