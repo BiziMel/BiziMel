@@ -37,6 +37,14 @@ def seed_validation_data(db_path):
             "Smoke test notes",
         ),
     ).lastrowid
+    smoke_logo = (
+        "data:image/png;base64,"
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+    )
+    connection.execute(
+        "UPDATE accounts SET customer_logo = ? WHERE id = ?",
+        (smoke_logo, account_id),
+    )
     contact_id = connection.execute(
         """
         INSERT INTO contacts (account_id, category, name, job_title, email, phone, location)
@@ -167,6 +175,20 @@ def main():
             response = client.get(path)
             html = response.get_data(as_text=True)
             assert_ok(response.status_code == 200 and marker in html, f"{path} failed")
+
+        accounts_html = client.get("/accounts").get_data(as_text=True)
+        logo_path = f"/accounts/{account_id}/logo"
+        assert_ok(logo_path in accounts_html, "Accounts table logo image source missing")
+        logo_response = client.get(logo_path)
+        assert_ok(logo_response.status_code == 200, "Account logo image route failed")
+        assert_ok(logo_response.content_type.startswith("image/png"), "Account logo route returned the wrong content type")
+        assert_ok(logo_response.get_data(), "Account logo route returned no image data")
+
+        account_html = client.get(f"/accounts/{account_id}").get_data(as_text=True)
+        add_contact_path = f"/contacts/add?account_id={account_id}"
+        assert_ok(add_contact_path in account_html, "Account page Add Contact link is not account-specific")
+        add_contact_html = client.get(add_contact_path).get_data(as_text=True)
+        assert_ok(f'value="{account_id}"' in add_contact_html and "selected" in add_contact_html, "Add Contact account prefill missing")
 
         campaign_builder_html = client.get("/outreach/campaign-builder").get_data(as_text=True)
         assert_ok(

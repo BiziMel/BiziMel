@@ -1228,6 +1228,32 @@ def account_logo_url(value):
     return url_for("account_logo_file", filename=filename)
 
 
+def data_uri_image_payload(value):
+    image_value = (value or "").strip()
+    if not image_value.startswith("data:image/") or "," not in image_value:
+        return None
+    header, payload = image_value.split(",", 1)
+    mime_type = header.split(";", 1)[0].replace("data:", "", 1)
+    if mime_type not in {"image/png", "image/jpeg"}:
+        return None
+    try:
+        return mime_type, base64.b64decode(payload, validate=True)
+    except Exception:
+        return None
+
+
+def account_logo_src(account):
+    if not account:
+        return ""
+    account_id = account["id"] if hasattr(account, "keys") and "id" in account.keys() else account.get("id")
+    logo = account["customer_logo"] if hasattr(account, "keys") and "customer_logo" in account.keys() else account.get("customer_logo", "")
+    if not logo:
+        return ""
+    if str(logo).strip().startswith("data:image/") and account_id:
+        return url_for("account_logo_image", account_id=account_id)
+    return account_logo_url(logo)
+
+
 def contact_photo_url(value):
     """Return a browser-safe contact photo URL for legacy and current values."""
     photo = (value or "").strip()
@@ -1257,6 +1283,31 @@ def account_logo_file(filename):
     legacy_logo_dir = account_logo_static_dir()
     if (legacy_logo_dir / safe_filename).exists():
         return send_from_directory(legacy_logo_dir, safe_filename)
+
+    abort(404)
+
+
+@app.route("/accounts/<int:account_id>/logo")
+def account_logo_image(account_id):
+    connection = get_db_connection()
+    account = connection.execute(
+        "SELECT customer_logo FROM accounts WHERE id = ?",
+        (account_id,),
+    ).fetchone()
+    connection.close()
+    if not account or not account["customer_logo"]:
+        abort(404)
+
+    payload = data_uri_image_payload(account["customer_logo"])
+    if payload:
+        mime_type, image_bytes = payload
+        response = Response(image_bytes, mimetype=mime_type)
+        response.headers["Cache-Control"] = "private, max-age=300"
+        return response
+
+    filename = account_logo_filename(account["customer_logo"])
+    if filename:
+        return account_logo_file(filename)
 
     abort(404)
 
@@ -1313,6 +1364,7 @@ def inject_dropdown_values():
         "app_build": APP_BUILD,
         "app_release_date": APP_RELEASE_DATE,
         "account_logo_url": account_logo_url,
+        "account_logo_src": account_logo_src,
         "contact_photo_url": contact_photo_url,
         "external_url": normalise_external_url,
         "page_instructions": page_instructions_for_endpoint(request.endpoint),
@@ -10384,6 +10436,7 @@ def contacts():
 
 @app.route("/contacts/add", methods=("GET", "POST"))
 def add_contact():
+    selected_account_id = request.form.get("account_id") if request.method == "POST" else request.args.get("account_id", "")
     if request.method == "POST":
         connection = get_db_connection()
         photo_path = save_contact_photo(request.files.get("photo"))
@@ -10447,7 +10500,11 @@ def add_contact():
     """).fetchall()
     connection.close()
 
-    return render_template("add_contact.html", accounts=accounts)
+    return render_template(
+        "add_contact.html",
+        accounts=accounts,
+        selected_account_id=selected_account_id,
+    )
 
 
 @app.route("/accounts/<int:account_id>/contacts/import", methods=("GET", "POST"))
