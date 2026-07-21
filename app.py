@@ -1701,7 +1701,13 @@ def require_login_and_prepare_database():
     public_endpoints = {"login", "register", "forgot_password", "reset_password", "release_notes", "user_guide", "user_guide_section", "version_health", "storage_health", "static"}
     if request.endpoint in public_endpoints:
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-            validate_csrf_token()
+            if request.endpoint == "login" and not csrf_token_is_valid():
+                # A stale login page after a deploy/session refresh should not
+                # lock the user out. The credential check and rate limit still
+                # run, and the session is replaced on successful sign-in.
+                session.pop(CSRF_SESSION_KEY, None)
+            else:
+                validate_csrf_token()
         return None
 
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:

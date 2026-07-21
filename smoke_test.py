@@ -145,6 +145,23 @@ def main():
         assert_ok(response.status_code == 200, f"register returned {response.status_code}")
         assert_ok(client.get("/health/version").status_code == 200, "health/version failed")
 
+        response = client.post(
+            "/logout",
+            data={"csrf_token": csrf_from_session(client)},
+            follow_redirects=True,
+        )
+        assert_ok(response.status_code == 200 and "Sign In" in response.get_data(as_text=True), "logout failed")
+        response = client.post(
+            "/login",
+            data={
+                "csrf_token": "stale-token-after-deploy",
+                "email": "smoke-test@example.com",
+                "password": "Password123!",
+            },
+            follow_redirects=True,
+        )
+        assert_ok(response.status_code == 200 and "Dashboard" in response.get_data(as_text=True), "stale-token login recovery failed")
+
         db_path = Path(tmp) / "users" / "1" / "pipeflow.db"
         account_id, contact_id, second_contact_id, partner_id, outreach_id = seed_validation_data(db_path)
         today = date.today()
