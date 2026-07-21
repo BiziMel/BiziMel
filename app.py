@@ -983,6 +983,63 @@ app.config["SESSION_COOKIE_SECURE"] = os.environ.get(
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=12)
 app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("PIPEFLOW_MAX_UPLOAD_BYTES", str(8 * 1024 * 1024)))
 
+
+DIAGNOSTIC_FORM_FIELDS = {
+    "account_id",
+    "sales_play",
+    "activity_type",
+    "activity_date",
+    "activity_time",
+    "next_action_date",
+    "next_action_time",
+    "task_status",
+    "outcome",
+    "scheduled_meeting_at",
+    "subject",
+}
+
+
+def diagnostic_error_code(area="APP"):
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return f"PF-{area}-{timestamp}-{secrets.token_hex(3).upper()}"
+
+
+def diagnostic_request_context(extra=None):
+    context = {
+        "path": request.path if request else "",
+        "method": request.method if request else "",
+        "user_id": session.get("user_id"),
+        "workspace_schema": session.get("workspace_schema"),
+        "using_postgres": using_postgres(),
+    }
+    try:
+        form_context = {
+            field: request.form.get(field)
+            for field in DIAGNOSTIC_FORM_FIELDS
+            if field in request.form
+        }
+        contact_values = request.form.getlist("contact_ids") or request.form.getlist("contact_id")
+        if contact_values:
+            form_context["contact_ids"] = contact_values
+        if form_context:
+            context["form"] = form_context
+    except Exception:
+        pass
+    if extra:
+        context.update(extra)
+    return context
+
+
+def log_diagnostic_exception(area, exc, extra=None):
+    code = diagnostic_error_code(area)
+    context = diagnostic_request_context(extra)
+    app.logger.exception("%s %s", code, json.dumps(context, default=str))
+    return code
+
+
+def diagnostic_user_message(base_message, code):
+    return f"{base_message} Error code: {code}"
+
 initialise_auth_database()
 
 
@@ -1744,17 +1801,20 @@ def apply_security_headers(response):
 def handle_unexpected_exception(exc):
     if isinstance(exc, HTTPException):
         return exc
-    traceback.print_exc()
+    code = log_diagnostic_exception("APP", exc, {"stage": "global_exception_handler"})
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
         target = request.form.get("return_to") or request.referrer or url_for("home")
         return redirect_with_query(
             safe_redirect_target(target, "home"),
-            error="PipeFlow could not complete that save. The page has been kept available so you can review the data and try again.",
+            error=diagnostic_user_message(
+                "PipeFlow could not complete that save. The page has been kept available so you can review the data and try again.",
+                code,
+            ),
         )
     return (
         "<!doctype html><title>PipeFlow</title>"
         "<h1>PipeFlow could not load this page</h1>"
-        "<p>Please go back, refresh, and try again. The error has been logged for review.</p>",
+        f"<p>Please go back, refresh, and try again. The error has been logged for review. Error code: {code}</p>",
         500,
     )
 
@@ -5103,7 +5163,7 @@ def render_dashboard_fallback(connection=None):
             weekly_guidance = load_dashboard_weekly_guidance(connection, metric_values, fallback_insights)
         except Exception as exc:
             if not database_error_looks_like_schema_drift(exc):
-                traceback.print_exc()
+                log_diagnostic_exception("DASHBOARD", exc, {"stage": "weekly_guidance_fallback"})
     if not weekly_guidance:
         weekly_guidance = {
             "weekly_wrap_up": format_dashboard_guidance(
@@ -6600,8 +6660,11 @@ def save_new_outreach_with_recovery(connection, form, requested_status, sales_pl
         except Exception:
             pass
         if not database_error_looks_like_schema_drift(exc):
-            traceback.print_exc()
-            return connection, "Outreach could not be saved. Check the selected account, contacts, Sales Play and schedule, then try again."
+            code = log_diagnostic_exception("OUTREACH-SAVE", exc, {"stage": "initial_save"})
+            return connection, diagnostic_user_message(
+                "Outreach could not be saved. Check the selected account, contacts, Sales Play and schedule, then try again.",
+                code,
+            )
         try:
             connection.close()
         except Exception:
@@ -6614,13 +6677,19 @@ def save_new_outreach_with_recovery(connection, form, requested_status, sales_pl
             record_new_outreach_audit(outreach_id, audit_values)
             return connection, ""
         except Exception as exc:
-            if not database_error_looks_like_schema_drift(exc):
-                traceback.print_exc()
+            code = log_diagnostic_exception(
+                "OUTREACH-SAVE",
+                exc,
+                {"stage": "retry_after_schema_refresh", "schema_drift": database_error_looks_like_schema_drift(exc)},
+            )
             try:
                 connection.rollback()
             except Exception:
                 pass
-            return connection, "Outreach could not be saved after refreshing the workspace schema. Please check the selected account, contacts, Sales Play and schedule, then try again."
+            return connection, diagnostic_user_message(
+                "Outreach could not be saved after refreshing the workspace schema. Please check the selected account, contacts, Sales Play and schedule, then try again.",
+                code,
+            )
 
 
 def persist_outreach_update(connection, outreach_id, outreach_item, new_values, recipients, labels):
@@ -11236,7 +11305,7 @@ def add_outreach():
                     return redirect(url_for("outreach"))
         except Exception as exc:
             if not database_error_looks_like_schema_drift(exc):
-                traceback.print_exc()
+                log_diagnostic_exception("OUTREACH-ADD", exc, {"stage": "initial_validate_or_save"})
             try:
                 connection.rollback()
             except Exception:
@@ -11248,8 +11317,8 @@ def add_outreach():
             try:
                 initialise_database(force=True)
                 connection = get_db_connection()
-            except Exception:
-                traceback.print_exc()
+            except Exception as refresh_exc:
+                log_diagnostic_exception("OUTREACH-ADD", refresh_exc, {"stage": "schema_refresh_failed"})
                 connection = get_db_connection()
             try:
                 error = validate_new_outreach(connection, request.form, requested_status, sales_play_value, recipients)
@@ -11264,13 +11333,16 @@ def add_outreach():
                     if not error:
                         connection.close()
                         return redirect(url_for("outreach"))
-            except Exception:
-                traceback.print_exc()
+            except Exception as exc:
+                code = log_diagnostic_exception("OUTREACH-ADD", exc, {"stage": "outer_retry_after_schema_refresh"})
                 try:
                     connection.rollback()
                 except Exception:
                     pass
-                error = "Outreach could not be saved after refreshing the workspace. Check the selected account, contacts, Sales Play and schedule, then try again."
+                error = diagnostic_user_message(
+                    "Outreach could not be saved after refreshing the workspace. Check the selected account, contacts, Sales Play and schedule, then try again.",
+                    code,
+                )
 
     if request.method == "POST":
         selected_contact_values = outreach_contact_form_values(request.form)
