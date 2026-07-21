@@ -131,6 +131,10 @@ def main():
             {"outreach_recipients", "audit_entries"}.issubset(db_compat.USER_TABLES),
             "tenant workspace tables missing from Postgres compatibility layer",
         )
+        assert_ok(
+            len(pipeflow_app.diagnostic_error_code("OUTREACH-ADD")) <= 10,
+            "diagnostic error code is too long",
+        )
 
         client = pipeflow_app.app.test_client()
         for path in ("/login", "/register", "/forgot-password"):
@@ -473,6 +477,33 @@ def main():
             representative_outreach is not None
             and str(representative_outreach["partner_contact_id"]) == str(partner_contact_id),
             "account representative meeting Outreach was not saved",
+        )
+
+        response = client.post(
+            "/outreach/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "fy": "27",
+                "quarter": "Q1",
+                "account_id": str(account_id),
+                "sales_play": "Smoke Test Play",
+                "contact_ids": ["partner_contact:not-a-number"],
+                "task_status": "Not Started",
+                "assigned_to": "Smoke Test Admin",
+                "activity_type": "Meeting",
+                "activity_date": "2026-05-13",
+                "activity_time": "09:30",
+                "next_action_date": "2026-05-20",
+                "next_action_time": "10:30",
+                "subject": "Smoke malformed representative outreach",
+                "outcome": "Positive Response",
+            },
+            follow_redirects=True,
+        )
+        malformed_html = response.get_data(as_text=True)
+        assert_ok(
+            response.status_code == 200 and "Select a contact or partner contact" in malformed_html,
+            "malformed representative id did not return validation",
         )
 
         connection = sqlite3.connect(db_path)

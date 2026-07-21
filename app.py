@@ -1000,8 +1000,14 @@ DIAGNOSTIC_FORM_FIELDS = {
 
 
 def diagnostic_error_code(area="APP"):
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    return f"PF-{area}-{timestamp}-{secrets.token_hex(3).upper()}"
+    area_codes = {
+        "APP": "AP",
+        "DASHBOARD": "DB",
+        "OUTREACH-ADD": "OA",
+        "OUTREACH-SAVE": "OS",
+    }
+    prefix = area_codes.get(area, re.sub(r"[^A-Z0-9]", "", str(area or "APP").upper())[:2] or "AP")
+    return f"PF-{prefix}-{secrets.token_hex(2).upper()}"
 
 
 def diagnostic_request_context(extra=None):
@@ -6065,26 +6071,44 @@ def due_rag_class(next_action_date, next_action_time, task_status):
 def contact_matches_account(connection, account_id, contact_id):
     if not contact_id:
         return True
-    if not account_id:
+    if not str(contact_id).isdigit() or not str(account_id or "").isdigit():
         return False
-
-    match = connection.execute(
-        """
-        SELECT id
-        FROM contacts
-        WHERE id = ?
-          AND account_id = ?
-        """,
-        (contact_id, account_id),
-    ).fetchone()
+    try:
+        match = connection.execute(
+            """
+            SELECT id
+            FROM contacts
+            WHERE id = ?
+              AND account_id = ?
+            """,
+            (contact_id, account_id),
+        ).fetchone()
+    except Exception as exc:
+        if not database_error_looks_like_schema_drift(exc):
+            raise
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+        initialise_database(force=True)
+        match = connection.execute(
+            """
+            SELECT id
+            FROM contacts
+            WHERE id = ?
+              AND account_id = ?
+            """,
+            (contact_id, account_id),
+        ).fetchone()
     return bool(match)
 
 
 def parse_outreach_contact_selection(value):
     value = str(value or "").strip()
     if value.startswith("partner_contact:"):
-        return None, value.split(":", 1)[1] or None
-    return value or None, None
+        partner_contact_id = value.split(":", 1)[1].strip()
+        return (None, partner_contact_id) if partner_contact_id.isdigit() else (None, None)
+    return (value, None) if value.isdigit() else (None, None)
 
 
 def parse_outreach_contact_selections(values):
@@ -6115,7 +6139,7 @@ def outreach_contact_form_values(form):
 def partner_contact_matches_account(connection, account_id, partner_contact_id):
     if not partner_contact_id:
         return True
-    if not account_id:
+    if not str(partner_contact_id).isdigit() or not str(account_id or "").isdigit():
         return False
     try:
         match = connection.execute("""
@@ -6165,10 +6189,23 @@ def outreach_recipient_matches_account(connection, account_id, contact_id, partn
 def outreach_recipients_match_account(connection, account_id, recipients):
     if not recipients:
         return False
-    return all(
-        outreach_recipient_matches_account(connection, account_id, contact_id, partner_contact_id)
-        for contact_id, partner_contact_id in recipients
-    )
+    try:
+        return all(
+            outreach_recipient_matches_account(connection, account_id, contact_id, partner_contact_id)
+            for contact_id, partner_contact_id in recipients
+        )
+    except Exception as exc:
+        if not database_error_looks_like_schema_drift(exc):
+            raise
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+        initialise_database(force=True)
+        return all(
+            outreach_recipient_matches_account(connection, account_id, contact_id, partner_contact_id)
+            for contact_id, partner_contact_id in recipients
+        )
 
 
 def save_outreach_recipients(connection, outreach_id, recipients):
@@ -6184,6 +6221,8 @@ def save_outreach_recipients(connection, outreach_id, recipients):
 
 
 def outreach_duplicate_exists(connection, account_id, recipients, activity_date="", activity_time="", next_action_date="", next_action_time="", activity_type="", subject="", exclude_outreach_id=None):
+    if not str(account_id or "").isdigit():
+        return False
     if not recipients:
         return False
     subject_key = (subject or "").strip().casefold()
@@ -6206,26 +6245,65 @@ def outreach_duplicate_exists(connection, account_id, recipients, activity_date=
         if not recipient_clauses:
             continue
         recipient_sql = " OR ".join(recipient_clauses)
-        rows = connection.execute(f"""
-            SELECT outreach.id, outreach.subject, outreach.activity_type
-            FROM outreach
-            WHERE outreach.account_id = ?
-              AND COALESCE(outreach.activity_date, '') = COALESCE(?, '')
-              AND COALESCE(outreach.activity_time, '') = COALESCE(?, '')
-              AND COALESCE(outreach.next_action_date, '') = COALESCE(?, '')
-              AND COALESCE(outreach.next_action_time, '') = COALESCE(?, '')
-              AND (? IS NULL OR outreach.id != ?)
-              AND ({recipient_sql})
-        """, (
-            account_id,
-            activity_date or "",
-            activity_time or "",
-            next_action_date or "",
-            next_action_time or "",
-            exclude_outreach_id,
-            exclude_outreach_id,
-            *recipient_params,
-        )).fetchall()
+        try:
+            rows = connection.execute(f"""
+                SELECT outreach.id, outreach.subject, outreach.activity_type
+                FROM outreach
+                WHERE outreach.account_id = ?
+                  AND COALESCE(outreach.activity_date, '') = COALESCE(?, '')
+                  AND COALESCE(outreach.activity_time, '') = COALESCE(?, '')
+                  AND COALESCE(outreach.next_action_date, '') = COALESCE(?, '')
+                  AND COALESCE(outreach.next_action_time, '') = COALESCE(?, '')
+                  AND (? IS NULL OR outreach.id != ?)
+                  AND ({recipient_sql})
+            """, (
+                account_id,
+                activity_date or "",
+                activity_time or "",
+                next_action_date or "",
+                next_action_time or "",
+                exclude_outreach_id,
+                exclude_outreach_id,
+                *recipient_params,
+            )).fetchall()
+        except Exception as exc:
+            if database_error_looks_like_schema_drift(exc):
+                try:
+                    connection.rollback()
+                except Exception:
+                    pass
+                initialise_database(force=True)
+                try:
+                    rows = connection.execute(f"""
+                        SELECT outreach.id, outreach.subject, outreach.activity_type
+                        FROM outreach
+                        WHERE outreach.account_id = ?
+                          AND COALESCE(outreach.activity_date, '') = COALESCE(?, '')
+                          AND COALESCE(outreach.activity_time, '') = COALESCE(?, '')
+                          AND COALESCE(outreach.next_action_date, '') = COALESCE(?, '')
+                          AND COALESCE(outreach.next_action_time, '') = COALESCE(?, '')
+                          AND (? IS NULL OR outreach.id != ?)
+                          AND ({recipient_sql})
+                    """, (
+                        account_id,
+                        activity_date or "",
+                        activity_time or "",
+                        next_action_date or "",
+                        next_action_time or "",
+                        exclude_outreach_id,
+                        exclude_outreach_id,
+                        *recipient_params,
+                    )).fetchall()
+                except Exception as retry_exc:
+                    log_diagnostic_exception("OUTREACH-ADD", retry_exc, {"stage": "duplicate_check_retry"})
+                    try:
+                        connection.rollback()
+                    except Exception:
+                        pass
+                    rows = []
+            else:
+                log_diagnostic_exception("OUTREACH-ADD", exc, {"stage": "duplicate_check"})
+                rows = []
         for row in rows:
             if (row["subject"] or "").strip().casefold() == subject_key and (row["activity_type"] or "").strip().casefold() == activity_type_key:
                 return True
@@ -6342,49 +6420,71 @@ def account_sales_play_options(connection, account_id=None):
                 "sales_play": sales_play,
             }
 
+    def fetch_rows(sql, params=(), stage="sales_play_options"):
+        try:
+            return connection.execute(sql, params).fetchall()
+        except Exception as exc:
+            if not database_error_looks_like_schema_drift(exc):
+                log_diagnostic_exception("OUTREACH-ADD", exc, {"stage": stage})
+                return []
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            initialise_database(force=True)
+            try:
+                return connection.execute(sql, params).fetchall()
+            except Exception as retry_exc:
+                log_diagnostic_exception("OUTREACH-ADD", retry_exc, {"stage": f"{stage}_retry"})
+                try:
+                    connection.rollback()
+                except Exception:
+                    pass
+                return []
+
     if account_id:
-        rows = connection.execute("""
-            SELECT
-                account_sales_plays.account_id,
-                sales_plays.sales_play_title AS sales_play
+        rows = []
+        rows.extend(fetch_rows("""
+            SELECT account_sales_plays.account_id, sales_plays.sales_play_title AS sales_play
             FROM account_sales_plays
             JOIN sales_plays ON sales_plays.id = account_sales_plays.sales_play_id
             WHERE account_sales_plays.account_id = ?
-            UNION ALL
+        """, (account_id,), "sales_play_account_links"))
+        rows.extend(fetch_rows("""
             SELECT DISTINCT account_id, sales_play
             FROM outreach
             WHERE account_id = ?
               AND sales_play IS NOT NULL
               AND sales_play != ''
-            UNION ALL
+        """, (account_id,), "sales_play_outreach_history"))
+        rows.extend(fetch_rows("""
             SELECT id AS account_id, sales_play
             FROM accounts
             WHERE id = ?
               AND sales_play IS NOT NULL
               AND sales_play != ''
-            ORDER BY sales_play
-        """, (account_id, account_id, account_id)).fetchall()
+        """, (account_id,), "sales_play_account_summary"))
         for row in rows:
             add_option(account_id, row["sales_play"])
     else:
-        rows = connection.execute("""
-            SELECT
-                account_sales_plays.account_id,
-                sales_plays.sales_play_title AS sales_play
+        rows = []
+        rows.extend(fetch_rows("""
+            SELECT account_sales_plays.account_id, sales_plays.sales_play_title AS sales_play
             FROM account_sales_plays
             JOIN sales_plays ON sales_plays.id = account_sales_plays.sales_play_id
-            UNION ALL
+        """, stage="sales_play_all_account_links"))
+        rows.extend(fetch_rows("""
             SELECT DISTINCT outreach.account_id, outreach.sales_play
             FROM outreach
             WHERE outreach.sales_play IS NOT NULL
               AND outreach.sales_play != ''
-            UNION ALL
+        """, stage="sales_play_all_outreach_history"))
+        rows.extend(fetch_rows("""
             SELECT accounts.id AS account_id, accounts.sales_play
             FROM accounts
             WHERE sales_play IS NOT NULL
               AND sales_play != ''
-            ORDER BY sales_play
-        """).fetchall()
+        """, stage="sales_play_all_account_summary"))
         for row in rows:
             add_option(row["account_id"], row["sales_play"])
     return sorted(options.values(), key=lambda item: ((item["sales_play"] or "").lower(), str(item["account_id"] or "")))
@@ -6505,7 +6605,26 @@ def sales_play_allowed_for_account(connection, account_id, sales_play_title):
     return sales_play_title in {row["sales_play"] for row in allowed}
 
 
+def account_exists(connection, account_id):
+    if not str(account_id or "").isdigit():
+        return False
+    try:
+        row = connection.execute("SELECT id FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    except Exception as exc:
+        if not database_error_looks_like_schema_drift(exc):
+            raise
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+        initialise_database(force=True)
+        row = connection.execute("SELECT id FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    return bool(row)
+
+
 def validate_new_outreach(connection, form, requested_status, sales_play_value, recipients):
+    if not account_exists(connection, form.get("account_id")):
+        return "Select a valid account before saving this Outreach task."
     if not fy_quarter_are_valid(form.get("fy"), form.get("quarter")):
         return fy_quarter_required_message()
     if not sales_play_allowed_for_account(connection, form.get("account_id"), sales_play_value):
