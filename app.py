@@ -6057,19 +6057,41 @@ def partner_contact_matches_account(connection, account_id, partner_contact_id):
         return True
     if not account_id:
         return False
-    match = connection.execute("""
-        SELECT id
-        FROM partner_contacts
-        WHERE id = ?
-          AND (
-                account_id = ?
-             OR id IN (
-                    SELECT partner_contact_id
-                    FROM partner_contact_accounts
-                    WHERE account_id = ?
-                )
-          )
-    """, (partner_contact_id, account_id, account_id)).fetchone()
+    try:
+        match = connection.execute("""
+            SELECT id
+            FROM partner_contacts
+            WHERE id = ?
+              AND (
+                    account_id = ?
+                 OR id IN (
+                        SELECT partner_contact_id
+                        FROM partner_contact_accounts
+                        WHERE account_id = ?
+                    )
+              )
+        """, (partner_contact_id, account_id, account_id)).fetchone()
+    except Exception as exc:
+        if not database_error_looks_like_schema_drift(exc):
+            raise
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+        initialise_database(force=True)
+        match = connection.execute("""
+            SELECT id
+            FROM partner_contacts
+            WHERE id = ?
+              AND (
+                    account_id = ?
+                 OR id IN (
+                        SELECT partner_contact_id
+                        FROM partner_contact_accounts
+                        WHERE account_id = ?
+                    )
+              )
+        """, (partner_contact_id, account_id, account_id)).fetchone()
     return bool(match)
 
 
@@ -6081,6 +6103,8 @@ def outreach_recipient_matches_account(connection, account_id, contact_id, partn
 
 
 def outreach_recipients_match_account(connection, account_id, recipients):
+    if not recipients:
+        return False
     return all(
         outreach_recipient_matches_account(connection, account_id, contact_id, partner_contact_id)
         for contact_id, partner_contact_id in recipients
@@ -6405,7 +6429,17 @@ def sales_play_allowed_for_account(connection, account_id, sales_play_title):
     sales_play_title = (sales_play_title or "").strip()
     if not sales_play_title:
         return False
-    allowed = account_sales_play_options(connection, account_id)
+    try:
+        allowed = account_sales_play_options(connection, account_id)
+    except Exception as exc:
+        if not database_error_looks_like_schema_drift(exc):
+            raise
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+        initialise_database(force=True)
+        allowed = account_sales_play_options(connection, account_id)
     if not allowed:
         return True
     return sales_play_title in {row["sales_play"] for row in allowed}

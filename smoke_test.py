@@ -66,7 +66,7 @@ def seed_validation_data(db_path):
         """,
         ("Smoke Test Partner", "SI", "United Kingdom", "London", "Smoke Tester"),
     ).lastrowid
-    connection.execute(
+    partner_contact_id = connection.execute(
         """
         INSERT INTO partner_contacts (partner_id, account_id, name, job_title, partner_contact_role, email)
         VALUES (?, ?, ?, ?, ?, ?)
@@ -115,7 +115,7 @@ def seed_validation_data(db_path):
     ).lastrowid
     connection.commit()
     connection.close()
-    return account_id, contact_id, second_contact_id, partner_id, outreach_id
+    return account_id, contact_id, second_contact_id, partner_id, partner_contact_id, outreach_id
 
 
 def main():
@@ -125,6 +125,12 @@ def main():
         os.environ["PIPEFLOW_SECRET_KEY"] = "pipeflow-smoke-test-key"
 
         import app as pipeflow_app
+        import db_compat
+
+        assert_ok(
+            {"outreach_recipients", "audit_entries"}.issubset(db_compat.USER_TABLES),
+            "tenant workspace tables missing from Postgres compatibility layer",
+        )
 
         client = pipeflow_app.app.test_client()
         for path in ("/login", "/register", "/forgot-password"):
@@ -163,7 +169,7 @@ def main():
         assert_ok(response.status_code == 200 and "Dashboard" in response.get_data(as_text=True), "stale-token login recovery failed")
 
         db_path = Path(tmp) / "users" / "1" / "pipeflow.db"
-        account_id, contact_id, second_contact_id, partner_id, outreach_id = seed_validation_data(db_path)
+        account_id, contact_id, second_contact_id, partner_id, partner_contact_id, outreach_id = seed_validation_data(db_path)
         today = date.today()
         yesterday = (today - timedelta(days=1)).isoformat()
         tomorrow = (today + timedelta(days=1)).isoformat()
@@ -432,6 +438,42 @@ def main():
             follow_redirects=False,
         )
         assert_ok(response.status_code in (302, 303), "multi-contact outreach add failed")
+
+        response = client.post(
+            "/outreach/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "fy": "27",
+                "quarter": "Q1",
+                "account_id": str(account_id),
+                "sales_play": "Smoke Test Play",
+                "contact_ids": [f"partner_contact:{partner_contact_id}"],
+                "task_status": "Not Started",
+                "assigned_to": "Smoke Test Admin",
+                "activity_type": "Meeting",
+                "activity_date": "2026-05-13",
+                "activity_time": "09:00",
+                "next_action_date": "2026-05-20",
+                "next_action_time": "10:00",
+                "subject": "Smoke account representative meeting outreach",
+                "outcome": "Positive Response",
+                "next_action": "",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "account representative meeting Outreach add failed")
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        representative_outreach = connection.execute(
+            "SELECT partner_contact_id FROM outreach WHERE subject = ?",
+            ("Smoke account representative meeting outreach",),
+        ).fetchone()
+        connection.close()
+        assert_ok(
+            representative_outreach is not None
+            and str(representative_outreach["partner_contact_id"]) == str(partner_contact_id),
+            "account representative meeting Outreach was not saved",
+        )
 
         connection = sqlite3.connect(db_path)
         connection.row_factory = sqlite3.Row

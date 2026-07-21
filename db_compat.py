@@ -20,6 +20,7 @@ USER_TABLES = {
     "accounts",
     "contacts",
     "outreach",
+    "outreach_recipients",
     "account_partners",
     "partners",
     "partner_contacts",
@@ -30,6 +31,7 @@ USER_TABLES = {
     "account_org_charts",
     "account_org_chart_people",
     "timeline_entries",
+    "audit_entries",
     "user_profile",
 }
 
