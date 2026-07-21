@@ -518,6 +518,42 @@ def main():
         assert_ok(recovered_outreach is not None, "schema-refresh Outreach was not saved")
         assert_ok(recovered_recipients == 1, "schema-refresh Outreach recipient was not saved")
 
+        connection = sqlite3.connect(db_path)
+        connection.execute("DROP TABLE audit_entries")
+        connection.commit()
+        connection.close()
+        response = client.post(
+            "/outreach/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "fy": "27",
+                "quarter": "Q1",
+                "account_id": str(account_id),
+                "sales_play": "Smoke Test Play",
+                "contact_ids": [str(contact_id)],
+                "task_status": "Not Started",
+                "assigned_to": "Smoke Test Admin",
+                "activity_type": "Email",
+                "activity_date": "2026-05-09",
+                "activity_time": "08:45",
+                "next_action_date": "2026-05-10",
+                "next_action_time": "09:45",
+                "subject": "Smoke audit recovery outreach",
+                "outcome": "No Response",
+                "next_action": "Audit recovery should not block save",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "audit recovery Outreach add failed")
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        audit_recovered_outreach = connection.execute(
+            "SELECT id FROM outreach WHERE subject = ?",
+            ("Smoke audit recovery outreach",),
+        ).fetchone()
+        connection.close()
+        assert_ok(audit_recovered_outreach is not None, "audit recovery Outreach was not saved")
+
         response = client.post(
             "/outreach/add",
             data={

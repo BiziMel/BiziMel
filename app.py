@@ -6484,7 +6484,7 @@ def persist_new_outreach(connection, form, requested_status, sales_play_value, r
     if not outreach_id:
         raise RuntimeError("Outreach save completed without returning a record id.")
     save_outreach_recipients(connection, outreach_id, recipients)
-    audit_record_create(connection, "outreach", outreach_id, {
+    audit_values = {
         "fy": form.get("fy"),
         "quarter": form.get("quarter"),
         "campaign": sales_play_value,
@@ -6505,14 +6505,60 @@ def persist_new_outreach(connection, form, requested_status, sales_play_value, r
         "task_status": requested_status,
         "completed_at": completed_at,
         "assigned_to": assigned_to,
-    })
-    return outreach_id
+    }
+    return outreach_id, audit_values
+
+
+def record_new_outreach_audit(outreach_id, audit_values):
+    """Record audit rows after the outreach save has committed.
+
+    Audit history is helpful, but it should not make a valid outreach task fail.
+    Keeping it outside the core transaction prevents a drifted audit table from
+    aborting the outreach insert and showing the user a generic save error.
+    """
+    if not outreach_id or not audit_values:
+        return
+    connection = get_db_connection()
+    try:
+        audit_record_create(connection, "outreach", outreach_id, audit_values)
+        connection.commit()
+    except Exception as exc:
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+        try:
+            connection.close()
+        except Exception:
+            pass
+        if not database_error_looks_like_schema_drift(exc):
+            traceback.print_exc()
+            return
+        try:
+            initialise_database(force=True)
+            connection = get_db_connection()
+            audit_record_create(connection, "outreach", outreach_id, audit_values)
+            connection.commit()
+        except Exception:
+            traceback.print_exc()
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+        finally:
+            try:
+                connection.close()
+            except Exception:
+                pass
+    else:
+        connection.close()
 
 
 def save_new_outreach_with_recovery(connection, form, requested_status, sales_play_value, recipients):
     try:
-        persist_new_outreach(connection, form, requested_status, sales_play_value, recipients)
+        outreach_id, audit_values = persist_new_outreach(connection, form, requested_status, sales_play_value, recipients)
         connection.commit()
+        record_new_outreach_audit(outreach_id, audit_values)
         return connection, ""
     except Exception as exc:
         try:
@@ -6529,8 +6575,9 @@ def save_new_outreach_with_recovery(connection, form, requested_status, sales_pl
         initialise_database(force=True)
         connection = get_db_connection()
         try:
-            persist_new_outreach(connection, form, requested_status, sales_play_value, recipients)
+            outreach_id, audit_values = persist_new_outreach(connection, form, requested_status, sales_play_value, recipients)
             connection.commit()
+            record_new_outreach_audit(outreach_id, audit_values)
             return connection, ""
         except Exception as exc:
             if not database_error_looks_like_schema_drift(exc):
