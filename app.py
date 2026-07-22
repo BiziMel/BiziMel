@@ -3275,8 +3275,38 @@ def next_working_date(action_date, campaign_start, campaign_end, profile=None, n
     return action_date
 
 
+def slot_minutes(value):
+    try:
+        parsed = parse_time_value(str(value or "")[:5], "09:00")
+    except ValueError:
+        return None
+    return parsed.hour * 60 + parsed.minute
+
+
+def campaign_slot_conflicts(action_date, candidate_time, reserved_slots=None, spacing_minutes=15):
+    candidate_minutes = slot_minutes(candidate_time)
+    if candidate_minutes is None:
+        return True
+    action_date_key = action_date.isoformat()
+    for reserved_date, reserved_time in reserved_slots or set():
+        if str(reserved_date or "") != action_date_key:
+            continue
+        reserved_minutes = slot_minutes(reserved_time)
+        if reserved_minutes is None:
+            continue
+        if abs(candidate_minutes - reserved_minutes) < spacing_minutes:
+            return True
+    return False
+
+
+def reserve_campaign_slot(action_date, action_time, reserved_slots=None):
+    if reserved_slots is not None:
+        reserved_slots.add((action_date.isoformat(), str(action_time or "")[:5]))
+
+
 def available_campaign_time(action_date, preferred_time, profile=None, reserved_slots=None, earliest_time=None):
-    reserved_slots = reserved_slots or set()
+    if reserved_slots is None:
+        reserved_slots = set()
     start_time = parse_time_value(profile["work_day_start"] if profile and profile["work_day_start"] else "", "09:00")
     end_time = parse_time_value(profile["work_day_end"] if profile and profile["work_day_end"] else "", "17:00")
     preferred = parse_time_value(preferred_time, "09:00")
@@ -3284,15 +3314,34 @@ def available_campaign_time(action_date, preferred_time, profile=None, reserved_
     current_dt = datetime.combine(action_date, max(start_time, earliest, min(preferred, end_time)))
     end_dt = datetime.combine(action_date, end_time)
     while current_dt <= end_dt:
-        slot = (action_date.isoformat(), current_dt.strftime("%H:%M"))
-        if slot not in reserved_slots:
-            reserved_slots.add(slot)
+        slot_time = current_dt.strftime("%H:%M")
+        if not campaign_slot_conflicts(action_date, slot_time, reserved_slots):
+            reserve_campaign_slot(action_date, slot_time, reserved_slots)
             return current_dt.strftime("%H:%M")
         current_dt += timedelta(minutes=15)
-    fallback = datetime.combine(action_date, max(start_time, earliest))
-    slot = (action_date.isoformat(), fallback.strftime("%H:%M"))
-    reserved_slots.add(slot)
-    return fallback.strftime("%H:%M")
+    return ""
+
+
+def next_campaign_working_slot(action_date, campaign_end, preferred_time, profile=None, reserved_slots=None, non_working_blocks=None, earliest_time=None):
+    candidate_date = action_date
+    while candidate_date <= campaign_end:
+        if is_non_working_date(candidate_date, profile, non_working_blocks):
+            candidate_date += timedelta(days=1)
+            earliest_time = None
+            continue
+        candidate_earliest = earliest_time if candidate_date == action_date else None
+        slot_time = available_campaign_time(
+            candidate_date,
+            preferred_time,
+            profile,
+            reserved_slots,
+            earliest_time=candidate_earliest,
+        )
+        if slot_time:
+            return candidate_date, slot_time
+        candidate_date += timedelta(days=1)
+        earliest_time = None
+    raise RuntimeError("Unable to find an available 15-minute Campaign Builder slot inside the campaign window.")
 
 
 def round_datetime_to_next_slot(value, minutes=15):
@@ -3376,15 +3425,17 @@ def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per
                 template["subject_prefix"] = "Follow-up email"
                 template["next_action"] = "Send follow-up email"
                 template["time"] = template.get("time") or "09:00"
-        template["action_date"] = action_date
         earliest_time = submitted_at.time() if submitted_at and action_date == submitted_at.date() else None
-        template["time"] = available_campaign_time(
+        action_date, template["time"] = next_campaign_working_slot(
             action_date,
+            campaign_end,
             template.get("time", "09:00"),
-            profile,
-            reserved_slots,
+            profile=profile,
+            reserved_slots=reserved_slots,
+            non_working_blocks=non_working_blocks,
             earliest_time=earliest_time,
         )
+        template["action_date"] = action_date
         template["times_per_week"] = times_per_week
         schedule.append(template)
 
@@ -6379,6 +6430,66 @@ def outreach_duplicate_exists(connection, account_id, recipients, activity_date=
     return False
 
 
+def campaign_step_duplicate_exists(connection, account_id, contact_id, action_date="", activity_type="", subject=""):
+    if not str(account_id or "").isdigit() or not str(contact_id or "").isdigit():
+        return False
+    subject_key = (subject or "").strip().casefold()
+    activity_type_key = (activity_type or "").strip().casefold()
+    try:
+        rows = connection.execute("""
+            SELECT outreach.subject, outreach.activity_type
+            FROM outreach
+            WHERE outreach.account_id = ?
+              AND (
+                    outreach.contact_id = ?
+                 OR outreach.id IN (
+                        SELECT outreach_id
+                        FROM outreach_recipients
+                        WHERE contact_id = ?
+                    )
+              )
+              AND (
+                    COALESCE(outreach.activity_date, '') = COALESCE(?, '')
+                 OR COALESCE(outreach.next_action_date, '') = COALESCE(?, '')
+              )
+              AND COALESCE(outreach.task_status, '') NOT IN ('Deleted', 'Cancelled')
+        """, (account_id, contact_id, contact_id, action_date or "", action_date or "")).fetchall()
+    except Exception as exc:
+        if database_error_looks_like_schema_drift(exc):
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            initialise_database(force=True)
+            try:
+                rows = connection.execute("""
+                    SELECT outreach.subject, outreach.activity_type
+                    FROM outreach
+                    WHERE outreach.account_id = ?
+                      AND outreach.contact_id = ?
+                      AND (
+                            COALESCE(outreach.activity_date, '') = COALESCE(?, '')
+                         OR COALESCE(outreach.next_action_date, '') = COALESCE(?, '')
+                      )
+                      AND COALESCE(outreach.task_status, '') NOT IN ('Deleted', 'Cancelled')
+                """, (account_id, contact_id, action_date or "", action_date or "")).fetchall()
+            except Exception as retry_exc:
+                log_diagnostic_exception("CAMPAIGN", retry_exc, {"stage": "campaign_duplicate_day_retry"})
+                try:
+                    connection.rollback()
+                except Exception:
+                    pass
+                rows = []
+        else:
+            log_diagnostic_exception("CAMPAIGN", exc, {"stage": "campaign_duplicate_day"})
+            rows = []
+    return any(
+        (row["subject"] or "").strip().casefold() == subject_key
+        and (row["activity_type"] or "").strip().casefold() == activity_type_key
+        for row in rows
+    )
+
+
 def selected_outreach_contact_values(connection, outreach_item):
     rows = connection.execute(
         """
@@ -7001,10 +7112,12 @@ def save_campaign_recipients_with_recovery(connection, outreach_id, recipients):
 
 def campaign_reserved_slots_with_recovery(connection):
     query = """
-        SELECT next_action_date, next_action_time
+        SELECT activity_date, activity_time, next_action_date, next_action_time
         FROM outreach
-        WHERE next_action_date IS NOT NULL
-          AND next_action_date != ''
+        WHERE (
+                (next_action_date IS NOT NULL AND next_action_date != '')
+             OR (activity_date IS NOT NULL AND activity_date != '')
+          )
           AND COALESCE(task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
     """
     try:
@@ -7035,11 +7148,13 @@ def campaign_reserved_slots_with_recovery(connection):
                 "Existing outreach schedules could not be checked, so PipeFlow generated "
                 f"against available campaign dates only. Error code: {code}"
             )
-    return connection, {
-        (row["next_action_date"], row["next_action_time"] or "09:00")
-        for row in reserved_rows
-        if row["next_action_date"]
-    }, ""
+    reserved_slots = set()
+    for row in reserved_rows:
+        if row["next_action_date"]:
+            reserved_slots.add((row["next_action_date"], str(row["next_action_time"] or "09:00")[:5]))
+        if row["activity_date"]:
+            reserved_slots.add((row["activity_date"], str(row["activity_time"] or "09:00")[:5]))
+    return connection, reserved_slots, ""
 
 
 def persist_outreach_update(connection, outreach_id, outreach_item, new_values, recipients, labels):
@@ -12137,6 +12252,19 @@ def campaign_builder():
                             f"Sales play: {sales_play}. Contact: {contact['name']}. "
                             f"{success_context_summary}"
                         )
+                        if campaign_step_duplicate_exists(
+                            connection,
+                            account_id,
+                            contact["id"],
+                            action_date.isoformat(),
+                            step["activity_type"],
+                            subject,
+                        ):
+                            skipped_duplicate_count += 1
+                            campaign_generation_warnings.append(
+                                f"{contact['name']}: skipped existing {step['activity_type']} campaign step on {action_date.isoformat()}."
+                            )
+                            continue
                         if outreach_duplicate_exists(
                             connection,
                             account_id,

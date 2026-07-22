@@ -227,6 +227,36 @@ def main():
             "GROUP BY accounts.id\n        HAVING COUNT(contacts.id) > 0" not in app_source,
             "Campaign Builder contains a Postgres-incompatible account grouping query",
         )
+        full_day = date(2026, 7, 22)
+        full_day_reserved = {
+            (full_day.isoformat(), f"{hour:02d}:{minute:02d}")
+            for hour in range(9, 18)
+            for minute in (0, 15, 30, 45)
+            if not (hour == 17 and minute > 0)
+        }
+        direct_schedule = pipeflow_app.build_campaign_schedule(
+            full_day,
+            full_day + timedelta(days=2),
+            1,
+            1,
+            reserved_slots=full_day_reserved,
+        )
+        assert_ok(
+            direct_schedule[0]["action_date"] == full_day + timedelta(days=1),
+            "Campaign Builder did not move to the next working day when the first day had no slots",
+        )
+        off_grid_reserved = {(full_day.isoformat(), "09:01")}
+        direct_schedule = pipeflow_app.build_campaign_schedule(
+            full_day,
+            full_day,
+            1,
+            1,
+            reserved_slots=off_grid_reserved,
+        )
+        assert_ok(
+            direct_schedule[0]["time"] == "09:30",
+            "Campaign Builder did not keep a 15-minute buffer from an off-grid scheduled event",
+        )
         connection = sqlite3.connect(db_path)
         campaign_count_before = connection.execute(
             "SELECT COUNT(*) FROM outreach WHERE campaign = ?",
@@ -338,6 +368,33 @@ def main():
         filter_campaign_start = (today + timedelta(days=35)).isoformat()
         filter_campaign_end = (today + timedelta(days=45)).isoformat()
         connection = sqlite3.connect(db_path)
+        connection.execute(
+            """
+            INSERT INTO outreach (
+                fy, quarter, account_id, contact_id, campaign, sales_play,
+                activity_date, activity_time, activity_type, subject, notes, outcome,
+                next_action_date, next_action_time, task_status, assigned_to
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "27",
+                "Q1",
+                account_id,
+                second_contact_id,
+                "Existing",
+                "Smoke Test Play",
+                filter_campaign_start,
+                "09:01",
+                "Email",
+                "Existing off-grid slot",
+                "Blocks the early campaign slots.",
+                "No Response",
+                filter_campaign_start,
+                "09:01",
+                "Not Started",
+                "Smoke Test Admin",
+            ),
+        )
         connection.execute("ALTER TABLE outreach_recipients DROP COLUMN sort_order")
         connection.commit()
         connection.close()
@@ -383,6 +440,20 @@ def main():
                 ("Smoke Test Play", second_contact_id, filter_campaign_start),
             ).fetchall()
         ]
+        filtered_times = [
+            row["next_action_time"]
+            for row in connection.execute(
+                """
+                SELECT next_action_time
+                FROM outreach
+                WHERE campaign = ?
+                  AND contact_id = ?
+                  AND campaign_start_date = ?
+                ORDER BY next_action_date, next_action_time
+                """,
+                ("Smoke Test Play", second_contact_id, filter_campaign_start),
+            ).fetchall()
+        ]
         filtered_recipient_count = connection.execute(
             """
             SELECT COUNT(*)
@@ -400,6 +471,14 @@ def main():
         connection.close()
         assert_ok(filtered_types and filtered_types[0] == "VITO", "Campaign Builder did not keep VITO as the first filtered campaign step")
         assert_ok(set(filtered_types[1:]).issubset({"Phone"}), "Campaign Builder generated an unselected activity type after VITO")
+        assert_ok(
+            all(int(time_value.split(":")[1]) % 15 == 0 for time_value in filtered_times),
+            "Campaign Builder generated a task outside the 15-minute scheduling grid",
+        )
+        assert_ok(
+            "09:00" not in filtered_times and "09:15" not in filtered_times,
+            "Campaign Builder scheduled inside the 15-minute buffer around an existing off-grid task",
+        )
         assert_ok(filtered_recipient_count == len(filtered_types), "Campaign Builder did not recover and save recipient links")
 
         response = client.post(
