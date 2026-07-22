@@ -6491,15 +6491,43 @@ def campaign_step_duplicate_exists(connection, account_id, contact_id, action_da
 
 
 def selected_outreach_contact_values(connection, outreach_item):
-    rows = connection.execute(
-        """
-        SELECT contact_id, partner_contact_id
-        FROM outreach_recipients
-        WHERE outreach_id = ?
-        ORDER BY sort_order, id
-        """,
-        (outreach_item["id"],),
-    ).fetchall()
+    try:
+        rows = connection.execute(
+            """
+            SELECT contact_id, partner_contact_id
+            FROM outreach_recipients
+            WHERE outreach_id = ?
+            ORDER BY sort_order, id
+            """,
+            (outreach_item["id"],),
+        ).fetchall()
+    except Exception as exc:
+        if database_error_looks_like_schema_drift(exc):
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            initialise_database(force=True)
+            try:
+                rows = connection.execute(
+                    """
+                    SELECT contact_id, partner_contact_id
+                    FROM outreach_recipients
+                    WHERE outreach_id = ?
+                    ORDER BY id
+                    """,
+                    (outreach_item["id"],),
+                ).fetchall()
+            except Exception as retry_exc:
+                log_diagnostic_exception("OUTREACH-ADD", retry_exc, {"stage": "selected_recipients_retry"})
+                try:
+                    connection.rollback()
+                except Exception:
+                    pass
+                rows = []
+        else:
+            log_diagnostic_exception("OUTREACH-ADD", exc, {"stage": "selected_recipients"})
+            rows = []
     values = []
     for row in rows:
         if row["partner_contact_id"]:
@@ -6828,6 +6856,66 @@ def validate_new_outreach(connection, form, requested_status, sales_play_value, 
     ):
         return "This contact already has the same outreach task at this date and time. Update the existing task or choose a different timestamp."
     return ""
+
+
+def validate_outreach_update_with_recovery(connection, outreach_id, new_values, recipients):
+    def run_validation(active_connection):
+        if not fy_quarter_are_valid(new_values["fy"], new_values["quarter"]):
+            return fy_quarter_required_message()
+        if not sales_play_allowed_for_account(active_connection, new_values["account_id"], new_values["sales_play"]):
+            return "Select a Sales Play used for or associated to the selected account."
+        if not outreach_recipients_match_account(active_connection, new_values["account_id"], recipients):
+            return "Select a contact or partner contact that belongs to the selected account."
+        if outcome_requires_scheduled_meeting(new_values["outcome"]) and not request.form.get("scheduled_meeting_at"):
+            return "Add the scheduled meeting date and time before saving this meeting outcome."
+        if status_requires_activity_update(new_values["task_status"]) and not activity_update_is_valid(new_values["next_action"]):
+            return activity_update_required_message()
+        if outreach_duplicate_exists(
+            active_connection,
+            new_values["account_id"],
+            recipients,
+            new_values["activity_date"],
+            new_values["activity_time"],
+            new_values["next_action_date"],
+            new_values["next_action_time"],
+            new_values["activity_type"],
+            new_values["subject"],
+            exclude_outreach_id=outreach_id,
+        ):
+            return "This contact already has the same outreach task at this date and time. Update the existing task or choose a different timestamp."
+        return ""
+
+    try:
+        return connection, run_validation(connection)
+    except Exception as exc:
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+        if not database_error_looks_like_schema_drift(exc):
+            code = log_diagnostic_exception("OUTREACH-SAVE", exc, {"stage": "update_validation"})
+            return connection, diagnostic_user_message(
+                "Outreach could not be validated. Check the selected account, contacts, Sales Play and schedule, then try again.",
+                code,
+            )
+        try:
+            connection.close()
+        except Exception:
+            pass
+        initialise_database(force=True)
+        connection = get_db_connection()
+        try:
+            return connection, run_validation(connection)
+        except Exception as retry_exc:
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            code = log_diagnostic_exception("OUTREACH-SAVE", retry_exc, {"stage": "update_validation_retry"})
+            return connection, diagnostic_user_message(
+                "Outreach could not be validated after refreshing the workspace schema. Check the selected account, contacts, Sales Play and schedule, then try again.",
+                code,
+            )
 
 
 def persist_new_outreach(connection, form, requested_status, sales_play_value, recipients):
@@ -7872,6 +7960,152 @@ def campaign_builder_sales_play_options(connection):
                 except Exception:
                     pass
         return connection, []
+
+
+def outreach_form_accounts_with_recovery(connection, stage="outreach_form_accounts"):
+    query = """
+        SELECT *
+        FROM accounts
+        ORDER BY account_name, business_unit
+    """
+    try:
+        return connection, connection.execute(query).fetchall()
+    except Exception as exc:
+        connection, should_retry = recover_campaign_connection(connection, exc, stage)
+        if should_retry:
+            try:
+                return connection, connection.execute(query).fetchall()
+            except Exception as retry_exc:
+                log_diagnostic_exception("OUTREACH-ADD", retry_exc, {"stage": f"{stage}_retry"})
+                try:
+                    connection.rollback()
+                except Exception:
+                    pass
+        return connection, []
+
+
+def outreach_form_contacts_with_recovery(connection, selected_account_id, include_contact_id=None, stage="outreach_form_contacts"):
+    if not selected_account_id:
+        return connection, []
+    if include_contact_id:
+        query = """
+            SELECT contacts.*, accounts.account_name
+            FROM contacts
+            LEFT JOIN accounts ON contacts.account_id = accounts.id
+            WHERE contacts.account_id = ?
+              AND (
+                    COALESCE(contacts.status, 'Active') = 'Active'
+                 OR contacts.id = ?
+              )
+            ORDER BY contacts.name
+        """
+        params = (selected_account_id, include_contact_id)
+    else:
+        query = """
+            SELECT contacts.*, accounts.account_name, accounts.account_tier
+            FROM contacts
+            LEFT JOIN accounts ON contacts.account_id = accounts.id
+            WHERE COALESCE(contacts.status, 'Active') = 'Active'
+              AND contacts.account_id = ?
+            ORDER BY contacts.name
+        """
+        params = (selected_account_id,)
+    try:
+        return connection, connection.execute(query, params).fetchall()
+    except Exception as exc:
+        connection, should_retry = recover_campaign_connection(connection, exc, stage)
+        if should_retry:
+            try:
+                return connection, connection.execute(query, params).fetchall()
+            except Exception as retry_exc:
+                log_diagnostic_exception("OUTREACH-ADD", retry_exc, {"stage": f"{stage}_retry"})
+                try:
+                    connection.rollback()
+                except Exception:
+                    pass
+        return connection, []
+
+
+def outreach_sales_play_options_with_recovery(connection, selected_account_id, stage="outreach_sales_play_options"):
+    if not selected_account_id:
+        return connection, []
+    try:
+        return connection, account_sales_play_options(connection, selected_account_id)
+    except Exception as exc:
+        connection, should_retry = recover_campaign_connection(connection, exc, stage)
+        if should_retry:
+            try:
+                return connection, account_sales_play_options(connection, selected_account_id)
+            except Exception as retry_exc:
+                log_diagnostic_exception("OUTREACH-ADD", retry_exc, {"stage": f"{stage}_retry"})
+                try:
+                    connection.rollback()
+                except Exception:
+                    pass
+        return connection, []
+
+
+def partner_contacts_for_outreach_with_recovery(connection, selected_account_id, stage="partner_contacts_for_outreach"):
+    try:
+        return connection, partner_contacts_for_outreach(connection, selected_account_id)
+    except Exception as exc:
+        connection, should_retry = recover_campaign_connection(connection, exc, stage)
+        if should_retry:
+            try:
+                return connection, partner_contacts_for_outreach(connection, selected_account_id)
+            except Exception as retry_exc:
+                log_diagnostic_exception("OUTREACH-ADD", retry_exc, {"stage": f"{stage}_retry"})
+                try:
+                    connection.rollback()
+                except Exception:
+                    pass
+        return connection, []
+
+
+def render_campaign_builder_error_page(exc):
+    code = log_diagnostic_exception("CAMPAIGN", exc, {"stage": "campaign_builder_route_wrapper"})
+    error = campaign_exception_user_message(exc, code)
+    connection = get_db_connection()
+    try:
+        connection, profile, _, _ = campaign_profile_and_blocks(connection)
+        connection, accounts = campaign_builder_accounts(connection)
+        connection, contacts = campaign_builder_contacts(connection)
+        connection, sales_play_rows = campaign_builder_sales_play_options(connection)
+        selected_account_id = request.form.get("account_id") or request.args.get("account_id") or ""
+        selected_contact_ids = request.form.getlist("contact_ids")
+        return render_template(
+            "campaign_builder.html",
+            accounts=accounts,
+            contacts=contacts,
+            profile=profile,
+            default_assignee=default_outreach_assignee(),
+            generated_count=0,
+            skipped_duplicate_count=0,
+            selected_account_id=selected_account_id,
+            selected_contact_ids=selected_contact_ids,
+            selected_pg_week_start=request.form.get("pg_week_start", ""),
+            selected_campaign_start=request.form.get("campaign_start_date", ""),
+            selected_campaign_end=request.form.get("campaign_end_date", ""),
+            selected_total_tasks=request.form.get("total_outreach_tasks", "8"),
+            selected_times_per_week=request.form.get("times_per_week", "2"),
+            selected_sales_play=request.form.get("sales_play") or request.form.get("sales_plays", ""),
+            sales_play_options=sales_play_rows,
+            selected_fy=request.form.get("fy", ""),
+            selected_quarter=request.form.get("quarter", ""),
+            campaign_activity_options=campaign_step_templates(),
+            selected_campaign_activity_types=request.form.getlist("campaign_activity_types"),
+            success_context_summary="",
+            generated_steps=[],
+            campaign_generation_warnings=[],
+            error=error,
+        )
+    except Exception:
+        return redirect_with_query(url_for("campaign_builder"), error=error)
+    finally:
+        try:
+            connection.close()
+        except Exception:
+            pass
 
 
 def activity_update_required_message():
@@ -11676,6 +11910,33 @@ def admin_bulk_delete_contacts():
 
 @app.route("/outreach")
 def outreach():
+    try:
+        return outreach_impl()
+    except Exception as exc:
+        code = log_diagnostic_exception("OUTREACH-SAVE", exc, {"stage": "outreach_route_wrapper"})
+        return render_template(
+            "outreach.html",
+            outreach_records=[],
+            accounts=[],
+            sales_play_options=[],
+            fy_filter=request.args.get("fy"),
+            quarter_filter=request.args.get("quarter"),
+            sales_play_filter=request.args.get("sales_play"),
+            account_filter=request.args.get("account_id"),
+            contact_filter=request.args.get("contact_id", ""),
+            outcome_filter=request.args.get("outcome"),
+            nbm_success_week_filter=request.args.get("nbm_success_week", ""),
+            selected_statuses=request.args.getlist("task_status") or ["All Open"],
+            assignable_users=[],
+            message=request.args.get("message", ""),
+            error=diagnostic_user_message(
+                "Outreach could not load the table. The save may have completed; refresh the page after the workspace schema check finishes.",
+                code,
+            ),
+        )
+
+
+def outreach_impl():
     user = current_user()
     fy_filter = request.args.get("fy")
     quarter_filter = request.args.get("quarter")
@@ -12030,40 +12291,19 @@ def add_outreach():
         selected_contact_values = prefill.get("contact_ids", [])
         selected_account_id = request.args.get("account_id") or prefill.get("account_id", "")
 
-    accounts = connection.execute("""
-        SELECT *
-        FROM accounts
-        ORDER BY account_name, business_unit
-    """).fetchall()
+    connection, accounts = outreach_form_accounts_with_recovery(connection)
+    connection, contacts = outreach_form_contacts_with_recovery(connection, selected_account_id)
+    connection, sales_play_rows = outreach_sales_play_options_with_recovery(connection, selected_account_id)
+    sales_play_assets = campaign_builder_sales_play_assets(connection)
+    partner_activity_options = campaign_builder_partner_activity_options(connection)
+    connection, partner_contacts = partner_contacts_for_outreach_with_recovery(connection, selected_account_id)
 
-    contacts = connection.execute("""
-        SELECT contacts.*, accounts.account_name, accounts.account_tier
-        FROM contacts
-        LEFT JOIN accounts ON contacts.account_id = accounts.id
-        WHERE COALESCE(contacts.status, 'Active') = 'Active'
-          AND contacts.account_id = ?
-        ORDER BY contacts.name
-    """, (selected_account_id,)).fetchall() if selected_account_id else []
-    sales_play_rows = account_sales_play_options(connection, selected_account_id) if selected_account_id else []
-    sales_play_assets = sales_play_asset_map(connection)
-    partner_activity_options = account_partner_activity_options(connection)
-    partner_contacts = partner_contacts_for_outreach(connection, selected_account_id)
-
-    profile = connection.execute("""
-        SELECT *
-        FROM user_profile
-        WHERE id = 1
-    """).fetchone()
+    connection, profile, non_working_block_rows, _ = campaign_profile_and_blocks(connection)
     prefill.setdefault("assigned_to", default_outreach_assignee())
     prefill["scheduled_meeting_at"] = scheduled_meeting_datetime_value(
         prefill.get("scheduled_meeting_date", ""),
         prefill.get("scheduled_meeting_time", ""),
     )
-    non_working_block_rows = connection.execute("""
-        SELECT *
-        FROM non_working_blocks
-        ORDER BY start_date, end_date, id
-    """).fetchall()
     connection.close()
 
     return render_template(
@@ -12085,6 +12325,13 @@ def add_outreach():
 
 @app.route("/outreach/campaign-builder", methods=("GET", "POST"))
 def campaign_builder():
+    try:
+        return campaign_builder_impl()
+    except Exception as exc:
+        return render_campaign_builder_error_page(exc)
+
+
+def campaign_builder_impl():
     connection = get_db_connection()
     generated_count = 0
     skipped_duplicate_count = 0
@@ -13011,47 +13258,40 @@ def edit_outreach(outreach_id):
     connection = get_db_connection()
     error = ""
 
-    outreach_item = connection.execute(
-        "SELECT * FROM outreach WHERE id = ?",
-        (outreach_id,)
-    ).fetchone()
+    try:
+        outreach_item = connection.execute(
+            "SELECT * FROM outreach WHERE id = ?",
+            (outreach_id,)
+        ).fetchone()
+    except Exception as exc:
+        connection, should_retry = recover_campaign_connection(connection, exc, "edit_outreach_load")
+        if should_retry:
+            outreach_item = connection.execute(
+                "SELECT * FROM outreach WHERE id = ?",
+                (outreach_id,)
+            ).fetchone()
+        else:
+            outreach_item = None
     if not outreach_item:
         connection.close()
         return redirect(url_for("outreach", error="The selected outreach task could not be found."))
     task_locked_value = not task_can_be_modified(outreach_item)
     task_lock_message_value = task_lock_message(outreach_item) if task_locked_value else ""
 
-    accounts = connection.execute(
-        "SELECT * FROM accounts ORDER BY account_name"
-    ).fetchall()
-
     selected_account_for_contacts = request.form.get("account_id") if request.method == "POST" else (request.args.get("account_id") or outreach_item["account_id"])
-    contacts = connection.execute("""
-        SELECT contacts.*, accounts.account_name
-        FROM contacts
-        LEFT JOIN accounts ON contacts.account_id = accounts.id
-        WHERE contacts.account_id = ?
-          AND (
-                COALESCE(contacts.status, 'Active') = 'Active'
-             OR contacts.id = ?
-          )
-        ORDER BY contacts.name
-    """, (selected_account_for_contacts, outreach_item["contact_id"])).fetchall() if selected_account_for_contacts else []
-    sales_play_rows = account_sales_play_options(connection, selected_account_for_contacts) if selected_account_for_contacts else []
-    sales_play_assets = sales_play_asset_map(connection)
-    partner_activity_options = account_partner_activity_options(connection)
-    partner_contacts = partner_contacts_for_outreach(connection, selected_account_for_contacts)
+    connection, accounts = outreach_form_accounts_with_recovery(connection, "edit_outreach_accounts")
+    connection, contacts = outreach_form_contacts_with_recovery(
+        connection,
+        selected_account_for_contacts,
+        outreach_item["contact_id"],
+        "edit_outreach_contacts",
+    )
+    connection, sales_play_rows = outreach_sales_play_options_with_recovery(connection, selected_account_for_contacts, "edit_outreach_sales_play_options")
+    sales_play_assets = campaign_builder_sales_play_assets(connection)
+    partner_activity_options = campaign_builder_partner_activity_options(connection)
+    connection, partner_contacts = partner_contacts_for_outreach_with_recovery(connection, selected_account_for_contacts, "edit_outreach_partner_contacts")
 
-    profile = connection.execute("""
-        SELECT *
-        FROM user_profile
-        WHERE id = 1
-    """).fetchone()
-    non_working_block_rows = connection.execute("""
-        SELECT *
-        FROM non_working_blocks
-        ORDER BY start_date, end_date, id
-    """).fetchall()
+    connection, profile, non_working_block_rows, _ = campaign_profile_and_blocks(connection)
     if request.method == "POST":
         if not task_can_be_modified(outreach_item):
             connection.close()
@@ -13096,129 +13336,13 @@ def edit_outreach(outreach_id):
             new_values["next_action_time"] = ""
         new_values["completed_at"] = completed_status_timestamp(outreach_item, new_values["task_status"])
 
-        if not fy_quarter_are_valid(new_values["fy"], new_values["quarter"]):
-            error = fy_quarter_required_message()
-            connection.close()
-            return render_template(
-                "edit_outreach.html",
-                outreach_item=outreach_item,
-                accounts=accounts,
-                contacts=contacts,
-                profile=profile,
-                non_working_blocks=non_working_block_rows,
-                sales_play_options=sales_play_rows,
-                sales_play_assets=sales_play_assets,
-                partner_activity_options=partner_activity_options,
-                partner_contacts=partner_contacts,
-                selected_contact_values=recipient_values,
-                selected_account_id=new_values["account_id"],
-                scheduled_meeting_at=request.form.get("scheduled_meeting_at", ""),
-                error=error,
-                task_locked=task_locked_value,
-                task_lock_message=task_lock_message_value
-            )
-
-        if not sales_play_allowed_for_account(connection, new_values["account_id"], new_values["sales_play"]):
-            error = "Select a Sales Play used for or associated to the selected account."
-            connection.close()
-            return render_template(
-                "edit_outreach.html",
-                outreach_item=outreach_item,
-                accounts=accounts,
-                contacts=contacts,
-                profile=profile,
-                non_working_blocks=non_working_block_rows,
-                sales_play_options=sales_play_rows,
-                sales_play_assets=sales_play_assets,
-                partner_activity_options=partner_activity_options,
-                partner_contacts=partner_contacts,
-                selected_contact_values=recipient_values,
-                selected_account_id=new_values["account_id"],
-                scheduled_meeting_at=request.form.get("scheduled_meeting_at", ""),
-                error=error,
-                task_locked=task_locked_value,
-                task_lock_message=task_lock_message_value
-            )
-
-        if not outreach_recipients_match_account(connection, new_values["account_id"], recipients):
-            error = "Select a contact or partner contact that belongs to the selected account."
-            connection.close()
-            return render_template(
-                "edit_outreach.html",
-                outreach_item=outreach_item,
-                accounts=accounts,
-                contacts=contacts,
-                profile=profile,
-                non_working_blocks=non_working_block_rows,
-                sales_play_options=sales_play_rows,
-                sales_play_assets=sales_play_assets,
-                partner_activity_options=partner_activity_options,
-                partner_contacts=partner_contacts,
-                selected_contact_values=recipient_values,
-                selected_account_id=new_values["account_id"],
-                scheduled_meeting_at=request.form.get("scheduled_meeting_at", ""),
-                error=error,
-                task_locked=task_locked_value,
-                task_lock_message=task_lock_message_value
-            )
-
-        if outcome_requires_scheduled_meeting(new_values["outcome"]) and not request.form.get("scheduled_meeting_at"):
-            error = "Add the scheduled meeting date and time before saving this meeting outcome."
-            connection.close()
-            return render_template(
-                "edit_outreach.html",
-                outreach_item=outreach_item,
-                accounts=accounts,
-                contacts=contacts,
-                profile=profile,
-                non_working_blocks=non_working_block_rows,
-                sales_play_options=sales_play_rows,
-                sales_play_assets=sales_play_assets,
-                partner_activity_options=partner_activity_options,
-                partner_contacts=partner_contacts,
-                selected_contact_values=recipient_values,
-                selected_account_id=new_values["account_id"],
-                scheduled_meeting_at=request.form.get("scheduled_meeting_at", ""),
-                error=error,
-                task_locked=task_locked_value,
-                task_lock_message=task_lock_message_value
-            )
-
-        if status_requires_activity_update(new_values["task_status"]) and not activity_update_is_valid(new_values["next_action"]):
-            error = activity_update_required_message()
-            connection.close()
-            return render_template(
-                "edit_outreach.html",
-                outreach_item=outreach_item,
-                accounts=accounts,
-                contacts=contacts,
-                profile=profile,
-                non_working_blocks=non_working_block_rows,
-                sales_play_options=sales_play_rows,
-                sales_play_assets=sales_play_assets,
-                partner_activity_options=partner_activity_options,
-                partner_contacts=partner_contacts,
-                selected_contact_values=recipient_values,
-                selected_account_id=new_values["account_id"],
-                scheduled_meeting_at=request.form.get("scheduled_meeting_at", ""),
-                error=error,
-                task_locked=task_locked_value,
-                task_lock_message=task_lock_message_value
-            )
-
-        if outreach_duplicate_exists(
+        connection, error = validate_outreach_update_with_recovery(
             connection,
-            new_values["account_id"],
+            outreach_id,
+            new_values,
             recipients,
-            new_values["activity_date"],
-            new_values["activity_time"],
-            new_values["next_action_date"],
-            new_values["next_action_time"],
-            new_values["activity_type"],
-            new_values["subject"],
-            exclude_outreach_id=outreach_id,
-        ):
-            error = "This contact already has the same outreach task at this date and time. Update the existing task or choose a different timestamp."
+        )
+        if error:
             connection.close()
             return render_template(
                 "edit_outreach.html",

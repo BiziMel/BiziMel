@@ -936,6 +936,10 @@ def main():
             "mismatched account/contact outreach was not rejected",
         )
 
+        connection = sqlite3.connect(db_path)
+        connection.execute("ALTER TABLE outreach_recipients DROP COLUMN sort_order")
+        connection.commit()
+        connection.close()
         response = client.get(f"/outreach/{multi_outreach['id']}/edit")
         edit_html = response.get_data(as_text=True)
         assert_ok(
