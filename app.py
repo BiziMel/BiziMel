@@ -1431,6 +1431,7 @@ def inject_dropdown_values():
         "account_logo_src": account_logo_src,
         "contact_photo_url": contact_photo_url,
         "external_url": normalise_external_url,
+        "format_display_datetime": format_display_datetime,
         "page_instructions": page_instructions_for_endpoint(request.endpoint),
         "csrf_token": csrf_token,
     }
@@ -11530,7 +11531,8 @@ def campaign_builder():
     connection = get_db_connection()
     generated_count = 0
     skipped_duplicate_count = 0
-    error = ""
+    generated_steps = []
+    error = request.args.get("error", "")
     selected_account_id = request.form.get("account_id") or request.args.get("account_id") or ""
     selected_contact_ids = request.form.getlist("contact_ids")
     selected_pg_week_start = request.form.get("pg_week_start", "")
@@ -11777,11 +11779,30 @@ def campaign_builder():
                             outreach_id = row["id"] if row and "id" in row.keys() else None
                         if not outreach_id:
                             raise RuntimeError("Campaign outreach save completed without returning a record id.")
-                        save_outreach_recipients(connection, outreach_id, [(contact["id"], None)])
+                        connection.commit()
+                        try:
+                            save_outreach_recipients(connection, outreach_id, [(contact["id"], None)])
+                            connection.commit()
+                        except Exception as recipient_exc:
+                            # The outreach row stores the primary contact_id, so the
+                            # generated task remains usable even if the multi-recipient
+                            # side table has a hosted schema issue.
+                            log_diagnostic_exception("CAMPAIGN", recipient_exc, {"stage": "campaign_recipient_link"})
+                            try:
+                                connection.rollback()
+                            except Exception:
+                                pass
                         generated_count += 1
+                        generated_steps.append({
+                            "outreach_id": outreach_id,
+                            "contact_name": contact["name"],
+                            "activity_type": step["activity_type"],
+                            "subject": subject,
+                            "next_action_date": action_date.isoformat(),
+                            "next_action_time": step["time"],
+                        })
 
                 if generated_count:
-                    connection.commit()
                     try:
                         add_timeline_entry(
                             connection,
@@ -11797,9 +11818,6 @@ def campaign_builder():
                             connection.rollback()
                         except Exception:
                             pass
-                    message = f"Campaign Generated: {generated_count} outreach task(s) created for {sales_play}."
-                    connection.close()
-                    return redirect(url_for("outreach", message=message))
                 elif skipped_duplicate_count:
                     connection.rollback()
                     error = (
@@ -11864,6 +11882,7 @@ def campaign_builder():
         campaign_activity_options=campaign_activity_options,
         selected_campaign_activity_types=selected_campaign_activity_types,
         success_context_summary=success_context_summary,
+        generated_steps=generated_steps,
         error=error
     )
 

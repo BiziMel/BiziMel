@@ -14,11 +14,35 @@
 </div>
 
 {% if generated_count %}
-    <div class="form-card">
+    <div class="form-card campaign-generated-card">
         <h2>Campaign Generated</h2>
-        <p>{{ generated_count }} outreach step(s) were created and added to Outreach and Tasks.</p>
+        <div class="alert-success">{{ generated_count }} outreach step(s) were created and added to Outreach and Tasks.</div>
         {% if success_context_summary %}
             <p class="field-help">{{ success_context_summary }}</p>
+        {% endif %}
+        {% if generated_steps %}
+            <div class="table-container">
+                <table class="report-table campaign-generated-table">
+                    <thead>
+                        <tr>
+                            <th>Contact</th>
+                            <th>Activity</th>
+                            <th>Subject</th>
+                            <th>Due</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for step in generated_steps %}
+                            <tr>
+                                <td>{{ step.contact_name }}</td>
+                                <td>{{ step.activity_type }}</td>
+                                <td>{{ step.subject }}</td>
+                                <td>{{ format_display_datetime(step.next_action_date, step.next_action_time) }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         {% endif %}
         <div class="button-group">
             <a href="{{ url_for('outreach') }}" class="btn btn-primary">View Outreach</a>

@@ -246,12 +246,15 @@ def main():
                 "quarter": "Q1",
                 "assigned_to": "Smoke Test Admin",
             },
-            follow_redirects=False,
+            follow_redirects=True,
         )
+        campaign_html = response.get_data(as_text=True)
         assert_ok(
-            response.status_code in (302, 303)
-            and "/outreach" in response.headers.get("Location", ""),
-            "Campaign Builder did not redirect to Outreach after save",
+            response.status_code == 200
+            and "Campaign Generated" in campaign_html
+            and "outreach step(s) were created" in campaign_html
+            and "Smoke Test Contact" in campaign_html,
+            "Campaign Builder did not show generated campaign confirmation",
         )
         connection = sqlite3.connect(db_path)
         campaign_count_after = connection.execute(
