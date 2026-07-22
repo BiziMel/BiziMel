@@ -55,6 +55,17 @@
     <div class="alert-error">{{ error }}</div>
 {% endif %}
 
+{% if campaign_generation_warnings %}
+    <div class="form-card campaign-warning-card">
+        <h2>Campaign Generation Warnings</h2>
+        <ul class="campaign-warning-list">
+            {% for warning in campaign_generation_warnings %}
+                <li>{{ warning }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+{% endif %}
+
 <div class="form-card">
     <form method="POST" class="pipeflow-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

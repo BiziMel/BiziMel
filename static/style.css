@@ -1316,6 +1316,21 @@ a:hover {
     margin-top: 4px;
 }
 
+.campaign-warning-card {
+    border-color: #f0c36a;
+    background: #fffaf0;
+}
+
+.campaign-warning-list {
+    margin: 10px 0 0;
+    padding-left: 20px;
+    line-height: 1.45;
+}
+
+.campaign-generated-card {
+    border-color: #6cab6a;
+}
+
 
 .partner-form {
     margin-bottom: 22px;

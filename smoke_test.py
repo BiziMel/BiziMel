@@ -245,6 +245,7 @@ def main():
                 "fy": "27",
                 "quarter": "Q1",
                 "assigned_to": "Smoke Test Admin",
+                "contact_ids": [str(contact_id)],
             },
             follow_redirects=True,
         )
@@ -276,6 +277,29 @@ def main():
         connection.close()
         assert_ok(campaign_count_after > campaign_count_before, "Campaign Builder did not save generated outreach")
         assert_ok(campaign_recipient_count > 0, "Campaign Builder did not save outreach recipients")
+
+        response = client.post(
+            "/outreach/campaign-builder",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "account_id": str(account_id),
+                "pg_week_start": pg_week_start,
+                "campaign_start_date": campaign_start,
+                "campaign_end_date": campaign_end,
+                "total_outreach_tasks": "not-a-number",
+                "times_per_week": "2",
+                "sales_play": "Smoke Test Play",
+                "fy": "27",
+                "quarter": "Q1",
+                "assigned_to": "Smoke Test Admin",
+                "contact_ids": [str(contact_id)],
+            },
+            follow_redirects=True,
+        )
+        assert_ok(
+            response.status_code == 200 and "Qty Outreach Tasks must be a whole number from 1 to 50." in response.get_data(as_text=True),
+            "Campaign Builder did not show field-specific quantity validation",
+        )
 
         dashboard_html = client.get("/").get_data(as_text=True)
         assert_ok("header-action-stack" in dashboard_html, "header action stack missing")

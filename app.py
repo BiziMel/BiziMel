@@ -996,6 +996,11 @@ DIAGNOSTIC_FORM_FIELDS = {
     "outcome",
     "scheduled_meeting_at",
     "subject",
+    "pg_week_start",
+    "campaign_start_date",
+    "campaign_end_date",
+    "total_outreach_tasks",
+    "times_per_week",
 }
 
 
@@ -1046,6 +1051,28 @@ def log_diagnostic_exception(area, exc, extra=None):
 
 def diagnostic_user_message(base_message, code):
     return f"{base_message} Error code: {code}"
+
+
+def campaign_exception_user_message(exc, code):
+    text = str(exc or "").lower()
+    form = request.form if request else {}
+    if "invalid input syntax" in text or "integer" in text:
+        if form.get("account_id") and not str(form.get("account_id")).isdigit():
+            return diagnostic_user_message("Campaign could not be generated because the Account field contains an invalid value. Select the account again.", code)
+        if any(not str(value or "").isdigit() for value in form.getlist("contact_ids")):
+            return diagnostic_user_message("Campaign could not be generated because one of the selected Contacts is invalid. Re-select the contacts and try again.", code)
+        return diagnostic_user_message("Campaign could not be generated because one of the numeric fields contains an invalid value. Check Qty Outreach Tasks and Qty Times Per Week.", code)
+    if "date" in text or "time" in text or "timestamp" in text:
+        return diagnostic_user_message("Campaign could not be generated because one of the campaign date fields is invalid. Check PG Week Start, Campaign Start and Campaign End.", code)
+    if "sales_play" in text or "sales play" in text or "account_sales_plays" in text:
+        return diagnostic_user_message("Campaign could not be generated because the selected Sales Play is not valid for this account. Re-select the Account and Sales Play.", code)
+    if "contact" in text or "contacts" in text:
+        return diagnostic_user_message("Campaign could not be generated because the selected contact data could not be matched to the account. Re-select the contacts and try again.", code)
+    if "unable to find an available outreach slot" in text:
+        return diagnostic_user_message("Campaign could not be generated because PipeFlow could not find available schedule slots in the campaign window. Extend the Campaign End date or reduce Qty Outreach Tasks.", code)
+    if "outreach" in text or "database" in text or "relation" in text or "column" in text:
+        return diagnostic_user_message("Campaign could not be generated while saving Outreach tasks. Check Account, Contacts, Sales Play and schedule values, then try again.", code)
+    return diagnostic_user_message("Campaign could not be generated. Check Account, Contacts, Sales Play, date range and quantity fields.", code)
 
 initialise_auth_database()
 
@@ -1815,7 +1842,7 @@ def handle_unexpected_exception(exc):
         target = url_for("campaign_builder") if request.endpoint == "campaign_builder" else request.form.get("return_to") or request.referrer or url_for("home")
         return redirect_with_query(
             safe_redirect_target(target, "home"),
-            error=diagnostic_user_message(
+            error=campaign_exception_user_message(exc, code) if request.endpoint == "campaign_builder" else diagnostic_user_message(
                 "PipeFlow could not complete that save. The page has been kept available so you can review the data and try again.",
                 code,
             ),
@@ -11532,6 +11559,7 @@ def campaign_builder():
     generated_count = 0
     skipped_duplicate_count = 0
     generated_steps = []
+    campaign_generation_warnings = []
     error = request.args.get("error", "")
     selected_account_id = request.form.get("account_id") or request.args.get("account_id") or ""
     selected_contact_ids = request.form.getlist("contact_ids")
@@ -11563,16 +11591,22 @@ def campaign_builder():
         pg_week_start_raw = request.form.get("pg_week_start", "")
         campaign_start_raw = request.form.get("campaign_start_date", "")
         campaign_end_raw = request.form.get("campaign_end_date", "")
+        total_tasks_raw = str(request.form.get("total_outreach_tasks", "8") or "").strip()
+        times_per_week_raw = str(request.form.get("times_per_week", "2") or "").strip()
         try:
-            total_tasks = max(1, min(int(request.form.get("total_outreach_tasks", "8") or 8), 50))
+            total_tasks = int(total_tasks_raw)
         except ValueError:
-            total_tasks = 8
+            total_tasks = 0
         try:
-            times_per_week = max(1, min(int(request.form.get("times_per_week", "2") or 2), 7))
+            times_per_week = int(times_per_week_raw)
         except ValueError:
-            times_per_week = 2
-        selected_total_tasks = str(total_tasks)
-        selected_times_per_week = str(times_per_week)
+            times_per_week = 0
+        if total_tasks < 1 or total_tasks > 50:
+            error = "Qty Outreach Tasks must be a whole number from 1 to 50."
+        if not error and (times_per_week < 1 or times_per_week > 7):
+            error = "Qty Times Per Week must be a whole number from 1 to 7."
+        selected_total_tasks = total_tasks_raw
+        selected_times_per_week = times_per_week_raw
         contact_ids = [
             contact_id for contact_id in request.form.getlist("contact_ids")
             if str(contact_id or "").isdigit()
@@ -11590,28 +11624,15 @@ def campaign_builder():
             if activity_type in {template["activity_type"] for template in campaign_activity_options}
         ]
 
-        if account_id and not contact_ids:
-            contact_ids = [
-                str(row["id"])
-                for row in connection.execute("""
-                    SELECT id
-                    FROM contacts
-                    WHERE account_id = ?
-                      AND COALESCE(status, 'Active') = 'Active'
-                    ORDER BY name
-                """, (account_id,)).fetchall()
-            ]
-            selected_contact_ids = contact_ids
-
-        if not account_id:
+        if not error and not str(account_id or "").isdigit():
             error = "Select an account before generating a campaign."
-        elif not contact_ids:
-            error = "The selected account has no active contacts for campaign generation."
-        elif not fy_quarter_are_valid(selected_fy, selected_quarter):
+        elif not error and not contact_ids:
+            error = "Select at least one contact in the Contacts table before generating a campaign."
+        elif not error and not fy_quarter_are_valid(selected_fy, selected_quarter):
             error = fy_quarter_required_message()
-        elif not sales_play_allowed_for_account(connection, account_id, sales_play):
+        elif not error and not sales_play_allowed_for_account(connection, account_id, sales_play):
             error = "Select a Sales Play used for or associated to the selected account."
-        elif not pg_week_start_raw or not campaign_start_raw or not campaign_end_raw:
+        elif not error and (not pg_week_start_raw or not campaign_start_raw or not campaign_end_raw):
             error = "Enter PG week start, campaign start and campaign end dates before generating a campaign."
         else:
             today = datetime.now().date()
@@ -11691,17 +11712,25 @@ def campaign_builder():
                 submitted_at = current_app_datetime()
 
                 for contact in contacts:
-                    for step in build_campaign_schedule(
-                        campaign_start,
-                        campaign_end,
-                        total_tasks,
-                        times_per_week,
-                        schedule_templates,
-                        profile=profile,
-                        reserved_slots=reserved_slots,
-                        non_working_blocks=non_working_blocks,
-                        submitted_at=submitted_at
-                    ):
+                    try:
+                        contact_schedule = build_campaign_schedule(
+                            campaign_start,
+                            campaign_end,
+                            total_tasks,
+                            times_per_week,
+                            schedule_templates,
+                            profile=profile,
+                            reserved_slots=reserved_slots,
+                            non_working_blocks=non_working_blocks,
+                            submitted_at=submitted_at
+                        )
+                    except Exception as schedule_exc:
+                        code = log_diagnostic_exception("CAMPAIGN", schedule_exc, {"stage": "campaign_contact_schedule", "contact_id": contact["id"]})
+                        campaign_generation_warnings.append(
+                            f"{contact['name']}: schedule could not be built. Extend the campaign date range or reduce task quantity. Error code: {code}"
+                        )
+                        continue
+                    for step in contact_schedule:
                         action_date = step["action_date"]
                         subject = f"{step['subject_prefix']}: {sales_play}"
                         notes = (
@@ -11724,62 +11753,76 @@ def campaign_builder():
                             subject,
                         ):
                             skipped_duplicate_count += 1
-                            continue
-                        cursor = connection.execute("""
-                            INSERT INTO outreach (
-                                fy,
-                                quarter,
-                                campaign,
-                                sales_play,
-                                campaign_start_date,
-                                campaign_end_date,
-                                campaign_tasks_per_week,
-                                campaign_total_tasks,
-                                account_id,
-                                contact_id,
-                                activity_type,
-                                activity_date,
-                                activity_time,
-                                subject,
-                                notes,
-                                outcome,
-                                next_action,
-                                next_action_date,
-                                next_action_time,
-                                task_status,
-                                assigned_to
+                            campaign_generation_warnings.append(
+                                f"{contact['name']}: skipped duplicate {step['activity_type']} on {action_date.isoformat()} at {step['time']}."
                             )
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                                fy,
-                                quarter,
-                                campaign_name,
-                                sales_play,
-                                campaign_start.isoformat(),
-                                campaign_end.isoformat(),
-                                times_per_week,
-                                total_tasks,
-                                account_id,
-                                contact["id"],
-                                step["activity_type"],
-                                action_date.isoformat(),
-                                step["time"],
-                                subject,
-                                notes,
-                                "No Response",
-                                "",
-                                action_date.isoformat(),
-                                step["time"],
-                                "Not Started",
-                                assigned_to
-                        ))
-                        outreach_id = cursor.lastrowid
-                        if not outreach_id:
-                            row = connection.execute("SELECT MAX(id) AS id FROM outreach").fetchone()
-                            outreach_id = row["id"] if row and "id" in row.keys() else None
-                        if not outreach_id:
-                            raise RuntimeError("Campaign outreach save completed without returning a record id.")
-                        connection.commit()
+                            continue
+                        try:
+                            cursor = connection.execute("""
+                                INSERT INTO outreach (
+                                    fy,
+                                    quarter,
+                                    campaign,
+                                    sales_play,
+                                    campaign_start_date,
+                                    campaign_end_date,
+                                    campaign_tasks_per_week,
+                                    campaign_total_tasks,
+                                    account_id,
+                                    contact_id,
+                                    activity_type,
+                                    activity_date,
+                                    activity_time,
+                                    subject,
+                                    notes,
+                                    outcome,
+                                    next_action,
+                                    next_action_date,
+                                    next_action_time,
+                                    task_status,
+                                    assigned_to
+                                )
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                    fy,
+                                    quarter,
+                                    campaign_name,
+                                    sales_play,
+                                    campaign_start.isoformat(),
+                                    campaign_end.isoformat(),
+                                    times_per_week,
+                                    total_tasks,
+                                    account_id,
+                                    contact["id"],
+                                    step["activity_type"],
+                                    action_date.isoformat(),
+                                    step["time"],
+                                    subject,
+                                    notes,
+                                    "No Response",
+                                    "",
+                                    action_date.isoformat(),
+                                    step["time"],
+                                    "Not Started",
+                                    assigned_to
+                            ))
+                            outreach_id = cursor.lastrowid
+                            if not outreach_id:
+                                row = connection.execute("SELECT MAX(id) AS id FROM outreach").fetchone()
+                                outreach_id = row["id"] if row and "id" in row.keys() else None
+                            if not outreach_id:
+                                raise RuntimeError("Campaign outreach save completed without returning a record id.")
+                            connection.commit()
+                        except Exception as save_exc:
+                            code = log_diagnostic_exception("CAMPAIGN", save_exc, {"stage": "campaign_outreach_row_save", "contact_id": contact["id"], "activity_type": step["activity_type"]})
+                            try:
+                                connection.rollback()
+                            except Exception:
+                                pass
+                            campaign_generation_warnings.append(
+                                f"{contact['name']}: {step['activity_type']} on {action_date.isoformat()} at {step['time']} could not be saved. Check the selected account, contact, Sales Play and schedule. Error code: {code}"
+                            )
+                            continue
                         try:
                             save_outreach_recipients(connection, outreach_id, [(contact["id"], None)])
                             connection.commit()
@@ -11826,7 +11869,10 @@ def campaign_builder():
                     )
                 else:
                     connection.rollback()
-                    error = "No campaign tasks were created. Extend the campaign date range or increase the activity quantity."
+                    if campaign_generation_warnings:
+                        error = "No campaign tasks were created. Review the generation warnings below and adjust the affected field values."
+                    else:
+                        error = "No campaign tasks were created. Extend the campaign date range or increase the activity quantity."
 
     accounts = connection.execute("""
         SELECT
@@ -11883,6 +11929,7 @@ def campaign_builder():
         selected_campaign_activity_types=selected_campaign_activity_types,
         success_context_summary=success_context_summary,
         generated_steps=generated_steps,
+        campaign_generation_warnings=campaign_generation_warnings,
         error=error
     )
 
