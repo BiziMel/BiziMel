@@ -33,6 +33,7 @@
 
 <div class="form-card">
     <form method="POST" class="pipeflow-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-grid">
             <div class="form-group">
                 <label for="account_id">Account</label>

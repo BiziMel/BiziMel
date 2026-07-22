@@ -1005,6 +1005,7 @@ def diagnostic_error_code(area="APP"):
         "DASHBOARD": "DB",
         "OUTREACH-ADD": "OA",
         "OUTREACH-SAVE": "OS",
+        "CAMPAIGN": "CG",
     }
     prefix = area_codes.get(area, re.sub(r"[^A-Z0-9]", "", str(area or "APP").upper())[:2] or "AP")
     return f"PF-{prefix}-{secrets.token_hex(2).upper()}"
@@ -1807,9 +1808,10 @@ def apply_security_headers(response):
 def handle_unexpected_exception(exc):
     if isinstance(exc, HTTPException):
         return exc
-    code = log_diagnostic_exception("APP", exc, {"stage": "global_exception_handler"})
+    area = "CAMPAIGN" if request.endpoint == "campaign_builder" else "APP"
+    code = log_diagnostic_exception(area, exc, {"stage": "global_exception_handler"})
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-        target = request.form.get("return_to") or request.referrer or url_for("home")
+        target = url_for("campaign_builder") if request.endpoint == "campaign_builder" else request.form.get("return_to") or request.referrer or url_for("home")
         return redirect_with_query(
             safe_redirect_target(target, "home"),
             error=diagnostic_user_message(
@@ -11779,14 +11781,25 @@ def campaign_builder():
                         generated_count += 1
 
                 if generated_count:
-                    add_timeline_entry(
-                        connection,
-                        "account",
-                        account_id,
-                        "Campaign Built",
-                        f"Generated {generated_count} campaign outreach step(s) for sales play {sales_play} from {campaign_start.isoformat()} to {campaign_end.isoformat()} with {total_tasks} task(s) at {times_per_week} time(s) per week. {success_context_summary}"
-                    )
                     connection.commit()
+                    try:
+                        add_timeline_entry(
+                            connection,
+                            "account",
+                            account_id,
+                            "Campaign Built",
+                            f"Generated {generated_count} campaign outreach step(s) for sales play {sales_play} from {campaign_start.isoformat()} to {campaign_end.isoformat()} with {total_tasks} task(s) at {times_per_week} time(s) per week. {success_context_summary}"
+                        )
+                        connection.commit()
+                    except Exception as timeline_exc:
+                        log_diagnostic_exception("CAMPAIGN", timeline_exc, {"stage": "campaign_timeline_after_commit"})
+                        try:
+                            connection.rollback()
+                        except Exception:
+                            pass
+                    message = f"Campaign Generated: {generated_count} outreach task(s) created for {sales_play}."
+                    connection.close()
+                    return redirect(url_for("outreach", message=message))
                 elif skipped_duplicate_count:
                     connection.rollback()
                     error = (

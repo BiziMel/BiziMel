@@ -246,9 +246,13 @@ def main():
                 "quarter": "Q1",
                 "assigned_to": "Smoke Test Admin",
             },
+            follow_redirects=False,
         )
-        campaign_html = response.get_data(as_text=True)
-        assert_ok(response.status_code == 200 and "Campaign Generated" in campaign_html, "Campaign Builder save failed")
+        assert_ok(
+            response.status_code in (302, 303)
+            and "/outreach" in response.headers.get("Location", ""),
+            "Campaign Builder did not redirect to Outreach after save",
+        )
         connection = sqlite3.connect(db_path)
         campaign_count_after = connection.execute(
             "SELECT COUNT(*) FROM outreach WHERE campaign = ?",
