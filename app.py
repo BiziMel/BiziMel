@@ -11922,12 +11922,20 @@ def campaign_builder():
     accounts = connection.execute("""
         SELECT
             accounts.*,
-            COUNT(contacts.id) AS contact_count
+            (
+                SELECT COUNT(*)
+                FROM contacts
+                WHERE contacts.account_id = accounts.id
+                  AND COALESCE(contacts.status, 'Active') = 'Active'
+            ) AS contact_count
         FROM accounts
-        LEFT JOIN contacts ON contacts.account_id = accounts.id
-        GROUP BY accounts.id
-        HAVING COUNT(contacts.id) > 0
-        ORDER BY accounts.account_name
+        WHERE (
+            SELECT COUNT(*)
+            FROM contacts
+            WHERE contacts.account_id = accounts.id
+              AND COALESCE(contacts.status, 'Active') = 'Active'
+        ) > 0
+        ORDER BY accounts.account_name, accounts.business_unit
     """).fetchall()
 
     contacts = connection.execute("""

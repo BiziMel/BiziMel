@@ -222,6 +222,11 @@ def main():
             "Smoke Test Play" in campaign_builder_html,
             "Campaign Builder sales play options missing on first load",
         )
+        app_source = Path(pipeflow_app.__file__).read_text()
+        assert_ok(
+            "GROUP BY accounts.id\n        HAVING COUNT(contacts.id) > 0" not in app_source,
+            "Campaign Builder contains a Postgres-incompatible account grouping query",
+        )
         connection = sqlite3.connect(db_path)
         campaign_count_before = connection.execute(
             "SELECT COUNT(*) FROM outreach WHERE campaign = ?",
