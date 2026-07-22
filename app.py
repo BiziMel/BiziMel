@@ -6841,6 +6841,93 @@ def save_new_outreach_with_recovery(connection, form, requested_status, sales_pl
             )
 
 
+def insert_campaign_outreach_row(connection, values):
+    cursor = connection.execute("""
+        INSERT INTO outreach (
+            fy,
+            quarter,
+            campaign,
+            sales_play,
+            campaign_start_date,
+            campaign_end_date,
+            campaign_tasks_per_week,
+            campaign_total_tasks,
+            account_id,
+            contact_id,
+            activity_type,
+            activity_date,
+            activity_time,
+            subject,
+            notes,
+            outcome,
+            next_action,
+            next_action_date,
+            next_action_time,
+            task_status,
+            assigned_to
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        values["fy"],
+        values["quarter"],
+        values["campaign_name"],
+        values["sales_play"],
+        values["campaign_start_date"],
+        values["campaign_end_date"],
+        values["times_per_week"],
+        values["total_tasks"],
+        values["account_id"],
+        values["contact_id"],
+        values["activity_type"],
+        values["activity_date"],
+        values["activity_time"],
+        values["subject"],
+        values["notes"],
+        "No Response",
+        "",
+        values["activity_date"],
+        values["activity_time"],
+        "Not Started",
+        values["assigned_to"],
+    ))
+    outreach_id = cursor.lastrowid
+    if not outreach_id:
+        row = connection.execute("SELECT MAX(id) AS id FROM outreach").fetchone()
+        outreach_id = row["id"] if row and "id" in row.keys() else None
+    if not outreach_id:
+        raise RuntimeError("Campaign outreach save completed without returning a record id.")
+    connection.commit()
+    return outreach_id
+
+
+def save_campaign_outreach_row_with_recovery(connection, values):
+    try:
+        return connection, insert_campaign_outreach_row(connection, values), ""
+    except Exception as exc:
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+        if not database_error_looks_like_schema_drift(exc):
+            code = log_diagnostic_exception("CAMPAIGN", exc, {"stage": "campaign_outreach_row_save", "contact_id": values.get("contact_id"), "activity_type": values.get("activity_type")})
+            return connection, None, campaign_exception_user_message(exc, code)
+        try:
+            connection.close()
+        except Exception:
+            pass
+        initialise_database(force=True)
+        connection = get_db_connection()
+        try:
+            return connection, insert_campaign_outreach_row(connection, values), ""
+        except Exception as retry_exc:
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            code = log_diagnostic_exception("CAMPAIGN", retry_exc, {"stage": "campaign_outreach_row_save_retry", "contact_id": values.get("contact_id"), "activity_type": values.get("activity_type")})
+            return connection, None, campaign_exception_user_message(retry_exc, code)
+
+
 def persist_outreach_update(connection, outreach_id, outreach_item, new_values, recipients, labels):
     changes = build_change_log(outreach_item, new_values, labels)
     connection.execute("""
@@ -11757,70 +11844,28 @@ def campaign_builder():
                                 f"{contact['name']}: skipped duplicate {step['activity_type']} on {action_date.isoformat()} at {step['time']}."
                             )
                             continue
-                        try:
-                            cursor = connection.execute("""
-                                INSERT INTO outreach (
-                                    fy,
-                                    quarter,
-                                    campaign,
-                                    sales_play,
-                                    campaign_start_date,
-                                    campaign_end_date,
-                                    campaign_tasks_per_week,
-                                    campaign_total_tasks,
-                                    account_id,
-                                    contact_id,
-                                    activity_type,
-                                    activity_date,
-                                    activity_time,
-                                    subject,
-                                    notes,
-                                    outcome,
-                                    next_action,
-                                    next_action_date,
-                                    next_action_time,
-                                    task_status,
-                                    assigned_to
-                                )
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (
-                                    fy,
-                                    quarter,
-                                    campaign_name,
-                                    sales_play,
-                                    campaign_start.isoformat(),
-                                    campaign_end.isoformat(),
-                                    times_per_week,
-                                    total_tasks,
-                                    account_id,
-                                    contact["id"],
-                                    step["activity_type"],
-                                    action_date.isoformat(),
-                                    step["time"],
-                                    subject,
-                                    notes,
-                                    "No Response",
-                                    "",
-                                    action_date.isoformat(),
-                                    step["time"],
-                                    "Not Started",
-                                    assigned_to
-                            ))
-                            outreach_id = cursor.lastrowid
-                            if not outreach_id:
-                                row = connection.execute("SELECT MAX(id) AS id FROM outreach").fetchone()
-                                outreach_id = row["id"] if row and "id" in row.keys() else None
-                            if not outreach_id:
-                                raise RuntimeError("Campaign outreach save completed without returning a record id.")
-                            connection.commit()
-                        except Exception as save_exc:
-                            code = log_diagnostic_exception("CAMPAIGN", save_exc, {"stage": "campaign_outreach_row_save", "contact_id": contact["id"], "activity_type": step["activity_type"]})
-                            try:
-                                connection.rollback()
-                            except Exception:
-                                pass
+                        campaign_row_values = {
+                            "fy": fy,
+                            "quarter": quarter,
+                            "campaign_name": campaign_name,
+                            "sales_play": sales_play,
+                            "campaign_start_date": campaign_start.isoformat(),
+                            "campaign_end_date": campaign_end.isoformat(),
+                            "times_per_week": times_per_week,
+                            "total_tasks": total_tasks,
+                            "account_id": account_id,
+                            "contact_id": contact["id"],
+                            "activity_type": step["activity_type"],
+                            "activity_date": action_date.isoformat(),
+                            "activity_time": step["time"],
+                            "subject": subject,
+                            "notes": notes,
+                            "assigned_to": assigned_to,
+                        }
+                        connection, outreach_id, row_error = save_campaign_outreach_row_with_recovery(connection, campaign_row_values)
+                        if row_error:
                             campaign_generation_warnings.append(
-                                f"{contact['name']}: {step['activity_type']} on {action_date.isoformat()} at {step['time']} could not be saved. Check the selected account, contact, Sales Play and schedule. Error code: {code}"
+                                f"{contact['name']}: {step['activity_type']} on {action_date.isoformat()} at {step['time']} could not be saved. {row_error}"
                             )
                             continue
                         try:
