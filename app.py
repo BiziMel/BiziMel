@@ -7744,19 +7744,19 @@ def campaign_selected_account_with_recovery(connection, account_id):
 
 def campaign_builder_sales_play_options(connection):
     try:
-        return account_sales_play_options(connection)
+        return connection, account_sales_play_options(connection)
     except Exception as exc:
         connection, should_retry = recover_campaign_connection(connection, exc, "campaign_sales_play_options")
         if should_retry:
             try:
-                return account_sales_play_options(connection)
+                return connection, account_sales_play_options(connection)
             except Exception as retry_exc:
                 log_diagnostic_exception("CAMPAIGN", retry_exc, {"stage": "campaign_sales_play_options_retry"})
                 try:
                     connection.rollback()
                 except Exception:
                     pass
-        return []
+        return connection, []
 
 
 def activity_update_required_message():
@@ -12035,11 +12035,15 @@ def campaign_builder():
             error = "Select at least one contact in the Contacts table before generating a campaign."
         elif not error and not fy_quarter_are_valid(selected_fy, selected_quarter):
             error = fy_quarter_required_message()
-        elif not error and not sales_play_allowed_for_account(connection, account_id, sales_play):
-            error = "Select a Sales Play used for or associated to the selected account."
-        elif not error and (not pg_week_start_raw or not campaign_start_raw or not campaign_end_raw):
+        elif not error:
+            connection, sales_play_allowed, sales_play_validation_error = campaign_sales_play_allowed_with_recovery(connection, account_id, sales_play)
+            if sales_play_validation_error:
+                error = sales_play_validation_error
+            elif not sales_play_allowed:
+                error = "Select a Sales Play used for or associated to the selected account."
+        if not error and (not pg_week_start_raw or not campaign_start_raw or not campaign_end_raw):
             error = "Enter PG week start, campaign start and campaign end dates before generating a campaign."
-        else:
+        if not error:
             today = datetime.now().date()
             try:
                 pg_week_start = datetime.strptime(pg_week_start_raw, "%Y-%m-%d").date()
@@ -12058,20 +12062,9 @@ def campaign_builder():
             if error:
                 contacts = []
             else:
-                placeholders = ",".join("?" for _ in contact_ids)
-                contacts = connection.execute(f"""
-                    SELECT *
-                    FROM contacts
-                    WHERE account_id = ?
-                      AND id IN ({placeholders})
-                    ORDER BY name
-                """, [account_id, *contact_ids]).fetchall()
+                connection, contacts = campaign_selected_contacts_with_recovery(connection, account_id, contact_ids)
 
-            account = connection.execute("""
-                SELECT account_name
-                FROM accounts
-                WHERE id = ?
-            """, (account_id,)).fetchone()
+            connection, account = campaign_selected_account_with_recovery(connection, account_id)
 
             if not account:
                 error = "The selected account could not be found."
@@ -12184,18 +12177,18 @@ def campaign_builder():
                                 f"{contact['name']}: {step['activity_type']} on {action_date.isoformat()} at {step['time']} could not be saved. {row_error}"
                             )
                             continue
-                        try:
-                            save_outreach_recipients(connection, outreach_id, [(contact["id"], None)])
-                            connection.commit()
-                        except Exception as recipient_exc:
-                            # The outreach row stores the primary contact_id, so the
-                            # generated task remains usable even if the multi-recipient
-                            # side table has a hosted schema issue.
-                            log_diagnostic_exception("CAMPAIGN", recipient_exc, {"stage": "campaign_recipient_link"})
-                            try:
-                                connection.rollback()
-                            except Exception:
-                                pass
+                        # The outreach row stores the primary contact_id, so the
+                        # generated task remains usable even if the multi-recipient
+                        # side table has a hosted schema issue. We still retry the
+                        # link once after schema refresh so reports and multi-contact
+                        # displays keep the richer recipient mapping.
+                        connection, recipient_warning = save_campaign_recipients_with_recovery(
+                            connection,
+                            outreach_id,
+                            [(contact["id"], None)]
+                        )
+                        if recipient_warning:
+                            campaign_generation_warnings.append(recipient_warning)
                         generated_count += 1
                         generated_steps.append({
                             "outreach_id": outreach_id,
@@ -12241,7 +12234,7 @@ def campaign_builder():
     # Load the complete account/play map so a first-load page can reveal valid
     # options immediately after the user selects an account.
     selected_account_for_contacts = selected_account_id
-    sales_play_rows = account_sales_play_options(connection)
+    connection, sales_play_rows = campaign_builder_sales_play_options(connection)
     sales_play_assets = campaign_builder_sales_play_assets(connection)
     partner_activity_options = campaign_builder_partner_activity_options(connection)
 

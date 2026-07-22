@@ -296,6 +296,166 @@ def main():
                 "pg_week_start": pg_week_start,
                 "campaign_start_date": campaign_start,
                 "campaign_end_date": campaign_end,
+                "total_outreach_tasks": "2",
+                "times_per_week": "1",
+                "sales_play": "Smoke Test Play",
+                "fy": "27",
+                "quarter": "Q1",
+                "assigned_to": "Smoke Test Admin",
+            },
+            follow_redirects=True,
+        )
+        assert_ok(
+            response.status_code == 200
+            and "Select at least one contact" in response.get_data(as_text=True),
+            "Campaign Builder did not validate missing contacts clearly",
+        )
+
+        response = client.post(
+            "/outreach/campaign-builder",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "account_id": str(account_id),
+                "pg_week_start": pg_week_start,
+                "campaign_start_date": campaign_start,
+                "campaign_end_date": campaign_end,
+                "total_outreach_tasks": "2",
+                "times_per_week": "1",
+                "sales_play": "Not Associated Play",
+                "fy": "27",
+                "quarter": "Q1",
+                "assigned_to": "Smoke Test Admin",
+                "contact_ids": [str(contact_id)],
+            },
+            follow_redirects=True,
+        )
+        assert_ok(
+            response.status_code == 200
+            and "Select a Sales Play used for or associated to the selected account." in response.get_data(as_text=True),
+            "Campaign Builder did not validate account-specific Sales Play selection",
+        )
+
+        filter_campaign_start = (today + timedelta(days=35)).isoformat()
+        filter_campaign_end = (today + timedelta(days=45)).isoformat()
+        connection = sqlite3.connect(db_path)
+        connection.execute("ALTER TABLE outreach_recipients DROP COLUMN sort_order")
+        connection.commit()
+        connection.close()
+        response = client.post(
+            "/outreach/campaign-builder",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "account_id": str(account_id),
+                "pg_week_start": (today + timedelta(days=50)).isoformat(),
+                "campaign_start_date": filter_campaign_start,
+                "campaign_end_date": filter_campaign_end,
+                "total_outreach_tasks": "3",
+                "times_per_week": "2",
+                "sales_play": "Smoke Test Play",
+                "fy": "27",
+                "quarter": "Q1",
+                "assigned_to": "Smoke Test Admin",
+                "contact_ids": [str(second_contact_id)],
+                "campaign_activity_types": ["Phone"],
+            },
+            follow_redirects=True,
+        )
+        filtered_campaign_html = response.get_data(as_text=True)
+        assert_ok(
+            response.status_code == 200
+            and "Campaign Generated" in filtered_campaign_html
+            and "Activity filter applied: Phone" in filtered_campaign_html,
+            "Campaign Builder did not generate with selected activity filters and recipient schema recovery",
+        )
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        filtered_types = [
+            row["activity_type"]
+            for row in connection.execute(
+                """
+                SELECT activity_type
+                FROM outreach
+                WHERE campaign = ?
+                  AND contact_id = ?
+                  AND campaign_start_date = ?
+                ORDER BY next_action_date, next_action_time
+                """,
+                ("Smoke Test Play", second_contact_id, filter_campaign_start),
+            ).fetchall()
+        ]
+        filtered_recipient_count = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM outreach_recipients
+            WHERE outreach_id IN (
+                SELECT id
+                FROM outreach
+                WHERE campaign = ?
+                  AND contact_id = ?
+                  AND campaign_start_date = ?
+            )
+            """,
+            ("Smoke Test Play", second_contact_id, filter_campaign_start),
+        ).fetchone()[0]
+        connection.close()
+        assert_ok(filtered_types and filtered_types[0] == "VITO", "Campaign Builder did not keep VITO as the first filtered campaign step")
+        assert_ok(set(filtered_types[1:]).issubset({"Phone"}), "Campaign Builder generated an unselected activity type after VITO")
+        assert_ok(filtered_recipient_count == len(filtered_types), "Campaign Builder did not recover and save recipient links")
+
+        response = client.post(
+            "/outreach/campaign-builder",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "account_id": str(account_id),
+                "pg_week_start": (today + timedelta(days=50)).isoformat(),
+                "campaign_start_date": filter_campaign_start,
+                "campaign_end_date": filter_campaign_end,
+                "total_outreach_tasks": "3",
+                "times_per_week": "2",
+                "sales_play": "Smoke Test Play",
+                "fy": "27",
+                "quarter": "Q1",
+                "assigned_to": "Smoke Test Admin",
+                "contact_ids": [str(second_contact_id)],
+                "campaign_activity_types": ["Phone"],
+            },
+            follow_redirects=True,
+        )
+        assert_ok(
+            response.status_code == 200
+            and "Internal Server Error" not in response.get_data(as_text=True),
+            "Campaign Builder did not handle repeated campaign generation cleanly",
+        )
+        connection = sqlite3.connect(db_path)
+        duplicate_campaign_rows = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM (
+                SELECT contact_id, next_action_date, next_action_time, activity_type, subject, COUNT(*) AS total
+                FROM outreach
+                WHERE campaign = ?
+                  AND contact_id = ?
+                  AND campaign_start_date = ?
+                GROUP BY contact_id, next_action_date, next_action_time, activity_type, subject
+                HAVING COUNT(*) > 1
+            )
+            """,
+            ("Smoke Test Play", second_contact_id, filter_campaign_start),
+        ).fetchone()[0]
+        connection.close()
+        assert_ok(
+            duplicate_campaign_rows == 0,
+            "Campaign Builder created duplicate contact/date/time/activity/subject rows",
+        )
+
+        response = client.post(
+            "/outreach/campaign-builder",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "account_id": str(account_id),
+                "pg_week_start": pg_week_start,
+                "campaign_start_date": campaign_start,
+                "campaign_end_date": campaign_end,
                 "total_outreach_tasks": "not-a-number",
                 "times_per_week": "2",
                 "sales_play": "Smoke Test Play",

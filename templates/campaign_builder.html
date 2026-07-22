@@ -264,6 +264,7 @@
     const campaignStartInput = document.getElementById("campaign_start_date");
     const campaignEndInput = document.getElementById("campaign_end_date");
     const accountInput = document.getElementById("account_id");
+    const salesPlayInput = document.getElementById("sales_play");
     const contactOptions = Array.from(document.querySelectorAll(".campaign-contact-option"));
     const campaignContactEmpty = document.getElementById("campaign_contact_empty");
     const salesPlayDatalist = document.getElementById("sales_play_options");
@@ -351,13 +352,21 @@
         }
         if (salesPlayDatalist) {
             salesPlayDatalist.innerHTML = "";
-            allSalesPlayOptions
-                .filter((option) => selectedAccountId && option.accountId === selectedAccountId)
+            const validSalesPlays = allSalesPlayOptions
+                .filter((option) => selectedAccountId && option.accountId === selectedAccountId);
+            validSalesPlays
                 .forEach((option) => {
                     const element = document.createElement("option");
                     element.value = option.value;
                     salesPlayDatalist.appendChild(element);
                 });
+            if (salesPlayInput && salesPlayInput.value) {
+                const currentValue = salesPlayInput.value.trim().toLowerCase();
+                const stillValid = validSalesPlays.some((option) => option.value.trim().toLowerCase() === currentValue);
+                if (!stillValid) {
+                    salesPlayInput.value = "";
+                }
+            }
         }
     }
 
