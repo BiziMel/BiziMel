@@ -237,6 +237,7 @@ def main():
         campaign_end = (today + timedelta(days=14)).isoformat()
         pg_week_start = (today + timedelta(days=21)).isoformat()
         connection = sqlite3.connect(db_path)
+        connection.execute("ALTER TABLE contacts DROP COLUMN personal_win")
         connection.execute("ALTER TABLE outreach DROP COLUMN campaign_start_date")
         connection.commit()
         connection.close()

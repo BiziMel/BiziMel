@@ -3134,6 +3134,45 @@ def build_campaign_success_context(connection, account_id, contact_ids, sales_pl
     }
 
 
+def safe_campaign_success_context(connection, account_id, contact_ids, sales_play):
+    fallback_context = {
+        "account": None,
+        "templates": campaign_step_templates(),
+        "summary": (
+            "Historic learning is temporarily unavailable, so PipeFlow used the standard "
+            "campaign sequence and will learn from this generated activity."
+        ),
+        "scores": {},
+    }
+    try:
+        return connection, build_campaign_success_context(connection, account_id, contact_ids, sales_play), ""
+    except Exception as exc:
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+        if database_error_looks_like_schema_drift(exc):
+            try:
+                connection.close()
+            except Exception:
+                pass
+            initialise_database(force=True)
+            connection = get_db_connection()
+            try:
+                return connection, build_campaign_success_context(connection, account_id, contact_ids, sales_play), ""
+            except Exception as retry_exc:
+                exc = retry_exc
+                try:
+                    connection.rollback()
+                except Exception:
+                    pass
+        code = log_diagnostic_exception("CAMPAIGN", exc, {"stage": "campaign_success_context"})
+        return connection, fallback_context, (
+            "Historic campaign learning could not be loaded for this run, so PipeFlow used "
+            f"the standard campaign sequence. Error code: {code}"
+        )
+
+
 def campaign_activity_templates_for_selection(selected_activity_types, learned_templates=None):
     base_templates = campaign_step_templates()
     template_by_type = {template["activity_type"]: template for template in base_templates}
@@ -6928,6 +6967,81 @@ def save_campaign_outreach_row_with_recovery(connection, values):
             return connection, None, campaign_exception_user_message(retry_exc, code)
 
 
+def save_campaign_recipients_with_recovery(connection, outreach_id, recipients):
+    try:
+        save_outreach_recipients(connection, outreach_id, recipients)
+        connection.commit()
+        return connection, ""
+    except Exception as exc:
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+        if not database_error_looks_like_schema_drift(exc):
+            code = log_diagnostic_exception("CAMPAIGN", exc, {"stage": "campaign_recipient_link", "outreach_id": outreach_id})
+            return connection, f"Recipient links could not be saved for outreach #{outreach_id}. Error code: {code}"
+        try:
+            connection.close()
+        except Exception:
+            pass
+        initialise_database(force=True)
+        connection = get_db_connection()
+        try:
+            save_outreach_recipients(connection, outreach_id, recipients)
+            connection.commit()
+            return connection, ""
+        except Exception as retry_exc:
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            code = log_diagnostic_exception("CAMPAIGN", retry_exc, {"stage": "campaign_recipient_link_retry", "outreach_id": outreach_id})
+            return connection, f"Recipient links could not be saved for outreach #{outreach_id}. Error code: {code}"
+
+
+def campaign_reserved_slots_with_recovery(connection):
+    query = """
+        SELECT next_action_date, next_action_time
+        FROM outreach
+        WHERE next_action_date IS NOT NULL
+          AND next_action_date != ''
+          AND COALESCE(task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
+    """
+    try:
+        reserved_rows = connection.execute(query).fetchall()
+    except Exception as exc:
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+        if database_error_looks_like_schema_drift(exc):
+            try:
+                connection.close()
+            except Exception:
+                pass
+            initialise_database(force=True)
+            connection = get_db_connection()
+            try:
+                reserved_rows = connection.execute(query).fetchall()
+            except Exception as retry_exc:
+                code = log_diagnostic_exception("CAMPAIGN", retry_exc, {"stage": "campaign_reserved_slots_retry"})
+                return connection, set(), (
+                    "Existing outreach schedules could not be checked, so PipeFlow generated "
+                    f"against available campaign dates only. Error code: {code}"
+                )
+        else:
+            code = log_diagnostic_exception("CAMPAIGN", exc, {"stage": "campaign_reserved_slots"})
+            return connection, set(), (
+                "Existing outreach schedules could not be checked, so PipeFlow generated "
+                f"against available campaign dates only. Error code: {code}"
+            )
+    return connection, {
+        (row["next_action_date"], row["next_action_time"] or "09:00")
+        for row in reserved_rows
+        if row["next_action_date"]
+    }, ""
+
+
 def persist_outreach_update(connection, outreach_id, outreach_item, new_values, recipients, labels):
     changes = build_change_log(outreach_item, new_values, labels)
     connection.execute("""
@@ -7429,6 +7543,220 @@ def account_partner_activity_options(connection):
         GROUP BY partner_contact_accounts.account_id, partners.id, partners.partner_name, partners.partner_type
         ORDER BY partners.partner_name
     """).fetchall()
+
+
+def recover_campaign_connection(connection, exc, stage):
+    try:
+        connection.rollback()
+    except Exception:
+        pass
+    if not database_error_looks_like_schema_drift(exc):
+        log_diagnostic_exception("CAMPAIGN", exc, {"stage": stage})
+        return connection, False
+    try:
+        connection.close()
+    except Exception:
+        pass
+    initialise_database(force=True)
+    return get_db_connection(), True
+
+
+def campaign_profile_and_blocks(connection):
+    query_profile = """
+        SELECT *
+        FROM user_profile
+        WHERE id = 1
+    """
+    query_blocks = """
+        SELECT *
+        FROM non_working_blocks
+        ORDER BY start_date, end_date, id
+    """
+    try:
+        profile = connection.execute(query_profile).fetchone()
+        non_working_block_rows = connection.execute(query_blocks).fetchall()
+        return connection, profile, non_working_block_rows, parse_non_working_blocks(non_working_block_rows)
+    except Exception as exc:
+        connection, should_retry = recover_campaign_connection(connection, exc, "campaign_profile_blocks")
+        if should_retry:
+            try:
+                profile = connection.execute(query_profile).fetchone()
+                non_working_block_rows = connection.execute(query_blocks).fetchall()
+                return connection, profile, non_working_block_rows, parse_non_working_blocks(non_working_block_rows)
+            except Exception as retry_exc:
+                log_diagnostic_exception("CAMPAIGN", retry_exc, {"stage": "campaign_profile_blocks_retry"})
+        return connection, None, [], []
+
+
+def campaign_builder_accounts(connection):
+    query = """
+        SELECT
+            accounts.*,
+            (
+                SELECT COUNT(*)
+                FROM contacts
+                WHERE contacts.account_id = accounts.id
+                  AND COALESCE(contacts.status, 'Active') = 'Active'
+            ) AS contact_count
+        FROM accounts
+        WHERE (
+            SELECT COUNT(*)
+            FROM contacts
+            WHERE contacts.account_id = accounts.id
+              AND COALESCE(contacts.status, 'Active') = 'Active'
+        ) > 0
+        ORDER BY accounts.account_name, accounts.business_unit
+    """
+    try:
+        return connection, connection.execute(query).fetchall()
+    except Exception as exc:
+        connection, should_retry = recover_campaign_connection(connection, exc, "campaign_accounts")
+        if should_retry:
+            try:
+                return connection, connection.execute(query).fetchall()
+            except Exception as retry_exc:
+                log_diagnostic_exception("CAMPAIGN", retry_exc, {"stage": "campaign_accounts_retry"})
+        return connection, []
+
+
+def campaign_builder_contacts(connection):
+    query = """
+        SELECT contacts.*, accounts.account_name
+        FROM contacts
+        LEFT JOIN accounts ON contacts.account_id = accounts.id
+        WHERE COALESCE(contacts.status, 'Active') = 'Active'
+        ORDER BY
+            CASE WHEN accounts.pg_bible_order IS NULL THEN 1 ELSE 0 END,
+            accounts.pg_bible_order,
+            accounts.account_name,
+            contacts.name
+    """
+    try:
+        return connection, connection.execute(query).fetchall()
+    except Exception as exc:
+        connection, should_retry = recover_campaign_connection(connection, exc, "campaign_contacts")
+        if should_retry:
+            try:
+                return connection, connection.execute(query).fetchall()
+            except Exception as retry_exc:
+                log_diagnostic_exception("CAMPAIGN", retry_exc, {"stage": "campaign_contacts_retry"})
+        return connection, []
+
+
+def campaign_builder_sales_play_assets(connection):
+    try:
+        return sales_play_asset_map(connection)
+    except Exception as exc:
+        log_diagnostic_exception("CAMPAIGN", exc, {"stage": "campaign_sales_play_assets"})
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+        return {}
+
+
+def campaign_builder_partner_activity_options(connection):
+    try:
+        return account_partner_activity_options(connection)
+    except Exception as exc:
+        log_diagnostic_exception("CAMPAIGN", exc, {"stage": "campaign_partner_activity_options"})
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+        return []
+
+
+def campaign_sales_play_allowed_with_recovery(connection, account_id, sales_play):
+    try:
+        return connection, sales_play_allowed_for_account(connection, account_id, sales_play), ""
+    except Exception as exc:
+        connection, should_retry = recover_campaign_connection(connection, exc, "campaign_sales_play_allowed")
+        if should_retry:
+            try:
+                return connection, sales_play_allowed_for_account(connection, account_id, sales_play), ""
+            except Exception as retry_exc:
+                exc = retry_exc
+                try:
+                    connection.rollback()
+                except Exception:
+                    pass
+                log_diagnostic_exception("CAMPAIGN", retry_exc, {"stage": "campaign_sales_play_allowed_retry"})
+        code = log_diagnostic_exception("CAMPAIGN", exc, {"stage": "campaign_sales_play_allowed_failed"})
+        return connection, False, diagnostic_user_message(
+            "Campaign could not validate the selected Sales Play. Re-select the Account and Sales Play, then try again.",
+            code,
+        )
+
+
+def campaign_selected_contacts_with_recovery(connection, account_id, contact_ids):
+    if not contact_ids:
+        return connection, []
+    placeholders = ",".join("?" for _ in contact_ids)
+    query = f"""
+        SELECT *
+        FROM contacts
+        WHERE account_id = ?
+          AND id IN ({placeholders})
+        ORDER BY name
+    """
+    params = [account_id, *contact_ids]
+    try:
+        return connection, connection.execute(query, params).fetchall()
+    except Exception as exc:
+        connection, should_retry = recover_campaign_connection(connection, exc, "campaign_selected_contacts")
+        if should_retry:
+            try:
+                return connection, connection.execute(query, params).fetchall()
+            except Exception as retry_exc:
+                log_diagnostic_exception("CAMPAIGN", retry_exc, {"stage": "campaign_selected_contacts_retry"})
+                try:
+                    connection.rollback()
+                except Exception:
+                    pass
+        return connection, []
+
+
+def campaign_selected_account_with_recovery(connection, account_id):
+    try:
+        return connection, connection.execute("""
+            SELECT account_name
+            FROM accounts
+            WHERE id = ?
+        """, (account_id,)).fetchone()
+    except Exception as exc:
+        connection, should_retry = recover_campaign_connection(connection, exc, "campaign_selected_account")
+        if should_retry:
+            try:
+                return connection, connection.execute("""
+                    SELECT account_name
+                    FROM accounts
+                    WHERE id = ?
+                """, (account_id,)).fetchone()
+            except Exception as retry_exc:
+                log_diagnostic_exception("CAMPAIGN", retry_exc, {"stage": "campaign_selected_account_retry"})
+                try:
+                    connection.rollback()
+                except Exception:
+                    pass
+        return connection, None
+
+
+def campaign_builder_sales_play_options(connection):
+    try:
+        return account_sales_play_options(connection)
+    except Exception as exc:
+        connection, should_retry = recover_campaign_connection(connection, exc, "campaign_sales_play_options")
+        if should_retry:
+            try:
+                return account_sales_play_options(connection)
+            except Exception as retry_exc:
+                log_diagnostic_exception("CAMPAIGN", retry_exc, {"stage": "campaign_sales_play_options_retry"})
+                try:
+                    connection.rollback()
+                except Exception:
+                    pass
+        return []
 
 
 def activity_update_required_message():
@@ -11661,17 +11989,7 @@ def campaign_builder():
     campaign_activity_options = campaign_step_templates()
     selected_campaign_activity_types = request.form.getlist("campaign_activity_types")
     success_context_summary = ""
-    profile = connection.execute("""
-        SELECT *
-        FROM user_profile
-        WHERE id = 1
-    """).fetchone()
-    non_working_block_rows = connection.execute("""
-        SELECT *
-        FROM non_working_blocks
-        ORDER BY start_date, end_date, id
-    """).fetchall()
-    non_working_blocks = parse_non_working_blocks(non_working_block_rows)
+    connection, profile, non_working_block_rows, non_working_blocks = campaign_profile_and_blocks(connection)
 
     if request.method == "POST":
         account_id = request.form.get("account_id")
@@ -11767,7 +12085,14 @@ def campaign_builder():
                 assigned_to = request.form.get("assigned_to") or default_outreach_assignee()
                 fy = selected_fy
                 quarter = selected_quarter
-                success_context = build_campaign_success_context(connection, account_id, valid_contact_ids, sales_play)
+                connection, success_context, success_context_warning = safe_campaign_success_context(
+                    connection,
+                    account_id,
+                    valid_contact_ids,
+                    sales_play
+                )
+                if success_context_warning:
+                    campaign_generation_warnings.append(success_context_warning)
                 success_context_summary = success_context["summary"]
                 schedule_templates = campaign_activity_templates_for_selection(
                     selected_campaign_activity_types,
@@ -11784,18 +12109,9 @@ def campaign_builder():
                     )
                 selected_fy = fy
                 selected_quarter = quarter
-                reserved_rows = connection.execute("""
-                    SELECT next_action_date, next_action_time
-                    FROM outreach
-                    WHERE next_action_date IS NOT NULL
-                      AND next_action_date != ''
-                      AND COALESCE(task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled')
-                """).fetchall()
-                reserved_slots = {
-                    (row["next_action_date"], row["next_action_time"] or "09:00")
-                    for row in reserved_rows
-                    if row["next_action_date"]
-                }
+                connection, reserved_slots, reserved_warning = campaign_reserved_slots_with_recovery(connection)
+                if reserved_warning:
+                    campaign_generation_warnings.append(reserved_warning)
                 submitted_at = current_app_datetime()
 
                 for contact in contacts:
@@ -11919,43 +12235,15 @@ def campaign_builder():
                     else:
                         error = "No campaign tasks were created. Extend the campaign date range or increase the activity quantity."
 
-    accounts = connection.execute("""
-        SELECT
-            accounts.*,
-            (
-                SELECT COUNT(*)
-                FROM contacts
-                WHERE contacts.account_id = accounts.id
-                  AND COALESCE(contacts.status, 'Active') = 'Active'
-            ) AS contact_count
-        FROM accounts
-        WHERE (
-            SELECT COUNT(*)
-            FROM contacts
-            WHERE contacts.account_id = accounts.id
-              AND COALESCE(contacts.status, 'Active') = 'Active'
-        ) > 0
-        ORDER BY accounts.account_name, accounts.business_unit
-    """).fetchall()
-
-    contacts = connection.execute("""
-        SELECT contacts.*, accounts.account_name
-        FROM contacts
-        LEFT JOIN accounts ON contacts.account_id = accounts.id
-        WHERE COALESCE(contacts.status, 'Active') = 'Active'
-        ORDER BY
-            CASE WHEN accounts.pg_bible_order IS NULL THEN 1 ELSE 0 END,
-            accounts.pg_bible_order,
-            accounts.account_name,
-            contacts.name
-    """).fetchall()
+    connection, accounts = campaign_builder_accounts(connection)
+    connection, contacts = campaign_builder_contacts(connection)
     # Campaign Builder filters Sales Plays client-side when the Account changes.
     # Load the complete account/play map so a first-load page can reveal valid
     # options immediately after the user selects an account.
     selected_account_for_contacts = selected_account_id
     sales_play_rows = account_sales_play_options(connection)
-    sales_play_assets = sales_play_asset_map(connection)
-    partner_activity_options = account_partner_activity_options(connection)
+    sales_play_assets = campaign_builder_sales_play_assets(connection)
+    partner_activity_options = campaign_builder_partner_activity_options(connection)
 
     connection.close()
 
