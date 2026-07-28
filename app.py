@@ -25,7 +25,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.8"
 APP_RELEASE_DATE = "2026-07-28"
-APP_BUILD = "2026-07-28-v2.6.8-pg-rag-broadcast-global-insights-r1"
+APP_BUILD = "2026-07-28-v2.6.8-pg-rag-broadcast-global-insights-campaign-hardening-r2"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -47,6 +47,7 @@ RELEASE_NOTES = [
             "Reviewed and tightened PG Progress RAG rules so contact and account status follows recent positive responses, meeting bookings, future meetings and 30-day relapse behaviour.",
             "Allowed Application Admins to share broadcasts with all companies while preventing Company Admins from editing global broadcasts.",
             "Reduced duplicated Execution Insights and added more account-specific pipeline generation guidance using account, contact, campaign and PG relapse signals.",
+            "Hardened Campaign Builder pre-flight validation so bad account, contact, Sales Play or date selections show clear correction warnings instead of internal errors.",
         ],
     },
     {
@@ -8097,7 +8098,7 @@ def campaign_selected_contacts_with_recovery(connection, account_id, contact_ids
 def campaign_selected_account_with_recovery(connection, account_id):
     try:
         return connection, connection.execute("""
-            SELECT account_name
+            SELECT id, account_name, business_unit, sales_play
             FROM accounts
             WHERE id = ?
         """, (account_id,)).fetchone()
@@ -8106,7 +8107,7 @@ def campaign_selected_account_with_recovery(connection, account_id):
         if should_retry:
             try:
                 return connection, connection.execute("""
-                    SELECT account_name
+                    SELECT id, account_name, business_unit, sales_play
                     FROM accounts
                     WHERE id = ?
                 """, (account_id,)).fetchone()
@@ -8117,6 +8118,84 @@ def campaign_selected_account_with_recovery(connection, account_id):
                 except Exception:
                     pass
         return connection, None
+
+
+def campaign_validate_selected_records(connection, account_id, contact_ids, sales_play):
+    """Validate Campaign Builder record links before any outreach rows are created."""
+    account_id = str(account_id or "").strip()
+    contact_ids = [str(value).strip() for value in contact_ids or [] if str(value or "").strip()]
+    sales_play = (sales_play or "").strip()
+    if not account_id.isdigit():
+        return connection, None, [], "Select a valid account before generating a campaign."
+    if not contact_ids:
+        return connection, None, [], "Select at least one contact in the Contacts table before generating a campaign."
+    invalid_contact_ids = [value for value in contact_ids if not value.isdigit()]
+    if invalid_contact_ids:
+        return connection, None, [], "One or more selected contacts are invalid. Re-select the contacts from the table and try again."
+    if not sales_play:
+        return connection, None, [], "Select a Sales Play before generating a campaign."
+
+    connection, account = campaign_selected_account_with_recovery(connection, account_id)
+    if not account:
+        return connection, None, [], "The selected account could not be found. Re-select the account and try again."
+
+    placeholders = ",".join("?" for _ in contact_ids)
+    try:
+        selected_rows = connection.execute(f"""
+            SELECT id, account_id, name, job_title, status
+            FROM contacts
+            WHERE id IN ({placeholders})
+            ORDER BY name
+        """, contact_ids).fetchall()
+    except Exception as exc:
+        connection, should_retry = recover_campaign_connection(connection, exc, "campaign_preflight_contacts")
+        if should_retry:
+            try:
+                selected_rows = connection.execute(f"""
+                    SELECT id, account_id, name, job_title, status
+                    FROM contacts
+                    WHERE id IN ({placeholders})
+                    ORDER BY name
+                """, contact_ids).fetchall()
+            except Exception as retry_exc:
+                code = log_diagnostic_exception("CAMPAIGN", retry_exc, {"stage": "campaign_preflight_contacts_retry"})
+                return connection, account, [], diagnostic_user_message(
+                    "Campaign could not validate the selected contacts. Re-select the contacts and try again.",
+                    code,
+                )
+        else:
+            code = log_diagnostic_exception("CAMPAIGN", exc, {"stage": "campaign_preflight_contacts_failed"})
+            return connection, account, [], diagnostic_user_message(
+                "Campaign could not validate the selected contacts. Re-select the contacts and try again.",
+                code,
+            )
+
+    rows_by_id = {str(row["id"]): row for row in selected_rows}
+    missing_ids = [value for value in contact_ids if value not in rows_by_id]
+    if missing_ids:
+        return connection, account, [], "One or more selected contacts no longer exist. Refresh the page, re-select the contacts and try again."
+
+    wrong_account = [row for row in selected_rows if str(row["account_id"]) != account_id]
+    if wrong_account:
+        names = ", ".join(row["name"] or f"Contact {row['id']}" for row in wrong_account)
+        account_label = account_context_label(account)
+        return connection, account, [], f"{names} cannot be used because they are not linked to {account_label}. Select contacts from the chosen account only."
+
+    inactive = [row for row in selected_rows if (row["status"] or "Active") != "Active"]
+    if inactive:
+        names = ", ".join(row["name"] or f"Contact {row['id']}" for row in inactive)
+        return connection, account, [], f"{names} cannot be used because the contact status is not Active. Reactivate the contact or choose an active contact."
+
+    connection, sales_play_allowed, sales_play_validation_error = campaign_sales_play_allowed_with_recovery(connection, account_id, sales_play)
+    if sales_play_validation_error:
+        return connection, account, [], sales_play_validation_error
+    if not sales_play_allowed:
+        allowed_options = account_sales_play_options(connection, account_id)
+        option_text = ", ".join(row["sales_play"] for row in allowed_options[:6] if row["sales_play"])
+        detail = f" Available Sales Play(s) for this account: {option_text}." if option_text else ""
+        return connection, account, [], f"Select a Sales Play used for or associated to the selected account.{detail}"
+
+    return connection, account, selected_rows, ""
 
 
 def campaign_builder_sales_play_options(connection):
@@ -12548,9 +12627,11 @@ def campaign_builder_impl():
             error = "Qty Times Per Week must be a whole number from 1 to 7."
         selected_total_tasks = total_tasks_raw
         selected_times_per_week = times_per_week_raw
+        raw_contact_ids = request.form.getlist("contact_ids")
         contact_ids = [
-            contact_id for contact_id in request.form.getlist("contact_ids")
-            if str(contact_id or "").isdigit()
+            str(contact_id or "").strip()
+            for contact_id in raw_contact_ids
+            if str(contact_id or "").strip()
         ]
         sales_play = (request.form.get("sales_play") or request.form.get("sales_plays", "")).strip()
         if "\n" in sales_play:
@@ -12565,6 +12646,8 @@ def campaign_builder_impl():
             if activity_type in {template["activity_type"] for template in campaign_activity_options}
         ]
 
+        account = None
+        contacts = []
         if not error and not str(account_id or "").isdigit():
             error = "Select an account before generating a campaign."
         elif not error and not contact_ids:
@@ -12572,11 +12655,14 @@ def campaign_builder_impl():
         elif not error and not fy_quarter_are_valid(selected_fy, selected_quarter):
             error = fy_quarter_required_message()
         elif not error:
-            connection, sales_play_allowed, sales_play_validation_error = campaign_sales_play_allowed_with_recovery(connection, account_id, sales_play)
-            if sales_play_validation_error:
-                error = sales_play_validation_error
-            elif not sales_play_allowed:
-                error = "Select a Sales Play used for or associated to the selected account."
+            connection, account, contacts, record_validation_error = campaign_validate_selected_records(
+                connection,
+                account_id,
+                contact_ids,
+                sales_play,
+            )
+            if record_validation_error:
+                error = record_validation_error
         if not error and (not pg_week_start_raw or not campaign_start_raw or not campaign_end_raw):
             error = "Enter PG week start, campaign start and campaign end dates before generating a campaign."
         if not error:
@@ -12589,7 +12675,7 @@ def campaign_builder_impl():
                 error = "Enter valid PG week, campaign start and campaign end dates before generating a campaign."
                 contacts = []
             if not error and campaign_end < campaign_start:
-                campaign_start, campaign_end = campaign_end, campaign_start
+                error = "Campaign End cannot be earlier than Campaign Start. Correct the campaign date range and try again."
             if not error and campaign_start < today:
                 campaign_start = today
                 selected_campaign_start = campaign_start.isoformat()
@@ -12597,10 +12683,6 @@ def campaign_builder_impl():
                 error = "Campaign end date cannot be earlier than the campaign start date."
             if error:
                 contacts = []
-            else:
-                connection, contacts = campaign_selected_contacts_with_recovery(connection, account_id, contact_ids)
-
-            connection, account = campaign_selected_account_with_recovery(connection, account_id)
 
             if not account:
                 error = "The selected account could not be found."

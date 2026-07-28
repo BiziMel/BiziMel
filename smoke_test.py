@@ -390,6 +390,54 @@ def main():
             "Campaign Builder did not validate account-specific Sales Play selection",
         )
 
+        response = client.post(
+            "/outreach/campaign-builder",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "account_id": str(account_id),
+                "pg_week_start": pg_week_start,
+                "campaign_start_date": campaign_end,
+                "campaign_end_date": campaign_start,
+                "total_outreach_tasks": "2",
+                "times_per_week": "1",
+                "sales_play": "Smoke Test Play",
+                "fy": "27",
+                "quarter": "Q1",
+                "assigned_to": "Smoke Test Admin",
+                "contact_ids": [str(contact_id)],
+            },
+            follow_redirects=True,
+        )
+        assert_ok(
+            response.status_code == 200
+            and "Campaign End cannot be earlier than Campaign Start" in response.get_data(as_text=True),
+            "Campaign Builder did not validate reversed campaign dates clearly",
+        )
+
+        response = client.post(
+            "/outreach/campaign-builder",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "account_id": str(account_id),
+                "pg_week_start": pg_week_start,
+                "campaign_start_date": campaign_start,
+                "campaign_end_date": campaign_end,
+                "total_outreach_tasks": "2",
+                "times_per_week": "1",
+                "sales_play": "Smoke Test Play",
+                "fy": "27",
+                "quarter": "Q1",
+                "assigned_to": "Smoke Test Admin",
+                "contact_ids": ["not-a-contact"],
+            },
+            follow_redirects=True,
+        )
+        assert_ok(
+            response.status_code == 200
+            and "One or more selected contacts are invalid" in response.get_data(as_text=True),
+            "Campaign Builder did not validate malformed contact selections clearly",
+        )
+
         filter_campaign_start = (today + timedelta(days=35)).isoformat()
         filter_campaign_end = (today + timedelta(days=45)).isoformat()
         connection = sqlite3.connect(db_path)
