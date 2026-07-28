@@ -25,7 +25,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.8"
 APP_RELEASE_DATE = "2026-07-28"
-APP_BUILD = "2026-07-28-v2.6.8-pg-rag-broadcast-global-insights-campaign-warning-text-r6"
+APP_BUILD = "2026-07-28-v2.6.8-pg-rag-broadcast-global-insights-campaign-safe-outreach-r7"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -52,6 +52,7 @@ RELEASE_NOTES = [
             "Hardened Outreach and Campaign Builder recovery paths so older live outreach-recipient schemas cannot break page load after campaign tasks are created.",
             "Changed every Campaign Builder POST failure path to redirect back to Outreach with a human-readable error instead of returning to the Campaign Builder page.",
             "Reworded Campaign Builder duplicate warnings so users can see that matching future Outreach tasks already exist, often from an earlier generation attempt that created rows before an error was shown.",
+            "Added a last-resort safe Outreach response so campaign redirects and Outreach refreshes show a readable page instead of an internal server error if table loading fails.",
         ],
     },
     {
@@ -1853,6 +1854,13 @@ def handle_unexpected_exception(exc):
         return exc
     area = "CAMPAIGN" if request.endpoint == "campaign_builder" else "APP"
     code = log_diagnostic_exception(area, exc, {"stage": "global_exception_handler"})
+    if request.endpoint in {"campaign_builder", "outreach"} and request.method == "GET":
+        return safe_outreach_error_response(
+            diagnostic_user_message(
+                "PipeFlow could not load the requested Outreach page. The campaign save may have completed; review the Outreach table after refreshing from this page.",
+                code,
+            )
+        )
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
         target = url_for("outreach") if request.endpoint == "campaign_builder" else request.form.get("return_to") or request.referrer or url_for("home")
         return redirect_with_query(
@@ -1868,6 +1876,42 @@ def handle_unexpected_exception(exc):
         f"<p>Please go back, refresh, and try again. The error has been logged for review. Error code: {code}</p>",
         500,
     )
+
+
+def safe_outreach_error_response(error):
+    try:
+        return render_template(
+            "outreach.html",
+            outreach_records=[],
+            accounts=[],
+            sales_play_options=[],
+            fy_filter=request.args.get("fy"),
+            quarter_filter=request.args.get("quarter"),
+            sales_play_filter=request.args.get("sales_play"),
+            account_filter=request.args.get("account_id"),
+            contact_filter=request.args.get("contact_id", ""),
+            outcome_filter=request.args.get("outcome"),
+            due_start_filter=request.args.get("due_start", ""),
+            due_end_filter=request.args.get("due_end", ""),
+            activity_start_filter=request.args.get("activity_start", ""),
+            activity_end_filter=request.args.get("activity_end", ""),
+            updated_start_filter=request.args.get("updated_start", ""),
+            updated_end_filter=request.args.get("updated_end", ""),
+            nbm_success_week_filter=request.args.get("nbm_success_week", ""),
+            selected_statuses=request.args.getlist("task_status") or ["All Open"],
+            assignable_users=[],
+            message=request.args.get("message", ""),
+            error=error,
+        )
+    except Exception as render_exc:
+        log_diagnostic_exception("OUTREACH-SAVE", render_exc, {"stage": "safe_outreach_error_response_render"})
+        return (
+            "<!doctype html><title>PipeFlow Outreach</title>"
+            "<h1>Outreach could not load normally</h1>"
+            f"<p>{html.escape(error)}</p>"
+            "<p><a href=\"/outreach\">Try Outreach again</a> or <a href=\"/\">return to Insights Dashboard</a>.</p>",
+            200,
+        )
 
 
 
@@ -12184,31 +12228,11 @@ def outreach():
                 initialise_database(force=True)
             except Exception as refresh_exc:
                 log_diagnostic_exception("OUTREACH-SAVE", refresh_exc, {"stage": "outreach_route_schema_refresh_failed"})
-        return render_template(
-            "outreach.html",
-            outreach_records=[],
-            accounts=[],
-            sales_play_options=[],
-            fy_filter=request.args.get("fy"),
-            quarter_filter=request.args.get("quarter"),
-            sales_play_filter=request.args.get("sales_play"),
-            account_filter=request.args.get("account_id"),
-            contact_filter=request.args.get("contact_id", ""),
-            outcome_filter=request.args.get("outcome"),
-            due_start_filter=request.args.get("due_start", ""),
-            due_end_filter=request.args.get("due_end", ""),
-            activity_start_filter=request.args.get("activity_start", ""),
-            activity_end_filter=request.args.get("activity_end", ""),
-            updated_start_filter=request.args.get("updated_start", ""),
-            updated_end_filter=request.args.get("updated_end", ""),
-            nbm_success_week_filter=request.args.get("nbm_success_week", ""),
-            selected_statuses=request.args.getlist("task_status") or ["All Open"],
-            assignable_users=[],
-            message=request.args.get("message", ""),
-            error=diagnostic_user_message(
+        return safe_outreach_error_response(
+            diagnostic_user_message(
                 "Outreach could not load the table. The save may have completed; refresh the page after the workspace schema check finishes.",
                 code,
-            ),
+            )
         )
 
 

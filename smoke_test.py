@@ -618,6 +618,23 @@ def main():
             and "Internal Server Error" not in failed_campaign_html,
             "Campaign Builder POST failure did not redirect back to Outreach with a human-readable error",
         )
+        original_outreach_impl = pipeflow_app.outreach_impl
+
+        def broken_outreach_impl():
+            raise RuntimeError("forced outreach smoke failure")
+
+        pipeflow_app.outreach_impl = broken_outreach_impl
+        try:
+            response = client.get("/outreach?message=Campaign%20created")
+        finally:
+            pipeflow_app.outreach_impl = original_outreach_impl
+        failed_outreach_html = response.get_data(as_text=True)
+        assert_ok(
+            response.status_code == 200
+            and "Internal Server Error" not in failed_outreach_html
+            and "Outreach could not load the table" in failed_outreach_html,
+            "Outreach failure fallback did not show a safe human-readable page",
+        )
         connection = sqlite3.connect(db_path)
         duplicate_campaign_rows = connection.execute(
             """
