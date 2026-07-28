@@ -573,10 +573,50 @@ def main():
             },
             follow_redirects=True,
         )
+        repeated_campaign_html = response.get_data(as_text=True)
         assert_ok(
             response.status_code == 200
-            and "Internal Server Error" not in response.get_data(as_text=True),
+            and "Internal Server Error" not in repeated_campaign_html,
             "Campaign Builder did not handle repeated campaign generation cleanly",
+        )
+        assert_ok(
+            "This can happen if an earlier Campaign Builder attempt created the tasks before the page showed an error." in app_source,
+            "Campaign Builder duplicate warning does not explain previous generation attempts",
+        )
+        original_campaign_builder_impl = pipeflow_app.campaign_builder_impl
+
+        def broken_campaign_builder_impl():
+            raise RuntimeError("forced campaign builder smoke failure")
+
+        pipeflow_app.campaign_builder_impl = broken_campaign_builder_impl
+        try:
+            response = client.post(
+                "/outreach/campaign-builder",
+                data={
+                    "csrf_token": csrf_from_session(client),
+                    "account_id": str(account_id),
+                    "pg_week_start": (today + timedelta(days=50)).isoformat(),
+                    "campaign_start_date": filter_campaign_start,
+                    "campaign_end_date": filter_campaign_end,
+                    "total_outreach_tasks": "3",
+                    "times_per_week": "2",
+                    "sales_play": "Smoke Test Play",
+                    "fy": "27",
+                    "quarter": "Q1",
+                    "assigned_to": "Smoke Test Admin",
+                    "contact_ids": [str(second_contact_id)],
+                },
+                follow_redirects=True,
+            )
+        finally:
+            pipeflow_app.campaign_builder_impl = original_campaign_builder_impl
+        failed_campaign_html = response.get_data(as_text=True)
+        assert_ok(
+            response.status_code == 200
+            and "Outreach Tasks" in failed_campaign_html
+            and "Campaign could not be generated" in failed_campaign_html
+            and "Internal Server Error" not in failed_campaign_html,
+            "Campaign Builder POST failure did not redirect back to Outreach with a human-readable error",
         )
         connection = sqlite3.connect(db_path)
         duplicate_campaign_rows = connection.execute(

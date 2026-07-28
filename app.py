@@ -25,7 +25,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.8"
 APP_RELEASE_DATE = "2026-07-28"
-APP_BUILD = "2026-07-28-v2.6.8-pg-rag-broadcast-global-insights-campaign-outreach-load-r4"
+APP_BUILD = "2026-07-28-v2.6.8-pg-rag-broadcast-global-insights-campaign-warning-text-r6"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -50,6 +50,8 @@ RELEASE_NOTES = [
             "Hardened Campaign Builder pre-flight validation so bad account, contact, Sales Play or date selections show clear correction warnings instead of internal errors.",
             "Changed successful Campaign Builder saves to redirect to Outreach with a success message, so post-save confirmation rendering cannot create an internal error after tasks have already been created.",
             "Hardened Outreach and Campaign Builder recovery paths so older live outreach-recipient schemas cannot break page load after campaign tasks are created.",
+            "Changed every Campaign Builder POST failure path to redirect back to Outreach with a human-readable error instead of returning to the Campaign Builder page.",
+            "Reworded Campaign Builder duplicate warnings so users can see that matching future Outreach tasks already exist, often from an earlier generation attempt that created rows before an error was shown.",
         ],
     },
     {
@@ -1852,7 +1854,7 @@ def handle_unexpected_exception(exc):
     area = "CAMPAIGN" if request.endpoint == "campaign_builder" else "APP"
     code = log_diagnostic_exception(area, exc, {"stage": "global_exception_handler"})
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-        target = url_for("campaign_builder") if request.endpoint == "campaign_builder" else request.form.get("return_to") or request.referrer or url_for("home")
+        target = url_for("outreach") if request.endpoint == "campaign_builder" else request.form.get("return_to") or request.referrer or url_for("home")
         return redirect_with_query(
             safe_redirect_target(target, "home"),
             error=campaign_exception_user_message(exc, code) if request.endpoint == "campaign_builder" else diagnostic_user_message(
@@ -12602,6 +12604,12 @@ def campaign_builder():
     try:
         return campaign_builder_impl()
     except Exception as exc:
+        if request.method == "POST":
+            code = log_diagnostic_exception("CAMPAIGN", exc, {"stage": "campaign_builder_post_wrapper"})
+            return redirect_with_query(
+                url_for("outreach"),
+                error=campaign_exception_user_message(exc, code),
+            )
         return render_campaign_builder_error_page(exc)
 
 
@@ -12786,7 +12794,11 @@ def campaign_builder_impl():
                         ):
                             skipped_duplicate_count += 1
                             campaign_generation_warnings.append(
-                                f"{contact['name']}: skipped existing {step['activity_type']} campaign step on {action_date.isoformat()}."
+                                (
+                                    f"{contact['name']}: PipeFlow did not create another {step['activity_type']} task "
+                                    f"for {format_display_datetime(action_date.isoformat(), step['time'])} because a matching future outreach task already exists "
+                                    "for this contact, activity and Sales Play. This can happen if an earlier Campaign Builder attempt created the tasks before the page showed an error."
+                                )
                             )
                             continue
                         if outreach_duplicate_exists(
@@ -12802,7 +12814,10 @@ def campaign_builder_impl():
                         ):
                             skipped_duplicate_count += 1
                             campaign_generation_warnings.append(
-                                f"{contact['name']}: skipped duplicate {step['activity_type']} on {action_date.isoformat()} at {step['time']}."
+                                (
+                                    f"{contact['name']}: PipeFlow did not create a duplicate {step['activity_type']} task "
+                                    f"for {format_display_datetime(action_date.isoformat(), step['time'])}. A task with the same contact, date, time, activity and subject already exists in Outreach."
+                                )
                             )
                             continue
                         campaign_row_values = {
@@ -12876,7 +12891,8 @@ def campaign_builder_impl():
                     warning_message = ""
                     if campaign_generation_warnings:
                         warning_message = (
-                            "Campaign created, but PipeFlow found warning(s): "
+                            "Campaign created. Some planned tasks were not duplicated because matching Outreach tasks already exist. "
+                            "Review the Outreach table for the contact and dates shown. Details: "
                             + " ".join(campaign_generation_warnings[:3])
                         )
                     try:
