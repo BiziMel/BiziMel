@@ -25,7 +25,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.8"
 APP_RELEASE_DATE = "2026-07-28"
-APP_BUILD = "2026-07-28-v2.6.8-pg-rag-broadcast-global-insights-campaign-redirect-r3"
+APP_BUILD = "2026-07-28-v2.6.8-pg-rag-broadcast-global-insights-campaign-outreach-load-r4"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -49,6 +49,7 @@ RELEASE_NOTES = [
             "Reduced duplicated Execution Insights and added more account-specific pipeline generation guidance using account, contact, campaign and PG relapse signals.",
             "Hardened Campaign Builder pre-flight validation so bad account, contact, Sales Play or date selections show clear correction warnings instead of internal errors.",
             "Changed successful Campaign Builder saves to redirect to Outreach with a success message, so post-save confirmation rendering cannot create an internal error after tasks have already been created.",
+            "Hardened Outreach and Campaign Builder recovery paths so older live outreach-recipient schemas cannot break page load after campaign tasks are created.",
         ],
     },
     {
@@ -8319,47 +8320,55 @@ def partner_contacts_for_outreach_with_recovery(connection, selected_account_id,
 def render_campaign_builder_error_page(exc):
     code = log_diagnostic_exception("CAMPAIGN", exc, {"stage": "campaign_builder_route_wrapper"})
     error = campaign_exception_user_message(exc, code)
-    connection = get_db_connection()
+    selected_account_id = request.form.get("account_id") or request.args.get("account_id") or ""
+    selected_contact_ids = request.form.getlist("contact_ids")
+    profile = None
+    accounts = []
+    contacts = []
+    sales_play_rows = []
+    connection = None
     try:
+        if database_error_looks_like_schema_drift(exc):
+            initialise_database(force=True)
+        connection = get_db_connection()
         connection, profile, _, _ = campaign_profile_and_blocks(connection)
         connection, accounts = campaign_builder_accounts(connection)
         connection, contacts = campaign_builder_contacts(connection)
         connection, sales_play_rows = campaign_builder_sales_play_options(connection)
-        selected_account_id = request.form.get("account_id") or request.args.get("account_id") or ""
-        selected_contact_ids = request.form.getlist("contact_ids")
-        return render_template(
-            "campaign_builder.html",
-            accounts=accounts,
-            contacts=contacts,
-            profile=profile,
-            default_assignee=default_outreach_assignee(),
-            generated_count=0,
-            skipped_duplicate_count=0,
-            selected_account_id=selected_account_id,
-            selected_contact_ids=selected_contact_ids,
-            selected_pg_week_start=request.form.get("pg_week_start", ""),
-            selected_campaign_start=request.form.get("campaign_start_date", ""),
-            selected_campaign_end=request.form.get("campaign_end_date", ""),
-            selected_total_tasks=request.form.get("total_outreach_tasks", "8"),
-            selected_times_per_week=request.form.get("times_per_week", "2"),
-            selected_sales_play=request.form.get("sales_play") or request.form.get("sales_plays", ""),
-            sales_play_options=sales_play_rows,
-            selected_fy=request.form.get("fy", ""),
-            selected_quarter=request.form.get("quarter", ""),
-            campaign_activity_options=campaign_step_templates(),
-            selected_campaign_activity_types=request.form.getlist("campaign_activity_types"),
-            success_context_summary="",
-            generated_steps=[],
-            campaign_generation_warnings=[],
-            error=error,
-        )
-    except Exception:
-        return redirect_with_query(url_for("campaign_builder"), error=error)
+    except Exception as render_exc:
+        log_diagnostic_exception("CAMPAIGN", render_exc, {"stage": "campaign_builder_error_page_recovery"})
     finally:
-        try:
-            connection.close()
-        except Exception:
-            pass
+        if connection:
+            try:
+                connection.close()
+            except Exception:
+                pass
+    return render_template(
+        "campaign_builder.html",
+        accounts=accounts,
+        contacts=contacts,
+        profile=profile,
+        default_assignee=default_outreach_assignee(),
+        generated_count=0,
+        skipped_duplicate_count=0,
+        selected_account_id=selected_account_id,
+        selected_contact_ids=selected_contact_ids,
+        selected_pg_week_start=request.form.get("pg_week_start", ""),
+        selected_campaign_start=request.form.get("campaign_start_date", ""),
+        selected_campaign_end=request.form.get("campaign_end_date", ""),
+        selected_total_tasks=request.form.get("total_outreach_tasks", "8"),
+        selected_times_per_week=request.form.get("times_per_week", "2"),
+        selected_sales_play=request.form.get("sales_play") or request.form.get("sales_plays", ""),
+        sales_play_options=sales_play_rows,
+        selected_fy=request.form.get("fy", ""),
+        selected_quarter=request.form.get("quarter", ""),
+        campaign_activity_options=campaign_step_templates(),
+        selected_campaign_activity_types=request.form.getlist("campaign_activity_types"),
+        success_context_summary="",
+        generated_steps=[],
+        campaign_generation_warnings=[],
+        error=error,
+    )
 
 
 def activity_update_required_message():
@@ -8915,7 +8924,7 @@ def outreach_recipient_summary(connection, outreach_id):
         LEFT JOIN partner_contacts ON outreach_recipients.partner_contact_id = partner_contacts.id
         LEFT JOIN partners ON partner_contacts.partner_id = partners.id
         WHERE outreach_recipients.outreach_id = ?
-        ORDER BY outreach_recipients.sort_order, outreach_recipients.id
+        ORDER BY outreach_recipients.id
     """, (outreach_id,)).fetchall()
     labels = []
     for recipient in recipients:
@@ -12168,6 +12177,11 @@ def outreach():
         return outreach_impl()
     except Exception as exc:
         code = log_diagnostic_exception("OUTREACH-SAVE", exc, {"stage": "outreach_route_wrapper"})
+        if database_error_looks_like_schema_drift(exc):
+            try:
+                initialise_database(force=True)
+            except Exception as refresh_exc:
+                log_diagnostic_exception("OUTREACH-SAVE", refresh_exc, {"stage": "outreach_route_schema_refresh_failed"})
         return render_template(
             "outreach.html",
             outreach_records=[],
@@ -12179,6 +12193,12 @@ def outreach():
             account_filter=request.args.get("account_id"),
             contact_filter=request.args.get("contact_id", ""),
             outcome_filter=request.args.get("outcome"),
+            due_start_filter=request.args.get("due_start", ""),
+            due_end_filter=request.args.get("due_end", ""),
+            activity_start_filter=request.args.get("activity_start", ""),
+            activity_end_filter=request.args.get("activity_end", ""),
+            updated_start_filter=request.args.get("updated_start", ""),
+            updated_end_filter=request.args.get("updated_end", ""),
             nbm_success_week_filter=request.args.get("nbm_success_week", ""),
             selected_statuses=request.args.getlist("task_status") or ["All Open"],
             assignable_users=[],
@@ -12230,7 +12250,7 @@ def outreach_impl():
                     LEFT JOIN contacts AS recipient_contacts ON outreach_recipients.contact_id = recipient_contacts.id
                     LEFT JOIN partner_contacts AS recipient_partner_contacts ON outreach_recipients.partner_contact_id = recipient_partner_contacts.id
                     WHERE outreach_recipients.outreach_id = outreach.id
-                    ORDER BY outreach_recipients.sort_order, outreach_recipients.id
+                    ORDER BY outreach_recipients.id
                     LIMIT 1
                 ),
                 COALESCE(contacts.name, partner_contacts.name)
@@ -12963,7 +12983,7 @@ def view_outreach(outreach_id):
         LEFT JOIN partner_contacts ON outreach_recipients.partner_contact_id = partner_contacts.id
         LEFT JOIN partners ON partner_contacts.partner_id = partners.id
         WHERE outreach_recipients.outreach_id = ?
-        ORDER BY outreach_recipients.sort_order, outreach_recipients.id
+        ORDER BY outreach_recipients.id
     """, (outreach_id,)).fetchall()
 
     connection.close()
@@ -15106,7 +15126,7 @@ def pg_bible_outreach_people_label(connection, outreach_row):
         LEFT JOIN partner_contacts ON outreach_recipients.partner_contact_id = partner_contacts.id
         LEFT JOIN partners ON partner_contacts.partner_id = partners.id
         WHERE outreach_recipients.outreach_id = ?
-        ORDER BY outreach_recipients.sort_order, outreach_recipients.id
+        ORDER BY outreach_recipients.id
     """, (outreach_row["id"],)).fetchall()
     if not people:
         people = connection.execute("""
@@ -15643,7 +15663,7 @@ def task_reports():
                     LEFT JOIN contacts AS recipient_contacts ON outreach_recipients.contact_id = recipient_contacts.id
                     LEFT JOIN partner_contacts AS recipient_partner_contacts ON outreach_recipients.partner_contact_id = recipient_partner_contacts.id
                     WHERE outreach_recipients.outreach_id = outreach.id
-                    ORDER BY outreach_recipients.sort_order, outreach_recipients.id
+                    ORDER BY outreach_recipients.id
                     LIMIT 1
                 ),
                 contacts.name
@@ -16031,7 +16051,7 @@ def outreach_reports():
                     LEFT JOIN contacts AS recipient_contacts ON outreach_recipients.contact_id = recipient_contacts.id
                     LEFT JOIN partner_contacts AS recipient_partner_contacts ON outreach_recipients.partner_contact_id = recipient_partner_contacts.id
                     WHERE outreach_recipients.outreach_id = outreach.id
-                    ORDER BY outreach_recipients.sort_order, outreach_recipients.id
+                    ORDER BY outreach_recipients.id
                     LIMIT 1
                 ),
                 contacts.name
