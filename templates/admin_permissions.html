@@ -326,7 +326,7 @@
 
     <div class="broadcast-purpose">
         <strong>Scheduled visibility</strong>
-        <p>Broadcasts are only visible between their start and stop times. Application Admins can target multiple companies. Company Admins can only target their own company.</p>
+        <p>Broadcasts are only visible between their start and stop times. Application Admins can target selected companies or all companies. Company Admins can only target their own company.</p>
     </div>
 
     <section class="broadcast-create-panel">
@@ -359,6 +359,10 @@
             {% if is_app_admin %}
                 <div class="form-group">
                     <label>Companies</label>
+                    <label class="checkbox-row broadcast-all-row">
+                        <input type="checkbox" name="target_all_companies" value="1">
+                        <span>Share to all companies</span>
+                    </label>
                     <details class="checkbox-dropdown broadcast-company-dropdown">
                         <summary>Select companies</summary>
                         <div class="checkbox-dropdown-panel">
@@ -444,6 +448,13 @@
                             {% if is_app_admin %}
                                 <div class="form-group">
                                     <label>Companies</label>
+                                    <label class="checkbox-row broadcast-all-row">
+                                        <input type="checkbox"
+                                               name="target_all_companies"
+                                               value="1"
+                                               {% if not broadcast.target_company_names %}checked{% endif %}>
+                                        <span>Share to all companies</span>
+                                    </label>
                                     <details class="checkbox-dropdown broadcast-company-dropdown">
                                         <summary>{{ broadcast.target_company_label or "Select companies" }}</summary>
                                         <div class="checkbox-dropdown-panel">

@@ -135,6 +135,31 @@ def main():
             len(pipeflow_app.diagnostic_error_code("OUTREACH-ADD")) <= 10,
             "diagnostic error code is too long",
         )
+        today = pipeflow_app.current_app_datetime().date()
+        stale_date = (today - timedelta(days=45)).isoformat()
+        future_date = (today + timedelta(days=7)).isoformat()
+        assert_ok(
+            pipeflow_app.pg_progress_rag_status(["No Response"])["status"] == "red",
+            "PG RAG should stay red for no-response activity",
+        )
+        assert_ok(
+            pipeflow_app.pg_progress_rag_status(
+                ["Positive Response"],
+                progress_signals=[{"outcome": "Positive Response", "date": today.isoformat()}],
+            )["status"] == "amber",
+            "PG RAG should be amber for recent positive response",
+        )
+        assert_ok(
+            pipeflow_app.pg_progress_rag_status(["NBM Booked"], scheduled_meetings=[future_date])["status"] == "green",
+            "PG RAG should be green for a future booked meeting",
+        )
+        assert_ok(
+            pipeflow_app.pg_progress_rag_status(
+                ["Positive Response"],
+                progress_signals=[{"outcome": "Positive Response", "date": stale_date}],
+            )["status"] == "red",
+            "PG RAG should relapse to red after stale progress",
+        )
 
         client = pipeflow_app.app.test_client()
         for path in ("/login", "/register", "/forgot-password"):
@@ -604,6 +629,7 @@ def main():
             and "admin-company-multiselect" in admin_html,
             "admin company membership or broadcast controls missing",
         )
+        assert_ok("target_all_companies" in admin_html, "global broadcast option missing")
 
         response = client.post(
             "/admin/tenants",
@@ -696,6 +722,33 @@ def main():
         assert_ok(
             pipeflow_auth.decode_broadcast_companies(updated_broadcast["target_companies"]) == ["Smoke Other Company"],
             "broadcast company targets were not updated",
+        )
+
+        response = client.post(
+            "/admin/broadcasts/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "title": "Smoke global broadcast",
+                "message": "Smoke test message for every company",
+                "severity": "info",
+                "target_all_companies": "1",
+                "start_at": f"{yesterday}T11:00",
+                "stop_at": f"{tomorrow}T11:00",
+                "is_active": "1",
+            },
+            follow_redirects=True,
+        )
+        assert_ok(response.status_code == 200 and "Smoke global broadcast" in response.get_data(as_text=True), "global broadcast create failed")
+        auth_connection = pipeflow_auth.get_auth_connection()
+        global_broadcast = auth_connection.execute(
+            "SELECT target_companies FROM broadcast_messages WHERE title = ?",
+            ("Smoke global broadcast",),
+        ).fetchone()
+        auth_connection.close()
+        assert_ok(
+            global_broadcast is not None
+            and pipeflow_auth.decode_broadcast_companies(global_broadcast["target_companies"]) == [],
+            "global broadcast should have no company target filter",
         )
 
         response = client.post(

@@ -23,9 +23,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.6.7"
-APP_RELEASE_DATE = "2026-07-08"
-APP_BUILD = "2026-07-08-v2.6.7-quick-outreach-broadcast-admin-companies-r1"
+APP_VERSION = "2.6.8"
+APP_RELEASE_DATE = "2026-07-28"
+APP_BUILD = "2026-07-28-v2.6.8-pg-rag-broadcast-global-insights-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -39,6 +39,16 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.6.8",
+        "release_date": "2026-07-28",
+        "title": "PG Progress RAG rules, global broadcasts and smarter insights",
+        "fixed": [
+            "Reviewed and tightened PG Progress RAG rules so contact and account status follows recent positive responses, meeting bookings, future meetings and 30-day relapse behaviour.",
+            "Allowed Application Admins to share broadcasts with all companies while preventing Company Admins from editing global broadcasts.",
+            "Reduced duplicated Execution Insights and added more account-specific pipeline generation guidance using account, contact, campaign and PG relapse signals.",
+        ],
+    },
     {
         "version": "2.6.7",
         "release_date": "2026-07-08",
@@ -2062,10 +2072,27 @@ def require_broadcast_admin_redirect():
 
 def broadcast_target_companies_from_form(actor):
     if is_application_admin(actor):
+        if request.form.get("target_all_companies") == "1":
+            return []
         return request.form.getlist("target_companies")
     if is_company_admin(actor):
         return [actor["company"] if "company" in actor.keys() else ""]
     return []
+
+
+def company_admin_can_manage_broadcast(actor, existing):
+    if not is_company_admin(actor) or not existing:
+        return False
+    target_companies = decode_broadcast_companies(existing["target_companies"] if "target_companies" in existing.keys() else "")
+    return bool(target_companies) and actor["company"] in target_companies
+
+
+def validate_application_admin_broadcast_target(actor, target_companies):
+    if not is_application_admin(actor):
+        return ""
+    if request.form.get("target_all_companies") == "1" or target_companies:
+        return ""
+    return "Select at least one company or choose Share to all companies for this broadcast."
 
 
 def user_company_memberships_from_form(actor, primary_company):
@@ -2221,6 +2248,10 @@ def admin_add_broadcast():
     guard = require_broadcast_admin_redirect()
     if guard:
         return guard
+    target_companies = broadcast_target_companies_from_form(actor)
+    target_error = validate_application_admin_broadcast_target(actor, target_companies)
+    if target_error:
+        return redirect(url_for("admin_users", error=target_error))
     error = create_broadcast_message(
         request.form.get("title", ""),
         request.form.get("message", ""),
@@ -2228,7 +2259,7 @@ def admin_add_broadcast():
         request.form.get("start_at", ""),
         request.form.get("stop_at", ""),
         bool(request.form.get("is_active")),
-        broadcast_target_companies_from_form(actor),
+        target_companies,
     )
     if error:
         return redirect(url_for("admin_users", error=error))
@@ -2243,10 +2274,12 @@ def admin_update_broadcast(message_id):
     if guard:
         return guard
     existing = get_broadcast_message(message_id)
-    if is_company_admin(actor):
-        target_companies = decode_broadcast_companies(existing["target_companies"] if existing and "target_companies" in existing.keys() else "")
-        if target_companies and actor["company"] not in target_companies:
-            return redirect(url_for("admin_users", error="You can only update broadcasts for your own company."))
+    if is_company_admin(actor) and not company_admin_can_manage_broadcast(actor, existing):
+        return redirect(url_for("admin_users", error="You can only update broadcasts for your own company."))
+    target_companies = broadcast_target_companies_from_form(actor)
+    target_error = validate_application_admin_broadcast_target(actor, target_companies)
+    if target_error:
+        return redirect(url_for("admin_users", error=target_error))
     error = update_broadcast_message(
         message_id,
         request.form.get("title", ""),
@@ -2255,7 +2288,7 @@ def admin_update_broadcast(message_id):
         request.form.get("start_at", ""),
         request.form.get("stop_at", ""),
         bool(request.form.get("is_active")),
-        broadcast_target_companies_from_form(actor),
+        target_companies,
     )
     if error:
         return redirect(url_for("admin_users", error=error))
@@ -2270,10 +2303,8 @@ def admin_deactivate_broadcast(message_id):
         return guard
     actor = current_user()
     existing = get_broadcast_message(message_id)
-    if is_company_admin(actor):
-        target_companies = decode_broadcast_companies(existing["target_companies"] if existing and "target_companies" in existing.keys() else "")
-        if target_companies and actor["company"] not in target_companies:
-            return redirect(url_for("admin_users", error="You can only pause broadcasts for your own company."))
+    if is_company_admin(actor) and not company_admin_can_manage_broadcast(actor, existing):
+        return redirect(url_for("admin_users", error="You can only pause broadcasts for your own company."))
     set_broadcast_message_active(message_id, False)
     return redirect(url_for("admin_users", message="Broadcast message hidden."))
 
@@ -2286,10 +2317,8 @@ def admin_reactivate_broadcast(message_id):
         return guard
     actor = current_user()
     existing = get_broadcast_message(message_id)
-    if is_company_admin(actor):
-        target_companies = decode_broadcast_companies(existing["target_companies"] if existing and "target_companies" in existing.keys() else "")
-        if target_companies and actor["company"] not in target_companies:
-            return redirect(url_for("admin_users", error="You can only reactivate broadcasts for your own company."))
+    if is_company_admin(actor) and not company_admin_can_manage_broadcast(actor, existing):
+        return redirect(url_for("admin_users", error="You can only reactivate broadcasts for your own company."))
     set_broadcast_message_active(message_id, True)
     return redirect(url_for("admin_users", message="Broadcast message restored."))
 
@@ -2302,10 +2331,8 @@ def admin_delete_broadcast(message_id):
         return guard
     actor = current_user()
     existing = get_broadcast_message(message_id)
-    if is_company_admin(actor):
-        target_companies = decode_broadcast_companies(existing["target_companies"] if existing and "target_companies" in existing.keys() else "")
-        if target_companies and actor["company"] not in target_companies:
-            return redirect(url_for("admin_users", error="You can only delete broadcasts for your own company."))
+    if is_company_admin(actor) and not company_admin_can_manage_broadcast(actor, existing):
+        return redirect(url_for("admin_users", error="You can only delete broadcasts for your own company."))
     delete_broadcast_message(message_id)
     return redirect(url_for("admin_users", message="Broadcast message deleted."))
 
@@ -4043,6 +4070,36 @@ def deduplicate_execution_insights(insights):
     return unique_insights
 
 
+def diversify_execution_insights(insights, limit=12):
+    unique_insights = deduplicate_execution_insights(insights)
+    selected = []
+    category_counts = {}
+    link_counts = {}
+
+    for insight in unique_insights:
+        category = str(insight.get("category", "General")).strip() or "General"
+        link = str(insight.get("link", "")).strip()
+        if category_counts.get(category, 0) >= 3:
+            continue
+        if link and link_counts.get(link, 0) >= 1:
+            continue
+        selected.append(insight)
+        category_counts[category] = category_counts.get(category, 0) + 1
+        if link:
+            link_counts[link] = link_counts.get(link, 0) + 1
+        if len(selected) >= limit:
+            return selected
+
+    for insight in unique_insights:
+        if insight in selected:
+            continue
+        selected.append(insight)
+        if len(selected) >= limit:
+            break
+
+    return selected
+
+
 def dashboard_scalar(connection, sql, params=(), default=0):
     try:
         row = connection.execute(sql, params).fetchone()
@@ -4210,6 +4267,7 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
     due_count = int(metric_values.get("this_week_due") or 0)
     success_count = int(metric_values.get("this_week_meetings_booked") or 0)
     untouched_count = int(metric_values.get("this_week_untouched_accounts") or 0)
+    focused_account_ids = set()
 
     untouched_accounts = dashboard_rows(connection, """
         WITH account_touch AS (
@@ -4263,6 +4321,7 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
             "link": url_for("view_account", account_id=row["id"]),
             "priority": "high",
         })
+        focused_account_ids.add(row["id"])
 
     no_contact_accounts = dashboard_rows(connection, """
         SELECT
@@ -4280,6 +4339,8 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
         LIMIT 4
     """)
     for row in no_contact_accounts:
+        if row["id"] in focused_account_ids:
+            continue
         account_label = account_context_label(row)
         insights.append({
             "source": "Daily Focus",
@@ -4291,6 +4352,89 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
             "link": url_for("view_account", account_id=row["id"]),
             "priority": "high",
         })
+        focused_account_ids.add(row["id"])
+
+    pipeline_meeting_gaps = dashboard_rows(connection, """
+        SELECT
+            accounts.id,
+            accounts.account_name,
+            accounts.business_unit,
+            COALESCE(accounts.pipeline_target, 0) AS pipeline_target,
+            COALESCE(accounts.sales_play, '') AS sales_play,
+            COUNT(DISTINCT contacts.id) AS active_contact_total,
+            SUM(CASE WHEN outreach.id IS NOT NULL THEN 1 ELSE 0 END) AS outreach_total,
+            SUM(CASE WHEN COALESCE(outreach.outcome, '') IN ('NBM Booked', 'NBM Meeting', 'Exec Meeting Booked')
+                       OR COALESCE(outreach.activity_type, '') = 'Meeting'
+                     THEN 1 ELSE 0 END) AS meeting_signal_total,
+            SUM(CASE WHEN COALESCE(outreach.scheduled_meeting_date, '') != ''
+                       AND date(outreach.scheduled_meeting_date) >= date(?)
+                     THEN 1 ELSE 0 END) AS future_meeting_total
+        FROM accounts
+        LEFT JOIN contacts
+          ON contacts.account_id = accounts.id
+         AND COALESCE(contacts.status, 'Active') = 'Active'
+        LEFT JOIN outreach ON outreach.account_id = accounts.id
+        GROUP BY accounts.id, accounts.account_name, accounts.business_unit, accounts.pipeline_target, accounts.sales_play
+        HAVING COALESCE(accounts.pipeline_target, 0) > 0
+           AND active_contact_total > 0
+           AND future_meeting_total = 0
+        ORDER BY accounts.pipeline_target DESC, meeting_signal_total ASC, outreach_total DESC, accounts.account_name
+        LIMIT 5
+    """, (current_app_datetime().date().isoformat(),))
+    for row in pipeline_meeting_gaps:
+        if row["id"] in focused_account_ids:
+            continue
+        account_label = account_context_label(row)
+        insights.append({
+            "source": "Daily Focus",
+            "category": "Pipeline Generation",
+            "title": f"{account_label} has pipeline target but no future meeting",
+            "evidence": f"Account: {account_label}. Pipeline target: ${float(row['pipeline_target'] or 0):,.0f}. Active contacts: {row['active_contact_total'] or 0}. Outreach tasks: {row['outreach_total'] or 0}. Future meetings: 0. Sales play: {row['sales_play'] or 'not entered'}.",
+            "message": "This is a pipeline generation gap: the account has value and contact coverage but no forward customer meeting scheduled.",
+            "action": strategic_gtm_recommendation(connection, account_label, "", row["sales_play"]),
+            "link": url_for("view_account", account_id=row["id"]),
+            "priority": "high",
+        })
+        focused_account_ids.add(row["id"])
+
+    executive_route_gaps = dashboard_rows(connection, f"""
+        SELECT
+            accounts.id,
+            accounts.account_name,
+            accounts.business_unit,
+            COALESCE(accounts.pipeline_target, 0) AS pipeline_target,
+            COUNT(DISTINCT contacts.id) AS active_contact_total,
+            SUM(CASE WHEN contacts.category IN ({",".join("?" for _ in EXECUTIVE_CONTACT_CATEGORIES)})
+                       OR LOWER(COALESCE(contacts.category, '')) LIKE '%executive%'
+                       OR LOWER(COALESCE(contacts.job_title, '')) LIKE '%chief%'
+                       OR LOWER(COALESCE(contacts.job_title, '')) LIKE '%director%'
+                       OR LOWER(COALESCE(contacts.job_title, '')) LIKE '%vp%'
+                     THEN 1 ELSE 0 END) AS executive_contact_total
+        FROM accounts
+        JOIN contacts
+          ON contacts.account_id = accounts.id
+         AND COALESCE(contacts.status, 'Active') = 'Active'
+        GROUP BY accounts.id, accounts.account_name, accounts.business_unit, accounts.pipeline_target
+        HAVING active_contact_total > 0
+           AND executive_contact_total = 0
+        ORDER BY accounts.pipeline_target DESC, accounts.account_name
+        LIMIT 4
+    """, EXECUTIVE_CONTACT_CATEGORIES)
+    for row in executive_route_gaps:
+        if row["id"] in focused_account_ids:
+            continue
+        account_label = account_context_label(row)
+        insights.append({
+            "source": "Daily Focus",
+            "category": "Executive Coverage",
+            "title": f"{account_label} needs an executive route to create meetings",
+            "evidence": f"Account: {account_label}. Active contacts: {row['active_contact_total'] or 0}. Executive contacts: 0. Pipeline target: ${float(row['pipeline_target'] or 0):,.0f}.",
+            "message": "The account has contact coverage, but the visible route does not yet reach a senior buyer or executive path.",
+            "action": f"Add or identify an executive stakeholder, EA/PA or sponsor for {account_label}, then create a new outreach task with a direct Discovery or NBM meeting ask.",
+            "link": url_for("view_account", account_id=row["id"]),
+            "priority": "medium",
+        })
+        focused_account_ids.add(row["id"])
 
     overdue_outreach = dashboard_rows(connection, f"""
         SELECT
@@ -4345,8 +4489,13 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
         ORDER BY outreach.last_updated DESC, outreach.id DESC
         LIMIT 6
     """)
+    campaign_gap_account_ids = set()
     for row in campaign_gaps:
         account_label = account_context_label(row)
+        account_key = account_label.casefold()
+        if account_key in campaign_gap_account_ids:
+            continue
+        campaign_gap_account_ids.add(account_key)
         contact_label = ", ".join(part for part in [row["contact_name"], row["contact_title"]] if part) or "No contact assigned"
         outcome_value = normalise_outreach_outcome(row["outcome"])
         has_no_response = outcome_value == "No Response"
@@ -4488,7 +4637,7 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
             "priority": "medium",
         })
 
-    return insights[:12]
+    return diversify_execution_insights(insights, 12)
 
 
 def dashboard_guidance_week_key(today):
@@ -5806,9 +5955,10 @@ def build_dashboard_response(connection):
     )
 
     ai_insights = ai_insights[:6]
-    execution_insights = deduplicate_execution_insights(
+    execution_insights = diversify_execution_insights(
         build_dashboard_strategy_insights(connection, metric_values, account_health_rows, learning_insights)
-        + build_execution_insights(ai_insights, learning_insights)
+        + build_execution_insights(ai_insights, learning_insights),
+        12,
     )
     if not execution_insights:
         execution_insights = [{
@@ -5820,7 +5970,6 @@ def build_dashboard_response(connection):
             "link": url_for("accounts"),
             "priority": "medium",
         }]
-    execution_insights = execution_insights[:12]
     try:
         weekly_guidance = load_dashboard_weekly_guidance(connection, metric_values, execution_insights)
     except Exception:
@@ -5945,6 +6094,18 @@ PG_PROGRESS_POSITIVE_OUTCOMES = (
     "Follow-up Required",
 )
 
+PG_PROGRESS_GREEN_OUTCOMES = (
+    "NBM Booked",
+    "NBM Meeting",
+    "Exec Meeting Booked",
+)
+
+PG_PROGRESS_AMBER_OUTCOMES = (
+    "Meeting Booked",
+    "Discovery Booked",
+    *PG_PROGRESS_POSITIVE_OUTCOMES,
+)
+
 
 def parse_progress_date(value):
     parsed = parse_app_datetime(value)
@@ -5960,9 +6121,18 @@ def progress_signal_is_recent(value, cutoff_date):
     return bool(signal_date and signal_date >= cutoff_date)
 
 
+def normalise_yes_no_flag(value):
+    value = str(value or "").strip().casefold()
+    if value in {"yes", "y", "true", "1", "checked", "on"}:
+        return "Yes"
+    if value in {"no", "n", "false", "0", "off"}:
+        return "No"
+    return ""
+
+
 def pg_progress_rag_status(outcomes, discovery_values=None, nbm_values=None, scheduled_meetings=None, progress_signals=None):
-    discovery_values = [str(value or "").strip() for value in (discovery_values or [])]
-    nbm_values = [str(value or "").strip() for value in (nbm_values or [])]
+    discovery_values = [normalise_yes_no_flag(value) for value in (discovery_values or [])]
+    nbm_values = [normalise_yes_no_flag(value) for value in (nbm_values or [])]
     scheduled_meetings = [parse_progress_date(value) for value in (scheduled_meetings or []) if parse_progress_date(value)]
     progress_signals = progress_signals or []
     today = current_app_datetime().date()
@@ -5976,6 +6146,10 @@ def pg_progress_rag_status(outcomes, discovery_values=None, nbm_values=None, sch
     has_stale_positive_signal = False
     has_any_historic_progress = bool(scheduled_meetings)
 
+    for outcome in normalised:
+        if outcome in PG_PROGRESS_GREEN_OUTCOMES or outcome in PG_PROGRESS_AMBER_OUTCOMES:
+            has_any_historic_progress = True
+
     for signal in progress_signals:
         outcome = normalise_outreach_outcome(signal.get("outcome", ""))
         signal_type = signal.get("type", "")
@@ -5983,20 +6157,20 @@ def pg_progress_rag_status(outcomes, discovery_values=None, nbm_values=None, sch
         if not outcome and not signal_type:
             continue
         is_progress = (
-            outcome in PG_PROGRESS_POSITIVE_OUTCOMES
-            or outcome in PG_SUCCESS_OUTCOMES
+            outcome in PG_PROGRESS_GREEN_OUTCOMES
+            or outcome in PG_PROGRESS_AMBER_OUTCOMES
             or signal_type in {"manual_discovery", "manual_nbm", "meeting"}
         )
         if not is_progress:
             continue
         has_any_historic_progress = True
         if signal_date and signal_date >= cutoff_date:
-            if outcome in PG_SUCCESS_OUTCOMES or signal_type in {"manual_nbm", "meeting"}:
+            if outcome in PG_PROGRESS_GREEN_OUTCOMES or signal_type == "manual_nbm":
                 has_recent_meeting_signal = True
             else:
                 has_recent_positive_signal = True
         else:
-            if outcome in PG_SUCCESS_OUTCOMES or signal_type in {"manual_nbm", "meeting"}:
+            if outcome in PG_PROGRESS_GREEN_OUTCOMES or signal_type == "manual_nbm":
                 has_stale_meeting_signal = True
             else:
                 has_stale_positive_signal = True
@@ -6014,13 +6188,13 @@ def pg_progress_rag_status(outcomes, discovery_values=None, nbm_values=None, sch
         return {
             "status": "green",
             "label": "Green",
-            "reason": "Recent NBM meeting progress recorded within 30 days",
+            "reason": "NBM or executive meeting progress recorded within 30 days",
         }
     if has_recent_meeting_signal:
         return {
-            "status": "amber",
-            "label": "Amber",
-            "reason": "Meeting progress is recent but no future meeting is scheduled",
+            "status": "green",
+            "label": "Green",
+            "reason": "Recent NBM or executive meeting signal recorded within 30 days",
         }
     if (any(value == "Yes" for value in discovery_values) and any(signal.get("type") == "manual_discovery" and progress_signal_is_recent(signal.get("date"), cutoff_date) for signal in progress_signals)) or has_recent_positive_signal:
         return {

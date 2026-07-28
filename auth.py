@@ -1511,8 +1511,6 @@ def create_broadcast_message(title: str, message: str, severity: str, start_at: 
     if error:
         return error
     target_companies = normalise_broadcast_companies(target_companies)
-    if not target_companies:
-        return "Select at least one company for this broadcast."
     target_companies_value = encode_broadcast_companies(target_companies)
 
     connection = get_auth_connection()
@@ -1567,8 +1565,6 @@ def update_broadcast_message(message_id: int, title: str, message: str, severity
     if error:
         return error
     target_companies = normalise_broadcast_companies(target_companies)
-    if not target_companies:
-        return "Select at least one company for this broadcast."
 
     connection = get_auth_connection()
     cleanup_expired_broadcast_messages(connection)
