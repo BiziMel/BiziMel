@@ -317,10 +317,10 @@ def main():
         campaign_html = response.get_data(as_text=True)
         assert_ok(
             response.status_code == 200
-            and "Campaign Generated" in campaign_html
-            and "outreach step(s) were created" in campaign_html
+            and "Outreach Tasks" in campaign_html
+            and "Campaign created:" in campaign_html
             and "Smoke Test Contact" in campaign_html,
-            "Campaign Builder did not show generated campaign confirmation",
+            "Campaign Builder did not redirect to Outreach with generated campaign confirmation",
         )
         connection = sqlite3.connect(db_path)
         campaign_count_after = connection.execute(
@@ -493,9 +493,9 @@ def main():
         filtered_campaign_html = response.get_data(as_text=True)
         assert_ok(
             response.status_code == 200
-            and "Campaign Generated" in filtered_campaign_html
-            and "Activity filter applied: Phone" in filtered_campaign_html,
-            "Campaign Builder did not generate with selected activity filters and recipient schema recovery",
+            and "Outreach Tasks" in filtered_campaign_html
+            and "Campaign created:" in filtered_campaign_html,
+            "Campaign Builder did not redirect to Outreach after selected activity generation and recipient schema recovery",
         )
         connection = sqlite3.connect(db_path)
         connection.row_factory = sqlite3.Row

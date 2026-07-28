@@ -25,7 +25,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.8"
 APP_RELEASE_DATE = "2026-07-28"
-APP_BUILD = "2026-07-28-v2.6.8-pg-rag-broadcast-global-insights-campaign-hardening-r2"
+APP_BUILD = "2026-07-28-v2.6.8-pg-rag-broadcast-global-insights-campaign-redirect-r3"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -48,6 +48,7 @@ RELEASE_NOTES = [
             "Allowed Application Admins to share broadcasts with all companies while preventing Company Admins from editing global broadcasts.",
             "Reduced duplicated Execution Insights and added more account-specific pipeline generation guidance using account, contact, campaign and PG relapse signals.",
             "Hardened Campaign Builder pre-flight validation so bad account, contact, Sales Play or date selections show clear correction warnings instead of internal errors.",
+            "Changed successful Campaign Builder saves to redirect to Outreach with a success message, so post-save confirmation rendering cannot create an internal error after tasks have already been created.",
         ],
     },
     {
@@ -12846,6 +12847,27 @@ def campaign_builder_impl():
                             connection.rollback()
                         except Exception:
                             pass
+                    success_message = (
+                        f"Campaign created: {generated_count} outreach task(s) were added "
+                        f"for {account_name} using Sales Play {sales_play}."
+                    )
+                    if skipped_duplicate_count:
+                        success_message += f" {skipped_duplicate_count} duplicate task(s) were skipped."
+                    warning_message = ""
+                    if campaign_generation_warnings:
+                        warning_message = (
+                            "Campaign created, but PipeFlow found warning(s): "
+                            + " ".join(campaign_generation_warnings[:3])
+                        )
+                    try:
+                        connection.close()
+                    except Exception:
+                        pass
+                    return redirect_with_query(
+                        url_for("outreach"),
+                        message=success_message,
+                        error=warning_message or None,
+                    )
                 elif skipped_duplicate_count:
                     connection.rollback()
                     error = (
