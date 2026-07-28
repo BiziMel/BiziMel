@@ -25,7 +25,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.8"
 APP_RELEASE_DATE = "2026-07-28"
-APP_BUILD = "2026-07-28-v2.6.8-pg-rag-broadcast-global-insights-campaign-safe-outreach-r7"
+APP_BUILD = "2026-07-28-v2.6.8-pg-rag-broadcast-global-insights-campaign-session-notices-r8"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -53,6 +53,7 @@ RELEASE_NOTES = [
             "Changed every Campaign Builder POST failure path to redirect back to Outreach with a human-readable error instead of returning to the Campaign Builder page.",
             "Reworded Campaign Builder duplicate warnings so users can see that matching future Outreach tasks already exist, often from an earlier generation attempt that created rows before an error was shown.",
             "Added a last-resort safe Outreach response so campaign redirects and Outreach refreshes show a readable page instead of an internal server error if table loading fails.",
+            "Moved Campaign Builder success and warning messages out of redirect URLs and into short session notices so long campaign messages cannot break the post-save redirect after Outreach rows are created.",
         ],
     },
     {
@@ -1192,6 +1193,22 @@ def redirect_with_query(target, **params):
     return redirect(urlunparse(("", "", parsed.path, parsed.params, urlencode(query_items), parsed.fragment)))
 
 
+def store_page_notice(message="", error=""):
+    if message:
+        session["page_message"] = str(message)[:1200]
+    if error:
+        session["page_error"] = str(error)[:2000]
+
+
+def pop_page_notice():
+    return session.pop("page_message", ""), session.pop("page_error", "")
+
+
+def redirect_with_notice(target, message="", error=""):
+    store_page_notice(message, error)
+    return redirect(safe_redirect_target(target, "home"))
+
+
 def normalise_external_url(value, allow_www=True):
     url = (value or "").strip()
     if not url:
@@ -1863,9 +1880,14 @@ def handle_unexpected_exception(exc):
         )
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
         target = url_for("outreach") if request.endpoint == "campaign_builder" else request.form.get("return_to") or request.referrer or url_for("home")
+        if request.endpoint == "campaign_builder":
+            return redirect_with_notice(
+                target,
+                error=campaign_exception_user_message(exc, code),
+            )
         return redirect_with_query(
             safe_redirect_target(target, "home"),
-            error=campaign_exception_user_message(exc, code) if request.endpoint == "campaign_builder" else diagnostic_user_message(
+            error=diagnostic_user_message(
                 "PipeFlow could not complete that save. The page has been kept available so you can review the data and try again.",
                 code,
             ),
@@ -1879,6 +1901,7 @@ def handle_unexpected_exception(exc):
 
 
 def safe_outreach_error_response(error):
+    notice_message, notice_error = pop_page_notice()
     try:
         return render_template(
             "outreach.html",
@@ -1900,8 +1923,8 @@ def safe_outreach_error_response(error):
             nbm_success_week_filter=request.args.get("nbm_success_week", ""),
             selected_statuses=request.args.getlist("task_status") or ["All Open"],
             assignable_users=[],
-            message=request.args.get("message", ""),
-            error=error,
+            message=notice_message or request.args.get("message", ""),
+            error=error or notice_error,
         )
     except Exception as render_exc:
         log_diagnostic_exception("OUTREACH-SAVE", render_exc, {"stage": "safe_outreach_error_response_render"})
@@ -12238,6 +12261,7 @@ def outreach():
 
 def outreach_impl():
     user = current_user()
+    notice_message, notice_error = pop_page_notice()
     fy_filter = request.args.get("fy")
     quarter_filter = request.args.get("quarter")
     sales_play_filter = request.args.get("sales_play")
@@ -12486,8 +12510,8 @@ def outreach_impl():
         nbm_success_week_filter=nbm_success_week_filter,
         selected_statuses=selected_statuses,
         assignable_users=list_assignable_users(),
-        message=request.args.get("message", ""),
-        error=request.args.get("error", ""),
+        message=notice_message or request.args.get("message", ""),
+        error=notice_error or request.args.get("error", ""),
     )
 
 
@@ -12630,7 +12654,7 @@ def campaign_builder():
     except Exception as exc:
         if request.method == "POST":
             code = log_diagnostic_exception("CAMPAIGN", exc, {"stage": "campaign_builder_post_wrapper"})
-            return redirect_with_query(
+            return redirect_with_notice(
                 url_for("outreach"),
                 error=campaign_exception_user_message(exc, code),
             )
@@ -12923,7 +12947,7 @@ def campaign_builder_impl():
                         connection.close()
                     except Exception:
                         pass
-                    return redirect_with_query(
+                    return redirect_with_notice(
                         url_for("outreach"),
                         message=success_message,
                         error=warning_message or None,

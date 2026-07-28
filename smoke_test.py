@@ -304,6 +304,29 @@ def main():
                 "pg_week_start": pg_week_start,
                 "campaign_start_date": campaign_start,
                 "campaign_end_date": campaign_end,
+                "total_outreach_tasks": "1",
+                "times_per_week": "1",
+                "sales_play": "Smoke Test Play",
+                "fy": "27",
+                "quarter": "Q1",
+                "assigned_to": "Smoke Test Admin",
+                "contact_ids": [str(contact_id)],
+            },
+            follow_redirects=False,
+        )
+        assert_ok(
+            response.status_code in (302, 303)
+            and response.headers.get("Location", "").endswith("/outreach"),
+            "Campaign Builder success redirect should use a short Outreach URL without message query strings",
+        )
+        response = client.post(
+            "/outreach/campaign-builder",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "account_id": str(account_id),
+                "pg_week_start": pg_week_start,
+                "campaign_start_date": campaign_start,
+                "campaign_end_date": campaign_end,
                 "total_outreach_tasks": "3",
                 "times_per_week": "2",
                 "sales_play": "Smoke Test Play",
