@@ -56,6 +56,18 @@ body {
     box-shadow: 0 18px 45px rgba(15, 23, 42, 0.25);
 }
 
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 h1, h2, h3, h4, h5, h6, p, label, a, span {
     color: #000000;
 }
@@ -1938,6 +1950,20 @@ a:hover {
 
 .table-secondary-link:hover {
     text-decoration: underline;
+}
+
+.button-as-link {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none;
+    cursor: pointer;
+}
+
+.button-as-link:hover,
+.button-as-link:focus {
+    background: transparent;
 }
 
 .outreach-main-row td {
@@ -5050,6 +5076,47 @@ body {
     font-size: 12px;
 }
 
+.contact-status-legend {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin: 6px 0 0;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.contact-status-legend span,
+.contact-status-report {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.contact-status-indicator {
+    display: inline-grid;
+    place-items: center;
+    width: 100%;
+    min-height: 24px;
+}
+
+.contact-status-dot {
+    display: inline-flex;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1px solid rgba(15, 23, 42, 0.22);
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
+}
+
+.contact-status-dot.status-active {
+    background: #16a34a;
+}
+
+.contact-status-dot.status-inactive {
+    background: #dc2626;
+}
+
 .contact-select-col {
     width: 34px;
 }
@@ -5059,11 +5126,11 @@ body {
 }
 
 .contact-name-col {
-    width: 118px;
+    width: 124px;
 }
 
 .contact-account-col {
-    width: 150px;
+    width: 172px;
 }
 
 .contact-tier-col,
@@ -5076,15 +5143,11 @@ body {
 }
 
 .contact-role-col {
-    width: 178px;
+    width: 210px;
 }
 
 .contact-relationship-col {
-    width: 110px;
-}
-
-.contact-email-col {
-    width: 178px;
+    width: 116px;
 }
 
 .contact-list-table .record-primary-link,
@@ -5146,6 +5209,48 @@ body {
 .contact-list-table .record-primary-link::before {
     content: none;
 }
+
+.contact-outreach-choice-card h2 {
+    margin-top: 0;
+}
+
+.contact-outreach-choice-actions {
+    margin-top: 18px;
+}
+
+.contact-report-table-container,
+.report-table-section .contact-report-table-container {
+    overflow-x: auto;
+}
+
+.contact-report-table {
+    min-width: 1180px;
+}
+
+.contact-report-table th,
+.contact-report-table td {
+    padding: 9px 10px;
+    font-size: 12px;
+    line-height: 1.3;
+    vertical-align: top;
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: break-word;
+}
+
+.contact-report-table th {
+    vertical-align: middle;
+}
+
+.contact-report-name-col { width: 13%; }
+.contact-report-title-col { width: 16%; }
+.contact-report-category-col { width: 10%; }
+.contact-report-status-col { width: 8%; }
+.contact-report-relationship-col { width: 10%; }
+.contact-report-email-col { width: 15%; }
+.contact-report-phone-col { width: 9%; }
+.contact-report-account-col { width: 14%; }
+.contact-report-tier-col { width: 6%; }
 
 
 .inline-edit-panel {

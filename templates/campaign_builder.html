@@ -76,7 +76,7 @@
                     <option value="">Select account with contacts</option>
                     {% for account in accounts %}
                         <option value="{{ account.id }}" {% if selected_account_id == account.id|string %}selected{% endif %}>
-                            {{ account.account_name }} ({{ account.contact_count }} contact{% if account.contact_count != 1 %}s{% endif %})
+                            {{ account.account_name }}{% if account.business_unit %} - {{ account.business_unit }}{% endif %} ({{ account.contact_count }} contact{% if account.contact_count != 1 %}s{% endif %})
                         </option>
                     {% endfor %}
                 </select>

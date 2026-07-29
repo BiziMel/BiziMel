@@ -151,6 +151,18 @@
 
     <div class="table-container full-width-table-container contact-report-table-container">
         <table class="report-table contact-report-table">
+            <colgroup>
+                <col class="contact-report-name-col">
+                <col class="contact-report-title-col">
+                <col class="contact-report-category-col">
+                <col class="contact-report-status-col">
+                <col class="contact-report-relationship-col">
+                <col class="contact-report-email-col">
+                <col class="contact-report-phone-col">
+                <col class="contact-report-phone-col">
+                <col class="contact-report-account-col">
+                <col class="contact-report-tier-col">
+            </colgroup>
             <thead>
                 <tr>
                     <th>Name</th>
@@ -179,7 +191,14 @@
                         </td>
                         <td>{{ contact["job_title"] or "Not set" }}</td>
                         <td>{{ contact["category"] or "Unknown" }}</td>
-                        <td>{{ contact["status"] or "Active" }}</td>
+                        <td>
+                            {% set contact_status = contact["status"] or "Active" %}
+                            {% set is_active = contact_status != "Inactive" %}
+                            <span class="contact-status-report">
+                                <i class="contact-status-dot {% if is_active %}status-active{% else %}status-inactive{% endif %}" aria-hidden="true"></i>
+                                {{ contact_status }}
+                            </span>
+                        </td>
                         <td>{{ contact["bmc_relationship"] or "Unknown" }}</td>
                         <td>{{ contact["email"] or "Not set" }}</td>
                         <td>{{ contact["office_phone"] or "Not set" }}</td>

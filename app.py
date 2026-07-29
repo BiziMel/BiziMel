@@ -25,7 +25,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.8"
 APP_RELEASE_DATE = "2026-07-28"
-APP_BUILD = "2026-07-29-v2.6.8-edit-outreach-account-org-r9"
+APP_BUILD = "2026-07-29-v2.6.9-contact-insights-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -39,6 +39,20 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.6.9",
+        "release_date": "2026-07-29",
+        "title": "Contact reporting, contact outreach choices and smarter PG guidance",
+        "fixed": [
+            "Improved the Contact Report Detail table with explicit column widths, horizontal protection and tighter readable spacing so fields no longer overlap.",
+            "Removed email addresses from the Contacts table; users can open the contact record when they need full contact details.",
+            "Changed Contacts table status to green and red dots with an on-page legend for Active and Inactive contacts.",
+            "Added a Contacts table Create Outreach choice dialog so users can create either a single outreach task or a campaign from the selected contact.",
+            "Tightened Campaign Builder duplicate detection so existing same-day outreach does not falsely block a first campaign; only the same campaign window, contact, Sales Play, quantity, frequency and step signature is treated as an existing campaign step.",
+            "Tightened PG Progress RAG relapse wording so stale meeting progress downgrades after 30 days while recent positive progress remains amber and future meetings remain green.",
+            "Expanded Insights guidance with a practical SaaS/software pipeline-generation playbook so duplicated low-value guidance is replaced by stronger route, channel and meeting-booking recommendations.",
+        ],
+    },
     {
         "version": "2.6.8",
         "release_date": "2026-07-28",
@@ -4108,10 +4122,7 @@ def strategic_gtm_recommendation(connection, account_label, failed_activity_type
         LIMIT 1
     """, (*success_outcomes, failed_activity_type or "", failed_sales_play or "")).fetchone()
     if not row:
-        return (
-            f"For {account_label}, stop repeating the current route and build a fresh meeting-led sequence: "
-            "try a different stakeholder level, a new channel mix, and a direct Discovery or NBM ask with two clear time options."
-        )
+        return strategic_pipeline_playbook_recommendation(account_label, failed_activity_type, failed_sales_play)
     route = compact_join([
         row["sales_play"],
         row["activity_type"],
@@ -4121,7 +4132,44 @@ def strategic_gtm_recommendation(connection, account_label, failed_activity_type
     return (
         f"For {account_label}, pivot to a go-to-market route that is working elsewhere: {route}. "
         f"That pattern has produced {row['nbm_total'] or 0} NBM booking(s) and {row['meeting_total'] or 0} meeting signal(s). "
-        "Use it to create a new contact angle or campaign touchpoint aimed specifically at booking a customer meeting."
+        "Use it to create a new contact angle or campaign touchpoint aimed specifically at booking a customer meeting. "
+        f"{strategic_pipeline_playbook_recommendation(account_label, failed_activity_type, failed_sales_play, compact=True)}"
+    )
+
+
+def strategic_pipeline_playbook_recommendation(account_label, failed_activity_type="", failed_sales_play="", compact=False):
+    """Static SaaS/software sales plays keep dashboard guidance useful offline."""
+    play_context = f" for {failed_sales_play}" if failed_sales_play else ""
+    failed_context = f" after {failed_activity_type}" if failed_activity_type else ""
+    options = [
+        (
+            "Build a 6-8 touch, 14-21 day sequence across email, LinkedIn and phone. "
+            "Keep each touch to one goal: interest, Discovery or NBM qualification."
+        ),
+        (
+            "Multi-thread the account: add an executive buyer, an EA/PA route and one operational stakeholder, "
+            "then tailor the message to each person's likely business pain."
+        ),
+        (
+            "Use a trigger-led value hypothesis instead of another generic follow-up: reference a business change, "
+            "risk, cost pressure, regulation, renewal moment or transformation priority."
+        ),
+        (
+            "If No Response is repeating, change both the channel and the ask: try a short phone-led touch, "
+            "a LinkedIn credibility touch and a direct two-slot meeting request."
+        ),
+        (
+            "Use partner or referral routes where direct outreach is cold. Ask for the warmest introduction to the "
+            "person who owns the business outcome."
+        ),
+    ]
+    selector = sum(ord(char) for char in f"{account_label}|{failed_activity_type}|{failed_sales_play}") % len(options)
+    primary = options[selector]
+    if compact:
+        return primary
+    return (
+        f"For {account_label}{play_context}{failed_context}, stop repeating the same motion. "
+        f"{primary} The success metric is a customer meeting, so end the next move with a specific Discovery or NBM ask."
     )
 
 
@@ -6281,7 +6329,13 @@ def pg_progress_rag_status(outcomes, discovery_values=None, nbm_values=None, sch
             "label": "Red",
             "reason": "Meeting progression marked as no",
         }
-    if has_any_historic_progress or has_stale_positive_signal or has_stale_meeting_signal:
+    if has_stale_meeting_signal:
+        return {
+            "status": "amber",
+            "label": "Amber",
+            "reason": "Meeting progress is older than 30 days and needs a fresh positive response or future meeting",
+        }
+    if has_any_historic_progress or has_stale_positive_signal:
         return {
             "status": "red",
             "label": "Red",
@@ -6677,7 +6731,19 @@ def outreach_duplicate_exists(connection, account_id, recipients, activity_date=
     return False
 
 
-def campaign_step_duplicate_exists(connection, account_id, contact_id, action_date="", activity_type="", subject=""):
+def campaign_step_duplicate_exists(
+    connection,
+    account_id,
+    contact_id,
+    action_date="",
+    activity_type="",
+    subject="",
+    sales_play="",
+    campaign_start_date="",
+    campaign_end_date="",
+    total_tasks=None,
+    times_per_week=None,
+):
     if not str(account_id or "").isdigit() or not str(contact_id or "").isdigit():
         return False
     subject_key = (subject or "").strip().casefold()
@@ -6687,20 +6753,36 @@ def campaign_step_duplicate_exists(connection, account_id, contact_id, action_da
             SELECT outreach.subject, outreach.activity_type
             FROM outreach
             WHERE outreach.account_id = ?
+              AND COALESCE(outreach.sales_play, '') = COALESCE(?, '')
+              AND COALESCE(outreach.campaign_start_date, '') = COALESCE(?, '')
+              AND COALESCE(outreach.campaign_end_date, '') = COALESCE(?, '')
+              AND COALESCE(outreach.campaign_total_tasks, 0) = COALESCE(?, 0)
+              AND COALESCE(outreach.campaign_tasks_per_week, 0) = COALESCE(?, 0)
               AND (
                     outreach.contact_id = ?
                  OR outreach.id IN (
                         SELECT outreach_id
                         FROM outreach_recipients
                         WHERE contact_id = ?
-                    )
+                )
               )
               AND (
                     COALESCE(outreach.activity_date, '') = COALESCE(?, '')
                  OR COALESCE(outreach.next_action_date, '') = COALESCE(?, '')
               )
               AND COALESCE(outreach.task_status, '') NOT IN ('Deleted', 'Cancelled')
-        """, (account_id, contact_id, contact_id, action_date or "", action_date or "")).fetchall()
+        """, (
+            account_id,
+            sales_play or "",
+            campaign_start_date or "",
+            campaign_end_date or "",
+            total_tasks or 0,
+            times_per_week or 0,
+            contact_id,
+            contact_id,
+            action_date or "",
+            action_date or "",
+        )).fetchall()
     except Exception as exc:
         if database_error_looks_like_schema_drift(exc):
             try:
@@ -6713,13 +6795,28 @@ def campaign_step_duplicate_exists(connection, account_id, contact_id, action_da
                     SELECT outreach.subject, outreach.activity_type
                     FROM outreach
                     WHERE outreach.account_id = ?
+                      AND COALESCE(outreach.sales_play, '') = COALESCE(?, '')
+                      AND COALESCE(outreach.campaign_start_date, '') = COALESCE(?, '')
+                      AND COALESCE(outreach.campaign_end_date, '') = COALESCE(?, '')
+                      AND COALESCE(outreach.campaign_total_tasks, 0) = COALESCE(?, 0)
+                      AND COALESCE(outreach.campaign_tasks_per_week, 0) = COALESCE(?, 0)
                       AND outreach.contact_id = ?
                       AND (
                             COALESCE(outreach.activity_date, '') = COALESCE(?, '')
                          OR COALESCE(outreach.next_action_date, '') = COALESCE(?, '')
                       )
                       AND COALESCE(outreach.task_status, '') NOT IN ('Deleted', 'Cancelled')
-                """, (account_id, contact_id, action_date or "", action_date or "")).fetchall()
+                """, (
+                    account_id,
+                    sales_play or "",
+                    campaign_start_date or "",
+                    campaign_end_date or "",
+                    total_tasks or 0,
+                    times_per_week or 0,
+                    contact_id,
+                    action_date or "",
+                    action_date or "",
+                )).fetchall()
             except Exception as retry_exc:
                 log_diagnostic_exception("CAMPAIGN", retry_exc, {"stage": "campaign_duplicate_day_retry"})
                 try:
@@ -12670,7 +12767,7 @@ def campaign_builder_impl():
     campaign_generation_warnings = []
     error = request.args.get("error", "")
     selected_account_id = request.form.get("account_id") or request.args.get("account_id") or ""
-    selected_contact_ids = request.form.getlist("contact_ids")
+    selected_contact_ids = request.form.getlist("contact_ids") or request.args.getlist("contact_ids") or request.args.getlist("contact_id")
     selected_pg_week_start = request.form.get("pg_week_start", "")
     selected_campaign_start = request.form.get("campaign_start_date", "")
     selected_campaign_end = request.form.get("campaign_end_date", "")
@@ -12840,13 +12937,18 @@ def campaign_builder_impl():
                             action_date.isoformat(),
                             step["activity_type"],
                             subject,
+                            sales_play,
+                            campaign_start.isoformat(),
+                            campaign_end.isoformat(),
+                            total_tasks,
+                            times_per_week,
                         ):
                             skipped_duplicate_count += 1
                             campaign_generation_warnings.append(
                                 (
                                     f"{contact['name']}: PipeFlow did not create another {step['activity_type']} task "
-                                    f"for {format_display_datetime(action_date.isoformat(), step['time'])} because a matching future outreach task already exists "
-                                    "for this contact, activity and Sales Play. This can happen if an earlier Campaign Builder attempt created the tasks before the page showed an error."
+                                    f"for {format_display_datetime(action_date.isoformat(), step['time'])} because the same campaign step already exists "
+                                    "for this contact, Sales Play, campaign date range, quantity and weekly frequency."
                                 )
                             )
                             continue

@@ -6,6 +6,10 @@
     <div>
         <h1>Contacts</h1>
         <p>Your relationship intelligence board across accounts, roles and stakeholder influence.</p>
+        <p class="contact-status-legend">
+            <span><i class="contact-status-dot status-active" aria-hidden="true"></i> Active</span>
+            <span><i class="contact-status-dot status-inactive" aria-hidden="true"></i> Inactive</span>
+        </p>
     </div>
 
     <a href="{{ url_for('add_contact') }}" class="btn btn-primary">
@@ -72,7 +76,6 @@
             <col class="contact-outreach-col">
             <col class="contact-role-col">
             <col class="contact-relationship-col">
-            <col class="contact-email-col">
         </colgroup>
         <thead>
             <tr>
@@ -87,7 +90,6 @@
                 <th>Outreach</th>
                 <th>Role</th>
                 <th>Relationship</th>
-                <th>Email</th>
             </tr>
         </thead>
 
@@ -118,10 +120,14 @@
                         <br>
                         <small>{{ contact["category"] or "Category not set" }}</small>
                         <br>
-                        <a href="{{ url_for('add_outreach', account_id=contact['account_id'], contact_id=contact['id']) }}"
-                           class="table-secondary-link">
+                        <button type="button"
+                                class="table-secondary-link button-as-link"
+                                data-contact-outreach-choice
+                                data-contact-name="{{ contact['name'] or 'this contact' }}"
+                                data-single-url="{{ url_for('add_outreach', account_id=contact['account_id'], contact_id=contact['id']) }}"
+                                data-campaign-url="{{ url_for('campaign_builder', account_id=contact['account_id'], contact_ids=contact['id']) }}">
                             Create Outreach
-                        </a>
+                        </button>
                     </td>
 
                     <td>
@@ -149,7 +155,12 @@
                     </td>
 
                     <td>
-                        <span class="status-pill">{{ contact["status"] or "Active" }}</span>
+                        {% set contact_status = contact["status"] or "Active" %}
+                        {% set is_active = contact_status != "Inactive" %}
+                        <span class="contact-status-indicator" title="{{ contact_status }}" aria-label="{{ contact_status }}">
+                            <i class="contact-status-dot {% if is_active %}status-active{% else %}status-inactive{% endif %}" aria-hidden="true"></i>
+                            <span class="sr-only">{{ contact_status }}</span>
+                        </span>
                     </td>
 
                     <td>
@@ -169,21 +180,68 @@
                             {{ contact["bmc_relationship"] or "Unknown" }}
                         </span>
                     </td>
-
-                    <td>
-                        {% if contact["email"] %}
-                            <a href="mailto:{{ contact['email'] }}">
-                                {{ contact["email"] }}
-                            </a>
-                        {% else %}
-                            <small>Not added</small>
-                        {% endif %}
-                    </td>
                 </tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
+
+<div class="modal-backdrop" id="contactOutreachChoiceModal" hidden>
+    <div class="modal-card contact-outreach-choice-card" role="dialog" aria-modal="true" aria-labelledby="contactOutreachChoiceTitle">
+        <h2 id="contactOutreachChoiceTitle">Create Outreach</h2>
+        <p id="contactOutreachChoiceText">Choose how to create outreach for this contact.</p>
+        <div class="button-group contact-outreach-choice-actions">
+            <a href="#" class="btn btn-primary" id="contactSingleOutreachLink">Single Outreach</a>
+            <a href="#" class="btn btn-secondary" id="contactCampaignOutreachLink">Campaign</a>
+            <button type="button" class="btn btn-secondary" id="contactOutreachChoiceClose">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const outreachChoiceModal = document.getElementById("contactOutreachChoiceModal");
+    const outreachChoiceText = document.getElementById("contactOutreachChoiceText");
+    const singleOutreachLink = document.getElementById("contactSingleOutreachLink");
+    const campaignOutreachLink = document.getElementById("contactCampaignOutreachLink");
+    const closeOutreachChoice = document.getElementById("contactOutreachChoiceClose");
+
+    function closeContactOutreachChoice() {
+        if (outreachChoiceModal) {
+            outreachChoiceModal.hidden = true;
+        }
+    }
+
+    document.querySelectorAll("[data-contact-outreach-choice]").forEach((button) => {
+        button.addEventListener("click", () => {
+            if (!outreachChoiceModal || !singleOutreachLink || !campaignOutreachLink) {
+                window.location.href = button.dataset.singleUrl;
+                return;
+            }
+            const contactName = button.dataset.contactName || "this contact";
+            outreachChoiceText.textContent = `Create a single outreach task or build a campaign for ${contactName}.`;
+            singleOutreachLink.href = button.dataset.singleUrl;
+            campaignOutreachLink.href = button.dataset.campaignUrl;
+            outreachChoiceModal.hidden = false;
+            singleOutreachLink.focus();
+        });
+    });
+
+    if (closeOutreachChoice) {
+        closeOutreachChoice.addEventListener("click", closeContactOutreachChoice);
+    }
+    if (outreachChoiceModal) {
+        outreachChoiceModal.addEventListener("click", (event) => {
+            if (event.target === outreachChoiceModal) {
+                closeContactOutreachChoice();
+            }
+        });
+    }
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+            closeContactOutreachChoice();
+        }
+    });
+</script>
 
 {% else %}
 

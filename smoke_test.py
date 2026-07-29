@@ -137,6 +137,7 @@ def main():
         )
         today = pipeflow_app.current_app_datetime().date()
         stale_date = (today - timedelta(days=45)).isoformat()
+        recent_past_date = (today - timedelta(days=7)).isoformat()
         future_date = (today + timedelta(days=7)).isoformat()
         assert_ok(
             pipeflow_app.pg_progress_rag_status(["No Response"])["status"] == "red",
@@ -159,6 +160,20 @@ def main():
                 progress_signals=[{"outcome": "Positive Response", "date": stale_date}],
             )["status"] == "red",
             "PG RAG should relapse to red after stale progress",
+        )
+        assert_ok(
+            pipeflow_app.pg_progress_rag_status(
+                ["NBM Booked"],
+                scheduled_meetings=[stale_date],
+            )["status"] == "amber",
+            "PG RAG should relapse from green to amber when meeting progress is stale",
+        )
+        assert_ok(
+            pipeflow_app.pg_progress_rag_status(
+                ["NBM Booked"],
+                scheduled_meetings=[recent_past_date],
+            )["status"] == "green",
+            "PG RAG should stay green for recent meeting progress",
         )
 
         client = pipeflow_app.app.test_client()
@@ -603,8 +618,8 @@ def main():
             "Campaign Builder did not handle repeated campaign generation cleanly",
         )
         assert_ok(
-            "This can happen if an earlier Campaign Builder attempt created the tasks before the page showed an error." in app_source,
-            "Campaign Builder duplicate warning does not explain previous generation attempts",
+            "same campaign step already exists" in app_source,
+            "Campaign Builder duplicate warning does not explain exact campaign duplicate criteria",
         )
         original_campaign_builder_impl = pipeflow_app.campaign_builder_impl
 
@@ -678,6 +693,64 @@ def main():
         assert_ok(
             duplicate_campaign_rows == 0,
             "Campaign Builder created duplicate contact/date/time/activity/subject rows",
+        )
+
+        false_duplicate_start = (today + timedelta(days=70)).isoformat()
+        false_duplicate_end = (today + timedelta(days=75)).isoformat()
+        connection = sqlite3.connect(db_path)
+        connection.execute(
+            """
+            INSERT INTO outreach (
+                fy, quarter, account_id, contact_id, campaign, sales_play,
+                activity_date, activity_time, activity_type, subject, notes, outcome,
+                next_action_date, next_action_time, task_status, assigned_to
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "27",
+                "Q1",
+                account_id,
+                second_contact_id,
+                "",
+                "Smoke Test Play",
+                false_duplicate_start,
+                "09:00",
+                "VITO",
+                "VITO: Smoke Test Play",
+                "Existing single outreach should not block first campaign generation.",
+                "No Response",
+                false_duplicate_start,
+                "09:00",
+                "Not Started",
+                "Smoke Test Admin",
+            ),
+        )
+        connection.commit()
+        connection.close()
+        response = client.post(
+            "/outreach/campaign-builder",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "account_id": str(account_id),
+                "pg_week_start": (today + timedelta(days=80)).isoformat(),
+                "campaign_start_date": false_duplicate_start,
+                "campaign_end_date": false_duplicate_end,
+                "total_outreach_tasks": "1",
+                "times_per_week": "1",
+                "sales_play": "Smoke Test Play",
+                "fy": "27",
+                "quarter": "Q1",
+                "assigned_to": "Smoke Test Admin",
+                "contact_ids": [str(second_contact_id)],
+            },
+            follow_redirects=True,
+        )
+        false_duplicate_html = response.get_data(as_text=True)
+        assert_ok(
+            response.status_code == 200
+            and "Campaign created:" in false_duplicate_html
+            and "same campaign step already exists" not in false_duplicate_html,
+            "Campaign Builder falsely treated an existing single outreach task as a duplicate campaign step",
         )
 
         response = client.post(
