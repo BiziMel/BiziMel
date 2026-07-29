@@ -731,6 +731,14 @@ def main():
         for outcome in ("NBM Booked", "Discovery Booked", "Exec Meeting Booked"):
             assert_ok(outcome in add_html, f"{outcome} outcome missing from Outreach form")
 
+        response = client.get(f"/outreach/{outreach_id}/edit")
+        edit_outreach_html = response.get_data(as_text=True)
+        assert_ok(
+            response.status_code == 200
+            and "Smoke Test Account - BMC" in edit_outreach_html,
+            "Edit Outreach account selector does not show account business/org",
+        )
+
         response = client.get(f"/outreach/add?account_id={account_id}")
         prefill_account_html = response.get_data(as_text=True)
         assert_ok(

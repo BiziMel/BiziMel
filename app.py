@@ -25,7 +25,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.8"
 APP_RELEASE_DATE = "2026-07-28"
-APP_BUILD = "2026-07-28-v2.6.8-pg-rag-broadcast-global-insights-campaign-session-notices-r8"
+APP_BUILD = "2026-07-29-v2.6.8-edit-outreach-account-org-r9"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -54,6 +54,7 @@ RELEASE_NOTES = [
             "Reworded Campaign Builder duplicate warnings so users can see that matching future Outreach tasks already exist, often from an earlier generation attempt that created rows before an error was shown.",
             "Added a last-resort safe Outreach response so campaign redirects and Outreach refreshes show a readable page instead of an internal server error if table loading fails.",
             "Moved Campaign Builder success and warning messages out of redirect URLs and into short session notices so long campaign messages cannot break the post-save redirect after Outreach rows are created.",
+            "Updated Edit Outreach so the Account field shows account name plus business/org where available.",
         ],
     },
     {
