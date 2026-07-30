@@ -25,7 +25,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.9"
 APP_RELEASE_DATE = "2026-07-29"
-APP_BUILD = "2026-07-30-v2.6.9-reporting-pg-progress-r6"
+APP_BUILD = "2026-07-30-v2.6.9-pg-progress-contact-activity-r7"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -60,6 +60,7 @@ RELEASE_NOTES = [
             "Added recovery handling around Account and Contact Reports so live data edge cases open a report-specific recovery page instead of the generic application error screen.",
             "Changed Sales Play report filters from checkbox panels to compact dropdown filters in one row.",
             "Tightened PG Progress so deleted outreach activities cannot appear in Sales Play context, recent activity or future planned action rows.",
+            "Changed PG Progress contact visibility so every active contact with associated non-deleted outreach is displayed, even when their last reportable activity is older than 30 days.",
         ],
     },
     {
@@ -8632,6 +8633,21 @@ def pg_dashboard_context(connection):
 
         for contact in contacts:
             contact_id = contact["id"]
+            associated_outreach_rows = connection.execute(f"""
+                SELECT id
+                FROM outreach
+                WHERE account_id = ?
+                  AND (
+                        contact_id = ?
+                     OR id IN (
+                            SELECT outreach_id
+                            FROM outreach_recipients
+                            WHERE contact_id = ?
+                        )
+                  )
+                  AND COALESCE(task_status, '') NOT IN ({",".join("?" for _ in REPORT_EXCLUDED_TASK_STATUSES)})
+                LIMIT 1
+            """, (account_id, contact_id, contact_id, *REPORT_EXCLUDED_TASK_STATUSES)).fetchall()
             scheduled_action_rows = connection.execute(f"""
                 SELECT subject, activity_type, next_action_date, next_action_time
                 FROM outreach
@@ -8673,7 +8689,7 @@ def pg_dashboard_context(connection):
                 row for row in recent_activity_rows
                 if str(row["completed_at"] or row["last_updated"] or row["activity_date"] or "")[:10] >= thirty_days_ago
             ]
-            if not recent_activity_rows:
+            if not associated_outreach_rows and not scheduled_action_rows:
                 continue
             contact_rag_payload = pg_progress_contact_update(connection, contact_id, legacy_action_update)
             action_update = contact_rag_payload["action_update"]
@@ -8701,6 +8717,12 @@ def pg_dashboard_context(connection):
                     "date": format_display_datetime(row["completed_at"]) or format_display_datetime(row["last_updated"]) or format_display_datetime(row["activity_date"], row["activity_time"]) or "No date",
                     "activity": row["activity_type"] or row["subject"] or "Activity",
                     "activity_update": " - ".join(part for part in activity_bits if part),
+                })
+            if not last_30_days_activity_entries:
+                last_30_days_activity_entries.append({
+                    "date": "",
+                    "activity": "No activity in last 30 days",
+                    "activity_update": "This contact has outreach associated to them but no reportable activity update in the last 30 days.",
                 })
 
             pg_action_rows.append({

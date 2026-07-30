@@ -150,6 +150,39 @@ def seed_validation_data(db_path):
             "Smoke Tester",
         ),
     )
+    connection.execute(
+        """
+        INSERT INTO outreach (
+            fy, quarter, account_id, contact_id, campaign, sales_play, campaign_start_date,
+            campaign_end_date, campaign_tasks_per_week, campaign_total_tasks, activity_date,
+            activity_time, activity_type, subject, notes, outcome, next_action,
+            next_action_date, next_action_time, task_status, assigned_to
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "FY27",
+            "Q1",
+            account_id,
+            second_contact_id,
+            "Older Smoke Campaign",
+            "Smoke Test Play",
+            "2026-05-01",
+            "2026-05-29",
+            1,
+            1,
+            "2026-05-01",
+            "12:00",
+            "Email",
+            "Older PG Progress Marker",
+            "Older activity should still keep this contact visible in PG Progress",
+            "No Response",
+            "Review older outreach route",
+            "2026-05-02",
+            "12:30",
+            "Completed",
+            "Smoke Tester",
+        ),
+    )
     connection.commit()
     connection.close()
     return account_id, contact_id, second_contact_id, partner_id, partner_contact_id, outreach_id
@@ -266,6 +299,10 @@ def main():
         plan_row = next(row for row in pg_context["pg_plan_rows"] if row["account_id"] == account_id)
         action_rows = [row for row in pg_context["pg_action_rows"] if row["account_id"] == account_id]
         assert_ok(action_rows, "PG Progress action rows missing for smoke account")
+        assert_ok(
+            any(row.get("contact_id") == second_contact_id for row in action_rows),
+            "PG Progress did not display a contact with associated older outreach activity",
+        )
         pg_progress_text = " ".join(
             str(entry)
             for row in action_rows
