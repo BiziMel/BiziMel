@@ -45,6 +45,10 @@ def seed_validation_data(db_path):
         "UPDATE accounts SET customer_logo = ? WHERE id = ?",
         (smoke_logo, account_id),
     )
+    connection.execute(
+        "UPDATE accounts SET pipeline_target = ?, current_pipeline = ?, account_tier = ? WHERE id = ?",
+        ("£1,250,000", "$250,000", "Tier 1", account_id),
+    )
     contact_id = connection.execute(
         """
         INSERT INTO contacts (account_id, category, name, job_title, email, phone, location)

@@ -25,7 +25,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.9"
 APP_RELEASE_DATE = "2026-07-29"
-APP_BUILD = "2026-07-30-v2.6.9-reporting-accordion-r2"
+APP_BUILD = "2026-07-30-v2.6.9-reporting-accordion-r3"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -55,6 +55,7 @@ RELEASE_NOTES = [
             "Changed System Metadata and audit-style timeline sections to closed accordions so audit detail is available on demand instead of permanently occupying the page.",
             "Enriched Account, Contact, Outreach and Partner reports with portfolio KPIs, coverage/risk/effectiveness breakdowns, filter links, CSV export and XLSX export while leaving the PG Bible report unchanged.",
             "Hardened Account Reports aggregation so production data is calculated through smaller resilient reads instead of a single brittle summary query, and expanded smoke coverage across all report pages and exports.",
+            "Hardened page and export rendering against live formatted values such as currency-formatted pipeline targets and labelled account tiers, preventing report and account pages from failing during load.",
         ],
     },
     {
@@ -1509,6 +1510,18 @@ def report_percent(numerator, denominator):
     if not denominator:
         return 0
     return round((float(numerator or 0) / denominator) * 100, 1)
+
+
+def sort_number_value(value, fallback=9999):
+    if value in (None, ""):
+        return fallback
+    match = re.search(r"\d+", str(value))
+    if not match:
+        return fallback
+    try:
+        return int(match.group(0))
+    except ValueError:
+        return fallback
 
 
 def report_filter_url(endpoint, **params):
@@ -4543,7 +4556,7 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
             "source": "Daily Focus",
             "category": "Account Activity",
             "title": f"{account_label} is untouched: {reason_text}",
-            "evidence": f"Account: {account_label}. Active contacts: {row['active_contact_total'] or 0}. Campaign tasks: {row['campaign_task_total'] or 0}. Sales play: {row['sales_play'] or 'not entered'}. Pipeline target: ${float(row['pipeline_target'] or 0):,.0f}.",
+            "evidence": f"Account: {account_label}. Active contacts: {row['active_contact_total'] or 0}. Campaign tasks: {row['campaign_task_total'] or 0}. Sales play: {row['sales_play'] or 'not entered'}. Pipeline target: ${money_value(row['pipeline_target']):,.0f}.",
             "message": "This account cannot create reliable campaign learning or meeting conversion until contact coverage and campaign tasks exist.",
             "action": strategic_gtm_recommendation(connection, account_label, "", row["sales_play"]),
             "link": url_for("view_account", account_id=row["id"]),
@@ -4574,7 +4587,7 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
             "source": "Daily Focus",
             "category": "Contact Activity",
             "title": f"{account_label} has no active contacts",
-            "evidence": f"Account: {account_label}. Active contacts: 0. Pipeline target: ${float(row['pipeline_target'] or 0):,.0f}.",
+            "evidence": f"Account: {account_label}. Active contacts: 0. Pipeline target: ${money_value(row['pipeline_target']):,.0f}.",
             "message": "No contact coverage means there is no person to progress toward Discovery, NBM or executive meetings.",
             "action": f"Add at least one executive buyer, assistant or senior stakeholder for {account_label}, then use the strongest successful route from other accounts to create the first meeting-led outreach task.",
             "link": url_for("view_account", account_id=row["id"]),
@@ -4617,7 +4630,7 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
             "source": "Daily Focus",
             "category": "Pipeline Generation",
             "title": f"{account_label} has pipeline target but no future meeting",
-            "evidence": f"Account: {account_label}. Pipeline target: ${float(row['pipeline_target'] or 0):,.0f}. Active contacts: {row['active_contact_total'] or 0}. Outreach tasks: {row['outreach_total'] or 0}. Future meetings: 0. Sales play: {row['sales_play'] or 'not entered'}.",
+            "evidence": f"Account: {account_label}. Pipeline target: ${money_value(row['pipeline_target']):,.0f}. Active contacts: {row['active_contact_total'] or 0}. Outreach tasks: {row['outreach_total'] or 0}. Future meetings: 0. Sales play: {row['sales_play'] or 'not entered'}.",
             "message": "This is a pipeline generation gap: the account has value and contact coverage but no forward customer meeting scheduled.",
             "action": strategic_gtm_recommendation(connection, account_label, "", row["sales_play"]),
             "link": url_for("view_account", account_id=row["id"]),
@@ -4656,7 +4669,7 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
             "source": "Daily Focus",
             "category": "Executive Coverage",
             "title": f"{account_label} needs an executive route to create meetings",
-            "evidence": f"Account: {account_label}. Active contacts: {row['active_contact_total'] or 0}. Executive contacts: 0. Pipeline target: ${float(row['pipeline_target'] or 0):,.0f}.",
+            "evidence": f"Account: {account_label}. Active contacts: {row['active_contact_total'] or 0}. Executive contacts: 0. Pipeline target: ${money_value(row['pipeline_target']):,.0f}.",
             "message": "The account has contact coverage, but the visible route does not yet reach a senior buyer or executive path.",
             "action": f"Add or identify an executive stakeholder, EA/PA or sponsor for {account_label}, then create a new outreach task with a direct Discovery or NBM meeting ask.",
             "link": url_for("view_account", account_id=row["id"]),
@@ -6302,6 +6315,8 @@ def contact_has_recent_or_open_activity(connection, contact_id, cutoff_date):
 
 
 def money_value(value):
+    if isinstance(value, str):
+        value = value.replace(",", "").replace("$", "").replace("£", "").strip()
     try:
         return float(value or 0)
     except (TypeError, ValueError):
@@ -9432,6 +9447,8 @@ def accounts():
 
     for row in account_rows:
         account = dict(row)
+        account["pipeline_target"] = money_value(account.get("pipeline_target"))
+        account["current_pipeline"] = money_value(account.get("current_pipeline"))
         account["active_contact_count"] = dashboard_scalar(connection, """
             SELECT COUNT(*)
             FROM contacts
@@ -9473,8 +9490,8 @@ def accounts():
 
     accounts.sort(
         key=lambda account: (
-            int(account["account_tier"] or 999),
-            int(account["pg_bible_order"] or 9999),
+            sort_number_value(account["account_tier"], 999),
+            sort_number_value(account["pg_bible_order"], 9999),
             account["account_name"].lower()
         )
     )
@@ -10384,6 +10401,9 @@ def view_account(account_id):
     if not account:
         connection.close()
         return redirect(url_for("accounts", message="Account could not be found in this workspace."))
+    account = dict(account)
+    account["pipeline_target"] = money_value(account.get("pipeline_target"))
+    account["current_pipeline"] = money_value(account.get("current_pipeline"))
 
     account_stats = connection.execute(f"""
         SELECT
@@ -15351,15 +15371,16 @@ def build_pg_bible_report_from_db(connection):
 
     plan_items = []
     for account in accounts:
+        account_pipeline_target = money_value(account["pipeline_target"])
         plan_items.append(PlanItem(
             pg_bible_order=account["pg_bible_order"],
             account_tier=account["account_tier"] or "",
-            pipeline_target_value=account["pipeline_target"] or 0,
+            pipeline_target_value=account_pipeline_target,
             notes=account["notes"] or "",
             nbm_target=str(account["pg_bible_order"] or ""),
             customer=account["account_name"] or "",
             sales_play=account["sales_play"] or "",
-            estimated_value=account["pipeline_target"] or 0,
+            estimated_value=account_pipeline_target,
         ))
 
     contacts = connection.execute("""
@@ -15507,7 +15528,7 @@ def build_pg_bible_report_from_db(connection):
             prep_with_manager="",
             nbm_completed="Yes" if meeting_count else "",
             nbm_next_action=next_action_text,
-            vo_value=contact["pipeline_target"] or 0 if meeting_count else 0,
+            vo_value=money_value(contact["pipeline_target"]) if meeting_count else 0,
         ))
 
     weekly_source_rows = connection.execute(f"""
@@ -15568,7 +15589,7 @@ def build_pg_bible_report_from_db(connection):
                 totals["nbms_completed"] += 1
         if is_pipeline_outcome:
             totals["pipeline_generated_vo_count"] += 1
-            totals["pipeline_generated_value"] += row["pipeline_target"] or 0
+            totals["pipeline_generated_value"] += money_value(row["pipeline_target"])
 
     weekly_results = [
         WeeklyResultRow(
@@ -15586,7 +15607,7 @@ def build_pg_bible_report_from_db(connection):
         for week_key, totals in sorted(weekly_totals.items())
     ]
 
-    total_account_target = sum(account["pipeline_target"] or 0 for account in accounts)
+    total_account_target = sum(money_value(account["pipeline_target"]) for account in accounts)
     total_pipeline_added = sum(row.pipeline_generated_value or 0 for row in weekly_results)
     calc_payload = {
         "starting_pipeline": os.environ.get("PIPEFLOW_PG_STARTING_PIPELINE", total_account_target),
@@ -15705,8 +15726,8 @@ def account_reports():
             last_updated
         FROM outreach
         WHERE account_id IS NOT NULL
-          AND {report_visible_task_sql("outreach")}
-    """, report_visible_task_params()).fetchall()
+          AND COALESCE(task_status, '') NOT IN ({",".join("?" for _ in REPORT_EXCLUDED_TASK_STATUSES)})
+    """, REPORT_EXCLUDED_TASK_STATUSES).fetchall()
     connection.close()
 
     contact_summary = {}
@@ -15753,6 +15774,8 @@ def account_reports():
     enriched_accounts = []
     for account in accounts:
         row = dict(account)
+        row["pipeline_target"] = money_value(row.get("pipeline_target"))
+        row["current_pipeline"] = money_value(row.get("current_pipeline"))
         contacts_for_account = contact_summary.get(account["id"], {})
         outreach_for_account = outreach_summary.get(account["id"], {})
         row["contact_count"] = len(contacts_for_account.get("contact_ids", set()))
@@ -15803,8 +15826,8 @@ def account_reports():
     risk_breakdown = group_total("risk_status", "risk")
     pipeline_by_account = sorted(
         [
-            {"account_name": row["account_label"], "pipeline_target": float(row["pipeline_target"] or 0), "filter_url": url_for("edit_account", account_id=row["id"])}
-            for row in enriched_accounts if float(row["pipeline_target"] or 0) > 0
+            {"account_name": row["account_label"], "pipeline_target": row["pipeline_target"], "filter_url": url_for("edit_account", account_id=row["id"])}
+            for row in enriched_accounts if row["pipeline_target"] > 0
         ],
         key=lambda item: item["pipeline_target"],
         reverse=True,
@@ -15818,11 +15841,11 @@ def account_reports():
     account_metrics = {
         "total_accounts": len(enriched_accounts),
         "priority_accounts": sum(1 for row in enriched_accounts if row["pg_bible_order"] or str(row["account_tier"] or "").strip() in ("1", "Tier 1", "Strategic")),
-        "active_opportunities": sum(1 for row in enriched_accounts if float(row["pipeline_target"] or 0) > 0 or float(row["current_pipeline"] or 0) > 0),
+        "active_opportunities": sum(1 for row in enriched_accounts if row["pipeline_target"] > 0 or row["current_pipeline"] > 0),
         "no_recent_activity": sum(1 for row in enriched_accounts if row["risk_status"] in ("No contacts", "No recent activity")),
         "incomplete_plans": sum(1 for row in enriched_accounts if not row["plan_complete"]),
-        "total_pipeline_target": sum(float(row["pipeline_target"] or 0) for row in enriched_accounts),
-        "weighted_pipeline": sum(float(row["pipeline_target"] or 0) * (row["engagement_score"] / 100) for row in enriched_accounts),
+        "total_pipeline_target": sum(row["pipeline_target"] for row in enriched_accounts),
+        "weighted_pipeline": sum(row["pipeline_target"] * (row["engagement_score"] / 100) for row in enriched_accounts),
         "average_engagement_score": round(sum(row["engagement_score"] for row in enriched_accounts) / len(enriched_accounts), 1) if enriched_accounts else 0,
     }
 
@@ -16566,7 +16589,7 @@ def contact_reports():
         ORDER BY account_name, business_unit
     """).fetchall()
 
-    contacts = connection.execute(f"""
+    contacts = connection.execute("""
         SELECT
             contacts.id,
             contacts.account_id,
@@ -16581,56 +16604,78 @@ def contact_reports():
             contacts.date_created,
             accounts.account_name,
             accounts.business_unit,
-            accounts.account_tier,
-            COUNT(DISTINCT outreach.id) AS activity_count,
-            SUM(CASE WHEN outreach.activity_date >= ? THEN 1 ELSE 0 END) AS recent_activity_count,
-            SUM(CASE WHEN outreach.outcome IN ('Positive Response', 'Meeting Booked', 'NBM Booked', 'Discovery Booked', 'Exec Meeting Booked')
-                       OR outreach.activity_type = 'Meeting'
-                     THEN 1 ELSE 0 END) AS positive_signal_count,
-            SUM(CASE WHEN outreach.outcome IN ('Meeting Booked', 'NBM Booked', 'Discovery Booked', 'Exec Meeting Booked')
-                       OR outreach.activity_type = 'Meeting'
-                     THEN 1 ELSE 0 END) AS meeting_count,
-            MAX(COALESCE(outreach.completed_at, outreach.last_updated, outreach.activity_date)) AS last_activity_date,
-            MIN(CASE WHEN {open_task_sql("outreach")} THEN outreach.next_action_date ELSE NULL END) AS next_action_date
+            accounts.account_tier
         FROM contacts
         LEFT JOIN accounts ON contacts.account_id = accounts.id
-        LEFT JOIN outreach ON (
-                outreach.contact_id = contacts.id
-             OR outreach.id IN (
-                    SELECT outreach_id
-                    FROM outreach_recipients
-                    WHERE outreach_recipients.contact_id = contacts.id
-                )
-            )
-            AND {report_visible_task_sql("outreach")}
         WHERE COALESCE(contacts.status, 'Active') != 'Archived'
-        GROUP BY
-            contacts.id,
-            contacts.account_id,
-            contacts.name,
-            contacts.job_title,
-            contacts.category,
-            contacts.status,
-            contacts.bmc_relationship,
-            contacts.email,
-            contacts.office_phone,
-            contacts.mobile_phone,
-            contacts.date_created,
-            accounts.account_name,
-            accounts.business_unit,
-            accounts.account_tier
         ORDER BY accounts.account_name, contacts.name
-    """, ((today - timedelta(days=30)).isoformat(), *open_task_params(), *report_visible_task_params())).fetchall()
+    """).fetchall()
+    outreach_rows = connection.execute(f"""
+        SELECT
+            id,
+            contact_id,
+            activity_date,
+            next_action_date,
+            task_status,
+            outcome,
+            activity_type,
+            completed_at,
+            last_updated
+        FROM outreach
+        WHERE COALESCE(task_status, '') NOT IN ({",".join("?" for _ in REPORT_EXCLUDED_TASK_STATUSES)})
+    """, REPORT_EXCLUDED_TASK_STATUSES).fetchall()
+    recipient_rows = connection.execute("""
+        SELECT outreach_id, contact_id
+        FROM outreach_recipients
+        WHERE contact_id IS NOT NULL
+    """).fetchall()
     connection.close()
+
+    contact_activity = {}
+    recipients_by_outreach = {}
+    for recipient in recipient_rows:
+        recipients_by_outreach.setdefault(recipient["outreach_id"], set()).add(recipient["contact_id"])
+    recent_cutoff = (today - timedelta(days=30)).isoformat()
+    for outreach in outreach_rows:
+        related_contact_ids = set(recipients_by_outreach.get(outreach["id"], set()))
+        if outreach["contact_id"]:
+            related_contact_ids.add(outreach["contact_id"])
+        for contact_id in related_contact_ids:
+            summary = contact_activity.setdefault(contact_id, {
+                "outreach_ids": set(),
+                "recent_activity_count": 0,
+                "positive_signal_count": 0,
+                "meeting_count": 0,
+                "last_activity_date": "",
+                "next_action_date": "",
+            })
+            summary["outreach_ids"].add(outreach["id"])
+            activity_date = outreach["activity_date"] or ""
+            if activity_date >= recent_cutoff:
+                summary["recent_activity_count"] += 1
+            if (outreach["outcome"] or "") in ("Positive Response", "Meeting Booked", "NBM Booked", "Discovery Booked", "Exec Meeting Booked") or (outreach["activity_type"] or "") == "Meeting":
+                summary["positive_signal_count"] += 1
+            if (outreach["outcome"] or "") in ("Meeting Booked", "NBM Booked", "Discovery Booked", "Exec Meeting Booked") or (outreach["activity_type"] or "") == "Meeting":
+                summary["meeting_count"] += 1
+            if not is_closed_task_status(outreach["task_status"]):
+                next_date = outreach["next_action_date"] or ""
+                if next_date and (not summary["next_action_date"] or next_date < summary["next_action_date"]):
+                    summary["next_action_date"] = next_date
+            last_signal = outreach["completed_at"] or outreach["last_updated"] or outreach["activity_date"] or ""
+            if last_signal and last_signal > summary["last_activity_date"]:
+                summary["last_activity_date"] = last_signal
 
     enriched_contacts = []
     for contact in contacts:
         row = dict(contact)
+        activity = contact_activity.get(contact["id"], {})
+        row["activity_count"] = len(activity.get("outreach_ids", set()))
+        row["recent_activity_count"] = int(activity.get("recent_activity_count", 0))
+        row["positive_signal_count"] = int(activity.get("positive_signal_count", 0))
+        row["meeting_count"] = int(activity.get("meeting_count", 0))
+        row["last_activity_date"] = activity.get("last_activity_date", "")
+        row["next_action_date"] = activity.get("next_action_date", "")
         row["account_label"] = report_account_display(row)
-        row["activity_count"] = int(row["activity_count"] or 0)
-        row["recent_activity_count"] = int(row["recent_activity_count"] or 0)
-        row["positive_signal_count"] = int(row["positive_signal_count"] or 0)
-        row["meeting_count"] = int(row["meeting_count"] or 0)
         row["days_since_last_activity"] = report_days_since(row["last_activity_date"], today)
         row["engagement_score"] = contact_report_engagement_score(row)
         row["engagement_band"] = "Meeting route" if row["meeting_count"] else ("Engaged" if row["positive_signal_count"] or row["recent_activity_count"] else "No activity")
