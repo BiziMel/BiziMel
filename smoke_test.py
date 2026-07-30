@@ -195,6 +195,9 @@ def main():
             "/reports/accounts": "Account Reports",
             "/reports/contacts": "Contact Reports",
             "/reports/outreach": "Outreach Reports",
+            "/reports/partners": "Partner Reports",
+            "/reports/sales-plays": "Sales Play Reports",
+            "/reports/pg-progress": "PG Progress",
             "/search?q=Smoke": "Global Search",
             "/profile": "Profile",
             "/admin/permissions": "Admin",
@@ -1501,8 +1504,13 @@ def main():
 
         for path in (
             "/reports/accounts/export",
+            "/reports/accounts/export?format=xlsx",
             "/reports/contacts/export",
+            "/reports/contacts/export?format=xlsx",
             "/reports/outreach/export",
+            "/reports/outreach/export?format=xlsx",
+            "/reports/partners/export",
+            "/reports/partners/export?format=xlsx",
             "/outreach/export",
         ):
             response = client.get(path)

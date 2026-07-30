@@ -25,7 +25,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.9"
 APP_RELEASE_DATE = "2026-07-29"
-APP_BUILD = "2026-07-30-v2.6.9-reporting-accordion-r1"
+APP_BUILD = "2026-07-30-v2.6.9-reporting-accordion-r2"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -54,6 +54,7 @@ RELEASE_NOTES = [
             "Expanded Insights guidance with a practical SaaS/software pipeline-generation playbook so duplicated low-value guidance is replaced by stronger route, channel and meeting-booking recommendations.",
             "Changed System Metadata and audit-style timeline sections to closed accordions so audit detail is available on demand instead of permanently occupying the page.",
             "Enriched Account, Contact, Outreach and Partner reports with portfolio KPIs, coverage/risk/effectiveness breakdowns, filter links, CSV export and XLSX export while leaving the PG Bible report unchanged.",
+            "Hardened Account Reports aggregation so production data is calculated through smaller resilient reads instead of a single brittle summary query, and expanded smoke coverage across all report pages and exports.",
         ],
     },
     {
@@ -15662,86 +15663,109 @@ def account_reports():
     selected_industry = request.args.get("industry", "")
     selected_risk = request.args.get("risk", "")
 
-    accounts = connection.execute(f"""
+    accounts = connection.execute("""
         SELECT
-            accounts.id,
-            accounts.pg_bible_order,
-            accounts.account_name,
-            accounts.business_unit,
-            accounts.customer_logo,
-            accounts.account_tier,
-            accounts.industry,
-            accounts.country,
-            accounts.city,
-            accounts.pipeline_target,
-            accounts.current_pipeline,
-            accounts.sales_play,
-            accounts.owner_name,
-            COUNT(DISTINCT contacts.id) AS contact_count,
-            SUM(CASE WHEN COALESCE(contacts.status, 'Active') != 'Archived'
-                      AND (LOWER(COALESCE(contacts.category, '')) LIKE '%exec%'
-                           OR LOWER(COALESCE(contacts.category, '')) LIKE '%decision%'
-                           OR LOWER(COALESCE(contacts.job_title, '')) LIKE '%director%'
-                           OR LOWER(COALESCE(contacts.job_title, '')) LIKE '%chief%'
-                           OR LOWER(COALESCE(contacts.job_title, '')) LIKE '%vp%')
-                     THEN 1 ELSE 0 END) AS senior_contact_count,
-            COUNT(DISTINCT outreach.id) AS outreach_count,
-            SUM(CASE WHEN outreach.activity_date >= ? THEN 1 ELSE 0 END) AS recent_outreach_count,
-            SUM(CASE WHEN {open_task_sql("outreach")} THEN 1 ELSE 0 END) AS open_outreach_count,
-            SUM(CASE WHEN {open_task_sql("outreach")} AND outreach.next_action_date >= ? THEN 1 ELSE 0 END) AS future_action_count,
-            SUM(CASE WHEN {open_task_sql("outreach")} AND outreach.next_action_date < ? THEN 1 ELSE 0 END) AS overdue_followups,
-            SUM(CASE WHEN outreach.outcome IN ('Meeting Booked', 'NBM Booked', 'Discovery Booked', 'Discovery Meeting', 'Exec Meeting Booked', 'Executive Meeting')
-                       OR outreach.activity_type = 'Meeting'
-                     THEN 1 ELSE 0 END) AS meeting_count,
-            MAX(COALESCE(outreach.completed_at, outreach.last_updated, outreach.activity_date)) AS last_activity_date,
-            MIN(CASE WHEN {open_task_sql("outreach")} THEN outreach.next_action_date ELSE NULL END) AS next_scheduled_activity
+            id,
+            pg_bible_order,
+            account_name,
+            business_unit,
+            customer_logo,
+            account_tier,
+            industry,
+            country,
+            city,
+            pipeline_target,
+            current_pipeline,
+            sales_play,
+            owner_name
         FROM accounts
-        LEFT JOIN contacts ON contacts.account_id = accounts.id
-            AND COALESCE(contacts.status, 'Active') != 'Archived'
-        LEFT JOIN outreach ON outreach.account_id = accounts.id
-            AND {report_visible_task_sql("outreach")}
-        GROUP BY
-            accounts.id,
-            accounts.pg_bible_order,
-            accounts.account_name,
-            accounts.business_unit,
-            accounts.customer_logo,
-            accounts.account_tier,
-            accounts.industry,
-            accounts.country,
-            accounts.city,
-            accounts.pipeline_target,
-            accounts.current_pipeline,
-            accounts.sales_play,
-            accounts.owner_name
         ORDER BY
-            CASE WHEN accounts.pg_bible_order IS NULL THEN 1 ELSE 0 END,
-            accounts.pg_bible_order,
-            accounts.account_name,
-            accounts.business_unit
-    """, (
-        (today - timedelta(days=30)).isoformat(),
-        *open_task_params(),
-        *open_task_params(),
-        today.isoformat(),
-        *open_task_params(),
-        today.isoformat(),
-        *open_task_params(),
-        *report_visible_task_params(),
-    )).fetchall()
+            CASE WHEN pg_bible_order IS NULL THEN 1 ELSE 0 END,
+            pg_bible_order,
+            account_name,
+            business_unit
+    """).fetchall()
+    contact_rows = connection.execute("""
+        SELECT id, account_id, category, bmc_relationship, job_title, status
+        FROM contacts
+        WHERE account_id IS NOT NULL
+          AND COALESCE(status, 'Active') != 'Archived'
+    """).fetchall()
+    outreach_rows = connection.execute(f"""
+        SELECT
+            id,
+            account_id,
+            activity_date,
+            next_action_date,
+            next_action_time,
+            task_status,
+            outcome,
+            activity_type,
+            completed_at,
+            last_updated
+        FROM outreach
+        WHERE account_id IS NOT NULL
+          AND {report_visible_task_sql("outreach")}
+    """, report_visible_task_params()).fetchall()
     connection.close()
+
+    contact_summary = {}
+    for contact in contact_rows:
+        account_id = contact["account_id"]
+        summary = contact_summary.setdefault(account_id, {"contact_ids": set(), "senior_contact_count": 0})
+        summary["contact_ids"].add(contact["id"])
+        if is_executive_contact(contact["category"], contact["bmc_relationship"], contact["job_title"]):
+            summary["senior_contact_count"] += 1
+
+    outreach_summary = {}
+    recent_cutoff = (today - timedelta(days=30)).isoformat()
+    for outreach in outreach_rows:
+        account_id = outreach["account_id"]
+        summary = outreach_summary.setdefault(account_id, {
+            "outreach_ids": set(),
+            "recent_outreach_count": 0,
+            "open_outreach_count": 0,
+            "future_action_count": 0,
+            "overdue_followups": 0,
+            "meeting_count": 0,
+            "last_activity_date": "",
+            "next_scheduled_activity": "",
+        })
+        summary["outreach_ids"].add(outreach["id"])
+        activity_date = outreach["activity_date"] or ""
+        if activity_date >= recent_cutoff:
+            summary["recent_outreach_count"] += 1
+        if not is_closed_task_status(outreach["task_status"]):
+            summary["open_outreach_count"] += 1
+            next_date = outreach["next_action_date"] or ""
+            if next_date >= today.isoformat():
+                summary["future_action_count"] += 1
+                if not summary["next_scheduled_activity"] or next_date < summary["next_scheduled_activity"]:
+                    summary["next_scheduled_activity"] = next_date
+            elif next_date:
+                summary["overdue_followups"] += 1
+        if (outreach["outcome"] or "") in ("Meeting Booked", "NBM Booked", "Discovery Booked", "Discovery Meeting", "Exec Meeting Booked", "Executive Meeting") or (outreach["activity_type"] or "") == "Meeting":
+            summary["meeting_count"] += 1
+        last_signal = outreach["completed_at"] or outreach["last_updated"] or outreach["activity_date"] or ""
+        if last_signal and last_signal > summary["last_activity_date"]:
+            summary["last_activity_date"] = last_signal
 
     enriched_accounts = []
     for account in accounts:
         row = dict(account)
+        contacts_for_account = contact_summary.get(account["id"], {})
+        outreach_for_account = outreach_summary.get(account["id"], {})
+        row["contact_count"] = len(contacts_for_account.get("contact_ids", set()))
+        row["senior_contact_count"] = int(contacts_for_account.get("senior_contact_count", 0))
+        row["outreach_count"] = len(outreach_for_account.get("outreach_ids", set()))
+        row["recent_outreach_count"] = int(outreach_for_account.get("recent_outreach_count", 0))
+        row["future_action_count"] = int(outreach_for_account.get("future_action_count", 0))
+        row["open_outreach_count"] = int(outreach_for_account.get("open_outreach_count", 0))
+        row["overdue_followups"] = int(outreach_for_account.get("overdue_followups", 0))
+        row["meeting_count"] = int(outreach_for_account.get("meeting_count", 0))
+        row["last_activity_date"] = outreach_for_account.get("last_activity_date", "")
+        row["next_scheduled_activity"] = outreach_for_account.get("next_scheduled_activity", "")
         row["account_label"] = report_account_display(row)
-        row["contact_count"] = int(row["contact_count"] or 0)
-        row["senior_contact_count"] = int(row["senior_contact_count"] or 0)
-        row["recent_outreach_count"] = int(row["recent_outreach_count"] or 0)
-        row["future_action_count"] = int(row["future_action_count"] or 0)
-        row["open_outreach_count"] = int(row["open_outreach_count"] or 0)
-        row["overdue_followups"] = int(row["overdue_followups"] or 0)
-        row["meeting_count"] = int(row["meeting_count"] or 0)
         row["days_since_last_activity"] = report_days_since(row["last_activity_date"], today)
         row["engagement_score"] = account_report_engagement_score(row)
         row["risk_status"] = "No contacts" if row["contact_count"] == 0 else (
