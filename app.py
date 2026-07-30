@@ -25,7 +25,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.9"
 APP_RELEASE_DATE = "2026-07-29"
-APP_BUILD = "2026-07-30-v2.6.9-reporting-resilience-r4"
+APP_BUILD = "2026-07-30-v2.6.9-reporting-pg-progress-r6"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -57,6 +57,9 @@ RELEASE_NOTES = [
             "Hardened Account Reports aggregation so production data is calculated through smaller resilient reads instead of a single brittle summary query, and expanded smoke coverage across all report pages and exports.",
             "Hardened page and export rendering against live formatted values such as currency-formatted pipeline targets and labelled account tiers, preventing report and account pages from failing during load.",
             "Hardened all report routes and report exports with defensive data access so missing optional fields or one failing aggregation no longer causes every report page to return an internal server error.",
+            "Added recovery handling around Account and Contact Reports so live data edge cases open a report-specific recovery page instead of the generic application error screen.",
+            "Changed Sales Play report filters from checkbox panels to compact dropdown filters in one row.",
+            "Tightened PG Progress so deleted outreach activities cannot appear in Sales Play context, recent activity or future planned action rows.",
         ],
     },
     {
@@ -1046,6 +1049,7 @@ def diagnostic_error_code(area="APP"):
     area_codes = {
         "APP": "AP",
         "DASHBOARD": "DB",
+        "REPORT": "RP",
         "OUTREACH-ADD": "OA",
         "OUTREACH-SAVE": "OS",
         "CAMPAIGN": "CG",
@@ -1561,6 +1565,32 @@ def report_success_notice(message="", warning=""):
         "report_warning": warning or "",
         "message": message or "",
     }
+
+
+def safe_report_error_response(template_name, context, code, title):
+    context = dict(context)
+    context["message"] = diagnostic_user_message(
+        f"PipeFlow could not load every part of {title}, so this page has opened in recovery mode.",
+        code,
+    )
+    try:
+        return render_template(template_name, **context)
+    except Exception as render_exc:
+        log_diagnostic_exception("REPORT", render_exc, {"stage": f"{template_name}_recovery_render"})
+        return Response(
+            f"""
+            <html>
+                <head><title>{html.escape(title)} | PipeFlow</title></head>
+                <body style="font-family: Arial, sans-serif; margin: 32px;">
+                    <h1>{html.escape(title)}</h1>
+                    <p>{html.escape(context["message"])}</p>
+                    <p><a href="{html.escape(url_for("reports"))}">Back to Reports</a></p>
+                </body>
+            </html>
+            """,
+            status=200,
+            mimetype="text/html",
+        )
 
 
 def report_xlsx_response(filename_prefix, sheet_title, headers, rows):
@@ -8563,14 +8593,15 @@ def pg_dashboard_context(connection):
               AND COALESCE(status, 'Active') = 'Active'
             ORDER BY name
         """, (account_id,)).fetchall()
-        outreach_sales_play_rows = connection.execute("""
+        outreach_sales_play_rows = connection.execute(f"""
             SELECT DISTINCT sales_play
             FROM outreach
             WHERE account_id = ?
               AND sales_play IS NOT NULL
               AND sales_play != ''
+              AND COALESCE(task_status, '') NOT IN ({",".join("?" for _ in REPORT_EXCLUDED_TASK_STATUSES)})
             ORDER BY sales_play
-        """, (account_id,)).fetchall()
+        """, (account_id, *REPORT_EXCLUDED_TASK_STATUSES)).fetchall()
         outreach_sales_plays = [
             row["sales_play"]
             for row in outreach_sales_play_rows
@@ -8728,9 +8759,10 @@ def pg_dashboard_context(connection):
                     outreach.activity_type = ('Partner: ' || partners.partner_name)
                  OR outreach.partner_contact_id = partner_contacts.id
              )
+             AND COALESCE(outreach.task_status, '') NOT IN ({",".join("?" for _ in REPORT_EXCLUDED_TASK_STATUSES)})
             WHERE partner_contact_accounts.account_id = ?
             ORDER BY partners.partner_name, partner_contacts.name, outreach.last_updated DESC
-        """, (*report_visible_task_params(), *report_scheduled_task_params(), account_id)).fetchall()
+        """, (*report_visible_task_params(), *report_scheduled_task_params(), *REPORT_EXCLUDED_TASK_STATUSES, account_id)).fetchall()
         partner_activity_entries = []
         partner_scheduled_actions = []
         seen_partner_entries = set()
@@ -15727,6 +15759,38 @@ def export_pg_bible():
 
 @app.route("/reports/accounts")
 def account_reports():
+    try:
+        return account_reports_impl()
+    except Exception as exc:
+        code = log_diagnostic_exception("REPORT", exc, {"stage": "account_reports_route"})
+        return safe_report_error_response(
+            "account_reports.html",
+            {
+                "accounts": [],
+                "account_metrics": {
+                    "total_accounts": 0,
+                    "active_opportunities": 0,
+                    "no_recent_activity": 0,
+                    "total_pipeline_target": 0,
+                    "weighted_pipeline": 0,
+                    "incomplete_plans": 0,
+                    "average_engagement_score": 0,
+                },
+                "accounts_by_industry": [],
+                "pipeline_by_account": [],
+                "accounts_by_tier": [],
+                "risk_breakdown": [],
+                "stakeholder_coverage": [],
+                "selected_tier": request.args.get("tier", ""),
+                "selected_industry": request.args.get("industry", ""),
+                "selected_risk": request.args.get("risk", ""),
+            },
+            code,
+            "Account Reports",
+        )
+
+
+def account_reports_impl():
     initialise_database(force=True)
     connection = get_db_connection()
     today = current_app_datetime().date()
@@ -16626,6 +16690,39 @@ def export_outreach_reports():
 
 @app.route("/reports/contacts")
 def contact_reports():
+    try:
+        return contact_reports_impl()
+    except Exception as exc:
+        code = log_diagnostic_exception("REPORT", exc, {"stage": "contact_reports_route"})
+        return safe_report_error_response(
+            "contact_reports.html",
+            {
+                "contacts": [],
+                "accounts": [],
+                "contact_metrics": {
+                    "total_contacts": 0,
+                    "new_contacts": 0,
+                    "executive_contacts": 0,
+                    "no_activity": 0,
+                    "missing_email_or_role": 0,
+                    "accounts_one_contact": 0,
+                },
+                "contacts_by_category": [],
+                "contacts_by_relationship": [],
+                "contacts_by_account": [],
+                "contacts_by_account_tier": [],
+                "engagement_breakdown": [],
+                "selected_account": request.args.get("account_id", ""),
+                "selected_category": request.args.get("category", ""),
+                "selected_relationship": request.args.get("relationship", ""),
+                "selected_engagement": request.args.get("engagement", ""),
+            },
+            code,
+            "Contact Reports",
+        )
+
+
+def contact_reports_impl():
     initialise_database(force=True)
     connection = get_db_connection()
     today = current_app_datetime().date()

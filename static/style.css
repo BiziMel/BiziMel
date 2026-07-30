@@ -6560,6 +6560,11 @@ body {
     align-items: stretch;
 }
 
+.sales-play-report-filter-row {
+    grid-template-columns: minmax(150px, 0.8fr) minmax(150px, 0.8fr) minmax(240px, 1.3fr) minmax(260px, 1.5fr) auto;
+    align-items: end;
+}
+
 .filter-check-section {
     grid-column: 1 / -1;
 }

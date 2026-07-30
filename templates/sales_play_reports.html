@@ -22,7 +22,7 @@
     </div>
 </div>
 
-<form method="get" action="{{ url_for('sales_play_reports') }}" class="filter-form sales-play-report-filter">
+<form method="get" action="{{ url_for('sales_play_reports') }}" class="filter-form sales-play-report-filter sales-play-report-filter-row">
     <div>
         <label for="start_date">Start date</label>
         <input type="date" id="start_date" name="start_date" value="{{ selected_start_date }}">
@@ -32,34 +32,28 @@
         <input type="date" id="end_date" name="end_date" value="{{ selected_end_date }}">
     </div>
 
-    <div class="filter-check-section">
-        <strong>Accounts</strong>
-        <div class="checkbox-grid report-filter-checkbox-grid">
+    <div>
+        <label for="account_ids">Account</label>
+        <select id="account_ids" name="account_ids">
+            <option value="">All Accounts</option>
             {% for account in accounts %}
-                <label class="checkbox-card">
-                    <input type="checkbox"
-                           name="account_ids"
-                           value="{{ account.id }}"
-                           {% if account.id|string in selected_account_ids %}checked{% endif %}>
-                    <span>{{ account.account_name }}{% if account.business_unit %} · {{ account.business_unit }}{% endif %}</span>
-                </label>
+                <option value="{{ account.id }}" {% if account.id|string in selected_account_ids %}selected{% endif %}>
+                    {{ account.account_name }}{% if account.business_unit %} - {{ account.business_unit }}{% endif %}
+                </option>
             {% endfor %}
-        </div>
+        </select>
     </div>
 
-    <div class="filter-check-section">
-        <strong>Contacts</strong>
-        <div class="checkbox-grid report-filter-checkbox-grid">
+    <div>
+        <label for="contact_ids">Contact</label>
+        <select id="contact_ids" name="contact_ids">
+            <option value="">All Contacts</option>
             {% for contact in contacts %}
-                <label class="checkbox-card">
-                    <input type="checkbox"
-                           name="contact_ids"
-                           value="{{ contact.id }}"
-                           {% if contact.id|string in selected_contact_ids %}checked{% endif %}>
-                    <span>{{ contact.name }}{% if contact.job_title %} · {{ contact.job_title }}{% endif %}{% if contact.account_name %} · {{ contact.account_name }}{% endif %}</span>
-                </label>
+                <option value="{{ contact.id }}" {% if contact.id|string in selected_contact_ids %}selected{% endif %}>
+                    {{ contact.name }}{% if contact.job_title %} - {{ contact.job_title }}{% endif %}{% if contact.account_name %} - {{ contact.account_name }}{% endif %}
+                </option>
             {% endfor %}
-        </div>
+        </select>
     </div>
 
     <div class="button-group">

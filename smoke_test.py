@@ -117,6 +117,39 @@ def seed_validation_data(db_path):
             "Smoke Tester",
         ),
     ).lastrowid
+    connection.execute(
+        """
+        INSERT INTO outreach (
+            fy, quarter, account_id, contact_id, campaign, sales_play, campaign_start_date,
+            campaign_end_date, campaign_tasks_per_week, campaign_total_tasks, activity_date,
+            activity_time, activity_type, subject, notes, outcome, next_action,
+            next_action_date, next_action_time, task_status, assigned_to
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "FY27",
+            "Q1",
+            account_id,
+            contact_id,
+            "Deleted Smoke Campaign",
+            "Deleted PG Progress Play",
+            "2026-05-01",
+            "2026-05-29",
+            1,
+            1,
+            "2026-07-29",
+            "11:00",
+            "Email",
+            "Deleted PG Progress Marker",
+            "This deleted activity must not appear in PG Progress",
+            "Meeting Booked",
+            "Deleted PG Progress Marker",
+            "2026-08-05",
+            "11:30",
+            "Deleted",
+            "Smoke Tester",
+        ),
+    )
     connection.commit()
     connection.close()
     return account_id, contact_id, second_contact_id, partner_id, partner_contact_id, outreach_id
@@ -233,6 +266,18 @@ def main():
         plan_row = next(row for row in pg_context["pg_plan_rows"] if row["account_id"] == account_id)
         action_rows = [row for row in pg_context["pg_action_rows"] if row["account_id"] == account_id]
         assert_ok(action_rows, "PG Progress action rows missing for smoke account")
+        pg_progress_text = " ".join(
+            str(entry)
+            for row in action_rows
+            for entry in (
+                row.get("last_7_days_activity_entries", [])
+                + row.get("next_7_days_actions", [])
+            )
+        )
+        assert_ok(
+            "Deleted PG Progress Marker" not in pg_progress_text,
+            "PG Progress displayed a deleted outreach activity",
+        )
         assert_ok(
             all(row.get("account_rag_status") == plan_row["rag_status"] for row in action_rows),
             "PG Progress lower account RAG does not match top account RAG",
