@@ -25,7 +25,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.9"
 APP_RELEASE_DATE = "2026-07-29"
-APP_BUILD = "2026-07-30-v2.6.9-reporting-accordion-r3"
+APP_BUILD = "2026-07-30-v2.6.9-reporting-resilience-r4"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -56,6 +56,7 @@ RELEASE_NOTES = [
             "Enriched Account, Contact, Outreach and Partner reports with portfolio KPIs, coverage/risk/effectiveness breakdowns, filter links, CSV export and XLSX export while leaving the PG Bible report unchanged.",
             "Hardened Account Reports aggregation so production data is calculated through smaller resilient reads instead of a single brittle summary query, and expanded smoke coverage across all report pages and exports.",
             "Hardened page and export rendering against live formatted values such as currency-formatted pipeline targets and labelled account tiers, preventing report and account pages from failing during load.",
+            "Hardened all report routes and report exports with defensive data access so missing optional fields or one failing aggregation no longer causes every report page to return an internal server error.",
         ],
     },
     {
@@ -1479,9 +1480,9 @@ def pluralise(count, singular, plural=None):
 
 def report_bar_rows(rows, value_key="total", percent_key="percent"):
     rows = [dict(row) for row in rows or []]
-    max_value = max((float(row.get(value_key) or 0) for row in rows), default=0)
+    max_value = max((money_value(row.get(value_key)) for row in rows), default=0)
     for row in rows:
-        value = float(row.get(value_key) or 0)
+        value = money_value(row.get(value_key))
         row[percent_key] = int(round((value / max_value) * 100)) if max_value else 0
     return rows
 
@@ -1506,10 +1507,10 @@ def report_days_since(value, today=None):
 
 
 def report_percent(numerator, denominator):
-    denominator = float(denominator or 0)
+    denominator = money_value(denominator)
     if not denominator:
         return 0
-    return round((float(numerator or 0) / denominator) * 100, 1)
+    return round((money_value(numerator) / denominator) * 100, 1)
 
 
 def sort_number_value(value, fallback=9999):
@@ -1527,6 +1528,39 @@ def sort_number_value(value, fallback=9999):
 def report_filter_url(endpoint, **params):
     clean = {key: value for key, value in params.items() if value not in (None, "")}
     return url_for(endpoint, **clean)
+
+
+def safe_report_fetchall(connection, sql, params=(), stage="report_query"):
+    try:
+        return connection.execute(sql, params).fetchall()
+    except Exception as exc:
+        log_diagnostic_exception("REPORT", exc, {"stage": stage})
+        return []
+
+
+def safe_report_fetchone(connection, sql, params=(), stage="report_query"):
+    try:
+        return connection.execute(sql, params).fetchone()
+    except Exception as exc:
+        log_diagnostic_exception("REPORT", exc, {"stage": stage})
+        return None
+
+
+def safe_report_scalar(connection, sql, params=(), default=0, stage="report_query"):
+    row = safe_report_fetchone(connection, sql, params, stage)
+    if row is None:
+        return default
+    try:
+        return row[0]
+    except (IndexError, KeyError, TypeError):
+        return default
+
+
+def report_success_notice(message="", warning=""):
+    return {
+        "report_warning": warning or "",
+        "message": message or "",
+    }
 
 
 def report_xlsx_response(filename_prefix, sheet_title, headers, rows):
@@ -3191,6 +3225,20 @@ def normalise_match_text(value):
     return (value or "").strip().lower()
 
 
+def select_existing_column(connection, table_name, column_name, alias=None, default="''", qualifier=None):
+    alias_name = alias or column_name
+    try:
+        cursor = connection.execute(f"SELECT * FROM {table_name} LIMIT 0")
+        column_names = {description[0] for description in (cursor.description or [])}
+    except Exception as exc:
+        log_diagnostic_exception("REPORT", exc, stage=f"{table_name}_{column_name}_column_lookup")
+        column_names = set()
+    if column_name in column_names:
+        column_reference = f"{qualifier}.{column_name}" if qualifier else column_name
+        return column_reference if alias_name == column_name else f"{column_reference} AS {alias_name}"
+    return f"{default} AS {alias_name}"
+
+
 def build_campaign_success_context(connection, account_id, contact_ids, sales_play):
     account = connection.execute("""
         SELECT account_name, industry, business_unit, account_tier, country, city
@@ -3200,10 +3248,11 @@ def build_campaign_success_context(connection, account_id, contact_ids, sales_pl
 
     if contact_ids:
         placeholders = ",".join("?" for _ in contact_ids)
+        contact_personal_win_select = select_existing_column(connection, "contacts", "personal_win")
         selected_contacts = connection.execute(f"""
             SELECT category, bmc_relationship, job_title, org_dept,
                    responsibilities, characteristics, background,
-                   personal_interests, personal_win, education, social_media,
+                   personal_interests, {contact_personal_win_select}, education, social_media,
                    additional_notes
             FROM contacts
             WHERE id IN ({placeholders})
@@ -3242,7 +3291,8 @@ def build_campaign_success_context(connection, account_id, contact_ids, sales_pl
         if len(word) >= 5
     }
 
-    historical_rows = connection.execute("""
+    historical_personal_win_select = select_existing_column(connection, "contacts", "personal_win", qualifier="contacts")
+    historical_rows = connection.execute(f"""
         SELECT
             outreach.activity_type,
             outreach.sales_play,
@@ -3260,7 +3310,7 @@ def build_campaign_success_context(connection, account_id, contact_ids, sales_pl
             contacts.characteristics,
             contacts.background,
             contacts.personal_interests,
-            contacts.personal_win,
+            {historical_personal_win_select},
             contacts.education,
             contacts.social_media,
             contacts.additional_notes
@@ -9120,7 +9170,7 @@ def render_full_data_workbook():
     workbook.remove(workbook.active)
     exported_at = current_app_datetime().strftime("%d-%m-%Y %H:%M")
 
-    accounts = connection.execute("""
+    accounts = safe_report_fetchall(connection, """
         SELECT
             id,
             pg_bible_order,
@@ -9146,7 +9196,7 @@ def render_full_data_workbook():
             pg_bible_order,
             account_name,
             business_unit
-    """).fetchall()
+    """)
     add_export_worksheet(workbook, "Accounts", [
         "Account ID", "PG Bible Order", "Account Name", "Business Org", "Tier", "Industry", "Country", "City",
         "Website", "Pipeline Target", "Current Pipeline", "NBM Target", "Sales Play(s)", "Owner Name",
@@ -14916,7 +14966,7 @@ def partner_reports():
     connection = get_db_connection()
     selected_status = request.args.get("status", "")
     selected_partner_type = request.args.get("partner_type", "")
-    partner_rows = connection.execute("""
+    partner_rows = safe_report_fetchall(connection, """
         SELECT
             partners.id,
             partners.partner_name,
@@ -14931,20 +14981,20 @@ def partner_reports():
         LEFT JOIN partner_contacts ON partner_contacts.id = partner_contact_accounts.partner_contact_id
         GROUP BY partners.id, partners.partner_name, partners.partner_type, partner_contact_accounts.relationship_status, accounts.account_name, accounts.business_unit
         ORDER BY partners.partner_name, accounts.account_name
-    """).fetchall()
-    partner_types = connection.execute("""
+    """, stage="partner_reports_rows")
+    partner_types = safe_report_fetchall(connection, """
         SELECT DISTINCT partner_type
         FROM partners
         WHERE partner_type IS NOT NULL
           AND partner_type != ''
         ORDER BY partner_type
-    """).fetchall()
-    engagement_rows = connection.execute("""
+    """, stage="partner_reports_types")
+    engagement_rows = safe_report_fetchall(connection, """
         SELECT COALESCE(NULLIF(relationship_status, ''), 'Not set') AS engagement, COUNT(*) AS total
         FROM partner_contact_accounts
         GROUP BY COALESCE(NULLIF(relationship_status, ''), 'Not set')
         ORDER BY total DESC
-    """).fetchall()
+    """, stage="partner_reports_engagement")
     connection.close()
     enriched_rows = []
     for row in partner_rows:
@@ -14992,7 +15042,7 @@ def partner_reports():
 @app.route("/reports/partners/export")
 def export_partner_reports():
     connection = get_db_connection()
-    rows = connection.execute("""
+    rows = safe_report_fetchall(connection, """
         SELECT
             partners.partner_name,
             partners.partner_type,
@@ -15007,7 +15057,7 @@ def export_partner_reports():
         LEFT JOIN accounts ON accounts.id = partner_contact_accounts.account_id
         LEFT JOIN partner_contacts ON partner_contacts.id = partner_contact_accounts.partner_contact_id
         ORDER BY partners.partner_name, accounts.account_name, partner_contacts.name
-    """).fetchall()
+    """, stage="partner_reports_export")
     connection.close()
     headers = ["Partner", "Partner Type", "Partner Engagement", "Account", "Business Org", "Partner Contact", "Job Title", "Contact Engagement"]
     export_rows = [[
@@ -15684,7 +15734,7 @@ def account_reports():
     selected_industry = request.args.get("industry", "")
     selected_risk = request.args.get("risk", "")
 
-    accounts = connection.execute("""
+    accounts = safe_report_fetchall(connection, """
         SELECT
             id,
             pg_bible_order,
@@ -15705,14 +15755,14 @@ def account_reports():
             pg_bible_order,
             account_name,
             business_unit
-    """).fetchall()
-    contact_rows = connection.execute("""
+    """, stage="account_reports_accounts")
+    contact_rows = safe_report_fetchall(connection, """
         SELECT id, account_id, category, bmc_relationship, job_title, status
         FROM contacts
         WHERE account_id IS NOT NULL
           AND COALESCE(status, 'Active') != 'Archived'
-    """).fetchall()
-    outreach_rows = connection.execute(f"""
+    """, stage="account_reports_contacts")
+    outreach_rows = safe_report_fetchall(connection, f"""
         SELECT
             id,
             account_id,
@@ -15727,7 +15777,7 @@ def account_reports():
         FROM outreach
         WHERE account_id IS NOT NULL
           AND COALESCE(task_status, '') NOT IN ({",".join("?" for _ in REPORT_EXCLUDED_TASK_STATUSES)})
-    """, REPORT_EXCLUDED_TASK_STATUSES).fetchall()
+    """, REPORT_EXCLUDED_TASK_STATUSES, stage="account_reports_outreach")
     connection.close()
 
     contact_summary = {}
@@ -15867,7 +15917,7 @@ def account_reports():
 @app.route("/reports/accounts/export")
 def export_account_reports():
     connection = get_db_connection()
-    accounts = connection.execute("""
+    accounts = safe_report_fetchall(connection, """
         SELECT
             pg_bible_order,
             account_name,
@@ -15886,7 +15936,7 @@ def export_account_reports():
             pg_bible_order,
             account_name,
             business_unit
-    """).fetchall()
+    """, stage="account_reports_export")
     connection.close()
     headers = [
         "PG Bible Order",
@@ -15921,7 +15971,7 @@ def export_account_reports():
 
 @app.route("/reports/tasks")
 def task_reports():
-    return redirect(url_for("outreach_reports"))
+    return outreach_reports()
     connection = get_db_connection()
 
     selected_start_date = request.args.get("start_date", "")
@@ -16102,7 +16152,7 @@ def task_reports():
 
 @app.route("/reports/tasks/export")
 def export_task_reports():
-    return redirect(url_for("export_outreach_reports"))
+    return export_outreach_reports()
     connection = get_db_connection()
 
     tasks = connection.execute("""
@@ -16193,19 +16243,19 @@ def sales_play_reports():
     selected_account_ids = set(request.args.getlist("account_ids"))
     selected_contact_ids = set(request.args.getlist("contact_ids"))
 
-    accounts = connection.execute("""
+    accounts = safe_report_fetchall(connection, """
         SELECT id, account_name, business_unit
         FROM accounts
         ORDER BY account_name, business_unit
-    """).fetchall()
-    contacts = connection.execute("""
+    """, stage="sales_play_reports_accounts")
+    contacts = safe_report_fetchall(connection, """
         SELECT contacts.id, contacts.name, contacts.job_title, contacts.account_id, accounts.account_name
         FROM contacts
         LEFT JOIN accounts ON accounts.id = contacts.account_id
         WHERE COALESCE(contacts.status, 'Active') = 'Active'
         ORDER BY accounts.account_name, contacts.name
-    """).fetchall()
-    rows = connection.execute("""
+    """, stage="sales_play_reports_contacts")
+    rows = safe_report_fetchall(connection, """
         SELECT
             outreach.id,
             outreach.sales_play,
@@ -16229,7 +16279,7 @@ def sales_play_reports():
         WHERE outreach.sales_play IS NOT NULL
           AND outreach.sales_play != ''
         ORDER BY outreach.activity_date DESC, outreach.last_updated DESC, outreach.id DESC
-    """).fetchall()
+    """, stage="sales_play_reports_rows")
     connection.close()
 
     def parse_report_date(value):
@@ -16296,29 +16346,29 @@ def outreach_reports():
     selected_activity_type = request.args.get("activity_type", "")
     selected_outcome = request.args.get("outcome", "")
 
-    accounts = connection.execute("""
-        SELECT id, account_name
+    accounts = safe_report_fetchall(connection, """
+        SELECT id, account_name, business_unit
         FROM accounts
-        ORDER BY account_name
-    """).fetchall()
+        ORDER BY account_name, business_unit
+    """, stage="outreach_reports_accounts")
 
-    activity_types = connection.execute("""
+    activity_types = safe_report_fetchall(connection, """
         SELECT DISTINCT activity_type
         FROM outreach
         WHERE activity_type IS NOT NULL
           AND activity_type != ''
         ORDER BY activity_type
-    """).fetchall()
+    """, stage="outreach_reports_activity_types")
 
-    outcomes = connection.execute("""
+    outcomes = safe_report_fetchall(connection, """
         SELECT DISTINCT outcome
         FROM outreach
         WHERE outcome IS NOT NULL
           AND outcome != ''
         ORDER BY outcome
-    """).fetchall()
+    """, stage="outreach_reports_outcomes")
 
-    all_outreach = connection.execute("""
+    all_outreach = safe_report_fetchall(connection, """
         SELECT
             outreach.id,
             outreach.account_id,
@@ -16336,6 +16386,7 @@ def outreach_reports():
             outreach.fy,
             outreach.quarter,
             accounts.account_name,
+            accounts.business_unit,
             accounts.account_tier,
             contacts.name AS contact_name,
             COALESCE(
@@ -16362,7 +16413,7 @@ def outreach_reports():
         LEFT JOIN accounts ON outreach.account_id = accounts.id
         LEFT JOIN contacts ON outreach.contact_id = contacts.id
         ORDER BY outreach.activity_date DESC, outreach.activity_time DESC, outreach.id DESC
-    """).fetchall()
+    """, stage="outreach_reports_rows")
 
     connection.close()
 
@@ -16506,7 +16557,7 @@ def outreach_reports():
 def export_outreach_reports():
     connection = get_db_connection()
 
-    outreach_items = connection.execute("""
+    outreach_items = safe_report_fetchall(connection, """
         SELECT
             outreach.activity_date,
             outreach.activity_time,
@@ -16528,7 +16579,7 @@ def export_outreach_reports():
         LEFT JOIN accounts ON outreach.account_id = accounts.id
         LEFT JOIN contacts ON outreach.contact_id = contacts.id
         ORDER BY outreach.activity_date DESC
-    """).fetchall()
+    """, stage="outreach_reports_export")
 
     connection.close()
 
@@ -16583,13 +16634,13 @@ def contact_reports():
     selected_relationship = request.args.get("relationship", "")
     selected_engagement = request.args.get("engagement", "")
 
-    accounts = connection.execute("""
+    accounts = safe_report_fetchall(connection, """
         SELECT id, account_name, business_unit
         FROM accounts
         ORDER BY account_name, business_unit
-    """).fetchall()
+    """, stage="contact_reports_accounts")
 
-    contacts = connection.execute("""
+    contacts = safe_report_fetchall(connection, """
         SELECT
             contacts.id,
             contacts.account_id,
@@ -16609,8 +16660,8 @@ def contact_reports():
         LEFT JOIN accounts ON contacts.account_id = accounts.id
         WHERE COALESCE(contacts.status, 'Active') != 'Archived'
         ORDER BY accounts.account_name, contacts.name
-    """).fetchall()
-    outreach_rows = connection.execute(f"""
+    """, stage="contact_reports_contacts")
+    outreach_rows = safe_report_fetchall(connection, f"""
         SELECT
             id,
             contact_id,
@@ -16623,12 +16674,12 @@ def contact_reports():
             last_updated
         FROM outreach
         WHERE COALESCE(task_status, '') NOT IN ({",".join("?" for _ in REPORT_EXCLUDED_TASK_STATUSES)})
-    """, REPORT_EXCLUDED_TASK_STATUSES).fetchall()
-    recipient_rows = connection.execute("""
+    """, REPORT_EXCLUDED_TASK_STATUSES, stage="contact_reports_outreach")
+    recipient_rows = safe_report_fetchall(connection, """
         SELECT outreach_id, contact_id
         FROM outreach_recipients
         WHERE contact_id IS NOT NULL
-    """).fetchall()
+    """, stage="contact_reports_recipients")
     connection.close()
 
     contact_activity = {}
@@ -16760,7 +16811,7 @@ def export_contact_reports():
     initialise_database(force=True)
     connection = get_db_connection()
 
-    contacts = connection.execute("""
+    contacts = safe_report_fetchall(connection, """
         SELECT
             contacts.name,
             contacts.job_title,
@@ -16788,7 +16839,7 @@ def export_contact_reports():
         LEFT JOIN accounts ON contacts.account_id = accounts.id
         WHERE COALESCE(contacts.status, 'Active') != 'Archived'
         ORDER BY contacts.name
-    """).fetchall()
+    """, stage="contact_reports_export")
 
     connection.close()
     headers = [

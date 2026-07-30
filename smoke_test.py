@@ -202,6 +202,7 @@ def main():
             "/reports/partners": "Partner Reports",
             "/reports/sales-plays": "Sales Play Reports",
             "/reports/pg-progress": "PG Progress",
+            "/reports/tasks": "Outreach Reports",
             "/search?q=Smoke": "Global Search",
             "/profile": "Profile",
             "/admin/permissions": "Admin",
@@ -1515,6 +1516,10 @@ def main():
             "/reports/outreach/export?format=xlsx",
             "/reports/partners/export",
             "/reports/partners/export?format=xlsx",
+            "/reports/tasks/export",
+            "/reports/full-export.xlsx",
+            "/reports/pg-progress/export.xls",
+            "/reports/pg-progress/export.pdf",
             "/outreach/export",
         ):
             response = client.get(path)
