@@ -257,6 +257,18 @@ def main():
         add_contact_html = client.get(add_contact_path).get_data(as_text=True)
         assert_ok(f'value="{account_id}"' in add_contact_html and "selected" in add_contact_html, "Add Contact account prefill missing")
 
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        pg_context = pipeflow_app.pg_dashboard_context(connection)
+        connection.close()
+        plan_row = next(row for row in pg_context["pg_plan_rows"] if row["account_id"] == account_id)
+        action_rows = [row for row in pg_context["pg_action_rows"] if row["account_id"] == account_id]
+        assert_ok(action_rows, "PG Progress action rows missing for smoke account")
+        assert_ok(
+            all(row.get("account_rag_status") == plan_row["rag_status"] for row in action_rows),
+            "PG Progress lower account RAG does not match top account RAG",
+        )
+
         campaign_builder_html = client.get("/outreach/campaign-builder").get_data(as_text=True)
         assert_ok(
             "Smoke Test Play" in campaign_builder_html,

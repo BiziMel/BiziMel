@@ -178,7 +178,7 @@
                                 <td colspan="7">
                                     <span>Account</span>
                                     <strong>{{ row.account_name }}</strong>
-                                    <span class="pg-rag-dot pg-rag-{{ row.rag_status }}" title="{{ row.rag_reason }}"></span>
+                                    <span class="pg-rag-dot pg-rag-{{ row.account_rag_status or row.rag_status }}" title="{{ row.account_rag_reason or row.rag_reason }}"></span>
                                 </td>
                             </tr>
                         {% endif %}
