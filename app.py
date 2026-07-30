@@ -23,9 +23,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.6.8"
-APP_RELEASE_DATE = "2026-07-28"
-APP_BUILD = "2026-07-29-v2.6.9-contact-insights-r1"
+APP_VERSION = "2.6.9"
+APP_RELEASE_DATE = "2026-07-29"
+APP_BUILD = "2026-07-30-v2.6.9-manual-pg-rag-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -49,7 +49,8 @@ RELEASE_NOTES = [
             "Changed Contacts table status to green and red dots with an on-page legend for Active and Inactive contacts.",
             "Added a Contacts table Create Outreach choice dialog so users can create either a single outreach task or a campaign from the selected contact.",
             "Tightened Campaign Builder duplicate detection so existing same-day outreach does not falsely block a first campaign; only the same campaign window, contact, Sales Play, quantity, frequency and step signature is treated as an existing campaign step.",
-            "Tightened PG Progress RAG relapse wording so stale meeting progress downgrades after 30 days while recent positive progress remains amber and future meetings remain green.",
+            "Changed PG Progress RAG from automated outcome calculation to manual account and contact RAG selections driven by user or manager judgement.",
+            "Restricted PG Progress RAG editing so only the logged-in user or that user's manager can update the visible RAG status.",
             "Expanded Insights guidance with a practical SaaS/software pipeline-generation playbook so duplicated low-value guidance is replaced by stronger route, channel and meeting-booking recommendations.",
         ],
     },
@@ -6209,25 +6210,6 @@ def nbm_colour_index(value):
     return number % 12
 
 
-PG_PROGRESS_POSITIVE_OUTCOMES = (
-    "Positive Response",
-    "Referral Made",
-    "Follow-up Required",
-)
-
-PG_PROGRESS_GREEN_OUTCOMES = (
-    "NBM Booked",
-    "NBM Meeting",
-    "Exec Meeting Booked",
-)
-
-PG_PROGRESS_AMBER_OUTCOMES = (
-    "Meeting Booked",
-    "Discovery Booked",
-    *PG_PROGRESS_POSITIVE_OUTCOMES,
-)
-
-
 def parse_progress_date(value):
     parsed = parse_app_datetime(value)
     if parsed:
@@ -6236,216 +6218,42 @@ def parse_progress_date(value):
         return value
     return None
 
-
-def progress_signal_is_recent(value, cutoff_date):
-    signal_date = parse_progress_date(value)
-    return bool(signal_date and signal_date >= cutoff_date)
-
-
-def normalise_yes_no_flag(value):
-    value = str(value or "").strip().casefold()
-    if value in {"yes", "y", "true", "1", "checked", "on"}:
-        return "Yes"
-    if value in {"no", "n", "false", "0", "off"}:
-        return "No"
-    return ""
+def normalise_manual_rag_status(value, default="red"):
+    status = str(value or "").strip().lower()
+    if status in {"red", "amber", "green"}:
+        return status
+    return default
 
 
-def pg_progress_rag_status(outcomes, discovery_values=None, nbm_values=None, scheduled_meetings=None, progress_signals=None):
-    discovery_values = [normalise_yes_no_flag(value) for value in (discovery_values or [])]
-    nbm_values = [normalise_yes_no_flag(value) for value in (nbm_values or [])]
-    scheduled_meetings = [parse_progress_date(value) for value in (scheduled_meetings or []) if parse_progress_date(value)]
-    progress_signals = progress_signals or []
-    today = current_app_datetime().date()
-    cutoff_date = today - timedelta(days=30)
-    normalised = [normalise_outreach_outcome(outcome) for outcome in outcomes if str(outcome or "").strip()]
-
-    has_future_meeting = any(meeting_date >= today for meeting_date in scheduled_meetings)
-    has_recent_meeting_signal = any(cutoff_date <= meeting_date < today for meeting_date in scheduled_meetings)
-    has_stale_meeting_signal = any(meeting_date < cutoff_date for meeting_date in scheduled_meetings)
-    has_recent_positive_signal = False
-    has_stale_positive_signal = False
-    has_any_historic_progress = bool(scheduled_meetings)
-
-    for outcome in normalised:
-        if outcome in PG_PROGRESS_GREEN_OUTCOMES or outcome in PG_PROGRESS_AMBER_OUTCOMES:
-            has_any_historic_progress = True
-
-    for signal in progress_signals:
-        outcome = normalise_outreach_outcome(signal.get("outcome", ""))
-        signal_type = signal.get("type", "")
-        signal_date = parse_progress_date(signal.get("date", ""))
-        if not outcome and not signal_type:
-            continue
-        is_progress = (
-            outcome in PG_PROGRESS_GREEN_OUTCOMES
-            or outcome in PG_PROGRESS_AMBER_OUTCOMES
-            or signal_type in {"manual_discovery", "manual_nbm", "meeting"}
-        )
-        if not is_progress:
-            continue
-        has_any_historic_progress = True
-        if signal_date and signal_date >= cutoff_date:
-            if outcome in PG_PROGRESS_GREEN_OUTCOMES or signal_type == "manual_nbm":
-                has_recent_meeting_signal = True
-            else:
-                has_recent_positive_signal = True
-        else:
-            if outcome in PG_PROGRESS_GREEN_OUTCOMES or signal_type == "manual_nbm":
-                has_stale_meeting_signal = True
-            else:
-                has_stale_positive_signal = True
-
-    # A future booked meeting is the only durable green state. Once that meeting
-    # date passes, the account/contact must show fresh follow-on progress within
-    # 30 days or the RAG deliberately relapses.
-    if has_future_meeting:
-        return {
-            "status": "green",
-            "label": "Green",
-            "reason": "Future meeting scheduled",
-        }
-    if any(value == "Yes" for value in nbm_values) and has_recent_meeting_signal:
-        return {
-            "status": "green",
-            "label": "Green",
-            "reason": "NBM or executive meeting progress recorded within 30 days",
-        }
-    if has_recent_meeting_signal:
-        return {
-            "status": "green",
-            "label": "Green",
-            "reason": "Recent NBM or executive meeting signal recorded within 30 days",
-        }
-    if (any(value == "Yes" for value in discovery_values) and any(signal.get("type") == "manual_discovery" and progress_signal_is_recent(signal.get("date"), cutoff_date) for signal in progress_signals)) or has_recent_positive_signal:
-        return {
-            "status": "amber",
-            "label": "Amber",
-            "reason": "Positive response or Discovery progress recorded within 30 days",
-        }
-    if any(value == "No" for value in (*discovery_values, *nbm_values)):
-        return {
-            "status": "red",
-            "label": "Red",
-            "reason": "Meeting progression marked as no",
-        }
-    if has_stale_meeting_signal:
-        return {
-            "status": "amber",
-            "label": "Amber",
-            "reason": "Meeting progress is older than 30 days and needs a fresh positive response or future meeting",
-        }
-    if has_any_historic_progress or has_stale_positive_signal:
-        return {
-            "status": "red",
-            "label": "Red",
-            "reason": "Previous progress has relapsed because no positive response or future meeting has been recorded in 30 days",
-        }
+def manual_pg_rag_payload(value, default="red"):
+    status = normalise_manual_rag_status(value, default)
     return {
-        "status": "red",
-        "label": "Red",
-        "reason": "No positive response or scheduled meeting recorded",
+        "status": status,
+        "label": status.title(),
+        "reason": "Manual PG Progress RAG status",
     }
 
 
-def aggregate_pg_progress_rag(contact_rags):
-    contact_rags = [rag for rag in contact_rags if rag]
-    if any(rag["status"] == "green" for rag in contact_rags):
-        return {
-            "status": "green",
-            "label": "Green",
-            "reason": "At least one active contact has NBM or executive meeting evidence",
-        }
-    if any(rag["status"] == "amber" for rag in contact_rags):
-        return {
-            "status": "amber",
-            "label": "Amber",
-            "reason": "At least one active contact has a response or Discovery meeting signal",
-        }
-    return {
-        "status": "red",
-        "label": "Red",
-        "reason": "No active contact has a response or meeting signal",
-    }
-
-
-def contact_pg_progress_rag(connection, account_id, contact_id, legacy_action_update=None):
+def pg_progress_contact_update(connection, contact_id, legacy_action_update=None):
     action_update = connection.execute("""
         SELECT *
         FROM pg_action_contact_updates
         WHERE contact_id = ?
     """, (contact_id,)).fetchone()
-    discovery_meeting_count = connection.execute("""
-        SELECT COUNT(*)
-        FROM outreach
-        WHERE account_id = ?
-          AND (
-                contact_id = ?
-             OR id IN (
-                    SELECT outreach_id
-                    FROM outreach_recipients
-                    WHERE contact_id = ?
-                )
-          )
-          AND (
-                outcome = 'Discovery Booked'
-             OR outcome = 'Meeting Booked'
-             OR activity_type = 'Meeting'
-          )
-    """, (account_id, contact_id, contact_id)).fetchone()[0]
     manual_completed_discovery = (
         action_update["completed_discovery_meeting"]
         if action_update
         else (legacy_action_update["completed_discovery_meeting"] if legacy_action_update else "")
     )
-    contact_outcome_rows = connection.execute("""
-        SELECT outcome, scheduled_meeting_date, scheduled_meeting_time, activity_date, completed_at, last_updated, activity_type
-        FROM outreach
-        WHERE account_id = ?
-          AND (
-                contact_id = ?
-             OR id IN (
-                    SELECT outreach_id
-                    FROM outreach_recipients
-                    WHERE contact_id = ?
-                )
-          )
-    """, (account_id, contact_id, contact_id)).fetchall()
-    completed_discovery = manual_completed_discovery or ("Yes" if discovery_meeting_count else "")
+    completed_discovery = manual_completed_discovery or ""
     nbm_completed = action_update["nbm_completed"] if action_update and "nbm_completed" in action_update.keys() else ""
-    progress_signals = []
-    for row in contact_outcome_rows:
-        progress_date = row["scheduled_meeting_date"] or row["completed_at"] or row["last_updated"] or row["activity_date"]
-        progress_signals.append({
-            "outcome": row["outcome"],
-            "date": progress_date,
-            "type": "meeting" if row["activity_type"] == "Meeting" else "",
-        })
-    manual_update_source = action_update or legacy_action_update
-    if completed_discovery == "Yes" and manual_update_source and "last_updated" in manual_update_source.keys():
-        progress_signals.append({
-            "type": "manual_discovery",
-            "date": manual_update_source["last_updated"],
-        })
-    if nbm_completed == "Yes" and action_update and "last_updated" in action_update.keys():
-        progress_signals.append({
-            "type": "manual_nbm",
-            "date": action_update["last_updated"],
-        })
     return {
         "action_update": action_update,
         "completed_discovery": completed_discovery,
         "nbm_completed": nbm_completed,
-        "rag": pg_progress_rag_status(
-            [row["outcome"] for row in contact_outcome_rows],
-            [completed_discovery],
-            [nbm_completed],
-            [
-                row["scheduled_meeting_date"]
-                for row in contact_outcome_rows
-                if row["scheduled_meeting_date"]
-            ],
-            progress_signals,
+        "rag": manual_pg_rag_payload(
+            action_update["rag_status"] if action_update and "rag_status" in action_update.keys() else "",
+            "red",
         ),
     }
 
@@ -8603,18 +8411,17 @@ def pg_dashboard_context(connection):
             FROM pg_action_updates
             WHERE account_id = ?
         """, (account_id,)).fetchone()
-        contact_rag_payloads = {
-            contact["id"]: contact_pg_progress_rag(connection, account_id, contact["id"], legacy_action_update)
-            for contact in contacts
-        }
-        rag = aggregate_pg_progress_rag(payload["rag"] for payload in contact_rag_payloads.values())
+        account_rag = manual_pg_rag_payload(
+            legacy_action_update["rag_status"] if legacy_action_update and "rag_status" in legacy_action_update.keys() else "",
+            "red",
+        )
         pg_plan_rows.append({
             "account_id": account_id,
             "target_number": pg_target_number,
             "colour_index": nbm_colour_index(pg_target_number),
-            "rag_status": rag["status"],
-            "rag_label": rag["label"],
-            "rag_reason": rag["reason"],
+            "rag_status": account_rag["status"],
+            "rag_label": account_rag["label"],
+            "rag_reason": account_rag["reason"],
             "sales_play": pg_sales_play,
             "account_name": account["account_name"],
             "business_org": account["business_unit"] or "",
@@ -8666,7 +8473,7 @@ def pg_dashboard_context(connection):
             ]
             if not recent_activity_rows:
                 continue
-            contact_rag_payload = contact_rag_payloads.get(contact_id) or contact_pg_progress_rag(connection, account_id, contact_id, legacy_action_update)
+            contact_rag_payload = pg_progress_contact_update(connection, contact_id, legacy_action_update)
             action_update = contact_rag_payload["action_update"]
             contact_completed_discovery = contact_rag_payload["completed_discovery"]
             contact_nbm_completed = contact_rag_payload["nbm_completed"]
@@ -8700,9 +8507,9 @@ def pg_dashboard_context(connection):
                 "contact_id": contact_id,
                 "target_number": pg_target_number,
                 "colour_index": nbm_colour_index(pg_target_number),
-                "account_rag_status": rag["status"],
-                "account_rag_label": rag["label"],
-                "account_rag_reason": rag["reason"],
+                "account_rag_status": account_rag["status"],
+                "account_rag_label": account_rag["label"],
+                "account_rag_reason": account_rag["reason"],
                 "rag_status": contact_rag["status"],
                 "rag_label": contact_rag["label"],
                 "rag_reason": contact_rag["reason"],
@@ -8755,9 +8562,6 @@ def pg_dashboard_context(connection):
         """, (*report_visible_task_params(), *report_scheduled_task_params(), account_id)).fetchall()
         partner_activity_entries = []
         partner_scheduled_actions = []
-        partner_outcomes = []
-        partner_scheduled_meetings = []
-        partner_progress_signals = []
         seen_partner_entries = set()
         partner_group_names = []
         partner_contact_names = []
@@ -8768,15 +8572,6 @@ def pg_dashboard_context(connection):
             partner_contact_name = row["partner_contact_name"] or "Partner contact"
             if partner_name not in partner_group_names:
                 partner_group_names.append(partner_name)
-            if row["outcome"] and (is_report_visible_task or is_report_scheduled_task):
-                partner_outcomes.append(row["outcome"])
-                partner_progress_signals.append({
-                    "outcome": row["outcome"],
-                    "date": row["scheduled_meeting_date"] or row["completed_at"] or row["last_updated"] or row["activity_date"],
-                    "type": "meeting" if row["activity_type"] == "Meeting" else "",
-                })
-            if row["scheduled_meeting_date"] and (is_report_visible_task or is_report_scheduled_task):
-                partner_scheduled_meetings.append(row["scheduled_meeting_date"])
             contact_label = partner_contact_name
             if row["partner_contact_job_title"]:
                 contact_label = f"{contact_label} - {row['partner_contact_job_title']}"
@@ -8817,7 +8612,7 @@ def pg_dashboard_context(connection):
                         "is_overdue": bool(row["next_action_date"] and row["next_action_date"] < today_key),
                     })
         if partner_activity_entries or partner_scheduled_actions:
-            partner_rag = pg_progress_rag_status(partner_outcomes, [], [], partner_scheduled_meetings, partner_progress_signals)
+            partner_rag = manual_pg_rag_payload("", "red")
             partner_group_label = "Partner Account: " + compact_join(partner_group_names, 3) if partner_group_names else "Partner activity"
             pg_action_rows.append({
                 "is_partner_row": True,
@@ -8825,9 +8620,9 @@ def pg_dashboard_context(connection):
                 "contact_id": f"partner_{account_id}",
                 "target_number": pg_target_number,
                 "colour_index": nbm_colour_index(pg_target_number),
-                "account_rag_status": rag["status"],
-                "account_rag_label": rag["label"],
-                "account_rag_reason": rag["reason"],
+                "account_rag_status": account_rag["status"],
+                "account_rag_label": account_rag["label"],
+                "account_rag_reason": account_rag["reason"],
                 "rag_status": partner_rag["status"],
                 "rag_label": partner_rag["label"],
                 "rag_reason": partner_rag["reason"],
@@ -8871,6 +8666,7 @@ def manager_pg_dashboard_context(selected_user_id=""):
         "team_members": manager_team_members(user),
         "selected_team_user_id": selected_user_id,
         "is_team_pg_progress": True,
+        "can_edit_pg_rag": bool(selected_user_id and members),
     }
     for member in members:
         connection = None
@@ -8901,6 +8697,84 @@ def manager_pg_dashboard_context(selected_user_id=""):
     team_context["pg_plan_rows"].sort(key=lambda row: (row.get("owner_name") or "", row.get("account_name") or "", row.get("sales_play") or ""))
     team_context["pg_action_rows"].sort(key=lambda row: (row.get("owner_name") or "", row.get("account_name") or "", row.get("business_org") or "", row.get("sales_play") or ""))
     return team_context
+
+
+def pg_progress_edit_connection(selected_user_id=""):
+    user = current_user()
+    selected_user_id = str(selected_user_id or "")
+    if selected_user_id and user:
+        members = manager_team_members(user)
+        target = next((member for member in members if str(member["id"]) == selected_user_id), None)
+        if not target:
+            return None, False
+        if using_postgres() and target["workspace_schema"]:
+            return get_schema_connection(schema=target["workspace_schema"]), True
+        if str(target["id"]) == str(user["id"]):
+            return get_db_connection(), True
+        return None, False
+    return get_db_connection(), True
+
+
+def save_manual_pg_progress(connection, form):
+    if "current_pipeline" in form:
+        save_dashboard_setting(connection, "current_pipeline", form.get("current_pipeline", "0"))
+    for account_id in form.getlist("pg_plan_account_id"):
+        if not str(account_id).isdigit():
+            continue
+        rag_status = normalise_manual_rag_status(form.get(f"rag_account_{account_id}"), "red")
+        existing = connection.execute(
+            "SELECT id FROM pg_action_updates WHERE account_id = ?",
+            (account_id,),
+        ).fetchone()
+        if existing:
+            connection.execute("""
+                UPDATE pg_action_updates
+                SET rag_status = ?,
+                    last_updated = CURRENT_TIMESTAMP
+                WHERE account_id = ?
+            """, (rag_status, account_id))
+        else:
+            connection.execute("""
+                INSERT INTO pg_action_updates (account_id, rag_status)
+                VALUES (?, ?)
+            """, (account_id, rag_status))
+    for contact_id in form.getlist("pg_action_contact_id"):
+        if not str(contact_id).isdigit():
+            continue
+        account_id = form.get(f"pg_action_account_id_{contact_id}", "")
+        completed = "Yes" if form.get(f"completed_discovery_contact_{contact_id}") == "Yes" else "No"
+        exec_first = "Yes" if form.get(f"exec_first_contact_{contact_id}") == "Yes" else "No"
+        nbm_completed = "Yes" if form.get(f"nbm_completed_contact_{contact_id}") == "Yes" else "No"
+        rag_status = normalise_manual_rag_status(form.get(f"rag_contact_{contact_id}"), "red")
+        next_action = form.get(f"next_action_contact_{contact_id}", "")
+        existing = connection.execute(
+            "SELECT id FROM pg_action_contact_updates WHERE contact_id = ?",
+            (contact_id,),
+        ).fetchone()
+        if existing:
+            connection.execute("""
+                UPDATE pg_action_contact_updates
+                SET completed_discovery_meeting = ?,
+                    exec_first = ?,
+                    nbm_completed = ?,
+                    rag_status = ?,
+                    next_action_override = ?,
+                    last_updated = CURRENT_TIMESTAMP
+                WHERE contact_id = ?
+            """, (completed, exec_first, nbm_completed, rag_status, next_action, contact_id))
+        else:
+            connection.execute("""
+                INSERT INTO pg_action_contact_updates (
+                    account_id,
+                    contact_id,
+                    completed_discovery_meeting,
+                    exec_first,
+                    nbm_completed,
+                    rag_status,
+                    next_action_override
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (account_id, contact_id, completed, exec_first, nbm_completed, rag_status, next_action))
 
 
 def pg_progress_report_context(selected_user_id=""):
@@ -9361,41 +9235,13 @@ def dashboard_new():
 def pg_progress():
     connection = get_db_connection()
     if request.method == "POST":
-        save_dashboard_setting(connection, "current_pipeline", request.form.get("current_pipeline", "0"))
-        for contact_id in request.form.getlist("pg_action_contact_id"):
-            if not str(contact_id).isdigit():
-                continue
-            account_id = request.form.get(f"pg_action_account_id_{contact_id}", "")
-            completed = "Yes" if request.form.get(f"completed_discovery_contact_{contact_id}") == "Yes" else "No"
-            exec_first = "Yes" if request.form.get(f"exec_first_contact_{contact_id}") == "Yes" else "No"
-            nbm_completed = "Yes" if request.form.get(f"nbm_completed_contact_{contact_id}") == "Yes" else "No"
-            next_action = request.form.get(f"next_action_contact_{contact_id}", "")
-            existing = connection.execute(
-                "SELECT id FROM pg_action_contact_updates WHERE contact_id = ?",
-                (contact_id,),
-            ).fetchone()
-            if existing:
-                connection.execute("""
-                    UPDATE pg_action_contact_updates
-                    SET completed_discovery_meeting = ?,
-                        exec_first = ?,
-                        nbm_completed = ?,
-                        next_action_override = ?,
-                        last_updated = CURRENT_TIMESTAMP
-                    WHERE contact_id = ?
-                """, (completed, exec_first, nbm_completed, next_action, contact_id))
-            else:
-                connection.execute("""
-                    INSERT INTO pg_action_contact_updates (
-                        account_id,
-                        contact_id,
-                        completed_discovery_meeting,
-                        exec_first,
-                        nbm_completed,
-                        next_action_override
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (account_id, contact_id, completed, exec_first, nbm_completed, next_action))
+        connection.close()
+        connection, can_edit_pg_rag = pg_progress_edit_connection(request.args.get("user_id", ""))
+        if not connection or not can_edit_pg_rag:
+            if connection:
+                connection.close()
+            return redirect(url_for("pg_progress", error="You do not have permission to update PG Progress RAG for this user."))
+        save_manual_pg_progress(connection, request.form)
         audit_entry(
             connection,
             "dashboard_new",
@@ -9408,7 +9254,7 @@ def pg_progress():
         )
         connection.commit()
         connection.close()
-        return redirect(url_for("pg_progress", message="PG Progress saved."))
+        return redirect(url_for("pg_progress", user_id=request.args.get("user_id", ""), message="PG Progress saved."))
 
     team_context = manager_pg_dashboard_context(request.args.get("user_id", ""))
     if team_context:
@@ -9416,10 +9262,12 @@ def pg_progress():
         connection.close()
     else:
         context = pg_dashboard_context(connection)
+        context["can_edit_pg_rag"] = True
         connection.close()
     return render_template(
         "dashboard_new.html",
         message=request.args.get("message", ""),
+        error=request.args.get("error", ""),
         **context,
     )
 

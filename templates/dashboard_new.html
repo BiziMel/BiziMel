@@ -20,8 +20,12 @@
 {% if message %}
     <div class="alert-success">{{ message }}</div>
 {% endif %}
+{% if error %}
+    <div class="alert-error">{{ error }}</div>
+{% endif %}
 
 <form method="POST" class="pg-goals-dashboard-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% if is_team_pg_progress %}
         <section class="form-card pg-team-filter-card">
             <div class="section-header">
@@ -48,7 +52,7 @@
                 <h2>PG Goals</h2>
                 <p>Pipeline target, current pipeline and gap position for the financial year.</p>
             </div>
-            {% if not is_team_pg_progress and not pg_progress_read_only %}
+            {% if can_edit_pg_rag and not pg_progress_read_only %}
                 <button type="submit" class="btn btn-primary">Save PG Progress</button>
             {% endif %}
         </div>
@@ -109,7 +113,18 @@
                     {% for row in pg_plan_rows %}
                         <tr>
                             <td class="pg-plan-rag-cell">
-                                <span class="pg-rag-dot pg-rag-{{ row.rag_status }}" title="{{ row.rag_reason }}"></span>
+                                {% if can_edit_pg_rag and not pg_progress_read_only %}
+                                    <input type="hidden" name="pg_plan_account_id" value="{{ row.account_id }}">
+                                    <input type="hidden" name="rag_account_{{ row.account_id }}" value="{{ row.rag_status }}" data-rag-input="account-{{ row.account_id }}">
+                                    <button type="button"
+                                            class="pg-rag-dot pg-rag-{{ row.rag_status }} pg-rag-picker-trigger"
+                                            title="Set account RAG status"
+                                            aria-label="Set account RAG status for {{ row.account_name }}"
+                                            data-rag-trigger
+                                            data-rag-target="account-{{ row.account_id }}"></button>
+                                {% else %}
+                                    <span class="pg-rag-dot pg-rag-{{ row.rag_status }}" title="{{ row.rag_reason }}"></span>
+                                {% endif %}
                             </td>
                             <td class="pg-plan-sales-play-cell">{{ row.sales_play or "No sales play entered" }}</td>
                             <td class="pg-plan-account-cell">
@@ -178,7 +193,16 @@
                                 <td colspan="7">
                                     <span>Account</span>
                                     <strong>{{ row.account_name }}</strong>
-                                    <span class="pg-rag-dot pg-rag-{{ row.account_rag_status or row.rag_status }}" title="{{ row.account_rag_reason or row.rag_reason }}"></span>
+                                    {% if can_edit_pg_rag and not pg_progress_read_only %}
+                                        <button type="button"
+                                                class="pg-rag-dot pg-rag-{{ row.account_rag_status or row.rag_status }} pg-rag-picker-trigger"
+                                                title="Set account RAG status"
+                                                aria-label="Set account RAG status for {{ row.account_name }}"
+                                                data-rag-trigger
+                                                data-rag-target="account-{{ row.account_id }}"></button>
+                                    {% else %}
+                                        <span class="pg-rag-dot pg-rag-{{ row.account_rag_status or row.rag_status }}" title="{{ row.account_rag_reason or row.rag_reason }}"></span>
+                                    {% endif %}
                                 </td>
                             </tr>
                         {% endif %}
@@ -206,7 +230,17 @@
                         {% endif %}
                         <tr>
                             <td class="pg-rag-cell">
-                                <span class="pg-rag-dot pg-rag-{{ row.rag_status }}" title="{{ row.rag_reason }}"></span>
+                                {% if not row.is_partner_row and can_edit_pg_rag and not pg_progress_read_only %}
+                                    <input type="hidden" name="rag_contact_{{ row.contact_id }}" value="{{ row.rag_status }}" data-rag-input="contact-{{ row.contact_id }}">
+                                    <button type="button"
+                                            class="pg-rag-dot pg-rag-{{ row.rag_status }} pg-rag-picker-trigger"
+                                            title="Set contact RAG status"
+                                            aria-label="Set contact RAG status for {{ row.targeted_discovery or 'contact' }}"
+                                            data-rag-trigger
+                                            data-rag-target="contact-{{ row.contact_id }}"></button>
+                                {% else %}
+                                    <span class="pg-rag-dot pg-rag-{{ row.rag_status }}" title="{{ row.rag_reason }}"></span>
+                                {% endif %}
                             </td>
                             <td class="pg-contact-cell">
                                 {% if not row.is_partner_row %}
@@ -287,11 +321,83 @@
         </div>
     </section>
 
-    {% if not is_team_pg_progress and not pg_progress_read_only %}
+    {% if can_edit_pg_rag and not pg_progress_read_only %}
         <div class="form-actions sticky-dashboard-save">
             <button type="submit" class="btn btn-primary">Save PG Goals Dashboard</button>
         </div>
     {% endif %}
 </form>
+
+{% if can_edit_pg_rag and not pg_progress_read_only %}
+<div class="modal-backdrop" id="pgRagPickerModal" hidden>
+    <div class="modal-card pg-rag-picker-card" role="dialog" aria-modal="true" aria-labelledby="pgRagPickerTitle">
+        <h2 id="pgRagPickerTitle">Set RAG Status</h2>
+        <div class="pg-rag-picker-options" role="group" aria-label="RAG status options">
+            <button type="button" class="pg-rag-dot pg-rag-red pg-rag-picker-option" data-rag-choice="red" aria-label="Red"></button>
+            <button type="button" class="pg-rag-dot pg-rag-amber pg-rag-picker-option" data-rag-choice="amber" aria-label="Amber"></button>
+            <button type="button" class="pg-rag-dot pg-rag-green pg-rag-picker-option" data-rag-choice="green" aria-label="Green"></button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const pgRagPickerModal = document.getElementById("pgRagPickerModal");
+    let activeRagTarget = "";
+
+    function closePgRagPicker() {
+        if (pgRagPickerModal) {
+            pgRagPickerModal.hidden = true;
+        }
+        activeRagTarget = "";
+    }
+
+    function setRagDotStatus(element, status) {
+        if (!element) {
+            return;
+        }
+        element.classList.remove("pg-rag-red", "pg-rag-amber", "pg-rag-green");
+        element.classList.add(`pg-rag-${status}`);
+    }
+
+    document.querySelectorAll("[data-rag-trigger]").forEach((trigger) => {
+        trigger.addEventListener("click", () => {
+            activeRagTarget = trigger.dataset.ragTarget || "";
+            if (pgRagPickerModal) {
+                pgRagPickerModal.hidden = false;
+                const firstChoice = pgRagPickerModal.querySelector("[data-rag-choice]");
+                if (firstChoice) {
+                    firstChoice.focus();
+                }
+            }
+        });
+    });
+
+    document.querySelectorAll("[data-rag-choice]").forEach((choice) => {
+        choice.addEventListener("click", () => {
+            const status = choice.dataset.ragChoice;
+            const input = document.querySelector(`[data-rag-input="${activeRagTarget}"]`);
+            if (input && status) {
+                input.value = status;
+                document.querySelectorAll(`[data-rag-target="${activeRagTarget}"]`).forEach((dot) => setRagDotStatus(dot, status));
+            }
+            closePgRagPicker();
+        });
+    });
+
+    if (pgRagPickerModal) {
+        pgRagPickerModal.addEventListener("click", (event) => {
+            if (event.target === pgRagPickerModal) {
+                closePgRagPicker();
+            }
+        });
+    }
+
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+            closePgRagPicker();
+        }
+    });
+</script>
+{% endif %}
 
 {% endblock %}

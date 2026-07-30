@@ -136,45 +136,6 @@ def main():
             "diagnostic error code is too long",
         )
         today = pipeflow_app.current_app_datetime().date()
-        stale_date = (today - timedelta(days=45)).isoformat()
-        recent_past_date = (today - timedelta(days=7)).isoformat()
-        future_date = (today + timedelta(days=7)).isoformat()
-        assert_ok(
-            pipeflow_app.pg_progress_rag_status(["No Response"])["status"] == "red",
-            "PG RAG should stay red for no-response activity",
-        )
-        assert_ok(
-            pipeflow_app.pg_progress_rag_status(
-                ["Positive Response"],
-                progress_signals=[{"outcome": "Positive Response", "date": today.isoformat()}],
-            )["status"] == "amber",
-            "PG RAG should be amber for recent positive response",
-        )
-        assert_ok(
-            pipeflow_app.pg_progress_rag_status(["NBM Booked"], scheduled_meetings=[future_date])["status"] == "green",
-            "PG RAG should be green for a future booked meeting",
-        )
-        assert_ok(
-            pipeflow_app.pg_progress_rag_status(
-                ["Positive Response"],
-                progress_signals=[{"outcome": "Positive Response", "date": stale_date}],
-            )["status"] == "red",
-            "PG RAG should relapse to red after stale progress",
-        )
-        assert_ok(
-            pipeflow_app.pg_progress_rag_status(
-                ["NBM Booked"],
-                scheduled_meetings=[stale_date],
-            )["status"] == "amber",
-            "PG RAG should relapse from green to amber when meeting progress is stale",
-        )
-        assert_ok(
-            pipeflow_app.pg_progress_rag_status(
-                ["NBM Booked"],
-                scheduled_meetings=[recent_past_date],
-            )["status"] == "green",
-            "PG RAG should stay green for recent meeting progress",
-        )
 
         client = pipeflow_app.app.test_client()
         for path in ("/login", "/register", "/forgot-password"):
@@ -268,6 +229,35 @@ def main():
             all(row.get("account_rag_status") == plan_row["rag_status"] for row in action_rows),
             "PG Progress lower account RAG does not match top account RAG",
         )
+        assert_ok(plan_row["rag_status"] == "red", "PG Progress account RAG should default to manual red")
+        pg_progress_html = client.get("/pg-progress").get_data(as_text=True)
+        assert_ok("data-rag-trigger" in pg_progress_html, "PG Progress manual RAG picker trigger missing")
+        response = client.post(
+            "/pg-progress",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "current_pipeline": "1000",
+                "pg_plan_account_id": [str(account_id)],
+                f"rag_account_{account_id}": "green",
+                "pg_action_contact_id": [str(contact_id)],
+                f"pg_action_account_id_{contact_id}": str(account_id),
+                f"rag_contact_{contact_id}": "amber",
+                f"completed_discovery_contact_{contact_id}": "Yes",
+                f"exec_first_contact_{contact_id}": "Yes",
+                f"nbm_completed_contact_{contact_id}": "No",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "PG Progress manual RAG save failed")
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        pg_context = pipeflow_app.pg_dashboard_context(connection)
+        connection.close()
+        plan_row = next(row for row in pg_context["pg_plan_rows"] if row["account_id"] == account_id)
+        contact_row = next(row for row in pg_context["pg_action_rows"] if row["contact_id"] == contact_id)
+        assert_ok(plan_row["rag_status"] == "green", "PG Progress account RAG did not persist manual selection")
+        assert_ok(contact_row["rag_status"] == "amber", "PG Progress contact RAG did not persist manual selection")
+        assert_ok(contact_row["account_rag_status"] == "green", "PG Progress action account RAG did not mirror manual account selection")
 
         campaign_builder_html = client.get("/outreach/campaign-builder").get_data(as_text=True)
         assert_ok(
