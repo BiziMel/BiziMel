@@ -76,7 +76,7 @@
     {% if audit_groups %}
         <div class="audit-month-stack">
             {% for group in audit_groups %}
-                <details class="audit-month-group" open>
+                <details class="audit-month-group">
                     <summary>
                         <strong>{{ group.month }}</strong>
                         <span>{{ group.entries|length }} entr{{ "y" if group.entries|length == 1 else "ies" }}</span>

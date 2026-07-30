@@ -10,17 +10,104 @@
     <div class="button-group">
         <a href="{{ url_for('reports') }}" class="btn btn-secondary">Back to Reports</a>
         <a href="{{ url_for('export_partner_reports') }}" class="btn btn-primary">Export Partner CSV</a>
+        <a href="{{ url_for('export_partner_reports', format='xlsx') }}" class="btn btn-secondary">Export Partner XLSX</a>
     </div>
 </div>
 
-<div class="dashboard-grid">
-    {% for row in engagement_rows %}
-        <div class="metric-card">
-            <h3>{{ row.engagement }}</h3>
-            <p class="metric-number">{{ row.total }}</p>
-            <p class="metric-subtext">partner account relationship{% if row.total != 1 %}s{% endif %}</p>
+<div class="dashboard-grid report-metric-grid">
+    <div class="dashboard-card report-metric-card report-metric-blue">
+        <h3>Total Partners</h3>
+        <p>{{ partner_metrics.total_partners }}</p>
+        <span>Partner organisations in scope</span>
+    </div>
+    <div class="dashboard-card report-metric-card report-metric-green">
+        <h3>Partner Contacts</h3>
+        <p>{{ partner_metrics.partner_contacts }}</p>
+        <span>Mapped partner relationship contacts</span>
+    </div>
+    <div class="dashboard-card report-metric-card report-metric-purple">
+        <h3>Accounts Supported</h3>
+        <p>{{ partner_metrics.accounts_supported }}</p>
+        <span>Customer accounts with partner coverage</span>
+    </div>
+    <div class="dashboard-card report-metric-card report-metric-amber">
+        <h3>Mapping Gaps</h3>
+        <p>{{ partner_metrics.unmapped_relationships }}</p>
+        <span>Missing account or status mapping</span>
+    </div>
+</div>
+
+<div class="report-card report-filter-card">
+    <h3>Filters</h3>
+    <form method="get" action="{{ url_for('partner_reports') }}" class="filter-form">
+        <label>Partner Type</label>
+        <select name="partner_type">
+            <option value="">All Partner Types</option>
+            {% for item in partner_types %}
+                <option value="{{ item.partner_type }}" {% if selected_partner_type == item.partner_type %}selected{% endif %}>{{ item.partner_type }}</option>
+            {% endfor %}
+        </select>
+        <label>Relationship Status</label>
+        <select name="status">
+            <option value="">All Statuses</option>
+            {% for item in engagement_rows %}
+                <option value="{{ item.engagement }}" {% if selected_status == item.engagement %}selected{% endif %}>{{ item.engagement }}</option>
+            {% endfor %}
+        </select>
+        <div class="button-group">
+            <button type="submit" class="btn btn-primary">Apply Filters</button>
+            <a href="{{ url_for('partner_reports') }}" class="btn btn-secondary">Clear</a>
         </div>
-    {% endfor %}
+    </form>
+</div>
+
+<div class="report-grid">
+    <div class="report-card report-metric-section">
+        <h3>Relationship Status</h3>
+        <div class="metric-bar-list">
+            {% for row in engagement_rows %}
+                <div class="metric-bar-row">
+                    <div class="metric-bar-row-top">
+                        <span><a href="{{ row.filter_url }}">{{ row.engagement }}</a></span>
+                        <strong>{{ row.total }}</strong>
+                    </div>
+                    <div class="metric-bar-track"><span style="width: {{ row.percent }}%;"></span></div>
+                </div>
+            {% else %}
+                <p>No partner relationship status data yet.</p>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="report-card report-metric-section">
+        <h3>Partner Type</h3>
+        <div class="metric-bar-list">
+            {% for row in partner_type_rows %}
+                <div class="metric-bar-row">
+                    <div class="metric-bar-row-top">
+                        <span><a href="{{ row.filter_url }}">{{ row.partner_type }}</a></span>
+                        <strong>{{ row.total }}</strong>
+                    </div>
+                    <div class="metric-bar-track"><span style="width: {{ row.percent }}%;"></span></div>
+                </div>
+            {% else %}
+                <p>No partner type data yet.</p>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="report-card report-metric-section">
+        <h3>Account Mapping Coverage</h3>
+        <div class="metric-bar-list">
+            {% for row in coverage_rows %}
+                <div class="metric-bar-row">
+                    <div class="metric-bar-row-top">
+                        <span>{{ row.coverage }}</span>
+                        <strong>{{ row.total }}</strong>
+                    </div>
+                    <div class="metric-bar-track"><span style="width: {{ row.percent }}%;"></span></div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
 </div>
 
 <div class="form-card">
@@ -46,7 +133,7 @@
                     <tr>
                         <td><a href="{{ url_for('view_partner', partner_id=row.id) }}" class="record-primary-link">{{ row.partner_name }}</a></td>
                         <td>{{ row.partner_type or "Not set" }}</td>
-                        <td>{{ row.account_name or "No account mapped" }}</td>
+                        <td>{{ row.account_label or "No account mapped" }}</td>
                         <td>{{ row.involvement_status or "Not set" }}</td>
                         <td>{{ row.contact_count or 0 }}</td>
                     </tr>

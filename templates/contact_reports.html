@@ -6,7 +6,8 @@
 
 <div class="button-group">
     <a href="/reports" class="btn btn-secondary">Back to Reports</a>
-    <a href="{{ url_for('export_contact_reports') }}" class="btn btn-primary">Export Contact Report</a>
+    <a href="{{ url_for('export_contact_reports') }}" class="btn btn-primary">Export CSV</a>
+    <a href="{{ url_for('export_contact_reports', format='xlsx') }}" class="btn btn-secondary">Export XLSX</a>
 </div>
 
 {% if message %}
@@ -20,9 +21,9 @@
         <span>All reportable contacts</span>
     </div>
     <div class="dashboard-card report-metric-card report-metric-green">
-        <h3>Active Contacts</h3>
-        <p>{{ contact_metrics.active_contacts }}</p>
-        <span>Currently active contacts</span>
+        <h3>New This Month</h3>
+        <p>{{ contact_metrics.new_contacts }}</p>
+        <span>Contacts created in 30 days</span>
     </div>
     <div class="dashboard-card report-metric-card report-metric-purple">
         <h3>Executive Routes</h3>
@@ -30,10 +31,60 @@
         <span>Executive or senior route signals</span>
     </div>
     <div class="dashboard-card report-metric-card report-metric-amber">
-        <h3>Lead Status</h3>
-        <p>{{ contact_metrics.lead_contacts }}</p>
-        <span>Contacts not yet validated</span>
+        <h3>No Activity</h3>
+        <p>{{ contact_metrics.no_activity }}</p>
+        <span>Contacts with no outreach signal</span>
     </div>
+    <div class="dashboard-card report-metric-card report-metric-red">
+        <h3>Data Gaps</h3>
+        <p>{{ contact_metrics.missing_email_or_role }}</p>
+        <span>Missing email or job title</span>
+    </div>
+    <div class="dashboard-card report-metric-card report-metric-blue">
+        <h3>Single Threaded</h3>
+        <p>{{ contact_metrics.accounts_one_contact }}</p>
+        <span>Accounts with only one contact</span>
+    </div>
+</div>
+
+<div class="report-card report-filter-card">
+    <h3>Filters</h3>
+    <form method="get" action="/reports/contacts" class="filter-form">
+        <label>Account</label>
+        <select name="account_id">
+            <option value="">All Accounts</option>
+            {% for account in accounts %}
+                <option value="{{ account['id'] }}" {% if selected_account == account['id']|string %}selected{% endif %}>
+                    {{ account['account_name'] }}{% if account['business_unit'] %} - {{ account['business_unit'] }}{% endif %}
+                </option>
+            {% endfor %}
+        </select>
+        <label>Category</label>
+        <select name="category">
+            <option value="">All Categories</option>
+            {% for item in contacts_by_category %}
+                <option value="{{ item.category }}" {% if selected_category == item.category %}selected{% endif %}>{{ item.category }}</option>
+            {% endfor %}
+        </select>
+        <label>Relationship</label>
+        <select name="relationship">
+            <option value="">All Relationships</option>
+            {% for item in contacts_by_relationship %}
+                <option value="{{ item.relationship }}" {% if selected_relationship == item.relationship %}selected{% endif %}>{{ item.relationship }}</option>
+            {% endfor %}
+        </select>
+        <label>Engagement</label>
+        <select name="engagement">
+            <option value="">All Engagement</option>
+            {% for item in engagement_breakdown %}
+                <option value="{{ item.engagement }}" {% if selected_engagement == item.engagement %}selected{% endif %}>{{ item.engagement }}</option>
+            {% endfor %}
+        </select>
+        <div class="button-group">
+            <button type="submit" class="btn btn-primary">Apply Filters</button>
+            <a href="/reports/contacts" class="btn btn-secondary">Clear</a>
+        </div>
+    </form>
 </div>
 
 {% if current_user and current_user["role"] == "admin" %}
@@ -77,7 +128,7 @@
             {% for item in contacts_by_category %}
                 <div class="metric-bar-row">
                     <div class="metric-bar-row-top">
-                        <span>{{ item.category }}</span>
+                        <span><a href="{{ item.filter_url }}">{{ item.category }}</a></span>
                         <strong>{{ item.total }}</strong>
                     </div>
                     <div class="metric-bar-track"><span style="width: {{ item.percent }}%;"></span></div>
@@ -94,7 +145,7 @@
             {% for item in contacts_by_relationship %}
                 <div class="metric-bar-row">
                     <div class="metric-bar-row-top">
-                        <span>{{ item.relationship }}</span>
+                        <span><a href="{{ item.filter_url }}">{{ item.relationship }}</a></span>
                         <strong>{{ item.total }}</strong>
                     </div>
                     <div class="metric-bar-track"><span style="width: {{ item.percent }}%;"></span></div>
@@ -111,7 +162,7 @@
             {% for item in contacts_by_account %}
                 <div class="metric-bar-row">
                     <div class="metric-bar-row-top">
-                        <span>{{ item.account_name or "Unknown" }}</span>
+                        <span><a href="{{ item.filter_url }}">{{ item.account_name or "Unknown" }}</a></span>
                         <strong>{{ item.total }}</strong>
                     </div>
                     <div class="metric-bar-track"><span style="width: {{ item.percent }}%;"></span></div>
@@ -139,6 +190,23 @@
         </div>
     </div>
 
+    <div class="report-card report-metric-section">
+        <h3>Engagement Coverage</h3>
+        <div class="metric-bar-list">
+            {% for item in engagement_breakdown %}
+                <div class="metric-bar-row">
+                    <div class="metric-bar-row-top">
+                        <span><a href="{{ item.filter_url }}">{{ item.engagement }}</a></span>
+                        <strong>{{ item.total }}</strong>
+                    </div>
+                    <div class="metric-bar-track"><span style="width: {{ item.percent }}%;"></span></div>
+                </div>
+            {% else %}
+                <p>No engagement data yet.</p>
+            {% endfor %}
+        </div>
+    </div>
+
 </div>
 
 <div class="report-table-section">
@@ -157,10 +225,10 @@
                 <col class="contact-report-category-col">
                 <col class="contact-report-status-col">
                 <col class="contact-report-relationship-col">
-                <col class="contact-report-email-col">
-                <col class="contact-report-phone-col">
-                <col class="contact-report-phone-col">
                 <col class="contact-report-account-col">
+                <col class="contact-report-tier-col">
+                <col class="contact-report-status-col">
+                <col class="contact-report-phone-col">
                 <col class="contact-report-tier-col">
             </colgroup>
             <thead>
@@ -170,11 +238,11 @@
                     <th>Category</th>
                     <th>Status</th>
                     <th>Relationship</th>
-                    <th>Email</th>
-                    <th>Office Phone</th>
-                    <th>Mobile Phone</th>
                     <th>Account</th>
                     <th>Account Tier</th>
+                    <th>Engagement</th>
+                    <th>Last Activity</th>
+                    <th>Score</th>
                 </tr>
             </thead>
 
@@ -200,11 +268,11 @@
                             </span>
                         </td>
                         <td>{{ contact["bmc_relationship"] or "Unknown" }}</td>
-                        <td>{{ contact["email"] or "Not set" }}</td>
-                        <td>{{ contact["office_phone"] or "Not set" }}</td>
-                        <td>{{ contact["mobile_phone"] or "Not set" }}</td>
-                        <td>{{ contact["account_name"] or "Unknown" }}</td>
+                        <td>{{ contact["account_label"] or "Unknown" }}</td>
                         <td>{{ "Tier " ~ contact["account_tier"] if contact["account_tier"] else "Not set" }}</td>
+                        <td><span class="report-status-pill">{{ contact["engagement_band"] }}</span></td>
+                        <td>{{ contact["last_activity_date"]|display_date if contact["last_activity_date"] else "No activity" }}</td>
+                        <td>{{ contact["engagement_score"] }}</td>
                     </tr>
                 {% else %}
                     <tr>

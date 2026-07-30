@@ -25,7 +25,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.9"
 APP_RELEASE_DATE = "2026-07-29"
-APP_BUILD = "2026-07-30-v2.6.9-manual-pg-rag-r1"
+APP_BUILD = "2026-07-30-v2.6.9-reporting-accordion-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -52,6 +52,8 @@ RELEASE_NOTES = [
             "Changed PG Progress RAG from automated outcome calculation to manual account and contact RAG selections driven by user or manager judgement.",
             "Restricted PG Progress RAG editing so only the logged-in user or that user's manager can update the visible RAG status.",
             "Expanded Insights guidance with a practical SaaS/software pipeline-generation playbook so duplicated low-value guidance is replaced by stronger route, channel and meeting-booking recommendations.",
+            "Changed System Metadata and audit-style timeline sections to closed accordions so audit detail is available on demand instead of permanently occupying the page.",
+            "Enriched Account, Contact, Outreach and Partner reports with portfolio KPIs, coverage/risk/effectiveness breakdowns, filter links, CSV export and XLSX export while leaving the PG Bible report unchanged.",
         ],
     },
     {
@@ -1480,6 +1482,109 @@ def report_bar_rows(rows, value_key="total", percent_key="percent"):
         value = float(row.get(value_key) or 0)
         row[percent_key] = int(round((value / max_value) * 100)) if max_value else 0
     return rows
+
+
+def report_date_value(value):
+    if not value:
+        return None
+    text = str(value).strip()
+    for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M"):
+        try:
+            return datetime.strptime(text[:len(fmt)], fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def report_days_since(value, today=None):
+    parsed = report_date_value(value)
+    if not parsed:
+        return None
+    return ((today or current_app_datetime().date()) - parsed).days
+
+
+def report_percent(numerator, denominator):
+    denominator = float(denominator or 0)
+    if not denominator:
+        return 0
+    return round((float(numerator or 0) / denominator) * 100, 1)
+
+
+def report_filter_url(endpoint, **params):
+    clean = {key: value for key, value in params.items() if value not in (None, "")}
+    return url_for(endpoint, **clean)
+
+
+def report_xlsx_response(filename_prefix, sheet_title, headers, rows):
+    try:
+        from openpyxl import Workbook
+    except ModuleNotFoundError:
+        raise RuntimeError("XLSX report export requires openpyxl. Install dependencies with python3 -m pip install -r requirements.txt.")
+    workbook = Workbook()
+    workbook.remove(workbook.active)
+    add_export_worksheet(workbook, sheet_title, headers, rows)
+    output = io.BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    return send_file(
+        output,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=f"{filename_prefix}_{timestamp}.xlsx",
+    )
+
+
+def report_csv_response(filename_prefix, headers, rows):
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(headers)
+    for row in rows:
+        writer.writerow(csv_safe_row(row))
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename_prefix}_{timestamp}.csv"},
+    )
+
+
+def report_account_display(row):
+    if not row:
+        return "Unknown"
+    name = row["account_name"] if hasattr(row, "keys") and "account_name" in row.keys() else row.get("account_name", "")
+    business_unit = row["business_unit"] if hasattr(row, "keys") and "business_unit" in row.keys() else row.get("business_unit", "")
+    return account_context_label(name or "Unknown", business_unit or "")
+
+
+def account_report_engagement_score(row):
+    score = 0
+    if int(row.get("contact_count") or 0) > 0:
+        score += 20
+    if int(row.get("senior_contact_count") or 0) > 0:
+        score += 20
+    if int(row.get("recent_outreach_count") or 0) > 0:
+        score += 20
+    if int(row.get("future_action_count") or 0) > 0:
+        score += 20
+    if int(row.get("meeting_count") or 0) > 0:
+        score += 20
+    return score
+
+
+def contact_report_engagement_score(row):
+    score = 0
+    if row.get("email"):
+        score += 15
+    if row.get("job_title"):
+        score += 15
+    if int(row.get("activity_count") or 0) > 0:
+        score += 25
+    if int(row.get("recent_activity_count") or 0) > 0:
+        score += 25
+    if int(row.get("meeting_count") or 0) > 0:
+        score += 20
+    return score
 
 
 def rate_limit_key(prefix, identifier):
@@ -14788,6 +14893,8 @@ def export_pg_progress_pdf():
 @app.route("/reports/partners")
 def partner_reports():
     connection = get_db_connection()
+    selected_status = request.args.get("status", "")
+    selected_partner_type = request.args.get("partner_type", "")
     partner_rows = connection.execute("""
         SELECT
             partners.id,
@@ -14795,13 +14902,21 @@ def partner_reports():
             partners.partner_type,
             partner_contact_accounts.relationship_status AS involvement_status,
             accounts.account_name,
+            accounts.business_unit,
             COUNT(DISTINCT partner_contacts.id) AS contact_count
         FROM partners
         LEFT JOIN partner_contact_accounts ON partner_contact_accounts.partner_id = partners.id
         LEFT JOIN accounts ON accounts.id = partner_contact_accounts.account_id
         LEFT JOIN partner_contacts ON partner_contacts.id = partner_contact_accounts.partner_contact_id
-        GROUP BY partners.id, partners.partner_name, partners.partner_type, partner_contact_accounts.relationship_status, accounts.account_name
+        GROUP BY partners.id, partners.partner_name, partners.partner_type, partner_contact_accounts.relationship_status, accounts.account_name, accounts.business_unit
         ORDER BY partners.partner_name, accounts.account_name
+    """).fetchall()
+    partner_types = connection.execute("""
+        SELECT DISTINCT partner_type
+        FROM partners
+        WHERE partner_type IS NOT NULL
+          AND partner_type != ''
+        ORDER BY partner_type
     """).fetchall()
     engagement_rows = connection.execute("""
         SELECT COALESCE(NULLIF(relationship_status, ''), 'Not set') AS engagement, COUNT(*) AS total
@@ -14810,7 +14925,47 @@ def partner_reports():
         ORDER BY total DESC
     """).fetchall()
     connection.close()
-    return render_template("partner_reports.html", partner_rows=partner_rows, engagement_rows=engagement_rows)
+    enriched_rows = []
+    for row in partner_rows:
+        item = dict(row)
+        item["account_label"] = report_account_display(item) if item["account_name"] else "No account mapped"
+        enriched_rows.append(item)
+    if selected_status:
+        enriched_rows = [row for row in enriched_rows if (row["involvement_status"] or "Not set") == selected_status]
+    if selected_partner_type:
+        enriched_rows = [row for row in enriched_rows if (row["partner_type"] or "") == selected_partner_type]
+
+    type_totals = {}
+    coverage_totals = {"Mapped to account": 0, "No account mapped": 0}
+    for row in enriched_rows:
+        type_label = row["partner_type"] or "Not set"
+        type_totals[type_label] = type_totals.get(type_label, 0) + 1
+        coverage_totals["Mapped to account" if row["account_name"] else "No account mapped"] += 1
+    partner_type_rows = [
+        {"partner_type": label, "total": total, "filter_url": report_filter_url("partner_reports", partner_type=label)}
+        for label, total in sorted(type_totals.items(), key=lambda item: (-item[1], item[0]))
+    ]
+    coverage_rows = [{"coverage": label, "total": total} for label, total in coverage_totals.items()]
+    partner_metrics = {
+        "total_partners": len({row["id"] for row in enriched_rows}),
+        "partner_contacts": sum(int(row["contact_count"] or 0) for row in enriched_rows),
+        "accounts_supported": len({row["account_label"] for row in enriched_rows if row["account_name"]}),
+        "unmapped_relationships": sum(1 for row in enriched_rows if not row["account_name"] or not row["involvement_status"]),
+    }
+    return render_template(
+        "partner_reports.html",
+        partner_rows=enriched_rows,
+        engagement_rows=report_bar_rows([
+            {**dict(row), "filter_url": report_filter_url("partner_reports", status=row["engagement"])}
+            for row in engagement_rows
+        ]),
+        partner_type_rows=report_bar_rows(partner_type_rows),
+        coverage_rows=report_bar_rows(coverage_rows),
+        partner_metrics=partner_metrics,
+        partner_types=partner_types,
+        selected_status=selected_status,
+        selected_partner_type=selected_partner_type,
+    )
 
 
 @app.route("/reports/partners/export")
@@ -14822,6 +14977,7 @@ def export_partner_reports():
             partners.partner_type,
             partner_contact_accounts.relationship_status AS involvement_status,
             accounts.account_name,
+            accounts.business_unit,
             partner_contacts.name AS partner_contact_name,
             partner_contacts.job_title,
             partner_contacts.relationship_status
@@ -14832,23 +14988,20 @@ def export_partner_reports():
         ORDER BY partners.partner_name, accounts.account_name, partner_contacts.name
     """).fetchall()
     connection.close()
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["Partner", "Partner Type", "Partner Engagement", "Account", "Partner Contact", "Job Title", "Contact Engagement"])
-    for row in rows:
-        writer.writerow(csv_safe_row([
+    headers = ["Partner", "Partner Type", "Partner Engagement", "Account", "Business Org", "Partner Contact", "Job Title", "Contact Engagement"]
+    export_rows = [[
             row["partner_name"],
             row["partner_type"],
             row["involvement_status"],
             row["account_name"],
+            row["business_unit"],
             row["partner_contact_name"],
             row["job_title"],
             row["relationship_status"],
-        ]))
-    response = Response(output.getvalue(), mimetype="text/csv")
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    response.headers["Content-Disposition"] = f"attachment; filename=partner_reports_{timestamp}.csv"
-    return response
+        ] for row in rows]
+    if request.args.get("format") == "xlsx":
+        return report_xlsx_response("partner_reports", "Partner Reports", headers, export_rows)
+    return report_csv_response("partner_reports", headers, export_rows)
 
 
 def audit_retention_cutoff():
@@ -15504,147 +15657,219 @@ def export_pg_bible():
 def account_reports():
     initialise_database(force=True)
     connection = get_db_connection()
+    today = current_app_datetime().date()
+    selected_tier = request.args.get("tier", "")
+    selected_industry = request.args.get("industry", "")
+    selected_risk = request.args.get("risk", "")
 
-    accounts = connection.execute("""
+    accounts = connection.execute(f"""
         SELECT
-            id,
-            pg_bible_order,
-            account_name,
-            customer_logo,
-            account_tier,
-            industry,
-            country,
-            city,
-            pipeline_target
+            accounts.id,
+            accounts.pg_bible_order,
+            accounts.account_name,
+            accounts.business_unit,
+            accounts.customer_logo,
+            accounts.account_tier,
+            accounts.industry,
+            accounts.country,
+            accounts.city,
+            accounts.pipeline_target,
+            accounts.current_pipeline,
+            accounts.sales_play,
+            accounts.owner_name,
+            COUNT(DISTINCT contacts.id) AS contact_count,
+            SUM(CASE WHEN COALESCE(contacts.status, 'Active') != 'Archived'
+                      AND (LOWER(COALESCE(contacts.category, '')) LIKE '%exec%'
+                           OR LOWER(COALESCE(contacts.category, '')) LIKE '%decision%'
+                           OR LOWER(COALESCE(contacts.job_title, '')) LIKE '%director%'
+                           OR LOWER(COALESCE(contacts.job_title, '')) LIKE '%chief%'
+                           OR LOWER(COALESCE(contacts.job_title, '')) LIKE '%vp%')
+                     THEN 1 ELSE 0 END) AS senior_contact_count,
+            COUNT(DISTINCT outreach.id) AS outreach_count,
+            SUM(CASE WHEN outreach.activity_date >= ? THEN 1 ELSE 0 END) AS recent_outreach_count,
+            SUM(CASE WHEN {open_task_sql("outreach")} THEN 1 ELSE 0 END) AS open_outreach_count,
+            SUM(CASE WHEN {open_task_sql("outreach")} AND outreach.next_action_date >= ? THEN 1 ELSE 0 END) AS future_action_count,
+            SUM(CASE WHEN {open_task_sql("outreach")} AND outreach.next_action_date < ? THEN 1 ELSE 0 END) AS overdue_followups,
+            SUM(CASE WHEN outreach.outcome IN ('Meeting Booked', 'NBM Booked', 'Discovery Booked', 'Discovery Meeting', 'Exec Meeting Booked', 'Executive Meeting')
+                       OR outreach.activity_type = 'Meeting'
+                     THEN 1 ELSE 0 END) AS meeting_count,
+            MAX(COALESCE(outreach.completed_at, outreach.last_updated, outreach.activity_date)) AS last_activity_date,
+            MIN(CASE WHEN {open_task_sql("outreach")} THEN outreach.next_action_date ELSE NULL END) AS next_scheduled_activity
         FROM accounts
+        LEFT JOIN contacts ON contacts.account_id = accounts.id
+            AND COALESCE(contacts.status, 'Active') != 'Archived'
+        LEFT JOIN outreach ON outreach.account_id = accounts.id
+            AND {report_visible_task_sql("outreach")}
+        GROUP BY
+            accounts.id,
+            accounts.pg_bible_order,
+            accounts.account_name,
+            accounts.business_unit,
+            accounts.customer_logo,
+            accounts.account_tier,
+            accounts.industry,
+            accounts.country,
+            accounts.city,
+            accounts.pipeline_target,
+            accounts.current_pipeline,
+            accounts.sales_play,
+            accounts.owner_name
         ORDER BY
-            CASE WHEN pg_bible_order IS NULL THEN 1 ELSE 0 END,
-            pg_bible_order,
-            account_name
-    """).fetchall()
+            CASE WHEN accounts.pg_bible_order IS NULL THEN 1 ELSE 0 END,
+            accounts.pg_bible_order,
+            accounts.account_name,
+            accounts.business_unit
+    """, (
+        (today - timedelta(days=30)).isoformat(),
+        *open_task_params(),
+        *open_task_params(),
+        today.isoformat(),
+        *open_task_params(),
+        today.isoformat(),
+        *open_task_params(),
+        *report_visible_task_params(),
+    )).fetchall()
+    connection.close()
 
-    accounts_by_industry = connection.execute("""
-        SELECT
-            COALESCE(NULLIF(industry, ''), 'Unknown') AS industry,
-            COUNT(*) AS total
-        FROM accounts
-        GROUP BY COALESCE(NULLIF(industry, ''), 'Unknown')
-        ORDER BY total DESC
-    """).fetchall()
+    enriched_accounts = []
+    for account in accounts:
+        row = dict(account)
+        row["account_label"] = report_account_display(row)
+        row["contact_count"] = int(row["contact_count"] or 0)
+        row["senior_contact_count"] = int(row["senior_contact_count"] or 0)
+        row["recent_outreach_count"] = int(row["recent_outreach_count"] or 0)
+        row["future_action_count"] = int(row["future_action_count"] or 0)
+        row["open_outreach_count"] = int(row["open_outreach_count"] or 0)
+        row["overdue_followups"] = int(row["overdue_followups"] or 0)
+        row["meeting_count"] = int(row["meeting_count"] or 0)
+        row["days_since_last_activity"] = report_days_since(row["last_activity_date"], today)
+        row["engagement_score"] = account_report_engagement_score(row)
+        row["risk_status"] = "No contacts" if row["contact_count"] == 0 else (
+            "No recent activity" if row["days_since_last_activity"] is None or row["days_since_last_activity"] > 30 else (
+                "No next step" if row["future_action_count"] == 0 else "Active"
+            )
+        )
+        row["plan_complete"] = bool(row["sales_play"] and row["account_tier"] and row["pg_bible_order"])
+        enriched_accounts.append(row)
 
-    pipeline_by_account = connection.execute("""
-        SELECT
-            account_name,
-            COALESCE(pipeline_target, 0) AS pipeline_target
-        FROM accounts
-        ORDER BY pipeline_target DESC
-        LIMIT 10
-    """).fetchall()
+    if selected_tier:
+        enriched_accounts = [row for row in enriched_accounts if (row["account_tier"] or "Not set") == selected_tier]
+    if selected_industry:
+        enriched_accounts = [row for row in enriched_accounts if (row["industry"] or "Unknown") == selected_industry]
+    if selected_risk:
+        enriched_accounts = [row for row in enriched_accounts if row["risk_status"] == selected_risk]
 
-    accounts_by_country = connection.execute("""
-        SELECT
-            COALESCE(NULLIF(country, ''), 'Unknown') AS country,
-            COUNT(*) AS total
-        FROM accounts
-        GROUP BY COALESCE(NULLIF(country, ''), 'Unknown')
-        ORDER BY total DESC
-    """).fetchall()
+    def group_total(key, label_key=None):
+        totals = {}
+        for row in enriched_accounts:
+            label = row.get(key) or "Unknown"
+            totals[label] = totals.get(label, 0) + 1
+        return [{label_key or key: label, "total": total, "filter_url": report_filter_url("account_reports", **{key if key in ("industry",) else "risk": label})} for label, total in sorted(totals.items(), key=lambda item: (-item[1], item[0]))]
 
-    accounts_by_tier = connection.execute("""
-        SELECT
-            COALESCE(NULLIF(account_tier, ''), 'Not set') AS account_tier,
-            COUNT(*) AS total
-        FROM accounts
-        GROUP BY COALESCE(NULLIF(account_tier, ''), 'Not set')
-        ORDER BY account_tier
-    """).fetchall()
+    tier_totals = {}
+    for row in enriched_accounts:
+        tier = row["account_tier"] or "Not set"
+        tier_totals[tier] = tier_totals.get(tier, 0) + 1
+
+    accounts_by_tier = [
+        {"account_tier": tier, "total": total, "filter_url": report_filter_url("account_reports", tier=tier)}
+        for tier, total in sorted(tier_totals.items(), key=lambda item: item[0])
+    ]
+    accounts_by_industry = group_total("industry")
+    risk_breakdown = group_total("risk_status", "risk")
+    pipeline_by_account = sorted(
+        [
+            {"account_name": row["account_label"], "pipeline_target": float(row["pipeline_target"] or 0), "filter_url": url_for("edit_account", account_id=row["id"])}
+            for row in enriched_accounts if float(row["pipeline_target"] or 0) > 0
+        ],
+        key=lambda item: item["pipeline_target"],
+        reverse=True,
+    )[:10]
+    stakeholder_coverage = [
+        {"coverage": "Executive coverage", "total": sum(1 for row in enriched_accounts if row["senior_contact_count"] > 0)},
+        {"coverage": "No executive route", "total": sum(1 for row in enriched_accounts if row["senior_contact_count"] == 0 and row["contact_count"] > 0)},
+        {"coverage": "No contacts", "total": sum(1 for row in enriched_accounts if row["contact_count"] == 0)},
+    ]
 
     account_metrics = {
-        "total_accounts": len(accounts),
-        "total_pipeline_target": sum(float(account["pipeline_target"] or 0) for account in accounts),
-        "pg_ordered_accounts": sum(1 for account in accounts if account["pg_bible_order"]),
-        "tiered_accounts": sum(1 for account in accounts if account["account_tier"]),
-        "accounts_with_contacts": connection.execute(
-            "SELECT COUNT(DISTINCT account_id) FROM contacts WHERE account_id IS NOT NULL AND COALESCE(status, 'Active') != 'Archived'"
-        ).fetchone()[0],
-        "accounts_with_open_outreach": connection.execute(f"""
-            SELECT COUNT(DISTINCT account_id)
-            FROM outreach
-            WHERE account_id IS NOT NULL
-              AND {open_task_sql("outreach")}
-        """, open_task_params()).fetchone()[0],
+        "total_accounts": len(enriched_accounts),
+        "priority_accounts": sum(1 for row in enriched_accounts if row["pg_bible_order"] or str(row["account_tier"] or "").strip() in ("1", "Tier 1", "Strategic")),
+        "active_opportunities": sum(1 for row in enriched_accounts if float(row["pipeline_target"] or 0) > 0 or float(row["current_pipeline"] or 0) > 0),
+        "no_recent_activity": sum(1 for row in enriched_accounts if row["risk_status"] in ("No contacts", "No recent activity")),
+        "incomplete_plans": sum(1 for row in enriched_accounts if not row["plan_complete"]),
+        "total_pipeline_target": sum(float(row["pipeline_target"] or 0) for row in enriched_accounts),
+        "weighted_pipeline": sum(float(row["pipeline_target"] or 0) * (row["engagement_score"] / 100) for row in enriched_accounts),
+        "average_engagement_score": round(sum(row["engagement_score"] for row in enriched_accounts) / len(enriched_accounts), 1) if enriched_accounts else 0,
     }
-
-    connection.close()
 
     return render_template(
         "account_reports.html",
-        accounts=accounts,
+        accounts=enriched_accounts,
         account_metrics=account_metrics,
         accounts_by_industry=report_bar_rows(accounts_by_industry),
         pipeline_by_account=report_bar_rows(pipeline_by_account, "pipeline_target"),
-        accounts_by_country=report_bar_rows(accounts_by_country),
-        accounts_by_tier=report_bar_rows(accounts_by_tier)
+        accounts_by_tier=report_bar_rows(accounts_by_tier),
+        risk_breakdown=report_bar_rows(risk_breakdown),
+        stakeholder_coverage=report_bar_rows(stakeholder_coverage),
+        selected_tier=selected_tier,
+        selected_industry=selected_industry,
+        selected_risk=selected_risk,
     )
 
 
 @app.route("/reports/accounts/export")
 def export_account_reports():
     connection = get_db_connection()
-
     accounts = connection.execute("""
         SELECT
             pg_bible_order,
             account_name,
+            business_unit,
             account_tier,
             industry,
             country,
             city,
-            pipeline_target
+            pipeline_target,
+            current_pipeline,
+            sales_play,
+            owner_name
         FROM accounts
         ORDER BY
             CASE WHEN pg_bible_order IS NULL THEN 1 ELSE 0 END,
             pg_bible_order,
-            account_name
+            account_name,
+            business_unit
     """).fetchall()
-
     connection.close()
-
-    output = io.StringIO()
-    writer = csv.writer(output)
-
-    writer.writerow([
+    headers = [
         "PG Bible Order",
         "Account Name",
+        "Business Org",
         "Account Tier",
         "Industry",
         "Country",
         "City",
-        "Pipeline Target"
-    ])
-
-    for account in accounts:
-        writer.writerow(csv_safe_row([
+        "Pipeline Target",
+        "Current Pipeline",
+        "Sales Play(s)",
+        "Owner"
+    ]
+    rows = [[
             account["pg_bible_order"],
             account["account_name"],
+            account["business_unit"],
             account["account_tier"],
             account["industry"],
             account["country"],
             account["city"],
-            account["pipeline_target"]
-        ]))
-
-    response = Response(
-        output.getvalue(),
-        mimetype="text/csv"
-    )
-
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    response.headers["Content-Disposition"] = (
-        f"attachment; filename=account_reports_{timestamp}.csv"
-    )
-
-    return response
+            account["pipeline_target"],
+            account["current_pipeline"],
+            account["sales_play"],
+            account["owner_name"],
+        ] for account in accounts]
+    if request.args.get("format") == "xlsx":
+        return report_xlsx_response("account_reports", "Account Reports", headers, rows)
+    return report_csv_response("account_reports", headers, rows)
 
 
 @app.route("/reports/tasks")
@@ -15659,9 +15884,9 @@ def task_reports():
     selected_assigned_to = request.args.get("assigned_to", "")
 
     accounts = connection.execute("""
-        SELECT id, account_name
+        SELECT id, account_name, business_unit
         FROM accounts
-        ORDER BY account_name
+        ORDER BY account_name, business_unit
     """).fetchall()
 
     all_tasks = connection.execute("""
@@ -15675,6 +15900,7 @@ def task_reports():
             outreach.assigned_to,
             outreach.sales_play,
             accounts.account_name,
+            accounts.business_unit,
             accounts.account_tier,
             contacts.name AS contact_name,
             COALESCE(
@@ -16123,6 +16349,7 @@ def outreach_reports():
         {
             **dict(item),
             "additional_contact_count": max(int(item["recipient_count"] or 0) - 1, 0),
+            "account_label": report_account_display(item),
         }
         for item in filtered_outreach
     ]
@@ -16136,14 +16363,28 @@ def outreach_reports():
         1 for item in filtered_outreach
         if is_overdue_task(item["next_action_date"], item["next_action_time"], item["task_status"])
     )
+    email_count = sum(1 for item in filtered_outreach if (item["activity_type"] or "").lower() == "email")
+    phone_count = sum(1 for item in filtered_outreach if (item["activity_type"] or "").lower() == "phone")
+    linkedin_count = sum(1 for item in filtered_outreach if "linkedin" in (item["activity_type"] or "").lower())
+    meeting_count = sum(1 for item in filtered_outreach if (item["activity_type"] or "").lower() == "meeting" or (item["outcome"] or "") in ("Meeting Booked", "NBM Booked", "Discovery Booked", "Exec Meeting Booked"))
+    response_count = sum(1 for item in filtered_outreach if (item["outcome"] or "") not in ("", "Unknown", "No Response", "No Response Yet"))
+    positive_response_count = sum(1 for item in filtered_outreach if (item["outcome"] or "") in ("Positive Response", "Meeting Booked", "NBM Booked", "Discovery Booked", "Exec Meeting Booked"))
+    accounts_engaged = len({item["account_id"] for item in filtered_outreach if item["account_id"]})
+    contacts_targeted = len({item["display_contact_name"] or item["contact_name"] for item in filtered_outreach if item["display_contact_name"] or item["contact_name"]})
 
     outcome_totals = {}
     type_totals = {}
+    account_totals = {}
+    sales_play_totals = {}
     for item in filtered_outreach:
         outcome = item["outcome"] or "Unknown"
         activity_type = item["activity_type"] or "Unknown"
         outcome_totals[outcome] = outcome_totals.get(outcome, 0) + 1
         type_totals[activity_type] = type_totals.get(activity_type, 0) + 1
+        account_totals[item["account_label"]] = account_totals.get(item["account_label"], {"count": 0, "account_id": item["account_id"]})
+        account_totals[item["account_label"]]["count"] += 1
+        sales_play = item["sales_play"] or "Not set"
+        sales_play_totals[sales_play] = sales_play_totals.get(sales_play, 0) + 1
 
     outcome_breakdown = [
         {"outcome": outcome, "count": count}
@@ -16153,8 +16394,22 @@ def outreach_reports():
         {"activity_type": activity_type, "count": count}
         for activity_type, count in sorted(type_totals.items(), key=lambda item: (-item[1], item[0]))
     ]
+    outreach_by_account = [
+        {
+            "account_name": label,
+            "count": details["count"],
+            "filter_url": report_filter_url("outreach_reports", account_id=details["account_id"], start_date=selected_start_date, end_date=selected_end_date),
+        }
+        for label, details in sorted(account_totals.items(), key=lambda item: (-item[1]["count"], item[0]))[:10]
+    ]
+    outreach_by_sales_play = [
+        {"sales_play": sales_play, "count": count}
+        for sales_play, count in sorted(sales_play_totals.items(), key=lambda item: (-item[1], item[0]))[:10]
+    ]
     outcome_breakdown = report_bar_rows(outcome_breakdown, "count")
     outreach_by_type = report_bar_rows(outreach_by_type, "count")
+    outreach_by_account = report_bar_rows(outreach_by_account, "count")
+    outreach_by_sales_play = report_bar_rows(outreach_by_sales_play, "count")
     working_week_start = report_today - timedelta(days=report_today.weekday())
     working_week_end = working_week_start + timedelta(days=6)
     working_week_outreach = [
@@ -16169,8 +16424,21 @@ def outreach_reports():
         pg_success_count=pg_success_count,
         open_tasks=open_tasks,
         overdue_tasks=overdue_tasks,
+        email_count=email_count,
+        phone_count=phone_count,
+        linkedin_count=linkedin_count,
+        meeting_count=meeting_count,
+        response_count=response_count,
+        positive_response_count=positive_response_count,
+        response_rate=report_percent(response_count, total_outreach),
+        positive_response_rate=report_percent(positive_response_count, total_outreach),
+        meeting_conversion_rate=report_percent(meeting_count, total_outreach),
+        accounts_engaged=accounts_engaged,
+        contacts_targeted=contacts_targeted,
         outcome_breakdown=outcome_breakdown,
         outreach_by_type=outreach_by_type,
+        outreach_by_account=outreach_by_account,
+        outreach_by_sales_play=outreach_by_sales_play,
         outreach_items=filtered_outreach,
         working_week_outreach=working_week_outreach,
         accounts=accounts,
@@ -16202,6 +16470,7 @@ def export_outreach_reports():
             outreach.fy,
             outreach.quarter,
             accounts.account_name,
+            accounts.business_unit,
             accounts.account_tier,
             contacts.name AS contact_name,
             outreach.activity_type,
@@ -16216,10 +16485,7 @@ def export_outreach_reports():
 
     connection.close()
 
-    output = io.StringIO()
-    writer = csv.writer(output)
-
-    writer.writerow([
+    headers = [
         "Date",
         "Time",
         "Due Date",
@@ -16229,16 +16495,15 @@ def export_outreach_reports():
         "Quarter",
         "Sales Play or Initiative",
         "Account",
+        "Business Org",
         "Account Tier",
         "Contact",
         "Activity Type",
         "Outcome",
         "Activity Update",
         "System Metadata"
-    ])
-
-    for item in outreach_items:
-        writer.writerow(csv_safe_row([
+    ]
+    rows = [[
             item["activity_date"],
             item["activity_time"],
             item["next_action_date"],
@@ -16248,35 +16513,39 @@ def export_outreach_reports():
             item["quarter"],
             item["sales_play"],
             item["account_name"],
+            item["business_unit"],
             item["account_tier"],
             item["contact_name"],
             item["activity_type"],
             item["outcome"],
             item["next_action"],
             item["notes"]
-        ]))
-
-    response = Response(
-        output.getvalue(),
-        mimetype="text/csv"
-    )
-
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    response.headers["Content-Disposition"] = (
-        f"attachment; filename=outreach_reports_{timestamp}.csv"
-    )
-
-    return response
+        ] for item in outreach_items]
+    if request.args.get("format") == "xlsx":
+        return report_xlsx_response("outreach_reports", "Outreach Reports", headers, rows)
+    return report_csv_response("outreach_reports", headers, rows)
 
 
 @app.route("/reports/contacts")
 def contact_reports():
     initialise_database(force=True)
     connection = get_db_connection()
+    today = current_app_datetime().date()
+    selected_account = request.args.get("account_id", "")
+    selected_category = request.args.get("category", "")
+    selected_relationship = request.args.get("relationship", "")
+    selected_engagement = request.args.get("engagement", "")
 
-    contacts = connection.execute("""
+    accounts = connection.execute("""
+        SELECT id, account_name, business_unit
+        FROM accounts
+        ORDER BY account_name, business_unit
+    """).fetchall()
+
+    contacts = connection.execute(f"""
         SELECT
             contacts.id,
+            contacts.account_id,
             contacts.name,
             contacts.job_title,
             contacts.category,
@@ -16285,76 +16554,134 @@ def contact_reports():
             contacts.email,
             contacts.office_phone,
             contacts.mobile_phone,
+            contacts.date_created,
             accounts.account_name,
+            accounts.business_unit,
+            accounts.account_tier,
+            COUNT(DISTINCT outreach.id) AS activity_count,
+            SUM(CASE WHEN outreach.activity_date >= ? THEN 1 ELSE 0 END) AS recent_activity_count,
+            SUM(CASE WHEN outreach.outcome IN ('Positive Response', 'Meeting Booked', 'NBM Booked', 'Discovery Booked', 'Exec Meeting Booked')
+                       OR outreach.activity_type = 'Meeting'
+                     THEN 1 ELSE 0 END) AS positive_signal_count,
+            SUM(CASE WHEN outreach.outcome IN ('Meeting Booked', 'NBM Booked', 'Discovery Booked', 'Exec Meeting Booked')
+                       OR outreach.activity_type = 'Meeting'
+                     THEN 1 ELSE 0 END) AS meeting_count,
+            MAX(COALESCE(outreach.completed_at, outreach.last_updated, outreach.activity_date)) AS last_activity_date,
+            MIN(CASE WHEN {open_task_sql("outreach")} THEN outreach.next_action_date ELSE NULL END) AS next_action_date
+        FROM contacts
+        LEFT JOIN accounts ON contacts.account_id = accounts.id
+        LEFT JOIN outreach ON (
+                outreach.contact_id = contacts.id
+             OR outreach.id IN (
+                    SELECT outreach_id
+                    FROM outreach_recipients
+                    WHERE outreach_recipients.contact_id = contacts.id
+                )
+            )
+            AND {report_visible_task_sql("outreach")}
+        WHERE COALESCE(contacts.status, 'Active') != 'Archived'
+        GROUP BY
+            contacts.id,
+            contacts.account_id,
+            contacts.name,
+            contacts.job_title,
+            contacts.category,
+            contacts.status,
+            contacts.bmc_relationship,
+            contacts.email,
+            contacts.office_phone,
+            contacts.mobile_phone,
+            contacts.date_created,
+            accounts.account_name,
+            accounts.business_unit,
             accounts.account_tier
-        FROM contacts
-        LEFT JOIN accounts ON contacts.account_id = accounts.id
-        ORDER BY contacts.name
-    """).fetchall()
+        ORDER BY accounts.account_name, contacts.name
+    """, ((today - timedelta(days=30)).isoformat(), *open_task_params(), *report_visible_task_params())).fetchall()
+    connection.close()
 
-    contacts_by_category = connection.execute("""
-        SELECT
-            COALESCE(NULLIF(category, ''), 'Unknown') AS category,
-            COUNT(*) AS total
-        FROM contacts
-        WHERE COALESCE(status, 'Active') != 'Archived'
-        GROUP BY COALESCE(NULLIF(category, ''), 'Unknown')
-        ORDER BY total DESC
-    """).fetchall()
+    enriched_contacts = []
+    for contact in contacts:
+        row = dict(contact)
+        row["account_label"] = report_account_display(row)
+        row["activity_count"] = int(row["activity_count"] or 0)
+        row["recent_activity_count"] = int(row["recent_activity_count"] or 0)
+        row["positive_signal_count"] = int(row["positive_signal_count"] or 0)
+        row["meeting_count"] = int(row["meeting_count"] or 0)
+        row["days_since_last_activity"] = report_days_since(row["last_activity_date"], today)
+        row["engagement_score"] = contact_report_engagement_score(row)
+        row["engagement_band"] = "Meeting route" if row["meeting_count"] else ("Engaged" if row["positive_signal_count"] or row["recent_activity_count"] else "No activity")
+        row["data_quality_gap"] = not bool(row["email"] and row["job_title"])
+        enriched_contacts.append(row)
 
-    contacts_by_relationship = connection.execute("""
-        SELECT
-            COALESCE(NULLIF(bmc_relationship, ''), 'Unknown') AS relationship,
-            COUNT(*) AS total
-        FROM contacts
-        WHERE COALESCE(status, 'Active') != 'Archived'
-        GROUP BY COALESCE(NULLIF(bmc_relationship, ''), 'Unknown')
-        ORDER BY total DESC
-    """).fetchall()
+    if selected_account:
+        enriched_contacts = [row for row in enriched_contacts if str(row["account_id"] or "") == selected_account]
+    if selected_category:
+        enriched_contacts = [row for row in enriched_contacts if (row["category"] or "Unknown") == selected_category]
+    if selected_relationship:
+        enriched_contacts = [row for row in enriched_contacts if (row["bmc_relationship"] or "Unknown") == selected_relationship]
+    if selected_engagement:
+        enriched_contacts = [row for row in enriched_contacts if row["engagement_band"] == selected_engagement]
 
-    contacts_by_account = connection.execute("""
-        SELECT
-            accounts.account_name,
-            COUNT(contacts.id) AS total
-        FROM contacts
-        LEFT JOIN accounts ON contacts.account_id = accounts.id
-        WHERE COALESCE(contacts.status, 'Active') != 'Archived'
-        GROUP BY accounts.account_name
-        ORDER BY total DESC
-        LIMIT 10
-    """).fetchall()
+    def totals_for(key, label_key, endpoint_param):
+        totals = {}
+        for row in enriched_contacts:
+            label = row.get(key) or "Unknown"
+            totals[label] = totals.get(label, 0) + 1
+        return [
+            {label_key: label, "total": total, "filter_url": report_filter_url("contact_reports", **{endpoint_param: label})}
+            for label, total in sorted(totals.items(), key=lambda item: (-item[1], item[0]))
+        ]
 
-    contacts_by_account_tier = connection.execute("""
-        SELECT
-            COALESCE(NULLIF(accounts.account_tier, ''), 'Not set') AS account_tier,
-            COUNT(contacts.id) AS total
-        FROM contacts
-        LEFT JOIN accounts ON contacts.account_id = accounts.id
-        WHERE COALESCE(contacts.status, 'Active') != 'Archived'
-        GROUP BY COALESCE(NULLIF(accounts.account_tier, ''), 'Not set')
-        ORDER BY account_tier
-    """).fetchall()
+    contacts_by_category = totals_for("category", "category", "category")
+    contacts_by_relationship = totals_for("bmc_relationship", "relationship", "relationship")
+    contacts_by_account = []
+    account_totals = {}
+    for row in enriched_contacts:
+        account_totals.setdefault(row["account_label"], {"total": 0, "account_id": row["account_id"]})
+        account_totals[row["account_label"]]["total"] += 1
+    for account_label, item in sorted(account_totals.items(), key=lambda pair: (-pair[1]["total"], pair[0]))[:10]:
+        contacts_by_account.append({"account_name": account_label, "total": item["total"], "filter_url": report_filter_url("contact_reports", account_id=item["account_id"])})
+    engagement_breakdown = totals_for("engagement_band", "engagement", "engagement")
+    tier_totals = {}
+    for row in enriched_contacts:
+        tier = row["account_tier"] or "Not set"
+        tier_totals[tier] = tier_totals.get(tier, 0) + 1
+    contacts_by_account_tier = [{"account_tier": tier, "total": total} for tier, total in sorted(tier_totals.items(), key=lambda item: item[0])]
 
-    contact_metrics = {
-        "total_contacts": len(contacts),
-        "active_contacts": sum(1 for contact in contacts if (contact["status"] or "Active") != "Archived"),
-        "executive_contacts": sum(
-            1 for contact in contacts
-            if is_executive_contact(contact["category"], contact["bmc_relationship"], contact["job_title"])
-        ),
-        "lead_contacts": sum(1 for contact in contacts if (contact["bmc_relationship"] or "") == "Lead"),
+    accounts_with_one_contact = {
+        row["account_id"] for row in enriched_contacts
+        if row["account_id"] and sum(1 for contact in enriched_contacts if contact["account_id"] == row["account_id"]) == 1
     }
 
-    connection.close()
+    contact_metrics = {
+        "total_contacts": len(enriched_contacts),
+        "active_contacts": sum(1 for contact in enriched_contacts if (contact["status"] or "Active") not in ("Archived", "Inactive")),
+        "new_contacts": sum(1 for contact in enriched_contacts if report_days_since(contact["date_created"], today) is not None and report_days_since(contact["date_created"], today) <= 30),
+        "executive_contacts": sum(
+            1 for contact in enriched_contacts
+            if is_executive_contact(contact["category"], contact["bmc_relationship"], contact["job_title"])
+        ),
+        "champions": sum(1 for contact in enriched_contacts if (contact["bmc_relationship"] or "").lower() in ("champion", "supporter")),
+        "influencers": sum(1 for contact in enriched_contacts if "influenc" in (contact["category"] or "").lower() or "influenc" in (contact["bmc_relationship"] or "").lower()),
+        "no_activity": sum(1 for contact in enriched_contacts if contact["activity_count"] == 0),
+        "missing_email_or_role": sum(1 for contact in enriched_contacts if contact["data_quality_gap"]),
+        "accounts_one_contact": len(accounts_with_one_contact),
+    }
 
     return render_template(
         "contact_reports.html",
-        contacts=contacts,
+        contacts=enriched_contacts,
+        accounts=accounts,
         contact_metrics=contact_metrics,
         contacts_by_category=report_bar_rows(contacts_by_category),
         contacts_by_relationship=report_bar_rows(contacts_by_relationship),
         contacts_by_account=report_bar_rows(contacts_by_account),
         contacts_by_account_tier=report_bar_rows(contacts_by_account_tier),
+        engagement_breakdown=report_bar_rows(engagement_breakdown),
+        selected_account=selected_account,
+        selected_category=selected_category,
+        selected_relationship=selected_relationship,
+        selected_engagement=selected_engagement,
         message=request.args.get("message", "")
     )
 
@@ -16386,6 +16713,7 @@ def export_contact_reports():
             contacts.social_media,
             contacts.additional_notes,
             accounts.account_name,
+            accounts.business_unit,
             accounts.account_tier
         FROM contacts
         LEFT JOIN accounts ON contacts.account_id = accounts.id
@@ -16394,11 +16722,7 @@ def export_contact_reports():
     """).fetchall()
 
     connection.close()
-
-    output = io.StringIO()
-    writer = csv.writer(output)
-
-    writer.writerow([
+    headers = [
         "Name",
         "Job Title",
         "Category",
@@ -16419,11 +16743,10 @@ def export_contact_reports():
         "Social Media",
         "Additional Notes",
         "Account",
+        "Business Org",
         "Account Tier"
-    ])
-
-    for contact in contacts:
-        writer.writerow(csv_safe_row([
+    ]
+    rows = [[
             contact["name"],
             contact["job_title"],
             contact["category"],
@@ -16444,20 +16767,12 @@ def export_contact_reports():
             contact["social_media"],
             contact["additional_notes"],
             contact["account_name"],
+            contact["business_unit"],
             contact["account_tier"]
-        ]))
-
-    response = Response(
-        output.getvalue(),
-        mimetype="text/csv"
-    )
-
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    response.headers["Content-Disposition"] = (
-        f"attachment; filename=contact_reports_{timestamp}.csv"
-    )
-
-    return response
+        ] for contact in contacts]
+    if request.args.get("format") == "xlsx":
+        return report_xlsx_response("contact_reports", "Contact Reports", headers, rows)
+    return report_csv_response("contact_reports", headers, rows)
 
 
 def inactive_contacts_for_archive(connection, start_date, end_date):

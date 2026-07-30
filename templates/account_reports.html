@@ -7,29 +7,71 @@
 <div class="button-group">
     <a href="/reports" class="btn btn-secondary">Back to Reports</a>
     <a href="/reports/accounts/export" class="btn btn-primary">Export CSV</a>
+    <a href="/reports/accounts/export?format=xlsx" class="btn btn-secondary">Export XLSX</a>
 </div>
 
 <div class="dashboard-grid report-metric-grid">
     <div class="dashboard-card report-metric-card report-metric-blue">
-        <h3>Total Accounts</h3>
+        <h3>Active Accounts</h3>
         <p>{{ account_metrics.total_accounts }}</p>
-        <span>Accounts in this workspace</span>
+        <span>Filtered portfolio records</span>
     </div>
     <div class="dashboard-card report-metric-card report-metric-green">
-        <h3>With Contacts</h3>
-        <p>{{ account_metrics.accounts_with_contacts }}</p>
-        <span>Accounts with mapped relationships</span>
+        <h3>Active Opportunities</h3>
+        <p>{{ account_metrics.active_opportunities }}</p>
+        <span>Pipeline or current pipeline entered</span>
     </div>
     <div class="dashboard-card report-metric-card report-metric-amber">
-        <h3>Open Outreach</h3>
-        <p>{{ account_metrics.accounts_with_open_outreach }}</p>
-        <span>Accounts with live outreach tasks</span>
+        <h3>No Recent Activity</h3>
+        <p>{{ account_metrics.no_recent_activity }}</p>
+        <span>No contacts or no 30-day signal</span>
     </div>
     <div class="dashboard-card report-metric-card report-metric-purple">
         <h3>Pipeline Target</h3>
         <p>${{ "{:,.0f}".format(account_metrics.total_pipeline_target or 0) }}</p>
-        <span>Total target ACV</span>
+        <span>Weighted: ${{ "{:,.0f}".format(account_metrics.weighted_pipeline or 0) }}</span>
     </div>
+    <div class="dashboard-card report-metric-card report-metric-red">
+        <h3>Incomplete Plans</h3>
+        <p>{{ account_metrics.incomplete_plans }}</p>
+        <span>Missing tier, PG order or Sales Play</span>
+    </div>
+    <div class="dashboard-card report-metric-card report-metric-green">
+        <h3>Engagement Score</h3>
+        <p>{{ account_metrics.average_engagement_score }}</p>
+        <span>Coverage, activity, meetings and next steps</span>
+    </div>
+</div>
+
+<div class="report-card report-filter-card">
+    <h3>Filters</h3>
+    <form method="get" action="/reports/accounts" class="filter-form">
+        <label>Tier</label>
+        <select name="tier">
+            <option value="">All Tiers</option>
+            {% for item in accounts_by_tier %}
+                <option value="{{ item.account_tier }}" {% if selected_tier == item.account_tier %}selected{% endif %}>{{ item.account_tier }}</option>
+            {% endfor %}
+        </select>
+        <label>Industry</label>
+        <select name="industry">
+            <option value="">All Industries</option>
+            {% for item in accounts_by_industry %}
+                <option value="{{ item.industry }}" {% if selected_industry == item.industry %}selected{% endif %}>{{ item.industry }}</option>
+            {% endfor %}
+        </select>
+        <label>Risk</label>
+        <select name="risk">
+            <option value="">All Risk States</option>
+            {% for item in risk_breakdown %}
+                <option value="{{ item.risk }}" {% if selected_risk == item.risk %}selected{% endif %}>{{ item.risk }}</option>
+            {% endfor %}
+        </select>
+        <div class="button-group">
+            <button type="submit" class="btn btn-primary">Apply Filters</button>
+            <a href="/reports/accounts" class="btn btn-secondary">Clear</a>
+        </div>
+    </form>
 </div>
 
 <div class="report-grid">
@@ -40,7 +82,7 @@
             {% for item in accounts_by_industry %}
                 <div class="metric-bar-row">
                     <div class="metric-bar-row-top">
-                        <span>{{ item.industry }}</span>
+                        <span><a href="{{ item.filter_url }}">{{ item.industry }}</a></span>
                         <strong>{{ item.total }}</strong>
                     </div>
                     <div class="metric-bar-track"><span style="width: {{ item.percent }}%;"></span></div>
@@ -57,7 +99,7 @@
             {% for item in pipeline_by_account %}
                 <div class="metric-bar-row">
                     <div class="metric-bar-row-top">
-                        <span>{{ item.account_name or "Unknown" }}</span>
+                        <span><a href="{{ item.filter_url }}">{{ item.account_name or "Unknown" }}</a></span>
                         <strong>${{ "{:,.0f}".format(item.pipeline_target or 0) }}</strong>
                     </div>
                     <div class="metric-bar-track"><span style="width: {{ item.percent }}%;"></span></div>
@@ -69,18 +111,18 @@
     </div>
 
     <div class="report-card report-metric-section">
-        <h3>Accounts by Country</h3>
+        <h3>Activity Risk</h3>
         <div class="metric-bar-list">
-            {% for item in accounts_by_country %}
+            {% for item in risk_breakdown %}
                 <div class="metric-bar-row">
                     <div class="metric-bar-row-top">
-                        <span>{{ item.country }}</span>
+                        <span><a href="{{ item.filter_url }}">{{ item.risk }}</a></span>
                         <strong>{{ item.total }}</strong>
                     </div>
                     <div class="metric-bar-track"><span style="width: {{ item.percent }}%;"></span></div>
                 </div>
             {% else %}
-                <p>No country data yet.</p>
+                <p>No risk data yet.</p>
             {% endfor %}
         </div>
     </div>
@@ -91,13 +133,30 @@
             {% for item in accounts_by_tier %}
                 <div class="metric-bar-row">
                     <div class="metric-bar-row-top">
-                        <span>{% if item.account_tier != "Not set" %}Tier {{ item.account_tier }}{% else %}Not set{% endif %}</span>
+                        <span><a href="{{ item.filter_url }}">{% if item.account_tier != "Not set" %}Tier {{ item.account_tier }}{% else %}Not set{% endif %}</a></span>
                         <strong>{{ item.total }}</strong>
                     </div>
                     <div class="metric-bar-track"><span style="width: {{ item.percent }}%;"></span></div>
                 </div>
             {% else %}
                 <p>No tier data yet.</p>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="report-card report-metric-section">
+        <h3>Stakeholder Coverage</h3>
+        <div class="metric-bar-list">
+            {% for item in stakeholder_coverage %}
+                <div class="metric-bar-row">
+                    <div class="metric-bar-row-top">
+                        <span>{{ item.coverage }}</span>
+                        <strong>{{ item.total }}</strong>
+                    </div>
+                    <div class="metric-bar-track"><span style="width: {{ item.percent }}%;"></span></div>
+                </div>
+            {% else %}
+                <p>No coverage data yet.</p>
             {% endfor %}
         </div>
     </div>
@@ -117,11 +176,16 @@
             <thead>
                 <tr>
                     <th>PG Bible Order</th>
-                    <th>Account Name</th>
+                    <th>Account</th>
+                    <th>Business Org</th>
                     <th>Tier</th>
                     <th>Industry</th>
-                    <th>Country</th>
-                    <th>City</th>
+                    <th>Contacts</th>
+                    <th>Senior Routes</th>
+                    <th>Last Activity</th>
+                    <th>Next Step</th>
+                    <th>Risk</th>
+                    <th>Score</th>
                     <th>Pipeline Target</th>
                 </tr>
             </thead>
@@ -142,15 +206,20 @@
                                 {{ account["account_name"] }}
                             </a>
                         </td>
+                        <td>{{ account["business_unit"] or "Not set" }}</td>
                         <td>{{ "Tier " ~ account["account_tier"] if account["account_tier"] else "Not set" }}</td>
                         <td>{{ account["industry"] }}</td>
-                        <td>{{ account["country"] }}</td>
-                        <td>{{ account["city"] }}</td>
+                        <td>{{ account["contact_count"] }}</td>
+                        <td>{{ account["senior_contact_count"] }}</td>
+                        <td>{{ account["last_activity_date"]|display_date if account["last_activity_date"] else "No activity" }}</td>
+                        <td>{{ account["next_scheduled_activity"]|display_date if account["next_scheduled_activity"] else "No next step" }}</td>
+                        <td><span class="report-status-pill">{{ account["risk_status"] }}</span></td>
+                        <td>{{ account["engagement_score"] }}</td>
                         <td>${{ "%.2f"|format(account["pipeline_target"] or 0) }}</td>
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="7">No accounts found.</td>
+                        <td colspan="11">No accounts found.</td>
                     </tr>
                 {% endfor %}
             </tbody>

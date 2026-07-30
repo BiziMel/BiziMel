@@ -7,6 +7,7 @@
 <div class="button-group">
     <a href="/reports" class="btn btn-secondary">Back to Reports</a>
     <a href="{{ url_for('export_outreach_reports') }}" class="btn btn-primary">Export CSV</a>
+    <a href="{{ url_for('export_outreach_reports', format='xlsx') }}" class="btn btn-secondary">Export XLSX</a>
 </div>
 
 <div class="dashboard-grid report-metric-grid outreach-report-metrics">
@@ -30,6 +31,26 @@
         <p>{{ overdue_tasks }}</p>
         <span>Due date/time has expired</span>
     </div>
+    <div class="dashboard-card report-metric-card report-metric-purple">
+        <h3>Response Rate</h3>
+        <p>{{ response_rate }}%</p>
+        <span>{{ response_count }} responses from {{ total_outreach }} activities</span>
+    </div>
+    <div class="dashboard-card report-metric-card report-metric-green">
+        <h3>Meeting Conversion</h3>
+        <p>{{ meeting_conversion_rate }}%</p>
+        <span>{{ meeting_count }} meeting outcomes</span>
+    </div>
+    <div class="dashboard-card report-metric-card report-metric-amber">
+        <h3>Accounts Engaged</h3>
+        <p>{{ accounts_engaged }}</p>
+        <span>{{ contacts_targeted }} contacts targeted</span>
+    </div>
+    <div class="dashboard-card report-metric-card report-metric-blue">
+        <h3>Channel Mix</h3>
+        <p>{{ email_count + phone_count + linkedin_count }}</p>
+        <span>Email {{ email_count }}, phone {{ phone_count }}, LinkedIn {{ linkedin_count }}</span>
+    </div>
 </div>
 
 <div class="report-card report-filter-card">
@@ -48,7 +69,7 @@
             <option value="">All Accounts</option>
             {% for account in accounts %}
                 <option value="{{ account['id'] }}" {% if selected_account == account['id']|string %}selected{% endif %}>
-                    {{ account['account_name'] }}
+                    {{ account['account_name'] }}{% if account['business_unit'] %} - {{ account['business_unit'] }}{% endif %}
                 </option>
             {% endfor %}
         </select>
@@ -113,6 +134,38 @@
             {% endfor %}
         </div>
     </div>
+    <div class="report-card report-metric-section outreach-breakdown-card">
+        <h3>Top Accounts Engaged</h3>
+        <div class="metric-bar-list">
+            {% for item in outreach_by_account %}
+                <div class="metric-bar-row">
+                    <div class="metric-bar-row-top">
+                        <span><a href="{{ item.filter_url }}">{{ item.account_name }}</a></span>
+                        <strong>{{ item.count }}</strong>
+                    </div>
+                    <div class="metric-bar-track"><span style="width: {{ item.percent }}%;"></span></div>
+                </div>
+            {% else %}
+                <p>No account engagement found.</p>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="report-card report-metric-section outreach-breakdown-card">
+        <h3>Sales Play Usage</h3>
+        <div class="metric-bar-list">
+            {% for item in outreach_by_sales_play %}
+                <div class="metric-bar-row">
+                    <div class="metric-bar-row-top">
+                        <span>{{ item.sales_play }}</span>
+                        <strong>{{ item.count }}</strong>
+                    </div>
+                    <div class="metric-bar-track"><span style="width: {{ item.percent }}%;"></span></div>
+                </div>
+            {% else %}
+                <p>No Sales Play data found.</p>
+            {% endfor %}
+        </div>
+    </div>
 </div>
 
 <div class="report-table-section">
@@ -147,7 +200,7 @@
                             </a>
                         </td>
                         <td>{{ item["subject"] or item["next_action"] or "No subject" }}</td>
-                        <td>{{ item["account_name"] or "Unknown" }}</td>
+                        <td>{{ item["account_label"] or "Unknown" }}</td>
                         <td>
                             {{ item["display_contact_name"] or item["contact_name"] or "No contact" }}
                             {% if item["additional_contact_count"] %}

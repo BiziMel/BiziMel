@@ -323,8 +323,8 @@
     {% endif %}
 </div>
 
-<div class="form-card account-timeline-card">
-    <h2>Timeline</h2>
+<details class="form-card account-timeline-card audit-accordion-card">
+    <summary>Timeline</summary>
 
     {% if timeline_entries %}
         {% for entry in timeline_entries %}
@@ -344,6 +344,6 @@
     {% else %}
         <p>No timeline entries yet.</p>
     {% endif %}
-</div>
+</details>
 
 {% endblock %}

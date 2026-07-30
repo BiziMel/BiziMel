@@ -65,8 +65,8 @@
     <p><strong>Additional Notes:</strong><br>{{ contact.additional_notes }}</p>
 </div>
 
-<div class="detail-card">
-    <h2>Timeline</h2>
+<details class="detail-card audit-accordion-card">
+    <summary>Timeline</summary>
 
     {% if timeline_entries %}
         <div class="timeline">
@@ -84,5 +84,5 @@
     {% else %}
         <p>No timeline entries yet.</p>
     {% endif %}
-</div>
+</details>
 {% endblock %}

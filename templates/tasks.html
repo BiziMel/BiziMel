@@ -69,10 +69,10 @@
                             <textarea name="next_action" rows="3">{{ item.next_action or '' }}</textarea>
                         </div>
 
-                        <div class="system-metadata-panel compact-system-metadata">
-                            <h4>System Metadata</h4>
+                        <details class="system-metadata-panel compact-system-metadata">
+                            <summary>System Metadata</summary>
                             <p>{{ item.notes or "No system scheduling metadata recorded." }}</p>
-                        </div>
+                        </details>
 
                         <div class="task-card-actions">
                             <button type="submit" class="btn btn-primary">Save Task</button>

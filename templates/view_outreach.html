@@ -49,10 +49,10 @@
 <div class="detail-card">
     <h2>Notes and Next Action</h2>
 
-    <div class="system-metadata-panel">
-        <h2>System Metadata</h2>
+    <details class="system-metadata-panel">
+        <summary>System Metadata</summary>
         <p>{{ outreach_item.notes or "No system scheduling metadata recorded." }}</p>
-    </div>
+    </details>
     <p><strong>Next Action:</strong><br>{{ outreach_item.next_action }}</p>
     <p><strong>Activity Due Date:</strong> {{ outreach_item.next_action_date|display_datetime(outreach_item.next_action_time) }}</p>
     <p><strong>Activity Due Time:</strong> {{ outreach_item.next_action_time }}</p>
@@ -68,8 +68,8 @@
     <span>{{ outreach_item["assigned_to"] or "Unassigned" }}</span>
 </div>
 
-<div class="detail-card">
-    <h2>Timeline</h2>
+<details class="detail-card audit-accordion-card">
+    <summary>Timeline</summary>
 
     {% if timeline_entries %}
         <div class="timeline">
@@ -87,5 +87,5 @@
     {% else %}
         <p>No timeline entries yet.</p>
     {% endif %}
-</div>
+</details>
 {% endblock %}
