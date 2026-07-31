@@ -66,8 +66,9 @@ RELEASE_NOTES = [
             "Hardened Campaign Builder and the global page safety net so post-save, page-load and recovery-render failures return human-readable PipeFlow messages instead of internal server error pages.",
             "Added Close and Create New to the Add Outreach form so reporting-only outreach can be saved as completed and immediately followed by another new outreach entry.",
             "Added single Outreach auto-scheduling on the Add Outreach form, using business hours, non-working dates, current time and a two-day contact buffer from existing outreach.",
-            "Moved the Add Outreach Auto Schedule control into a full-width visible action strip below Activity Start so it is clear when creating a single outreach activity.",
+            "Placed the Add Outreach Auto Schedule control beside the Activity Start fields so it is clear without stretching across the page.",
             "Clarified and tested that manually entered Activity Start Date and Time may be backdated; only Auto Schedule chooses a current-or-future start.",
+            "Updated Add Outreach Auto Schedule so it fills both Activity Start and Activity Due fields with the selected slot and uses a compact button presentation.",
         ],
     },
     {
@@ -12901,6 +12902,8 @@ def auto_schedule_new_outreach():
             "ok": True,
             "activity_date": activity_date,
             "activity_time": activity_time,
+            "next_action_date": activity_date,
+            "next_action_time": activity_time,
             "message": f"Auto-scheduled for {format_display_datetime(activity_date, activity_time)}.",
         })
     except Exception as exc:

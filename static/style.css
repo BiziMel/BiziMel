@@ -2108,20 +2108,26 @@ a:hover {
     display: flex;
     flex-direction: row;
     align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
+    gap: 8px;
+    padding: 8px 10px;
     border: 1px solid #cfe6cc;
     border-radius: 6px;
     background: #f7fbf5;
+    align-self: start;
 }
 
 .outreach-auto-schedule-panel .field-help {
     margin: 0;
+    font-size: 12px;
+    line-height: 1.35;
 }
 
 .outreach-auto-schedule-form-button {
     flex: 0 0 auto;
-    min-width: 116px;
+    min-width: 0;
+    width: auto;
+    padding: 6px 10px;
+    white-space: nowrap;
 }
 
 .alert-success {

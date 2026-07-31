@@ -990,6 +990,10 @@ def main():
             "Auto Schedule" in add_html and "outreach-auto-schedule-panel" in add_html,
             "Add Outreach auto-schedule button missing",
         )
+        assert_ok(
+            "full-width outreach-auto-schedule-panel" not in add_html,
+            "Add Outreach auto-schedule control should not be full width",
+        )
         default_activity_date = input_value(add_html, "activity_date")
         default_due_date = input_value(add_html, "next_action_date")
         assert_ok(default_activity_date >= today.isoformat(), "new Outreach default activity date is in the past")
@@ -1273,6 +1277,11 @@ def main():
         assert_ok(response.status_code == 200 and auto_schedule_payload and auto_schedule_payload.get("ok"), "new Outreach auto-schedule did not return a slot")
         auto_scheduled_date = date.fromisoformat(auto_schedule_payload["activity_date"])
         assert_ok(auto_scheduled_date >= today, "new Outreach auto-schedule returned a past date")
+        assert_ok(
+            auto_schedule_payload.get("next_action_date") == auto_schedule_payload.get("activity_date")
+            and auto_schedule_payload.get("next_action_time") == auto_schedule_payload.get("activity_time"),
+            "new Outreach auto-schedule did not populate matching due/end fields",
+        )
         assert_ok(abs((auto_scheduled_date - buffer_conflict_date).days) > 2, "new Outreach auto-schedule ignored the two-day contact buffer")
 
         response = client.post(
