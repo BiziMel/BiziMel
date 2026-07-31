@@ -25,7 +25,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.9"
 APP_RELEASE_DATE = "2026-07-29"
-APP_BUILD = "2026-07-31-v2.6.9-backdatable-activity-start-r9"
+APP_BUILD = "2026-07-31-v2.6.9-campaign-and-global-resilience-r10"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -63,6 +63,7 @@ RELEASE_NOTES = [
             "Changed PG Progress contact visibility so every active contact with associated non-deleted outreach is displayed, even when their last reportable activity is older than 30 days.",
             "Hardened Outreach and Campaign Builder scheduling so system defaults and due/scheduled dates cannot be earlier than the current date and time, while Activity Start dates remain backdatable.",
             "Corrected Outreach edit behaviour so Activity Start Date and Time can be manually backdated without being blocked by an unchanged historical due date.",
+            "Hardened Campaign Builder and the global page safety net so post-save, page-load and recovery-render failures return human-readable PipeFlow messages instead of internal server error pages.",
         ],
     },
     {
@@ -1119,6 +1120,19 @@ def campaign_exception_user_message(exc, code):
         return diagnostic_user_message("Campaign could not be generated while saving Outreach tasks. Check Account, Contacts, Sales Play and schedule values, then try again.", code)
     return diagnostic_user_message("Campaign could not be generated. Check Account, Contacts, Sales Play, date range and quantity fields.", code)
 
+
+def safe_pipeflow_recovery_page(title, message, code="", primary_href="/", primary_label="Return to Insights Dashboard"):
+    code_text = f" Error code: {html.escape(str(code))}" if code else ""
+    return (
+        "<!doctype html><title>PipeFlow</title>"
+        "<main style=\"font-family: system-ui, -apple-system, Segoe UI, sans-serif; max-width: 760px; margin: 48px auto; padding: 0 24px;\">"
+        f"<h1>{html.escape(str(title or 'PipeFlow could not load this page'))}</h1>"
+        f"<p>{html.escape(str(message or 'Please go back, refresh, and try again.'))}{code_text}</p>"
+        f"<p><a href=\"{html.escape(str(primary_href or '/'))}\" style=\"display:inline-block;padding:10px 14px;border-radius:6px;background:#0f766e;color:white;text-decoration:none;\">{html.escape(str(primary_label or 'Return'))}</a></p>"
+        "</main>",
+        200,
+    )
+
 initialise_auth_database()
 
 
@@ -2094,11 +2108,10 @@ def handle_unexpected_exception(exc):
                 code,
             ),
         )
-    return (
-        "<!doctype html><title>PipeFlow</title>"
-        "<h1>PipeFlow could not load this page</h1>"
-        f"<p>Please go back, refresh, and try again. The error has been logged for review. Error code: {code}</p>",
-        500,
+    return safe_pipeflow_recovery_page(
+        "PipeFlow could not load this page",
+        "Please go back, refresh, and try again. The error has been logged for review.",
+        code,
     )
 
 
@@ -8602,33 +8615,43 @@ def render_campaign_builder_error_page(exc):
                 connection.close()
             except Exception:
                 pass
-    return render_template(
-        "campaign_builder.html",
-        accounts=accounts,
-        contacts=contacts,
-        profile=profile,
-        default_assignee=default_outreach_assignee(),
-        generated_count=0,
-        skipped_duplicate_count=0,
-        selected_account_id=selected_account_id,
-        selected_contact_ids=selected_contact_ids,
-        selected_pg_week_start=request.form.get("pg_week_start", ""),
-        selected_campaign_start=request.form.get("campaign_start_date", ""),
-        selected_campaign_end=request.form.get("campaign_end_date", ""),
-        selected_total_tasks=request.form.get("total_outreach_tasks", "8"),
-        selected_times_per_week=request.form.get("times_per_week", "2"),
-        selected_sales_play=request.form.get("sales_play") or request.form.get("sales_plays", ""),
-        sales_play_options=sales_play_rows,
-        selected_fy=request.form.get("fy", ""),
-        selected_quarter=request.form.get("quarter", ""),
-        campaign_activity_options=campaign_step_templates(),
-        selected_campaign_activity_types=request.form.getlist("campaign_activity_types"),
-        success_context_summary="",
-        generated_steps=[],
-        campaign_generation_warnings=[],
-        current_datetime=current_app_datetime(),
-        error=error,
-    )
+    try:
+        return render_template(
+            "campaign_builder.html",
+            accounts=accounts,
+            contacts=contacts,
+            profile=profile,
+            default_assignee=default_outreach_assignee(),
+            generated_count=0,
+            skipped_duplicate_count=0,
+            selected_account_id=selected_account_id,
+            selected_contact_ids=selected_contact_ids,
+            selected_pg_week_start=request.form.get("pg_week_start", ""),
+            selected_campaign_start=request.form.get("campaign_start_date", ""),
+            selected_campaign_end=request.form.get("campaign_end_date", ""),
+            selected_total_tasks=request.form.get("total_outreach_tasks", "8"),
+            selected_times_per_week=request.form.get("times_per_week", "2"),
+            selected_sales_play=request.form.get("sales_play") or request.form.get("sales_plays", ""),
+            sales_play_options=sales_play_rows,
+            selected_fy=request.form.get("fy", ""),
+            selected_quarter=request.form.get("quarter", ""),
+            campaign_activity_options=campaign_step_templates(),
+            selected_campaign_activity_types=request.form.getlist("campaign_activity_types"),
+            success_context_summary="",
+            generated_steps=[],
+            campaign_generation_warnings=[],
+            current_datetime=current_app_datetime(),
+            error=error,
+        )
+    except Exception as render_exc:
+        log_diagnostic_exception("CAMPAIGN", render_exc, {"stage": "campaign_builder_error_template_failed"})
+        return safe_pipeflow_recovery_page(
+            "Campaign Builder could not load normally",
+            error,
+            code,
+            "/outreach",
+            "Return to Outreach",
+        )
 
 
 def activity_update_required_message():
@@ -10557,7 +10580,7 @@ def add_account():
                 selected_sales_play_ids=selected_sales_play_ids,
                 error="The account could not be saved. Check the required values and try again.",
                 prefill=dict(request.form),
-            ), 500
+            )
         connection.close()
         return redirect(url_for("accounts"))
 
@@ -15077,7 +15100,7 @@ def export_full_data_workbook():
     try:
         output = render_full_data_workbook()
     except RuntimeError as exc:
-        return Response(str(exc), status=500, mimetype="text/plain")
+        return Response(str(exc), status=200, mimetype="text/plain")
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
     return send_file(
         output,
@@ -15847,7 +15870,7 @@ def export_pg_bible():
     except ModuleNotFoundError:
         return Response(
             "PG Bible export requires openpyxl. Install dependencies with python3 -m pip install -r requirements.txt.",
-            status=500,
+            status=200,
             mimetype="text/plain",
         )
 

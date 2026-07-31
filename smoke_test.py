@@ -501,6 +501,68 @@ def main():
         assert_ok(campaign_count_after > campaign_count_before, "Campaign Builder did not save generated outreach")
         assert_ok(campaign_recipient_count > 0, "Campaign Builder did not save outreach recipients")
 
+        new_campaign_contact_id = None
+        new_contact_campaign_start = (today + timedelta(days=24)).isoformat()
+        new_contact_campaign_end = (today + timedelta(days=34)).isoformat()
+        connection = sqlite3.connect(db_path)
+        new_campaign_contact_id = connection.execute(
+            """
+            INSERT INTO contacts (account_id, category, name, job_title, email, phone, location, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                account_id,
+                "Executive",
+                "Smoke Newly Added Contact",
+                "VP Operations",
+                "new-campaign-contact@example.com",
+                "77777",
+                "London",
+                "Active",
+            ),
+        ).lastrowid
+        connection.commit()
+        connection.close()
+        response = client.post(
+            "/outreach/campaign-builder",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "account_id": str(account_id),
+                "pg_week_start": (today + timedelta(days=40)).isoformat(),
+                "campaign_start_date": new_contact_campaign_start,
+                "campaign_end_date": new_contact_campaign_end,
+                "total_outreach_tasks": "2",
+                "times_per_week": "1",
+                "sales_play": "Smoke Test Play",
+                "fy": "27",
+                "quarter": "Q1",
+                "assigned_to": "Smoke Test Admin",
+                "contact_ids": [str(new_campaign_contact_id)],
+            },
+            follow_redirects=True,
+        )
+        new_contact_campaign_html = response.get_data(as_text=True)
+        assert_ok(
+            response.status_code == 200
+            and "Outreach Tasks" in new_contact_campaign_html
+            and "Campaign created:" in new_contact_campaign_html
+            and "Smoke Newly Added Contact" in new_contact_campaign_html,
+            "Campaign Builder failed for a newly added contact on an existing account",
+        )
+        connection = sqlite3.connect(db_path)
+        new_contact_campaign_count = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM outreach
+            WHERE contact_id = ?
+              AND campaign = ?
+              AND campaign_start_date = ?
+            """,
+            (new_campaign_contact_id, "Smoke Test Play", new_contact_campaign_start),
+        ).fetchone()[0]
+        connection.close()
+        assert_ok(new_contact_campaign_count == 2, "Campaign Builder did not create the requested tasks for the newly added contact")
+
         response = client.post(
             "/outreach/campaign-builder",
             data={
