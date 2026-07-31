@@ -25,7 +25,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.9"
 APP_RELEASE_DATE = "2026-07-29"
-APP_BUILD = "2026-07-31-v2.6.9-visible-single-outreach-auto-schedule-r13"
+APP_BUILD = "2026-07-31-v2.6.9-manual-activity-start-backdate-r14"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -67,6 +67,7 @@ RELEASE_NOTES = [
             "Added Close and Create New to the Add Outreach form so reporting-only outreach can be saved as completed and immediately followed by another new outreach entry.",
             "Added single Outreach auto-scheduling on the Add Outreach form, using business hours, non-working dates, current time and a two-day contact buffer from existing outreach.",
             "Moved the Add Outreach Auto Schedule control into a full-width visible action strip below Activity Start so it is clear when creating a single outreach activity.",
+            "Clarified and tested that manually entered Activity Start Date and Time may be backdated; only Auto Schedule chooses a current-or-future start.",
         ],
     },
     {

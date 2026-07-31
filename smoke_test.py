@@ -994,6 +994,15 @@ def main():
         default_due_date = input_value(add_html, "next_action_date")
         assert_ok(default_activity_date >= today.isoformat(), "new Outreach default activity date is in the past")
         assert_ok(default_due_date >= today.isoformat(), "new Outreach default due date is in the past")
+        activity_start_input = re.search(r'<input[^>]+id="activity_date"[^>]*>', add_html)
+        assert_ok(
+            activity_start_input and "min=" not in activity_start_input.group(0),
+            "Activity Start Date should allow manual backdating",
+        )
+        assert_ok(
+            "Manual backdating is allowed" in add_html,
+            "Activity Start backdating guidance missing",
+        )
 
         campaign_builder_html = client.get("/outreach/campaign-builder").get_data(as_text=True)
         assert_ok(input_value(campaign_builder_html, "campaign_start_date") >= today.isoformat(), "Campaign Builder default start date is in the past")
@@ -1181,6 +1190,44 @@ def main():
         assert_ok(
             response.status_code == 200 and "Activity Due Date cannot be earlier than the current date and time." in response.get_data(as_text=True),
             "new Outreach did not reject a past due date",
+        )
+
+        backdated_activity_date = (today - timedelta(days=30)).isoformat()
+        response = client.post(
+            "/outreach/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "fy": "27",
+                "quarter": "Q1",
+                "account_id": str(account_id),
+                "sales_play": "Smoke Test Play",
+                "contact_ids": [str(second_contact_id)],
+                "task_status": "Not Started",
+                "assigned_to": "Smoke Test Admin",
+                "activity_type": "Email",
+                "activity_date": backdated_activity_date,
+                "activity_time": "08:00",
+                "next_action_date": (today + timedelta(days=12)).isoformat(),
+                "next_action_time": "10:00",
+                "subject": "Smoke allowed backdated activity start",
+                "outcome": "No Response",
+                "next_action": "",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "manual backdated Activity Start was blocked on new Outreach")
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        backdated_outreach = connection.execute(
+            "SELECT activity_date, activity_time FROM outreach WHERE subject = ?",
+            ("Smoke allowed backdated activity start",),
+        ).fetchone()
+        connection.close()
+        assert_ok(
+            backdated_outreach
+            and backdated_outreach["activity_date"] == backdated_activity_date
+            and backdated_outreach["activity_time"] == "08:00",
+            "manual backdated Activity Start was not saved as entered",
         )
 
         buffer_conflict_date = today
