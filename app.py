@@ -25,7 +25,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.9"
 APP_RELEASE_DATE = "2026-07-29"
-APP_BUILD = "2026-07-31-v2.6.9-future-safe-outreach-dates-r8"
+APP_BUILD = "2026-07-31-v2.6.9-backdatable-activity-start-r9"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -62,6 +62,7 @@ RELEASE_NOTES = [
             "Tightened PG Progress so deleted outreach activities cannot appear in Sales Play context, recent activity or future planned action rows.",
             "Changed PG Progress contact visibility so every active contact with associated non-deleted outreach is displayed, even when their last reportable activity is older than 30 days.",
             "Hardened Outreach and Campaign Builder scheduling so system defaults and due/scheduled dates cannot be earlier than the current date and time, while Activity Start dates remain backdatable.",
+            "Corrected Outreach edit behaviour so Activity Start Date and Time can be manually backdated without being blocked by an unchanged historical due date.",
         ],
     },
     {
@@ -7271,7 +7272,17 @@ def validate_new_outreach(connection, form, requested_status, sales_play_value, 
     return ""
 
 
-def validate_outreach_update_with_recovery(connection, outreach_id, new_values, recipients):
+def outreach_value_changed(existing_record, new_values, *keys):
+    if not existing_record:
+        return True
+    existing_keys = set(existing_record.keys()) if hasattr(existing_record, "keys") else set()
+    return any(
+        str((existing_record[key] if key in existing_keys else "") or "") != str(new_values.get(key) or "")
+        for key in keys
+    )
+
+
+def validate_outreach_update_with_recovery(connection, outreach_id, new_values, recipients, existing_record=None):
     def run_validation(active_connection):
         if not fy_quarter_are_valid(new_values["fy"], new_values["quarter"]):
             return fy_quarter_required_message()
@@ -7281,16 +7292,18 @@ def validate_outreach_update_with_recovery(connection, outreach_id, new_values, 
             return "Select a contact or partner contact that belongs to the selected account."
         if outcome_requires_scheduled_meeting(new_values["outcome"]) and not request.form.get("scheduled_meeting_at"):
             return "Add the scheduled meeting date and time before saving this meeting outcome."
-        due_error = future_datetime_validation_error(new_values["next_action_date"], new_values["next_action_time"], "Activity Due Date")
-        if due_error:
-            return due_error
-        meeting_error = future_datetime_validation_error(
-            new_values.get("scheduled_meeting_date"),
-            new_values.get("scheduled_meeting_time"),
-            "Scheduled Meeting Date / Time",
-        )
-        if meeting_error:
-            return meeting_error
+        if outreach_value_changed(existing_record, new_values, "next_action_date", "next_action_time"):
+            due_error = future_datetime_validation_error(new_values["next_action_date"], new_values["next_action_time"], "Activity Due Date")
+            if due_error:
+                return due_error
+        if outreach_value_changed(existing_record, new_values, "scheduled_meeting_date", "scheduled_meeting_time"):
+            meeting_error = future_datetime_validation_error(
+                new_values.get("scheduled_meeting_date"),
+                new_values.get("scheduled_meeting_time"),
+                "Scheduled Meeting Date / Time",
+            )
+            if meeting_error:
+                return meeting_error
         if status_requires_activity_update(new_values["task_status"]) and not activity_update_is_valid(new_values["next_action"]):
             return activity_update_required_message()
         if outreach_duplicate_exists(
@@ -13975,6 +13988,7 @@ def edit_outreach(outreach_id):
             outreach_id,
             new_values,
             recipients,
+            outreach_item,
         )
         if error:
             connection.close()

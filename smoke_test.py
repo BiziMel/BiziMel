@@ -912,7 +912,7 @@ def main():
                 "next_action_date": "2026-08-06",
                 "next_action_time": "11:30",
                 "task_status": "In Progress",
-                "outcome": "Meeting Booked",
+                "outcome": "No Response",
                 "notes": "Updated from smoke test",
             },
             follow_redirects=False,
@@ -1352,6 +1352,65 @@ def main():
             response.status_code == 200
             and "Select a contact or partner contact that belongs to the selected account." in mismatch_html,
             "mismatched account/contact outreach was not rejected",
+        )
+
+        connection = sqlite3.connect(db_path)
+        historical_due_outreach_id = connection.execute(
+            """
+            INSERT INTO outreach (
+                fy, quarter, account_id, contact_id, campaign, sales_play,
+                activity_date, activity_time, activity_type, subject, outcome,
+                next_action, next_action_date, next_action_time, task_status, assigned_to
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "27",
+                "Q1",
+                account_id,
+                contact_id,
+                "Smoke Test Play",
+                "Smoke Test Play",
+                "2026-05-02",
+                "09:00",
+                "Call",
+                "Smoke historical due edit source",
+                "No Response",
+                "Historical due remains unchanged",
+                "2026-05-05",
+                "10:00",
+                "Not Started",
+                "Smoke Test Admin",
+            ),
+        ).lastrowid
+        connection.commit()
+        connection.close()
+        response = client.post(
+            f"/outreach/{historical_due_outreach_id}/edit",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "submit_action": "save",
+                "fy": "27",
+                "quarter": "Q1",
+                "account_id": str(account_id),
+                "sales_play": "Smoke Test Play",
+                "contact_ids": [str(contact_id)],
+                "task_status": "Not Started",
+                "assigned_to": "Smoke Test Admin",
+                "activity_type": "Call",
+                "activity_date": "2026-04-01",
+                "activity_time": "08:00",
+                "next_action_date": "2026-05-05",
+                "next_action_time": "10:00",
+                "subject": "Smoke historical due edit source",
+                "outcome": "No Response",
+                "scheduled_meeting_at": "",
+                "next_action": "Backdated activity start while retaining old due date",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(
+            response.status_code in (302, 303),
+            "editing Activity Start was blocked by an unchanged historical due date",
         )
 
         connection = sqlite3.connect(db_path)
