@@ -169,7 +169,7 @@
 
             <div class="form-group">
                 <label for="next_action_date">Activity Due Date</label>
-                <input type="date" id="next_action_date" name="next_action_date" value="{{ prefill.next_action_date or '' }}">
+                <input type="date" id="next_action_date" name="next_action_date" value="{{ prefill.next_action_date or '' }}" min="{{ current_datetime.strftime('%Y-%m-%d') }}">
             </div>
 
             <div class="form-group">
@@ -204,7 +204,7 @@
 
             <div class="form-group" data-scheduled-meeting-field hidden>
                 <label for="scheduled_meeting_at">Scheduled Meeting Date / Time</label>
-                <input type="datetime-local" id="scheduled_meeting_at" name="scheduled_meeting_at" value="{{ prefill.scheduled_meeting_at or '' }}">
+                <input type="datetime-local" id="scheduled_meeting_at" name="scheduled_meeting_at" value="{{ prefill.scheduled_meeting_at or '' }}" min="{{ current_datetime.strftime('%Y-%m-%dT%H:%M') }}">
             </div>
 
             <div class="form-group full-width">
@@ -236,6 +236,7 @@
 <script>
     const profileWorkStart = "{{ profile.work_day_start or '09:00' }}";
     const profileWorkEnd = "{{ profile.work_day_end or '17:00' }}";
+    const currentDateTimeIso = "{{ current_datetime.strftime('%Y-%m-%dT%H:%M') }}";
     const nonWorkingBlocks = {{ non_working_blocks | map(attribute='start_date') | list | tojson }}.map((start, index) => ({
         start,
         end: {{ non_working_blocks | map(attribute='end_date') | list | tojson }}[index] || start
@@ -504,6 +505,24 @@
     }
 
     document.querySelector(".pipeflow-form")?.addEventListener("submit", (event) => {
+        const dueDateInput = document.getElementById("next_action_date");
+        const dueTimeInput = document.getElementById("next_action_time");
+        if (dueDateInput && dueDateInput.value) {
+            const dueDateTime = `${dueDateInput.value}T${dueTimeInput && dueTimeInput.value ? dueTimeInput.value : "23:59"}`;
+            if (dueDateTime < currentDateTimeIso) {
+                alert("Activity Due Date cannot be earlier than the current date and time.");
+                event.preventDefault();
+                dueDateInput.focus();
+                return;
+            }
+        }
+        const scheduledMeetingInput = document.getElementById("scheduled_meeting_at");
+        if (scheduledMeetingInput && scheduledMeetingInput.value && scheduledMeetingInput.value < currentDateTimeIso) {
+            alert("Scheduled Meeting Date / Time cannot be earlier than the current date and time.");
+            event.preventDefault();
+            scheduledMeetingInput.focus();
+            return;
+        }
         const fields = [
             ["activity_date", "activity_time"],
             ["next_action_date", "next_action_time"]

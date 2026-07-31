@@ -1,4 +1,5 @@
 import os
+import re
 import sqlite3
 import tempfile
 from datetime import date, timedelta
@@ -13,6 +14,11 @@ def assert_ok(condition, message):
 def csrf_from_session(client):
     with client.session_transaction() as sess:
         return sess.get("_csrf_token", "")
+
+
+def input_value(html, field_id):
+    match = re.search(rf'id="{re.escape(field_id)}"[^>]*\bvalue="([^"]*)"', html)
+    return match.group(1) if match else ""
 
 
 def seed_validation_data(db_path):
@@ -398,6 +404,28 @@ def main():
         campaign_start = (today + timedelta(days=3)).isoformat()
         campaign_end = (today + timedelta(days=14)).isoformat()
         pg_week_start = (today + timedelta(days=21)).isoformat()
+        response = client.post(
+            "/outreach/campaign-builder",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "account_id": str(account_id),
+                "pg_week_start": pg_week_start,
+                "campaign_start_date": (today - timedelta(days=1)).isoformat(),
+                "campaign_end_date": campaign_end,
+                "total_outreach_tasks": "1",
+                "times_per_week": "1",
+                "sales_play": "Smoke Test Play",
+                "fy": "27",
+                "quarter": "Q1",
+                "assigned_to": "Smoke Test Admin",
+                "contact_ids": [str(contact_id)],
+            },
+            follow_redirects=True,
+        )
+        assert_ok(
+            response.status_code == 200 and "Campaign Start cannot be earlier than" in response.get_data(as_text=True),
+            "Campaign Builder did not reject a past campaign start date",
+        )
         connection = sqlite3.connect(db_path)
         connection.execute("ALTER TABLE contacts DROP COLUMN personal_win")
         connection.execute("ALTER TABLE outreach DROP COLUMN campaign_start_date")
@@ -881,7 +909,7 @@ def main():
                 "csrf_token": csrf_from_session(client),
                 "return_to": "/",
                 "next_action": "Updated smoke follow up",
-                "next_action_date": "2026-05-06",
+                "next_action_date": "2026-08-06",
                 "next_action_time": "11:30",
                 "task_status": "In Progress",
                 "outcome": "Meeting Booked",
@@ -895,6 +923,15 @@ def main():
         add_html = response.get_data(as_text=True)
         for outcome in ("NBM Booked", "Discovery Booked", "Exec Meeting Booked"):
             assert_ok(outcome in add_html, f"{outcome} outcome missing from Outreach form")
+        default_activity_date = input_value(add_html, "activity_date")
+        default_due_date = input_value(add_html, "next_action_date")
+        assert_ok(default_activity_date >= today.isoformat(), "new Outreach default activity date is in the past")
+        assert_ok(default_due_date >= today.isoformat(), "new Outreach default due date is in the past")
+
+        campaign_builder_html = client.get("/outreach/campaign-builder").get_data(as_text=True)
+        assert_ok(input_value(campaign_builder_html, "campaign_start_date") >= today.isoformat(), "Campaign Builder default start date is in the past")
+        assert_ok(input_value(campaign_builder_html, "campaign_end_date") >= today.isoformat(), "Campaign Builder default end date is in the past")
+        assert_ok(input_value(campaign_builder_html, "pg_week_start") >= today.isoformat(), "Campaign Builder default PG week date is in the past")
 
         response = client.get(f"/outreach/{outreach_id}/edit")
         edit_outreach_html = response.get_data(as_text=True)
@@ -1060,17 +1097,44 @@ def main():
                 "quarter": "Q1",
                 "account_id": str(account_id),
                 "sales_play": "Smoke Test Play",
+                "contact_ids": [str(contact_id)],
+                "task_status": "Not Started",
+                "assigned_to": "Smoke Test Admin",
+                "activity_type": "Call",
+                "activity_date": "2026-05-07",
+                "activity_time": "09:00",
+                "next_action_date": (today - timedelta(days=1)).isoformat(),
+                "next_action_time": "10:00",
+                "subject": "Smoke rejected past due outreach",
+                "outcome": "No Response",
+                "next_action": "",
+            },
+            follow_redirects=True,
+        )
+        assert_ok(
+            response.status_code == 200 and "Activity Due Date cannot be earlier than the current date and time." in response.get_data(as_text=True),
+            "new Outreach did not reject a past due date",
+        )
+
+        response = client.post(
+            "/outreach/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "fy": "27",
+                "quarter": "Q1",
+                "account_id": str(account_id),
+                "sales_play": "Smoke Test Play",
                 "contact_ids": [str(contact_id), str(second_contact_id)],
                 "task_status": "Not Started",
                 "assigned_to": "Smoke Test Admin",
                 "activity_type": "Call",
                 "activity_date": "2026-05-07",
                 "activity_time": "09:00",
-                "next_action_date": "2026-05-08",
+                "next_action_date": "2026-08-10",
                 "next_action_time": "10:00",
                 "subject": "Smoke multi-contact outreach",
                 "outcome": "NBM Booked",
-                "scheduled_meeting_at": "2026-05-12T09:30",
+                "scheduled_meeting_at": "2026-08-12T09:30",
                 "next_action": "",
             },
             follow_redirects=False,
@@ -1091,7 +1155,7 @@ def main():
                 "activity_type": "Meeting",
                 "activity_date": "2026-05-13",
                 "activity_time": "09:00",
-                "next_action_date": "2026-05-20",
+                "next_action_date": "2026-08-20",
                 "next_action_time": "10:00",
                 "subject": "Smoke account representative meeting outreach",
                 "outcome": "Positive Response",
@@ -1127,7 +1191,7 @@ def main():
                 "activity_type": "Meeting",
                 "activity_date": "2026-05-13",
                 "activity_time": "09:30",
-                "next_action_date": "2026-05-20",
+                "next_action_date": "2026-08-20",
                 "next_action_time": "10:30",
                 "subject": "Smoke malformed representative outreach",
                 "outcome": "Positive Response",
@@ -1202,7 +1266,7 @@ def main():
                 "activity_type": "Email",
                 "activity_date": "2026-05-09",
                 "activity_time": "08:15",
-                "next_action_date": "2026-05-10",
+                "next_action_date": "2026-08-15",
                 "next_action_time": "09:15",
                 "subject": "Smoke schema-refresh outreach",
                 "outcome": "No Response",
@@ -1243,7 +1307,7 @@ def main():
                 "activity_type": "Email",
                 "activity_date": "2026-05-09",
                 "activity_time": "08:45",
-                "next_action_date": "2026-05-10",
+                "next_action_date": "2026-08-16",
                 "next_action_time": "09:45",
                 "subject": "Smoke audit recovery outreach",
                 "outcome": "No Response",
@@ -1275,7 +1339,7 @@ def main():
                 "activity_type": "Call",
                 "activity_date": "2026-05-07",
                 "activity_time": "09:00",
-                "next_action_date": "2026-05-08",
+                "next_action_date": "2026-08-10",
                 "next_action_time": "10:00",
                 "subject": "Smoke mismatched-contact outreach",
                 "outcome": "No Response Yet",
@@ -1318,11 +1382,11 @@ def main():
                 "activity_type": "Call",
                 "activity_date": "2026-05-07",
                 "activity_time": "09:00",
-                "next_action_date": "2026-05-08",
+                "next_action_date": "2026-08-10",
                 "next_action_time": "10:00",
                 "subject": "Smoke multi-contact outreach",
                 "outcome": "Exec Meeting Booked",
-                "scheduled_meeting_at": "2026-05-13T10:30",
+                "scheduled_meeting_at": "2026-08-13T10:30",
                 "next_action": "",
             },
             follow_redirects=False,
@@ -1358,7 +1422,7 @@ def main():
                 "activity_type": "Email",
                 "activity_date": "2026-05-14",
                 "activity_time": "08:30",
-                "next_action_date": "2026-05-15",
+                "next_action_date": "2026-08-17",
                 "next_action_time": "09:45",
                 "subject": "Smoke complete follow-on source",
                 "outcome": "No Response",
@@ -1393,7 +1457,7 @@ def main():
                 "activity_type": "Email",
                 "activity_date": "2026-05-14",
                 "activity_time": "08:30",
-                "next_action_date": "2026-05-15",
+                "next_action_date": "2026-08-17",
                 "next_action_time": "09:45",
                 "subject": "Smoke complete follow-on source",
                 "outcome": "No Response",
@@ -1430,7 +1494,7 @@ def main():
             data={
                 "csrf_token": csrf_from_session(client),
                 "return_to": "/outreach",
-                "next_action_date": "2026-05-09",
+                "next_action_date": "2026-08-18",
                 "next_action_time": "12:15",
             },
             follow_redirects=False,
@@ -1444,7 +1508,7 @@ def main():
             (multi_outreach["id"],),
         ).fetchone()
         connection.close()
-        assert_ok(inline_due["next_action_date"] == "2026-05-09", "inline due date was not saved")
+        assert_ok(inline_due["next_action_date"] == "2026-08-18", "inline due date was not saved")
         assert_ok(inline_due["next_action_time"] == "12:15", "inline due time was not saved")
 
         blocked_contact_dates = []
@@ -1545,7 +1609,7 @@ def main():
                 "activity_type": "Email",
                 "activity_date": "2026-05-11",
                 "activity_time": "08:45",
-                "next_action_date": "2026-05-12",
+                "next_action_date": "2026-08-19",
                 "next_action_time": "09:15",
                 "subject": "Smoke schema recovery outreach",
                 "outcome": "No Response",
@@ -1570,7 +1634,7 @@ def main():
                 "return_to": "/outreach",
                 "bulk_action": "update_due",
                 "selected_ids": [str(outreach_id), str(multi_outreach["id"])],
-                "bulk_next_action_date": "2026-05-10",
+                "bulk_next_action_date": "2026-08-21",
                 "bulk_next_action_time": "14:45",
             },
             follow_redirects=False,
@@ -1585,7 +1649,7 @@ def main():
         ).fetchall()
         connection.close()
         assert_ok(
-            all(row["next_action_date"] == "2026-05-10" and row["next_action_time"] == "14:45" for row in bulk_due_rows),
+            all(row["next_action_date"] == "2026-08-21" and row["next_action_time"] == "14:45" for row in bulk_due_rows),
             "bulk due date was not saved for selected outreach tasks",
         )
 

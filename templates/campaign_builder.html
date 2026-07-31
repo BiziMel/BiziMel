@@ -89,6 +89,7 @@
                        id="pg_week_start"
                        name="pg_week_start"
                        value="{{ selected_pg_week_start }}"
+                       min="{{ current_datetime.strftime('%Y-%m-%d') }}"
                        required>
             </div>
 
@@ -98,6 +99,7 @@
                        id="campaign_start_date"
                        name="campaign_start_date"
                        value="{{ selected_campaign_start }}"
+                       min="{{ current_datetime.strftime('%Y-%m-%d') }}"
                        required>
                 <p class="field-help">Campaigns cannot start before today's date.</p>
             </div>
@@ -108,6 +110,7 @@
                        id="campaign_end_date"
                        name="campaign_end_date"
                        value="{{ selected_campaign_end }}"
+                       min="{{ current_datetime.strftime('%Y-%m-%d') }}"
                        required>
             </div>
 

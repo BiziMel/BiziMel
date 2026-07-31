@@ -25,7 +25,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.9"
 APP_RELEASE_DATE = "2026-07-29"
-APP_BUILD = "2026-07-30-v2.6.9-pg-progress-contact-activity-r7"
+APP_BUILD = "2026-07-31-v2.6.9-future-safe-outreach-dates-r8"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -61,6 +61,7 @@ RELEASE_NOTES = [
             "Changed Sales Play report filters from checkbox panels to compact dropdown filters in one row.",
             "Tightened PG Progress so deleted outreach activities cannot appear in Sales Play context, recent activity or future planned action rows.",
             "Changed PG Progress contact visibility so every active contact with associated non-deleted outreach is displayed, even when their last reportable activity is older than 30 days.",
+            "Hardened Outreach and Campaign Builder scheduling so system defaults and due/scheduled dates cannot be earlier than the current date and time, while Activity Start dates remain backdatable.",
         ],
     },
     {
@@ -3708,6 +3709,55 @@ def next_available_outreach_slot(start_at, profile=None, reserved_slots=None, no
     raise RuntimeError("Unable to find an available Outreach slot in the next year.")
 
 
+def default_future_outreach_slot(profile=None, non_working_blocks=None, now=None):
+    return next_available_outreach_slot(
+        now or current_app_datetime(),
+        profile=profile,
+        reserved_slots=set(),
+        non_working_blocks=non_working_blocks,
+    )
+
+
+def form_datetime_value(date_value, time_value="", default_time=time(23, 59, 59)):
+    date_value = str(date_value or "").strip()
+    if not date_value:
+        return None
+    try:
+        parsed_date = datetime.strptime(date_value[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+    time_value = str(time_value or "").strip()
+    if time_value:
+        parsed_time = parse_due_time(time_value)
+        if parsed_time is None:
+            return None
+    else:
+        parsed_time = default_time
+    return datetime.combine(parsed_date, parsed_time)
+
+
+def future_datetime_validation_error(date_value, time_value, label, now=None):
+    if not date_value:
+        return ""
+    selected = form_datetime_value(date_value, time_value)
+    if selected is None:
+        return f"Enter a valid {label.lower()}."
+    if selected < (now or current_app_datetime()).replace(second=0, microsecond=0):
+        return f"{label} cannot be earlier than the current date and time."
+    return ""
+
+
+def apply_new_outreach_defaults(prefill, profile=None, non_working_blocks=None, now=None):
+    now = (now or current_app_datetime()).replace(second=0, microsecond=0)
+    rounded_now = round_datetime_to_next_slot(now)
+    prefill.setdefault("activity_date", rounded_now.date().isoformat())
+    prefill.setdefault("activity_time", rounded_now.strftime("%H:%M"))
+    next_action_date, next_action_time = default_future_outreach_slot(profile, non_working_blocks, rounded_now)
+    prefill.setdefault("next_action_date", next_action_date)
+    prefill.setdefault("next_action_time", next_action_time)
+    return prefill
+
+
 def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per_week, templates=None, profile=None, reserved_slots=None, non_working_blocks=None, submitted_at=None):
     templates = templates or campaign_step_templates()
     total_tasks = max(1, int(total_tasks or 1))
@@ -3740,7 +3790,7 @@ def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per
                 template["subject_prefix"] = "Follow-up email"
                 template["next_action"] = "Send follow-up email"
                 template["time"] = template.get("time") or "09:00"
-        earliest_time = submitted_at.time() if submitted_at and action_date == submitted_at.date() else None
+        earliest_time = round_datetime_to_next_slot(submitted_at).time() if submitted_at and action_date == submitted_at.date() else None
         action_date, template["time"] = next_campaign_working_slot(
             action_date,
             campaign_end,
@@ -7197,6 +7247,15 @@ def validate_new_outreach(connection, form, requested_status, sales_play_value, 
         return activity_update_required_message()
     if outcome_requires_scheduled_meeting(normalise_outreach_outcome(form.get("outcome"))) and not form.get("scheduled_meeting_at"):
         return "Add the scheduled meeting date and time before saving this meeting outcome."
+    due_error = future_datetime_validation_error(form.get("next_action_date"), form.get("next_action_time"), "Activity Due Date")
+    if due_error:
+        return due_error
+    scheduled_meeting_date, scheduled_meeting_time = split_scheduled_meeting_datetime(
+        form.get("scheduled_meeting_at") if outcome_requires_scheduled_meeting(normalise_outreach_outcome(form.get("outcome"))) else ""
+    )
+    meeting_error = future_datetime_validation_error(scheduled_meeting_date, scheduled_meeting_time, "Scheduled Meeting Date / Time")
+    if meeting_error:
+        return meeting_error
     if outreach_duplicate_exists(
         connection,
         form.get("account_id"),
@@ -7222,6 +7281,16 @@ def validate_outreach_update_with_recovery(connection, outreach_id, new_values, 
             return "Select a contact or partner contact that belongs to the selected account."
         if outcome_requires_scheduled_meeting(new_values["outcome"]) and not request.form.get("scheduled_meeting_at"):
             return "Add the scheduled meeting date and time before saving this meeting outcome."
+        due_error = future_datetime_validation_error(new_values["next_action_date"], new_values["next_action_time"], "Activity Due Date")
+        if due_error:
+            return due_error
+        meeting_error = future_datetime_validation_error(
+            new_values.get("scheduled_meeting_date"),
+            new_values.get("scheduled_meeting_time"),
+            "Scheduled Meeting Date / Time",
+        )
+        if meeting_error:
+            return meeting_error
         if status_requires_activity_update(new_values["task_status"]) and not activity_update_is_valid(new_values["next_action"]):
             return activity_update_required_message()
         if outreach_duplicate_exists(
@@ -8544,6 +8613,7 @@ def render_campaign_builder_error_page(exc):
         success_context_summary="",
         generated_steps=[],
         campaign_generation_warnings=[],
+        current_datetime=current_app_datetime(),
         error=error,
     )
 
@@ -12804,8 +12874,10 @@ def add_outreach():
     partner_activity_options = campaign_builder_partner_activity_options(connection)
     connection, partner_contacts = partner_contacts_for_outreach_with_recovery(connection, selected_account_id)
 
-    connection, profile, non_working_block_rows, _ = campaign_profile_and_blocks(connection)
+    connection, profile, non_working_block_rows, non_working_blocks = campaign_profile_and_blocks(connection)
     prefill.setdefault("assigned_to", default_outreach_assignee())
+    if request.method != "POST":
+        apply_new_outreach_defaults(prefill, profile, non_working_blocks)
     prefill["scheduled_meeting_at"] = scheduled_meeting_datetime_value(
         prefill.get("scheduled_meeting_date", ""),
         prefill.get("scheduled_meeting_time", ""),
@@ -12825,6 +12897,7 @@ def add_outreach():
         prefill=prefill,
         selected_contact_values=selected_contact_values,
         selected_account_id=selected_account_id,
+        current_datetime=current_app_datetime(),
         error=error
     )
 
@@ -12864,6 +12937,11 @@ def campaign_builder_impl():
     selected_campaign_activity_types = request.form.getlist("campaign_activity_types")
     success_context_summary = ""
     connection, profile, non_working_block_rows, non_working_blocks = campaign_profile_and_blocks(connection)
+    if request.method != "POST":
+        today = current_app_datetime().date()
+        selected_campaign_start = selected_campaign_start or today.isoformat()
+        selected_campaign_end = selected_campaign_end or (today + timedelta(days=28)).isoformat()
+        selected_pg_week_start = selected_pg_week_start or (today + timedelta(days=29)).isoformat()
 
     if request.method == "POST":
         account_id = request.form.get("account_id")
@@ -12925,7 +13003,7 @@ def campaign_builder_impl():
         if not error and (not pg_week_start_raw or not campaign_start_raw or not campaign_end_raw):
             error = "Enter PG week start, campaign start and campaign end dates before generating a campaign."
         if not error:
-            today = datetime.now().date()
+            today = current_app_datetime().date()
             try:
                 pg_week_start = datetime.strptime(pg_week_start_raw, "%Y-%m-%d").date()
                 campaign_start = datetime.strptime(campaign_start_raw, "%Y-%m-%d").date()
@@ -12935,9 +13013,12 @@ def campaign_builder_impl():
                 contacts = []
             if not error and campaign_end < campaign_start:
                 error = "Campaign End cannot be earlier than Campaign Start. Correct the campaign date range and try again."
+            if not error and pg_week_start < today:
+                error = "PG Week Start cannot be earlier than today's date."
             if not error and campaign_start < today:
-                campaign_start = today
-                selected_campaign_start = campaign_start.isoformat()
+                error = "Campaign Start cannot be earlier than today's date."
+            if not error and campaign_end < today:
+                error = "Campaign End cannot be earlier than today's date."
             if not error and campaign_end < campaign_start:
                 error = "Campaign end date cannot be earlier than the campaign start date."
             if error:
@@ -13188,6 +13269,7 @@ def campaign_builder_impl():
         success_context_summary=success_context_summary,
         generated_steps=generated_steps,
         campaign_generation_warnings=campaign_generation_warnings,
+        current_datetime=current_app_datetime(),
         error=error
     )
 
@@ -13559,6 +13641,9 @@ def auto_reschedule_outreach_with_recovery(connection, outreach_ids, actor_label
 
 
 def save_outreach_due_dates_with_recovery(connection, outreach_ids, next_action_date, next_action_time, actor_label):
+    due_error = future_datetime_validation_error(next_action_date, next_action_time, "Activity Due Date")
+    if due_error:
+        return connection, 0, due_error
     try:
         updated_count = update_outreach_due_date_records(
             connection,
@@ -14706,6 +14791,10 @@ def update_task_from_tasks(outreach_id):
         "notes": outreach_item["notes"] or "",
     }
     new_values["completed_at"] = completed_status_timestamp(outreach_item, new_values["task_status"])
+    due_error = future_datetime_validation_error(new_values["next_action_date"], new_values["next_action_time"], "Activity Due Date")
+    if due_error:
+        connection.close()
+        return redirect_with_query(return_target, error=due_error)
     if status_requires_activity_update(new_values["task_status"]) and not activity_update_is_valid(new_values["next_action"]):
         connection.close()
         return redirect(return_target)
