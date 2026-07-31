@@ -985,6 +985,11 @@ def main():
         add_html = response.get_data(as_text=True)
         for outcome in ("NBM Booked", "Discovery Booked", "Exec Meeting Booked"):
             assert_ok(outcome in add_html, f"{outcome} outcome missing from Outreach form")
+        assert_ok("Close and Create New" in add_html, "Add Outreach close-and-new button missing")
+        assert_ok(
+            "Auto Schedule" in add_html and "outreach-auto-schedule-panel" in add_html,
+            "Add Outreach auto-schedule button missing",
+        )
         default_activity_date = input_value(add_html, "activity_date")
         default_due_date = input_value(add_html, "next_action_date")
         assert_ok(default_activity_date >= today.isoformat(), "new Outreach default activity date is in the past")
@@ -1178,6 +1183,51 @@ def main():
             "new Outreach did not reject a past due date",
         )
 
+        buffer_conflict_date = today
+        connection = sqlite3.connect(db_path)
+        connection.execute(
+            """
+            INSERT INTO outreach (
+                fy, quarter, account_id, contact_id, campaign, sales_play,
+                activity_date, activity_time, activity_type, subject, notes, outcome,
+                next_action_date, next_action_time, task_status, assigned_to
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "27",
+                "Q1",
+                account_id,
+                contact_id,
+                "Smoke Test Play",
+                "Smoke Test Play",
+                buffer_conflict_date.isoformat(),
+                "09:00",
+                "Call",
+                "Smoke auto schedule contact buffer source",
+                "Blocks auto-schedule within two days.",
+                "No Response",
+                buffer_conflict_date.isoformat(),
+                "09:00",
+                "Not Started",
+                "Smoke Test Admin",
+            ),
+        )
+        connection.commit()
+        connection.close()
+        response = client.post(
+            "/outreach/auto-schedule",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "account_id": str(account_id),
+                "contact_ids": [str(contact_id)],
+            },
+        )
+        auto_schedule_payload = response.get_json()
+        assert_ok(response.status_code == 200 and auto_schedule_payload and auto_schedule_payload.get("ok"), "new Outreach auto-schedule did not return a slot")
+        auto_scheduled_date = date.fromisoformat(auto_schedule_payload["activity_date"])
+        assert_ok(auto_scheduled_date >= today, "new Outreach auto-schedule returned a past date")
+        assert_ok(abs((auto_scheduled_date - buffer_conflict_date).days) > 2, "new Outreach auto-schedule ignored the two-day contact buffer")
+
         response = client.post(
             "/outreach/add",
             data={
@@ -1202,6 +1252,45 @@ def main():
             follow_redirects=False,
         )
         assert_ok(response.status_code in (302, 303), "multi-contact outreach add failed")
+
+        response = client.post(
+            "/outreach/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "submit_action": "close_and_new",
+                "fy": "27",
+                "quarter": "Q1",
+                "account_id": str(account_id),
+                "sales_play": "Smoke Test Play",
+                "contact_ids": [str(contact_id)],
+                "task_status": "Not Started",
+                "assigned_to": "Smoke Test Admin",
+                "activity_type": "Email",
+                "activity_date": "2026-05-07",
+                "activity_time": "09:30",
+                "next_action_date": "2026-08-11",
+                "next_action_time": "11:00",
+                "subject": "Smoke close and create new outreach",
+                "outcome": "No Response",
+                "next_action": "Closed immediately for reporting smoke coverage.",
+            },
+            follow_redirects=False,
+        )
+        close_new_location = response.headers.get("Location", "")
+        assert_ok(
+            response.status_code in (302, 303) and "/outreach/add?prefill_from=" in close_new_location,
+            "Add Outreach Close and Create New did not redirect to a prefilled new Outreach form",
+        )
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        close_new_outreach = connection.execute(
+            "SELECT id, task_status, next_action_date, next_action_time FROM outreach WHERE subject = ?",
+            ("Smoke close and create new outreach",),
+        ).fetchone()
+        connection.close()
+        assert_ok(close_new_outreach is not None, "Add Outreach Close and Create New did not save the outreach")
+        assert_ok(close_new_outreach["task_status"] == "Completed", "Add Outreach Close and Create New did not complete the saved outreach")
+        assert_ok(not close_new_outreach["next_action_date"] and not close_new_outreach["next_action_time"], "Add Outreach Close and Create New should clear due date fields")
 
         response = client.post(
             "/outreach/add",

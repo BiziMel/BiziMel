@@ -167,6 +167,13 @@
                 <input type="time" id="activity_time" name="activity_time" value="{{ prefill.activity_time or '' }}">
             </div>
 
+            <div class="form-group full-width outreach-auto-schedule-panel">
+                <button type="button" id="auto_schedule_activity" class="btn btn-secondary btn-small outreach-auto-schedule-form-button">
+                    Auto Schedule
+                </button>
+                <p class="field-help" id="auto_schedule_message">Find the next available activity start that respects working hours, availability and the selected contact schedule.</p>
+            </div>
+
             <div class="form-group">
                 <label for="next_action_date">Activity Due Date</label>
                 <input type="date" id="next_action_date" name="next_action_date" value="{{ prefill.next_action_date or '' }}" min="{{ current_datetime.strftime('%Y-%m-%d') }}">
@@ -220,8 +227,12 @@
         </details>
 
         <div class="form-actions">
-            <button type="submit" class="btn btn-primary">
+            <button type="submit" name="submit_action" value="save" class="btn btn-primary">
                 Save Outreach
+            </button>
+
+            <button type="submit" name="submit_action" value="close_and_new" class="btn btn-primary">
+                Close and Create New
             </button>
 
             <a href="{{ url_for('outreach') }}" class="btn btn-secondary">
@@ -503,6 +514,45 @@
     } else {
         toggleScheduledMeetingFields();
     }
+
+    function setupActivityAutoSchedule() {
+        const button = document.getElementById("auto_schedule_activity");
+        const form = document.querySelector(".pipeflow-form");
+        const dateInput = document.getElementById("activity_date");
+        const timeInput = document.getElementById("activity_time");
+        const message = document.getElementById("auto_schedule_message");
+        if (!button || !form || !dateInput || !timeInput) return;
+        button.addEventListener("click", async () => {
+            const originalText = button.textContent;
+            button.disabled = true;
+            button.textContent = "Checking...";
+            if (message) message.textContent = "";
+            try {
+                const response = await fetch("{{ url_for('auto_schedule_new_outreach') }}", {
+                    method: "POST",
+                    headers: {
+                        "X-CSRF-Token": window.PIPEFLOW_CSRF_TOKEN || ""
+                    },
+                    body: new FormData(form)
+                });
+                const payload = await response.json();
+                if (!payload.ok) {
+                    if (message) message.textContent = payload.error || "PipeFlow could not auto-schedule this outreach.";
+                    return;
+                }
+                dateInput.value = payload.activity_date || "";
+                timeInput.value = payload.activity_time || "";
+                if (message) message.textContent = payload.message || "Auto-scheduled.";
+            } catch (error) {
+                if (message) message.textContent = "PipeFlow could not auto-schedule this outreach. Try again.";
+            } finally {
+                button.disabled = false;
+                button.textContent = originalText;
+            }
+        });
+    }
+
+    setupActivityAutoSchedule();
 
     document.querySelector(".pipeflow-form")?.addEventListener("submit", (event) => {
         const dueDateInput = document.getElementById("next_action_date");

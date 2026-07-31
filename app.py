@@ -14,7 +14,7 @@ from datetime import date, datetime, time, timedelta
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from flask import Flask, render_template, request, redirect, url_for, Response, send_file, send_from_directory, session, abort
+from flask import Flask, render_template, request, redirect, url_for, Response, send_file, send_from_directory, session, abort, jsonify
 from werkzeug.exceptions import HTTPException
 from werkzeug.utils import secure_filename
 from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members, decode_broadcast_companies, set_user_company_memberships, user_company_names
@@ -25,7 +25,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.9"
 APP_RELEASE_DATE = "2026-07-29"
-APP_BUILD = "2026-07-31-v2.6.9-campaign-and-global-resilience-r10"
+APP_BUILD = "2026-07-31-v2.6.9-visible-single-outreach-auto-schedule-r13"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -64,6 +64,9 @@ RELEASE_NOTES = [
             "Hardened Outreach and Campaign Builder scheduling so system defaults and due/scheduled dates cannot be earlier than the current date and time, while Activity Start dates remain backdatable.",
             "Corrected Outreach edit behaviour so Activity Start Date and Time can be manually backdated without being blocked by an unchanged historical due date.",
             "Hardened Campaign Builder and the global page safety net so post-save, page-load and recovery-render failures return human-readable PipeFlow messages instead of internal server error pages.",
+            "Added Close and Create New to the Add Outreach form so reporting-only outreach can be saved as completed and immediately followed by another new outreach entry.",
+            "Added single Outreach auto-scheduling on the Add Outreach form, using business hours, non-working dates, current time and a two-day contact buffer from existing outreach.",
+            "Moved the Add Outreach Auto Schedule control into a full-width visible action strip below Activity Start so it is clear when creating a single outreach activity.",
         ],
     },
     {
@@ -3721,6 +3724,83 @@ def next_available_outreach_slot(start_at, profile=None, reserved_slots=None, no
             return slot
         candidate += timedelta(minutes=15)
     raise RuntimeError("Unable to find an available Outreach slot in the next year.")
+
+
+def contact_schedule_keys_from_recipients(recipients):
+    keys = set()
+    for contact_id, partner_contact_id in recipients or []:
+        if contact_id:
+            keys.add(f"contact:{contact_id}")
+        if partner_contact_id:
+            keys.add(f"partner:{partner_contact_id}")
+    return keys
+
+
+def date_buffer_values(date_value, days=2):
+    try:
+        parsed = datetime.strptime(str(date_value or "")[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return []
+    return [(parsed + timedelta(days=offset)).isoformat() for offset in range(-days, days + 1)]
+
+
+def existing_outreach_reserved_slots(connection):
+    rows = connection.execute("""
+        SELECT activity_date, activity_time, next_action_date, next_action_time
+        FROM outreach
+        WHERE COALESCE(task_status, '') NOT IN ('Deleted', 'Cancelled')
+    """).fetchall()
+    slots = set()
+    for row in rows:
+        if row["activity_date"]:
+            slots.add((row["activity_date"], str(row["activity_time"] or "09:00")[:5]))
+        if row["next_action_date"]:
+            slots.add((row["next_action_date"], str(row["next_action_time"] or "09:00")[:5]))
+    return slots
+
+
+def existing_contact_buffered_outreach_dates(connection, recipients, buffer_days=2):
+    contact_keys = contact_schedule_keys_from_recipients(recipients)
+    blocked_dates = {key: set() for key in contact_keys}
+    if not contact_keys:
+        return blocked_dates
+    rows = connection.execute("""
+        SELECT
+            outreach.id,
+            outreach.contact_id,
+            outreach.partner_contact_id,
+            outreach.activity_date,
+            outreach.next_action_date
+        FROM outreach
+        WHERE COALESCE(outreach.task_status, '') NOT IN ('Deleted', 'Cancelled')
+    """).fetchall()
+    for row in rows:
+        row_keys = outreach_contact_schedule_keys(connection, row)
+        matching_keys = contact_keys.intersection(row_keys)
+        if not matching_keys:
+            continue
+        buffered_dates = set(date_buffer_values(row["activity_date"], buffer_days))
+        buffered_dates.update(date_buffer_values(row["next_action_date"], buffer_days))
+        for key in matching_keys:
+            blocked_dates.setdefault(key, set()).update(buffered_dates)
+    return blocked_dates
+
+
+def calculate_new_outreach_auto_schedule(connection, recipients):
+    profile = connection.execute("SELECT * FROM user_profile WHERE id = 1").fetchone()
+    non_working_rows = connection.execute("""
+        SELECT *
+        FROM non_working_blocks
+        ORDER BY start_date, end_date, id
+    """).fetchall()
+    return next_available_outreach_slot(
+        current_app_datetime(),
+        profile=profile,
+        reserved_slots=existing_outreach_reserved_slots(connection),
+        non_working_blocks=parse_non_working_blocks(non_working_rows),
+        contact_keys=contact_schedule_keys_from_recipients(recipients),
+        reserved_contact_dates=existing_contact_buffered_outreach_dates(connection, recipients, buffer_days=2),
+    )
 
 
 def default_future_outreach_slot(profile=None, non_working_blocks=None, now=None):
@@ -7489,7 +7569,7 @@ def save_new_outreach_with_recovery(connection, form, requested_status, sales_pl
         outreach_id, audit_values = persist_new_outreach(connection, form, requested_status, sales_play_value, recipients)
         connection.commit()
         record_new_outreach_audit(outreach_id, audit_values)
-        return connection, ""
+        return connection, "", outreach_id
     except Exception as exc:
         try:
             connection.rollback()
@@ -7500,7 +7580,7 @@ def save_new_outreach_with_recovery(connection, form, requested_status, sales_pl
             return connection, diagnostic_user_message(
                 "Outreach could not be saved. Check the selected account, contacts, Sales Play and schedule, then try again.",
                 code,
-            )
+            ), None
         try:
             connection.close()
         except Exception:
@@ -7511,7 +7591,7 @@ def save_new_outreach_with_recovery(connection, form, requested_status, sales_pl
             outreach_id, audit_values = persist_new_outreach(connection, form, requested_status, sales_play_value, recipients)
             connection.commit()
             record_new_outreach_audit(outreach_id, audit_values)
-            return connection, ""
+            return connection, "", outreach_id
         except Exception as exc:
             code = log_diagnostic_exception(
                 "OUTREACH-SAVE",
@@ -7525,7 +7605,7 @@ def save_new_outreach_with_recovery(connection, form, requested_status, sales_pl
             return connection, diagnostic_user_message(
                 "Outreach could not be saved after refreshing the workspace schema. Please check the selected account, contacts, Sales Play and schedule, then try again.",
                 code,
-            )
+            ), None
 
 
 def insert_campaign_outreach_row(connection, values):
@@ -12803,6 +12883,41 @@ def outreach_impl():
     )
 
 
+@app.route("/outreach/auto-schedule", methods=("POST",))
+def auto_schedule_new_outreach():
+    connection = get_db_connection()
+    try:
+        account_id = request.form.get("account_id", "")
+        recipients = parse_outreach_contact_selections(outreach_contact_form_values(request.form))
+        if not str(account_id or "").isdigit():
+            return jsonify({"ok": False, "error": "Select an account before auto-scheduling this outreach."})
+        if not recipients:
+            return jsonify({"ok": False, "error": "Select at least one contact before auto-scheduling this outreach."})
+        if not outreach_recipients_match_account(connection, account_id, recipients):
+            return jsonify({"ok": False, "error": "Select contacts that belong to the selected account before auto-scheduling."})
+        activity_date, activity_time = calculate_new_outreach_auto_schedule(connection, recipients)
+        return jsonify({
+            "ok": True,
+            "activity_date": activity_date,
+            "activity_time": activity_time,
+            "message": f"Auto-scheduled for {format_display_datetime(activity_date, activity_time)}.",
+        })
+    except Exception as exc:
+        code = log_diagnostic_exception("OUTREACH-ADD", exc, {"stage": "new_outreach_auto_schedule"})
+        return jsonify({
+            "ok": False,
+            "error": diagnostic_user_message(
+                "PipeFlow could not auto-schedule this outreach. Check the selected contact and try again.",
+                code,
+            ),
+        })
+    finally:
+        try:
+            connection.close()
+        except Exception:
+            pass
+
+
 @app.route("/outreach/add", methods=("GET", "POST"))
 def add_outreach():
     connection = get_db_connection()
@@ -12837,23 +12952,32 @@ def add_outreach():
         prefill = {"account_id": prefill_account_id}
 
     if request.method == "POST":
-        prefill = dict(request.form)
-        requested_status = normalise_task_status(request.form.get("task_status", "Not Started"))
-        sales_play_value = request.form.get("sales_play")
-        recipient_values = outreach_contact_form_values(request.form)
+        submit_action = request.form.get("submit_action", "save")
+        form_data = request.form.copy()
+        close_and_new_requested = submit_action == "close_and_new"
+        if close_and_new_requested:
+            form_data["task_status"] = "Completed"
+            form_data["next_action_date"] = ""
+            form_data["next_action_time"] = ""
+        prefill = dict(form_data)
+        requested_status = normalise_task_status(form_data.get("task_status", "Not Started"))
+        sales_play_value = form_data.get("sales_play")
+        recipient_values = outreach_contact_form_values(form_data)
         recipients = parse_outreach_contact_selections(recipient_values)
         try:
-            error = validate_new_outreach(connection, request.form, requested_status, sales_play_value, recipients)
+            error = validate_new_outreach(connection, form_data, requested_status, sales_play_value, recipients)
             if not error:
-                connection, error = save_new_outreach_with_recovery(
+                connection, error, outreach_id = save_new_outreach_with_recovery(
                     connection,
-                    request.form,
+                    form_data,
                     requested_status,
                     sales_play_value,
                     recipients,
                 )
                 if not error:
                     connection.close()
+                    if close_and_new_requested:
+                        return redirect(url_for("add_outreach", prefill_from=outreach_id))
                     return redirect(url_for("outreach"))
         except Exception as exc:
             if not database_error_looks_like_schema_drift(exc):
@@ -12873,17 +12997,19 @@ def add_outreach():
                 log_diagnostic_exception("OUTREACH-ADD", refresh_exc, {"stage": "schema_refresh_failed"})
                 connection = get_db_connection()
             try:
-                error = validate_new_outreach(connection, request.form, requested_status, sales_play_value, recipients)
+                error = validate_new_outreach(connection, form_data, requested_status, sales_play_value, recipients)
                 if not error:
-                    connection, error = save_new_outreach_with_recovery(
+                    connection, error, outreach_id = save_new_outreach_with_recovery(
                         connection,
-                        request.form,
+                        form_data,
                         requested_status,
                         sales_play_value,
                         recipients,
                     )
                     if not error:
                         connection.close()
+                        if close_and_new_requested:
+                            return redirect(url_for("add_outreach", prefill_from=outreach_id))
                         return redirect(url_for("outreach"))
             except Exception as exc:
                 code = log_diagnostic_exception("OUTREACH-ADD", exc, {"stage": "outer_retry_after_schema_refresh"})

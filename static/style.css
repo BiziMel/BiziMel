@@ -2104,6 +2104,26 @@ a:hover {
     margin: 0;
 }
 
+.outreach-auto-schedule-panel {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid #cfe6cc;
+    border-radius: 6px;
+    background: #f7fbf5;
+}
+
+.outreach-auto-schedule-panel .field-help {
+    margin: 0;
+}
+
+.outreach-auto-schedule-form-button {
+    flex: 0 0 auto;
+    min-width: 116px;
+}
+
 .alert-success {
     border: 1px solid #6cab6a;
     background: #f1fbf0;
