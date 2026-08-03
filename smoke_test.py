@@ -284,6 +284,11 @@ def main():
             html = response.get_data(as_text=True)
             assert_ok(response.status_code == 200 and marker in html, f"{path} failed")
 
+        contacts_html = client.get("/contacts").get_data(as_text=True)
+        assert_ok("Last Outreach" in contacts_html, "Contacts table last outreach column missing")
+        assert_ok("05-05-2026 10:00" in contacts_html, "Contacts table did not show the latest active outreach date")
+        assert_ok("05-08-2026 11:30" not in contacts_html, "Contacts table used a deleted outreach as the last active outreach date")
+
         accounts_html = client.get("/accounts").get_data(as_text=True)
         logo_path = f"/accounts/{account_id}/logo"
         assert_ok(logo_path in accounts_html, "Accounts table logo image source missing")

@@ -73,6 +73,7 @@ RELEASE_NOTES = [
             "Hardened Campaign Builder post-save redirect notices so created campaigns land on Outreach even if the confirmation message cannot be stored in the browser session.",
             "Reclassified Campaign Builder duplicate and historic-learning notices so successful campaign creation is shown as success information, not as an error.",
             "Simplified Campaign Builder duplicate handling so repeated submissions quietly preserve existing generated tasks instead of showing duplicate activity details.",
+            "Added a subtle Last Outreach date to the Contacts table, based on each contact's latest active outreach task.",
         ],
     },
     {
@@ -12190,6 +12191,43 @@ def contacts():
                         WHERE outreach_recipients.contact_id = contacts.id
                    )
             ) AS outreach_total
+            ,
+            (
+                SELECT COALESCE(NULLIF(outreach.next_action_date, ''), NULLIF(outreach.activity_date, ''))
+                FROM outreach
+                WHERE COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled', 'Deleted')
+                  AND (
+                        outreach.contact_id = contacts.id
+                     OR outreach.id IN (
+                            SELECT outreach_id
+                            FROM outreach_recipients
+                            WHERE outreach_recipients.contact_id = contacts.id
+                     )
+                  )
+                  AND COALESCE(NULLIF(outreach.next_action_date, ''), NULLIF(outreach.activity_date, '')) IS NOT NULL
+                ORDER BY COALESCE(NULLIF(outreach.next_action_date, ''), NULLIF(outreach.activity_date, '')) DESC,
+                         COALESCE(NULLIF(outreach.next_action_time, ''), NULLIF(outreach.activity_time, '')) DESC,
+                         outreach.id DESC
+                LIMIT 1
+            ) AS last_active_outreach_date,
+            (
+                SELECT COALESCE(NULLIF(outreach.next_action_time, ''), NULLIF(outreach.activity_time, ''))
+                FROM outreach
+                WHERE COALESCE(outreach.task_status, '') NOT IN ('Closed', 'Completed', 'Cancelled', 'Deleted')
+                  AND (
+                        outreach.contact_id = contacts.id
+                     OR outreach.id IN (
+                            SELECT outreach_id
+                            FROM outreach_recipients
+                            WHERE outreach_recipients.contact_id = contacts.id
+                     )
+                  )
+                  AND COALESCE(NULLIF(outreach.next_action_date, ''), NULLIF(outreach.activity_date, '')) IS NOT NULL
+                ORDER BY COALESCE(NULLIF(outreach.next_action_date, ''), NULLIF(outreach.activity_date, '')) DESC,
+                         COALESCE(NULLIF(outreach.next_action_time, ''), NULLIF(outreach.activity_time, '')) DESC,
+                         outreach.id DESC
+                LIMIT 1
+            ) AS last_active_outreach_time
         FROM contacts
         LEFT JOIN accounts ON contacts.account_id = accounts.id
         WHERE COALESCE(contacts.status, 'Active') != 'Archived'

@@ -5234,7 +5234,7 @@ body {
 }
 
 .contact-account-col {
-    width: 172px;
+    width: 158px;
 }
 
 .contact-tier-col,
@@ -5246,12 +5246,16 @@ body {
     width: 70px;
 }
 
+.contact-last-outreach-col {
+    width: 92px;
+}
+
 .contact-role-col {
-    width: 210px;
+    width: 188px;
 }
 
 .contact-relationship-col {
-    width: 116px;
+    width: 106px;
 }
 
 .contact-list-table .record-primary-link,
@@ -5267,6 +5271,17 @@ body {
 .contact-list-table .health-pill {
     padding: 3px 6px;
     font-size: 11px;
+}
+
+.contact-last-outreach-cell {
+    color: #64748b;
+    font-size: 11px;
+}
+
+.contact-last-outreach-cell .subtle-date {
+    display: inline-block;
+    line-height: 1.25;
+    white-space: normal;
 }
 
 .metric-pill-link {

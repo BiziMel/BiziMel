@@ -74,6 +74,7 @@
             <col class="contact-tier-col">
             <col class="contact-status-col">
             <col class="contact-outreach-col">
+            <col class="contact-last-outreach-col">
             <col class="contact-role-col">
             <col class="contact-relationship-col">
         </colgroup>
@@ -88,6 +89,7 @@
                 <th>Account Tier</th>
                 <th>Status</th>
                 <th>Outreach</th>
+                <th>Last Outreach</th>
                 <th>Role</th>
                 <th>Relationship</th>
             </tr>
@@ -169,6 +171,16 @@
                            title="Open outreach activity for {{ contact['name'] or 'this contact' }}">
                             {{ contact["outreach_total"] or 0 }}
                         </a>
+                    </td>
+
+                    <td class="contact-last-outreach-cell">
+                        {% if contact["last_active_outreach_date"] %}
+                            <span class="subtle-date">
+                                {{ contact["last_active_outreach_date"]|display_datetime(contact["last_active_outreach_time"]) }}
+                            </span>
+                        {% else %}
+                            <span class="muted">None active</span>
+                        {% endif %}
                     </td>
 
                     <td>
