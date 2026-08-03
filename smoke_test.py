@@ -796,13 +796,64 @@ def main():
         repeated_campaign_html = response.get_data(as_text=True)
         assert_ok(
             response.status_code == 200
+            and "Outreach Tasks" in repeated_campaign_html
+            and "This campaign has already been generated" in repeated_campaign_html
+            and "same campaign step already exists" not in repeated_campaign_html
             and "Internal Server Error" not in repeated_campaign_html,
-            "Campaign Builder did not handle repeated campaign generation cleanly",
+            "Campaign Builder did not handle repeated campaign generation as a safe no-op",
         )
         assert_ok(
             "same campaign step already exists" in app_source,
             "Campaign Builder duplicate warning does not explain exact campaign duplicate criteria",
         )
+
+        original_store_page_notice = pipeflow_app.store_page_notice
+        notice_fallback_start = (today + timedelta(days=62)).isoformat()
+        notice_fallback_end = (today + timedelta(days=66)).isoformat()
+        pipeflow_app.store_page_notice = lambda message="", error="": False
+        try:
+            response = client.post(
+                "/outreach/campaign-builder",
+                data={
+                    "csrf_token": csrf_from_session(client),
+                    "account_id": str(account_id),
+                    "pg_week_start": (today + timedelta(days=72)).isoformat(),
+                    "campaign_start_date": notice_fallback_start,
+                    "campaign_end_date": notice_fallback_end,
+                    "total_outreach_tasks": "1",
+                    "times_per_week": "1",
+                    "sales_play": "Smoke Test Play",
+                    "fy": "27",
+                    "quarter": "Q1",
+                    "assigned_to": "Smoke Test Admin",
+                    "contact_ids": [str(second_contact_id)],
+                },
+                follow_redirects=True,
+            )
+        finally:
+            pipeflow_app.store_page_notice = original_store_page_notice
+        notice_fallback_html = response.get_data(as_text=True)
+        assert_ok(
+            response.status_code == 200
+            and "Outreach Tasks" in notice_fallback_html
+            and "Campaign created:" in notice_fallback_html
+            and "Internal Server Error" not in notice_fallback_html,
+            "Campaign Builder notice fallback did not redirect safely after creating tasks",
+        )
+        connection = sqlite3.connect(db_path)
+        notice_fallback_count = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM outreach
+            WHERE campaign = ?
+              AND contact_id = ?
+              AND campaign_start_date = ?
+            """,
+            ("Smoke Test Play", second_contact_id, notice_fallback_start),
+        ).fetchone()[0]
+        connection.close()
+        assert_ok(notice_fallback_count == 1, "Campaign Builder notice fallback did not save the generated task")
+
         original_campaign_builder_impl = pipeflow_app.campaign_builder_impl
 
         def broken_campaign_builder_impl():

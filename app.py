@@ -70,6 +70,9 @@ RELEASE_NOTES = [
             "Clarified and tested that manually entered Activity Start Date and Time may be backdated; only Auto Schedule chooses a current-or-future start.",
             "Updated Add Outreach Auto Schedule so it fills both Activity Start and Activity Due fields with the selected slot and uses a compact button presentation.",
             "Corrected manual Outreach due-date scheduling so users can deliberately save retrospective due dates; automatic scheduling still only selects current-or-future slots.",
+            "Hardened Campaign Builder post-save redirect notices so created campaigns land on Outreach even if the confirmation message cannot be stored in the browser session.",
+            "Reclassified Campaign Builder duplicate and historic-learning notices so successful campaign creation is shown as success information, not as an error.",
+            "Simplified Campaign Builder duplicate handling so repeated submissions quietly preserve existing generated tasks instead of showing duplicate activity details.",
         ],
     },
     {
@@ -1242,19 +1245,37 @@ def redirect_with_query(target, **params):
 
 
 def store_page_notice(message="", error=""):
-    if message:
-        session["page_message"] = str(message)[:1200]
-    if error:
-        session["page_error"] = str(error)[:2000]
+    try:
+        if message:
+            session["page_message"] = str(message)[:1200]
+        if error:
+            session["page_error"] = str(error)[:2000]
+        return True
+    except Exception as exc:
+        log_diagnostic_exception("APP", exc, {"stage": "store_page_notice"})
+        return False
 
 
 def pop_page_notice():
-    return session.pop("page_message", ""), session.pop("page_error", "")
+    try:
+        return session.pop("page_message", ""), session.pop("page_error", "")
+    except Exception as exc:
+        log_diagnostic_exception("APP", exc, {"stage": "pop_page_notice"})
+        return "", ""
 
 
 def redirect_with_notice(target, message="", error=""):
-    store_page_notice(message, error)
-    return redirect(safe_redirect_target(target, "home"))
+    target = safe_redirect_target(target, "home")
+    if store_page_notice(message, error):
+        return redirect(target)
+    # Session writes are non-critical. Fall back to a short query notice so
+    # post-save flows, especially Campaign Builder, never turn a successful
+    # database save into an internal error while trying to display feedback.
+    return redirect_with_query(
+        target,
+        message=(str(message)[:300] if message else None),
+        error=(str(error)[:300] if error else None),
+    )
 
 
 def normalise_external_url(value, allow_www=True):
@@ -3283,7 +3304,7 @@ def select_existing_column(connection, table_name, column_name, alias=None, defa
         cursor = connection.execute(f"SELECT * FROM {table_name} LIMIT 0")
         column_names = {description[0] for description in (cursor.description or [])}
     except Exception as exc:
-        log_diagnostic_exception("REPORT", exc, stage=f"{table_name}_{column_name}_column_lookup")
+        log_diagnostic_exception("REPORT", exc, {"stage": f"{table_name}_{column_name}_column_lookup"})
         column_names = set()
     if column_name in column_names:
         column_reference = f"{qualifier}.{column_name}" if qualifier else column_name
@@ -13082,6 +13103,8 @@ def campaign_builder_impl():
     skipped_duplicate_count = 0
     generated_steps = []
     campaign_generation_warnings = []
+    campaign_duplicate_warnings = []
+    campaign_info_warnings = []
     error = request.args.get("error", "")
     selected_account_id = request.form.get("account_id") or request.args.get("account_id") or ""
     selected_contact_ids = request.form.getlist("contact_ids") or request.args.getlist("contact_ids") or request.args.getlist("contact_id")
@@ -13203,7 +13226,7 @@ def campaign_builder_impl():
                     sales_play
                 )
                 if success_context_warning:
-                    campaign_generation_warnings.append(success_context_warning)
+                    campaign_info_warnings.append(success_context_warning)
                 success_context_summary = success_context["summary"]
                 schedule_templates = campaign_activity_templates_for_selection(
                     selected_campaign_activity_types,
@@ -13222,7 +13245,7 @@ def campaign_builder_impl():
                 selected_quarter = quarter
                 connection, reserved_slots, reserved_warning = campaign_reserved_slots_with_recovery(connection)
                 if reserved_warning:
-                    campaign_generation_warnings.append(reserved_warning)
+                    campaign_info_warnings.append(reserved_warning)
                 submitted_at = current_app_datetime()
 
                 for contact in contacts:
@@ -13269,7 +13292,7 @@ def campaign_builder_impl():
                             times_per_week,
                         ):
                             skipped_duplicate_count += 1
-                            campaign_generation_warnings.append(
+                            campaign_duplicate_warnings.append(
                                 (
                                     f"{contact['name']}: PipeFlow did not create another {step['activity_type']} task "
                                     f"for {format_display_datetime(action_date.isoformat(), step['time'])} because the same campaign step already exists "
@@ -13289,7 +13312,7 @@ def campaign_builder_impl():
                             subject,
                         ):
                             skipped_duplicate_count += 1
-                            campaign_generation_warnings.append(
+                            campaign_duplicate_warnings.append(
                                 (
                                     f"{contact['name']}: PipeFlow did not create a duplicate {step['activity_type']} task "
                                     f"for {format_display_datetime(action_date.isoformat(), step['time'])}. A task with the same contact, date, time, activity and subject already exists in Outreach."
@@ -13331,7 +13354,7 @@ def campaign_builder_impl():
                             [(contact["id"], None)]
                         )
                         if recipient_warning:
-                            campaign_generation_warnings.append(recipient_warning)
+                            campaign_info_warnings.append(recipient_warning)
                         generated_count += 1
                         generated_steps.append({
                             "outreach_id": outreach_id,
@@ -13363,14 +13386,11 @@ def campaign_builder_impl():
                         f"for {account_name} using Sales Play {sales_play}."
                     )
                     if skipped_duplicate_count:
-                        success_message += f" {skipped_duplicate_count} duplicate task(s) were skipped."
-                    warning_message = ""
-                    if campaign_generation_warnings:
-                        warning_message = (
-                            "Campaign created. Some planned tasks were not duplicated because matching Outreach tasks already exist. "
-                            "Review the Outreach table for the contact and dates shown. Details: "
-                            + " ".join(campaign_generation_warnings[:3])
+                        success_message += (
+                            " PipeFlow also checked for matching existing generated tasks and left any existing records unchanged."
                         )
+                    if campaign_info_warnings:
+                        success_message += " Note: " + " ".join(campaign_info_warnings[:2])
                     try:
                         connection.close()
                     except Exception:
@@ -13378,14 +13398,18 @@ def campaign_builder_impl():
                     return redirect_with_notice(
                         url_for("outreach"),
                         message=success_message,
-                        error=warning_message or None,
                     )
                 elif skipped_duplicate_count:
                     connection.rollback()
-                    error = (
-                        "No campaign tasks were created because matching outreach tasks already exist "
-                        "for the selected contact, dates, times, activity types and subjects."
+                    duplicate_message = (
+                        "This campaign has already been generated for the selected contact(s), Sales Play, date range, quantity and weekly frequency. "
+                        "PipeFlow left the existing Outreach tasks unchanged and did not create duplicate records."
                     )
+                    try:
+                        connection.close()
+                    except Exception:
+                        pass
+                    return redirect_with_notice(url_for("outreach"), message=duplicate_message)
                 else:
                     connection.rollback()
                     if campaign_generation_warnings:
