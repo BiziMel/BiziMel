@@ -999,9 +999,14 @@ def main():
         assert_ok(default_activity_date >= today.isoformat(), "new Outreach default activity date is in the past")
         assert_ok(default_due_date >= today.isoformat(), "new Outreach default due date is in the past")
         activity_start_input = re.search(r'<input[^>]+id="activity_date"[^>]*>', add_html)
+        due_date_input = re.search(r'<input[^>]+id="next_action_date"[^>]*>', add_html)
         assert_ok(
             activity_start_input and "min=" not in activity_start_input.group(0),
             "Activity Start Date should allow manual backdating",
+        )
+        assert_ok(
+            due_date_input and "min=" not in due_date_input.group(0),
+            "Activity Due Date should allow manual retrospective scheduling",
         )
         assert_ok(
             "Manual backdating is allowed" in add_html,
@@ -1169,6 +1174,7 @@ def main():
             "global broadcast should have no company target filter",
         )
 
+        manual_past_due_date = (today - timedelta(days=1)).isoformat()
         response = client.post(
             "/outreach/add",
             data={
@@ -1183,17 +1189,27 @@ def main():
                 "activity_type": "Call",
                 "activity_date": "2026-05-07",
                 "activity_time": "09:00",
-                "next_action_date": (today - timedelta(days=1)).isoformat(),
+                "next_action_date": manual_past_due_date,
                 "next_action_time": "10:00",
-                "subject": "Smoke rejected past due outreach",
+                "subject": "Smoke allowed manual past due outreach",
                 "outcome": "No Response",
                 "next_action": "",
             },
-            follow_redirects=True,
+            follow_redirects=False,
         )
+        assert_ok(response.status_code in (302, 303), "new Outreach manually entered past due date was blocked")
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        manual_past_due_outreach = connection.execute(
+            "SELECT next_action_date, next_action_time FROM outreach WHERE subject = ?",
+            ("Smoke allowed manual past due outreach",),
+        ).fetchone()
+        connection.close()
         assert_ok(
-            response.status_code == 200 and "Activity Due Date cannot be earlier than the current date and time." in response.get_data(as_text=True),
-            "new Outreach did not reject a past due date",
+            manual_past_due_outreach
+            and manual_past_due_outreach["next_action_date"] == manual_past_due_date
+            and manual_past_due_outreach["next_action_time"] == "10:00",
+            "new Outreach manually entered past due date was not saved",
         )
 
         backdated_activity_date = (today - timedelta(days=30)).isoformat()
@@ -1755,12 +1771,13 @@ def main():
         connection.execute("DROP TABLE timeline_entries")
         connection.commit()
         connection.close()
+        inline_manual_past_due_date = (today - timedelta(days=7)).isoformat()
         response = client.post(
             f"/outreach/{multi_outreach['id']}/due-date",
             data={
                 "csrf_token": csrf_from_session(client),
                 "return_to": "/outreach",
-                "next_action_date": "2026-08-18",
+                "next_action_date": inline_manual_past_due_date,
                 "next_action_time": "12:15",
             },
             follow_redirects=False,
@@ -1774,7 +1791,7 @@ def main():
             (multi_outreach["id"],),
         ).fetchone()
         connection.close()
-        assert_ok(inline_due["next_action_date"] == "2026-08-18", "inline due date was not saved")
+        assert_ok(inline_due["next_action_date"] == inline_manual_past_due_date, "inline retrospective due date was not saved")
         assert_ok(inline_due["next_action_time"] == "12:15", "inline due time was not saved")
 
         blocked_contact_dates = []
@@ -1893,6 +1910,7 @@ def main():
         connection.close()
         assert_ok(recovered_outreach is not None, "schema recovery outreach was not saved")
 
+        bulk_manual_past_due_date = (today - timedelta(days=3)).isoformat()
         response = client.post(
             "/outreach/bulk-action",
             data={
@@ -1900,7 +1918,7 @@ def main():
                 "return_to": "/outreach",
                 "bulk_action": "update_due",
                 "selected_ids": [str(outreach_id), str(multi_outreach["id"])],
-                "bulk_next_action_date": "2026-08-21",
+                "bulk_next_action_date": bulk_manual_past_due_date,
                 "bulk_next_action_time": "14:45",
             },
             follow_redirects=False,
@@ -1915,8 +1933,37 @@ def main():
         ).fetchall()
         connection.close()
         assert_ok(
-            all(row["next_action_date"] == "2026-08-21" and row["next_action_time"] == "14:45" for row in bulk_due_rows),
-            "bulk due date was not saved for selected outreach tasks",
+            all(row["next_action_date"] == bulk_manual_past_due_date and row["next_action_time"] == "14:45" for row in bulk_due_rows),
+            "bulk retrospective due date was not saved for selected outreach tasks",
+        )
+
+        task_manual_past_due_date = (today - timedelta(days=5)).isoformat()
+        response = client.post(
+            f"/tasks/{outreach_id}/update",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "return_to": "/tasks",
+                "outcome": "No Response",
+                "task_status": "In Progress",
+                "next_action": "Manual retrospective task schedule smoke coverage.",
+                "next_action_date": task_manual_past_due_date,
+                "next_action_time": "09:30",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "Tasks page manually entered retrospective due date was blocked")
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        task_due_row = connection.execute(
+            "SELECT next_action_date, next_action_time FROM outreach WHERE id = ?",
+            (outreach_id,),
+        ).fetchone()
+        connection.close()
+        assert_ok(
+            task_due_row
+            and task_due_row["next_action_date"] == task_manual_past_due_date
+            and task_due_row["next_action_time"] == "09:30",
+            "Tasks page manually entered retrospective due date was not saved",
         )
 
         for path in (

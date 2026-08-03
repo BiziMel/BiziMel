@@ -177,7 +177,7 @@
 
             <div class="form-group">
                 <label for="next_action_date">Activity Due Date</label>
-                <input type="date" id="next_action_date" name="next_action_date" value="{{ prefill.next_action_date or '' }}" min="{{ current_datetime.strftime('%Y-%m-%d') }}">
+                <input type="date" id="next_action_date" name="next_action_date" value="{{ prefill.next_action_date or '' }}">
             </div>
 
             <div class="form-group">
@@ -560,17 +560,6 @@
     setupActivityAutoSchedule();
 
     document.querySelector(".pipeflow-form")?.addEventListener("submit", (event) => {
-        const dueDateInput = document.getElementById("next_action_date");
-        const dueTimeInput = document.getElementById("next_action_time");
-        if (dueDateInput && dueDateInput.value) {
-            const dueDateTime = `${dueDateInput.value}T${dueTimeInput && dueTimeInput.value ? dueTimeInput.value : "23:59"}`;
-            if (dueDateTime < currentDateTimeIso) {
-                alert("Activity Due Date cannot be earlier than the current date and time.");
-                event.preventDefault();
-                dueDateInput.focus();
-                return;
-            }
-        }
         const scheduledMeetingInput = document.getElementById("scheduled_meeting_at");
         if (scheduledMeetingInput && scheduledMeetingInput.value && scheduledMeetingInput.value < currentDateTimeIso) {
             alert("Scheduled Meeting Date / Time cannot be earlier than the current date and time.");

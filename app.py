@@ -69,6 +69,7 @@ RELEASE_NOTES = [
             "Placed the Add Outreach Auto Schedule control beside the Activity Start fields so it is clear without stretching across the page.",
             "Clarified and tested that manually entered Activity Start Date and Time may be backdated; only Auto Schedule chooses a current-or-future start.",
             "Updated Add Outreach Auto Schedule so it fills both Activity Start and Activity Due fields with the selected slot and uses a compact button presentation.",
+            "Corrected manual Outreach due-date scheduling so users can deliberately save retrospective due dates; automatic scheduling still only selects current-or-future slots.",
         ],
     },
     {
@@ -7343,9 +7344,6 @@ def validate_new_outreach(connection, form, requested_status, sales_play_value, 
         return activity_update_required_message()
     if outcome_requires_scheduled_meeting(normalise_outreach_outcome(form.get("outcome"))) and not form.get("scheduled_meeting_at"):
         return "Add the scheduled meeting date and time before saving this meeting outcome."
-    due_error = future_datetime_validation_error(form.get("next_action_date"), form.get("next_action_time"), "Activity Due Date")
-    if due_error:
-        return due_error
     scheduled_meeting_date, scheduled_meeting_time = split_scheduled_meeting_datetime(
         form.get("scheduled_meeting_at") if outcome_requires_scheduled_meeting(normalise_outreach_outcome(form.get("outcome"))) else ""
     )
@@ -7387,10 +7385,6 @@ def validate_outreach_update_with_recovery(connection, outreach_id, new_values, 
             return "Select a contact or partner contact that belongs to the selected account."
         if outcome_requires_scheduled_meeting(new_values["outcome"]) and not request.form.get("scheduled_meeting_at"):
             return "Add the scheduled meeting date and time before saving this meeting outcome."
-        if outreach_value_changed(existing_record, new_values, "next_action_date", "next_action_time"):
-            due_error = future_datetime_validation_error(new_values["next_action_date"], new_values["next_action_time"], "Activity Due Date")
-            if due_error:
-                return due_error
         if outreach_value_changed(existing_record, new_values, "scheduled_meeting_date", "scheduled_meeting_time"):
             meeting_error = future_datetime_validation_error(
                 new_values.get("scheduled_meeting_date"),
@@ -13807,9 +13801,6 @@ def auto_reschedule_outreach_with_recovery(connection, outreach_ids, actor_label
 
 
 def save_outreach_due_dates_with_recovery(connection, outreach_ids, next_action_date, next_action_time, actor_label):
-    due_error = future_datetime_validation_error(next_action_date, next_action_time, "Activity Due Date")
-    if due_error:
-        return connection, 0, due_error
     try:
         updated_count = update_outreach_due_date_records(
             connection,
@@ -14958,10 +14949,6 @@ def update_task_from_tasks(outreach_id):
         "notes": outreach_item["notes"] or "",
     }
     new_values["completed_at"] = completed_status_timestamp(outreach_item, new_values["task_status"])
-    due_error = future_datetime_validation_error(new_values["next_action_date"], new_values["next_action_time"], "Activity Due Date")
-    if due_error:
-        connection.close()
-        return redirect_with_query(return_target, error=due_error)
     if status_requires_activity_update(new_values["task_status"]) and not activity_update_is_valid(new_values["next_action"]):
         connection.close()
         return redirect(return_target)
