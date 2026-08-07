@@ -25,7 +25,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.9"
 APP_RELEASE_DATE = "2026-07-29"
-APP_BUILD = "2026-08-06-v2.6.9-campaign-save-id-hardening-r15"
+APP_BUILD = "2026-08-07-v2.6.9-postgres-transaction-recovery-r16"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -75,6 +75,7 @@ RELEASE_NOTES = [
             "Simplified Campaign Builder duplicate handling so repeated submissions quietly preserve existing generated tasks instead of showing duplicate activity details.",
             "Added a subtle Last Outreach date to the Contacts table, based on each contact's latest active outreach task.",
             "Hardened Campaign Builder and new Outreach saves so inserted task IDs are taken from the actual insert operation, preventing live campaigns from partially saving and then failing while linking recipients.",
+            "Hardened hosted Postgres recovery so an aborted transaction is rolled back and retried instead of poisoning later page or save queries.",
         ],
     },
     {

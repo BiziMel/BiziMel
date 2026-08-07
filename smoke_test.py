@@ -207,6 +207,23 @@ def main():
             {"outreach_recipients", "audit_entries"}.issubset(db_compat.USER_TABLES),
             "tenant workspace tables missing from Postgres compatibility layer",
         )
+        retry_attempts = {"count": 0}
+        retry_rollbacks = {"count": 0}
+
+        def aborted_transaction_then_success():
+            retry_attempts["count"] += 1
+            if retry_attempts["count"] == 1:
+                raise RuntimeError("current transaction is aborted, commands ignored until end of transaction block")
+            return "recovered"
+
+        retry_result = db_compat.execute_with_retry(
+            aborted_transaction_then_success,
+            rollback=lambda: retry_rollbacks.__setitem__("count", retry_rollbacks["count"] + 1),
+        )
+        assert_ok(
+            retry_result == "recovered" and retry_rollbacks["count"] == 1,
+            "Postgres aborted transaction recovery did not rollback and retry",
+        )
         assert_ok(
             len(pipeflow_app.diagnostic_error_code("OUTREACH-ADD")) <= 10,
             "diagnostic error code is too long",

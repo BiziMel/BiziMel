@@ -121,6 +121,8 @@ def transient_database_error(exc):
             "deadlock detected",
             "connection reset",
             "terminating connection",
+            "current transaction is aborted",
+            "infailedsqltransaction",
         )
     )
 
@@ -134,6 +136,11 @@ def execute_with_retry(operation, rollback=None, attempts=3):
         except Exception as exc:
             last_error = exc
             if not transient_database_error(exc) or attempt == attempts - 1:
+                if rollback and transient_database_error(exc):
+                    try:
+                        rollback()
+                    except Exception:
+                        pass
                 raise
             if rollback:
                 try:
