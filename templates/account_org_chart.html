@@ -160,14 +160,20 @@
                 </div>
 
                 <div class="org-connector-controls" aria-label="Org chart connector tools">
-                    <button type="button" class="btn btn-secondary org-connector-tool" id="orgHorizontalConnectorButton" data-orientation="horizontal">Horizontal Line</button>
-                    <button type="button" class="btn btn-secondary org-connector-tool" id="orgVerticalConnectorButton" data-orientation="vertical">Vertical Line</button>
-                    <button type="button" class="btn btn-secondary" id="orgCancelConnectorButton" disabled>Cancel Line</button>
-                    <span id="orgConnectorStatus">Select a line type, then drag from one tile to another.</span>
+                    <strong>Connectors</strong>
+                    <button type="button" class="org-connector-tool" id="orgHorizontalConnectorButton" data-orientation="horizontal" draggable="true" aria-label="Horizontal connector">
+                        <span class="org-connector-icon org-connector-icon-horizontal"></span>
+                    </button>
+                    <button type="button" class="org-connector-tool" id="orgVerticalConnectorButton" data-orientation="vertical" draggable="true" aria-label="Vertical connector">
+                        <span class="org-connector-icon org-connector-icon-vertical"></span>
+                    </button>
+                    <span id="orgConnectorStatus">Drag a connector from the palette, then connect side dots on tiles.</span>
                 </div>
 
                 <div class="org-single-pane" id="orgChartPane" aria-label="Org chart canvas">
+                    <div class="org-canvas-expander" id="orgCanvasExpander" aria-hidden="true"></div>
                     <svg class="org-link-layer" id="orgLinkLayer" aria-hidden="true"></svg>
+                    <div class="org-selection-box" id="orgSelectionBox" aria-hidden="true" hidden></div>
 
                     {% for label in chart_labels %}
                         <div class="org-canvas-label"
@@ -212,6 +218,10 @@
                                   class="org-person-delete-form">
                                 <button type="submit" class="org-node-remove-button" aria-label="Remove {{ node.name }}" title="Remove">X</button>
                             </form>
+                            <span class="org-connector-dot org-connector-dot-top" data-side="top" aria-hidden="true"></span>
+                            <span class="org-connector-dot org-connector-dot-right" data-side="right" aria-hidden="true"></span>
+                            <span class="org-connector-dot org-connector-dot-bottom" data-side="bottom" aria-hidden="true"></span>
+                            <span class="org-connector-dot org-connector-dot-left" data-side="left" aria-hidden="true"></span>
                         </div>
                     {% endfor %}
                 </div>
@@ -233,8 +243,9 @@ document.addEventListener("DOMContentLoaded", function () {
     const addLabelButton = document.getElementById("orgAddLabelButton");
     const horizontalConnectorButton = document.getElementById("orgHorizontalConnectorButton");
     const verticalConnectorButton = document.getElementById("orgVerticalConnectorButton");
-    const cancelConnectorButton = document.getElementById("orgCancelConnectorButton");
     const connectorStatus = document.getElementById("orgConnectorStatus");
+    const canvasExpander = document.getElementById("orgCanvasExpander");
+    const selectionBox = document.getElementById("orgSelectionBox");
     const printPdfButton = document.getElementById("orgPrintPdfButton");
     const exportPngButton = document.getElementById("orgExportPngButton");
     const exportCanvas = document.getElementById("orgExportCanvas");
@@ -245,14 +256,19 @@ document.addEventListener("DOMContentLoaded", function () {
                 id: "{{ connector.id }}",
                 source_node_id: "{{ connector.source_node_id }}",
                 target_node_id: "{{ connector.target_node_id }}",
+                source_side: "{{ connector.source_side or '' }}",
+                target_side: "{{ connector.target_side or '' }}",
                 orientation: "{{ connector.orientation or 'horizontal' }}"
             }{% if not loop.last %},{% endif %}
         {% endfor %}
     ];
     let draggedItem = null;
     let pointerDrag = null;
+    let selectionDrag = null;
+    let groupDrag = null;
     let connectorMode = "";
     let connectorDrag = null;
+    let canvasSize = { width: 1200, height: 760 };
 
     if (!pane) {
         return;
@@ -276,6 +292,35 @@ document.addEventListener("DOMContentLoaded", function () {
         return { width, height, xStep: width + 36, yStep: height + 46, originX: 32, originY: 32 };
     }
 
+    function selectedElements() {
+        return Array.from(pane.querySelectorAll(".org-selected"));
+    }
+
+    function clearSelection() {
+        selectedElements().forEach((element) => element.classList.remove("org-selected"));
+    }
+
+    function updateCanvasSize(extraPoint) {
+        let maxX = 1200;
+        let maxY = 760;
+        pane.querySelectorAll(".org-canvas-node, .org-canvas-label").forEach((element) => {
+            maxX = Math.max(maxX, element.offsetLeft + element.offsetWidth + 140);
+            maxY = Math.max(maxY, element.offsetTop + element.offsetHeight + 140);
+        });
+        if (extraPoint) {
+            maxX = Math.max(maxX, extraPoint.x + 140);
+            maxY = Math.max(maxY, extraPoint.y + 140);
+        }
+        canvasSize = {
+            width: Math.max(maxX, pane.clientWidth),
+            height: Math.max(maxY, pane.clientHeight)
+        };
+        if (canvasExpander) {
+            canvasExpander.style.width = `${canvasSize.width}px`;
+            canvasExpander.style.height = `${canvasSize.height}px`;
+        }
+    }
+
     function snapGrid(value, origin, step) {
         return origin + Math.round((value - origin) / step) * step;
     }
@@ -290,7 +335,7 @@ document.addEventListener("DOMContentLoaded", function () {
         try {
             const raw = (value || "").trim();
             if (raw.startsWith("/static/") || raw.startsWith("/contact-photos/")) return raw;
-            if (/^data:image\/(png|jpeg);base64,/i.test(raw)) return raw;
+            if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(raw)) return raw;
             if (!/^https?:\/\//i.test(raw)) return "";
             const url = new URL(raw);
             return ["http:", "https:"].includes(url.protocol) ? url.href : "";
@@ -310,6 +355,10 @@ document.addEventListener("DOMContentLoaded", function () {
             <strong>${escapeHtml(item.name || "Contact")}</strong>
             ${title}
             ${group}
+            <span class="org-connector-dot org-connector-dot-top" data-side="top" aria-hidden="true"></span>
+            <span class="org-connector-dot org-connector-dot-right" data-side="right" aria-hidden="true"></span>
+            <span class="org-connector-dot org-connector-dot-bottom" data-side="bottom" aria-hidden="true"></span>
+            <span class="org-connector-dot org-connector-dot-left" data-side="left" aria-hidden="true"></span>
         `;
     }
 
@@ -392,8 +441,24 @@ document.addEventListener("DOMContentLoaded", function () {
             if (event.button !== 0 || event.target.closest("button, input, select, textarea")) {
                 return;
             }
+            const connectorDot = event.target.closest(".org-connector-dot");
             if (connectorMode && element.classList.contains("org-canvas-node")) {
-                startConnectorDrag(element, event);
+                if (connectorDot) {
+                    startConnectorDrag(connectorDot, event);
+                }
+                return;
+            }
+            if (element.classList.contains("org-selected") && selectedElements().length > 1) {
+                startGroupDrag(element, event);
+                return;
+            }
+            if (!event.shiftKey) {
+                clearSelection();
+            }
+            if (element.classList.contains("org-canvas-node") || element.classList.contains("org-canvas-label")) {
+                element.classList.add("org-selected");
+            }
+            if (groupDrag) {
                 return;
             }
             pointerDrag = {
@@ -409,6 +474,10 @@ document.addEventListener("DOMContentLoaded", function () {
             element.setPointerCapture?.(event.pointerId);
         });
         element.addEventListener("pointermove", function (event) {
+            if (groupDrag && groupDrag.pointerId === event.pointerId) {
+                updateGroupDrag(event);
+                return;
+            }
             if (!pointerDrag || pointerDrag.pointerId !== event.pointerId) {
                 return;
             }
@@ -431,12 +500,16 @@ document.addEventListener("DOMContentLoaded", function () {
             const point = panePoint(event);
             const metrics = gridMetrics();
             const dragNode = pointerDrag.node;
+            updateCanvasSize({
+                x: point.x + metrics.width,
+                y: point.y + metrics.height
+            });
             if (pointerDrag.item.type === "label") {
-                dragNode.style.left = `${clamp(Math.round(point.x - 40), 12, pane.scrollWidth - 180)}px`;
-                dragNode.style.top = `${clamp(Math.round(point.y - 18), 12, pane.scrollHeight - 60)}px`;
+                dragNode.style.left = `${clamp(Math.round(point.x - 40), 12, canvasSize.width - 180)}px`;
+                dragNode.style.top = `${clamp(Math.round(point.y - 18), 12, canvasSize.height - 60)}px`;
             } else {
-                dragNode.style.left = `${clamp(Math.round(point.x - metrics.width / 2), 12, pane.scrollWidth - metrics.width - 12)}px`;
-                dragNode.style.top = `${clamp(Math.round(point.y - metrics.height / 2), 12, pane.scrollHeight - metrics.height - 12)}px`;
+                dragNode.style.left = `${clamp(Math.round(point.x - metrics.width / 2), 12, canvasSize.width - metrics.width - 12)}px`;
+                dragNode.style.top = `${clamp(Math.round(point.y - metrics.height / 2), 12, canvasSize.height - metrics.height - 12)}px`;
             }
             window.requestAnimationFrame(drawLinks);
         });
@@ -444,7 +517,68 @@ document.addEventListener("DOMContentLoaded", function () {
         element.addEventListener("pointercancel", cancelPointerDrag);
     }
 
+    function startGroupDrag(anchor, event) {
+        event.preventDefault();
+        groupDrag = {
+            pointerId: event.pointerId,
+            startClientX: event.clientX,
+            startClientY: event.clientY,
+            moved: false,
+            anchor,
+            items: selectedElements().map((element) => ({
+                element,
+                left: element.offsetLeft,
+                top: element.offsetTop
+            }))
+        };
+        anchor.setPointerCapture?.(event.pointerId);
+        groupDrag.items.forEach((item) => item.element.classList.add("org-dragging"));
+    }
+
+    function updateGroupDrag(event) {
+        const drag = groupDrag;
+        const dx = event.clientX - drag.startClientX;
+        const dy = event.clientY - drag.startClientY;
+        if (!drag.moved && Math.hypot(dx, dy) < 5) {
+            return;
+        }
+        drag.moved = true;
+        const metrics = gridMetrics();
+        updateCanvasSize({
+            x: Math.max(...drag.items.map((item) => item.left + item.element.offsetWidth + dx + 140)),
+            y: Math.max(...drag.items.map((item) => item.top + item.element.offsetHeight + dy + 140))
+        });
+        drag.items.forEach((item) => {
+            const maxX = item.element.classList.contains("org-canvas-label") ? canvasSize.width - 180 : canvasSize.width - metrics.width - 12;
+            const maxY = item.element.classList.contains("org-canvas-label") ? canvasSize.height - 60 : canvasSize.height - metrics.height - 12;
+            item.element.style.left = `${clamp(Math.round(item.left + dx), 12, maxX)}px`;
+            item.element.style.top = `${clamp(Math.round(item.top + dy), 12, maxY)}px`;
+        });
+        window.requestAnimationFrame(drawLinks);
+    }
+
+    function finishGroupDrag(event) {
+        if (!groupDrag || groupDrag.pointerId !== event.pointerId) {
+            return false;
+        }
+        const drag = groupDrag;
+        groupDrag = null;
+        drag.anchor.releasePointerCapture?.(event.pointerId);
+        drag.items.forEach((item) => {
+            item.element.classList.remove("org-dragging");
+            if (drag.moved) {
+                stageElementPosition(item.element);
+            }
+        });
+        updateCanvasSize();
+        drawLinks();
+        return true;
+    }
+
     function finishPointerDrag(event) {
+        if (finishGroupDrag(event)) {
+            return;
+        }
         if (!pointerDrag || pointerDrag.pointerId !== event.pointerId) {
             return;
         }
@@ -494,6 +628,7 @@ document.addEventListener("DOMContentLoaded", function () {
         node.dataset.personName = item.name;
         node.dataset.personTitle = item.title;
         node.dataset.personGroup = item.group;
+        node.dataset.personPhoto = item.photo || "";
         node.innerHTML = `<div class="org-person-view">${tileHtml(item)}</div>`;
         pane.appendChild(node);
         attachDragHandler(node);
@@ -522,6 +657,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const metrics = gridMetrics();
         const width = metrics.width;
         const height = metrics.height;
+        updateCanvasSize({ x: point.x + width, y: point.y + height });
         function snapX(value) {
             return snapGrid(value, metrics.originX, metrics.xStep);
         }
@@ -529,16 +665,13 @@ document.addEventListener("DOMContentLoaded", function () {
             return snapGrid(value, metrics.originY, metrics.yStep);
         }
         return {
-            x: clamp(snapX(point.x - width / 2), 12, pane.scrollWidth - width - 12),
-            y: clamp(snapY(point.y - height / 2), 12, pane.scrollHeight - height - 12)
+            x: clamp(snapX(point.x - width / 2), 12, canvasSize.width - width - 12),
+            y: clamp(snapY(point.y - height / 2), 12, canvasSize.height - height - 12)
         };
     }
 
-    function placeNode(node, placement, item) {
-        node.style.left = `${placement.x}px`;
-        node.style.top = `${placement.y}px`;
-        node.classList.add("org-move-staged");
-
+    function stageNodePosition(node, item) {
+        item = item || dragItemFromElement(node);
         const key = node.dataset.nodeId ? `node:${node.dataset.nodeId}` : `person:${item.person_ref}`;
         stageAction(key, {
             type: "person",
@@ -546,26 +679,48 @@ document.addEventListener("DOMContentLoaded", function () {
             local_node_id: node.dataset.localId || "",
             person_ref: item.person_ref || "",
             person_name: item.name || node.dataset.personName || "",
-            x_position: placement.x,
-            y_position: placement.y,
+            x_position: Math.round(node.offsetLeft),
+            y_position: Math.round(node.offsetTop),
             sort_order: stagedActions.size + 1
         });
-        window.requestAnimationFrame(drawLinks);
     }
 
-    function placeLabel(label, point) {
-        const x = clamp(Math.round(point.x - 40), 12, pane.scrollWidth - 180);
-        const y = clamp(Math.round(point.y - 18), 12, pane.scrollHeight - 60);
-        label.style.left = `${x}px`;
-        label.style.top = `${y}px`;
-        label.classList.add("org-move-staged");
+    function stageLabelPosition(label) {
         stageAction(`label:${label.dataset.labelId || label.dataset.labelText}`, {
             type: "label",
             label_id: label.dataset.labelId || "",
             label_text: label.dataset.labelText || label.textContent.trim(),
-            x_position: x,
-            y_position: y
+            x_position: Math.round(label.offsetLeft),
+            y_position: Math.round(label.offsetTop)
         });
+    }
+
+    function stageElementPosition(element) {
+        element.classList.add("org-move-staged");
+        if (element.classList.contains("org-canvas-label")) {
+            stageLabelPosition(element);
+        } else {
+            stageNodePosition(element);
+        }
+    }
+
+    function placeNode(node, placement, item) {
+        node.style.left = `${placement.x}px`;
+        node.style.top = `${placement.y}px`;
+        node.classList.add("org-move-staged");
+        updateCanvasSize({ x: placement.x + node.offsetWidth, y: placement.y + node.offsetHeight });
+        stageNodePosition(node, item);
+        window.requestAnimationFrame(drawLinks);
+    }
+
+    function placeLabel(label, point) {
+        updateCanvasSize({ x: point.x + 220, y: point.y + 90 });
+        const x = clamp(Math.round(point.x - 40), 12, canvasSize.width - 180);
+        const y = clamp(Math.round(point.y - 18), 12, canvasSize.height - 60);
+        label.style.left = `${x}px`;
+        label.style.top = `${y}px`;
+        label.classList.add("org-move-staged");
+        stageLabelPosition(label);
     }
 
     pane.addEventListener("dragover", function (event) {
@@ -615,17 +770,35 @@ document.addEventListener("DOMContentLoaded", function () {
         return value === "vertical" ? "vertical" : "horizontal";
     }
 
+    function sideAllowedForOrientation(side, orientation) {
+        if (normaliseOrientation(orientation) === "vertical") {
+            return side === "top" || side === "bottom";
+        }
+        return side === "left" || side === "right";
+    }
+
+    function defaultSideForEndpoint(element, otherElement, orientation, endpoint) {
+        const normalised = normaliseOrientation(orientation);
+        if (normalised === "vertical") {
+            const useBottom = endpoint === "source"
+                ? otherElement.offsetTop >= element.offsetTop
+                : otherElement.offsetTop < element.offsetTop;
+            return useBottom ? "bottom" : "top";
+        }
+        const useRight = endpoint === "source"
+            ? otherElement.offsetLeft >= element.offsetLeft
+            : otherElement.offsetLeft < element.offsetLeft;
+        return useRight ? "right" : "left";
+    }
+
     function setConnectorMode(orientation) {
         connectorMode = normaliseOrientation(orientation);
         connectorDrag = null;
         pane.classList.add("org-connector-mode");
         horizontalConnectorButton?.classList.toggle("active-tab", connectorMode === "horizontal");
         verticalConnectorButton?.classList.toggle("active-tab", connectorMode === "vertical");
-        if (cancelConnectorButton) {
-            cancelConnectorButton.disabled = false;
-        }
         if (connectorStatus) {
-            connectorStatus.textContent = `${connectorMode === "vertical" ? "Vertical" : "Horizontal"} line: drag from one tile to another.`;
+            connectorStatus.textContent = `${connectorMode === "vertical" ? "Vertical" : "Horizontal"} connector active: drag between matching side dots.`;
         }
     }
 
@@ -635,35 +808,36 @@ document.addEventListener("DOMContentLoaded", function () {
         pane.classList.remove("org-connector-mode");
         horizontalConnectorButton?.classList.remove("active-tab");
         verticalConnectorButton?.classList.remove("active-tab");
-        if (cancelConnectorButton) {
-            cancelConnectorButton.disabled = true;
-        }
         if (connectorStatus) {
-            connectorStatus.textContent = "Select a line type, then drag from one tile to another.";
+            connectorStatus.textContent = "Drag a connector from the palette, then connect side dots on tiles.";
         }
         drawLinks();
     }
 
-    function connectorPoint(element, orientation, endpoint, otherElement) {
+    function connectorPoint(element, side) {
         const left = element.offsetLeft;
         const top = element.offsetTop;
         const width = element.offsetWidth;
         const height = element.offsetHeight;
-        const otherLeft = otherElement ? otherElement.offsetLeft : left + width;
-        const otherTop = otherElement ? otherElement.offsetTop : top + height;
-        if (orientation === "vertical") {
-            const useBottom = endpoint === "source" ? otherTop >= top : otherTop < top;
-            return { x: left + width / 2, y: useBottom ? top + height : top };
+        if (side === "top") {
+            return { x: left + width / 2, y: top };
         }
-        const useRight = endpoint === "source" ? otherLeft >= left : otherLeft < left;
-        return { x: useRight ? left + width : left, y: top + height / 2 };
+        if (side === "bottom") {
+            return { x: left + width / 2, y: top + height };
+        }
+        if (side === "left") {
+            return { x: left, y: top + height / 2 };
+        }
+        return { x: left + width, y: top + height / 2 };
     }
 
-    function connectorLinePoints(source, target, orientation) {
-        const normalised = normaliseOrientation(orientation);
+    function connectorLinePoints(source, target, connector) {
+        const normalised = normaliseOrientation(connector.orientation);
+        const sourceSide = connector.source_side || defaultSideForEndpoint(source, target, normalised, "source");
+        const targetSide = connector.target_side || defaultSideForEndpoint(target, source, normalised, "target");
         return {
-            start: connectorPoint(source, normalised, "source", target),
-            end: connectorPoint(target, normalised, "target", source)
+            start: connectorPoint(source, sourceSide),
+            end: connectorPoint(target, targetSide)
         };
     }
 
@@ -678,11 +852,22 @@ document.addEventListener("DOMContentLoaded", function () {
         return null;
     }
 
-    function startConnectorDrag(sourceNode, event) {
+    function startConnectorDrag(sourceDot, event) {
+        const sourceNode = sourceDot.closest(".org-canvas-node");
+        const sourceSide = sourceDot.dataset.side || "";
+        if (!sourceNode || !sideAllowedForOrientation(sourceSide, connectorMode)) {
+            if (connectorStatus) {
+                connectorStatus.textContent = connectorMode === "vertical"
+                    ? "Vertical connectors use the top or bottom dots."
+                    : "Horizontal connectors use the left or right dots.";
+            }
+            return;
+        }
         event.preventDefault();
         event.stopPropagation();
         connectorDrag = {
             source: sourceNode,
+            sourceSide,
             pointerId: event.pointerId,
             orientation: connectorMode,
             preview: null
@@ -690,12 +875,29 @@ document.addEventListener("DOMContentLoaded", function () {
         sourceNode.setPointerCapture?.(event.pointerId);
         sourceNode.classList.add("org-connector-source");
         if (connectorStatus) {
-            connectorStatus.textContent = "Release over another tile to create the connector.";
+            connectorStatus.textContent = "Release over a matching side dot on another tile.";
         }
         drawLinks();
     }
 
-    function stageConnector(sourceNode, targetNode, orientation) {
+    function stageConnector(sourceDot, targetDot, orientation) {
+        const sourceNode = sourceDot.closest(".org-canvas-node");
+        const targetNode = targetDot.closest(".org-canvas-node");
+        const sourceSide = sourceDot.dataset.side || "";
+        const targetSide = targetDot.dataset.side || "";
+        if (!sourceNode || !targetNode || sourceNode === targetNode) {
+            clearConnectorMode();
+            return;
+        }
+        if (!sideAllowedForOrientation(sourceSide, orientation) || !sideAllowedForOrientation(targetSide, orientation)) {
+            if (connectorStatus) {
+                connectorStatus.textContent = normaliseOrientation(orientation) === "vertical"
+                    ? "Vertical connectors can only use top or bottom dots."
+                    : "Horizontal connectors can only use left or right dots.";
+            }
+            connectorDrag = null;
+            return;
+        }
         const connector = {
             id: "",
             local_id: `connector-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -703,6 +905,8 @@ document.addEventListener("DOMContentLoaded", function () {
             target_node_id: targetNode.dataset.nodeId || "",
             source_local_id: sourceNode.dataset.localId || "",
             target_local_id: targetNode.dataset.localId || "",
+            source_side: sourceSide,
+            target_side: targetSide,
             orientation: normaliseOrientation(orientation)
         };
         manualConnectors.push(connector);
@@ -712,6 +916,8 @@ document.addEventListener("DOMContentLoaded", function () {
             target_node_id: connector.target_node_id,
             source_local_id: connector.source_local_id,
             target_local_id: connector.target_local_id,
+            source_side: connector.source_side,
+            target_side: connector.target_side,
             orientation: connector.orientation
         });
         clearConnectorMode();
@@ -737,13 +943,102 @@ document.addEventListener("DOMContentLoaded", function () {
         drag.source.classList.remove("org-connector-source");
         const previousPointerEvents = drag.source.style.pointerEvents;
         drag.source.style.pointerEvents = "none";
-        const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(".org-canvas-node") || null;
+        const targetDot = document.elementFromPoint(event.clientX, event.clientY)?.closest(".org-connector-dot") || null;
         drag.source.style.pointerEvents = previousPointerEvents;
-        if (target && target !== drag.source) {
-            stageConnector(drag.source, target, drag.orientation);
-            return;
+        if (targetDot && targetDot.closest(".org-canvas-node") !== drag.source) {
+            const sourceDot = drag.source.querySelector(`.org-connector-dot[data-side="${drag.sourceSide}"]`);
+            if (sourceDot) {
+                stageConnector(sourceDot, targetDot, drag.orientation);
+                return;
+            }
+        } else if (connectorStatus) {
+            connectorStatus.textContent = "Connector cancelled. Drag a line again when ready.";
         }
         clearConnectorMode();
+    });
+
+    function selectionRectFromDrag(drag, currentPoint) {
+        const left = Math.min(drag.start.x, currentPoint.x);
+        const top = Math.min(drag.start.y, currentPoint.y);
+        return {
+            left,
+            top,
+            right: Math.max(drag.start.x, currentPoint.x),
+            bottom: Math.max(drag.start.y, currentPoint.y),
+            width: Math.abs(currentPoint.x - drag.start.x),
+            height: Math.abs(currentPoint.y - drag.start.y)
+        };
+    }
+
+    function updateSelection(rect) {
+        pane.querySelectorAll(".org-canvas-node, .org-canvas-label").forEach((element) => {
+            const elementRect = {
+                left: element.offsetLeft,
+                top: element.offsetTop,
+                right: element.offsetLeft + element.offsetWidth,
+                bottom: element.offsetTop + element.offsetHeight
+            };
+            const overlaps = rect.left <= elementRect.right
+                && rect.right >= elementRect.left
+                && rect.top <= elementRect.bottom
+                && rect.bottom >= elementRect.top;
+            element.classList.toggle("org-selected", overlaps);
+        });
+    }
+
+    pane.addEventListener("pointerdown", function (event) {
+        if (connectorMode && !event.target.closest(".org-connector-dot")) {
+            clearConnectorMode();
+            return;
+        }
+        if (event.button !== 0 || connectorMode || event.target.closest(".org-canvas-node, .org-canvas-label, .org-manual-connector")) {
+            return;
+        }
+        const point = panePoint(event);
+        selectionDrag = {
+            pointerId: event.pointerId,
+            start: point
+        };
+        pane.setPointerCapture?.(event.pointerId);
+        clearSelection();
+        if (selectionBox) {
+            selectionBox.hidden = false;
+            selectionBox.style.left = `${point.x}px`;
+            selectionBox.style.top = `${point.y}px`;
+            selectionBox.style.width = "0px";
+            selectionBox.style.height = "0px";
+        }
+    });
+
+    pane.addEventListener("pointermove", function (event) {
+        if (!selectionDrag || selectionDrag.pointerId !== event.pointerId) {
+            return;
+        }
+        event.preventDefault();
+        const rect = selectionRectFromDrag(selectionDrag, panePoint(event));
+        if (selectionBox) {
+            selectionBox.style.left = `${rect.left}px`;
+            selectionBox.style.top = `${rect.top}px`;
+            selectionBox.style.width = `${rect.width}px`;
+            selectionBox.style.height = `${rect.height}px`;
+        }
+        updateSelection(rect);
+    });
+
+    pane.addEventListener("pointerup", function (event) {
+        if (!selectionDrag || selectionDrag.pointerId !== event.pointerId) {
+            return;
+        }
+        const drag = selectionDrag;
+        selectionDrag = null;
+        pane.releasePointerCapture?.(event.pointerId);
+        if (selectionBox) {
+            selectionBox.hidden = true;
+        }
+        const rect = selectionRectFromDrag(drag, panePoint(event));
+        if (rect.width < 8 && rect.height < 8) {
+            clearSelection();
+        }
     });
 
     function removeConnector(connector) {
@@ -764,9 +1059,10 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function drawLinks() {
+        updateCanvasSize();
         linkLayer.innerHTML = "";
-        const width = Math.max(pane.scrollWidth, pane.clientWidth);
-        const height = Math.max(pane.scrollHeight, pane.clientHeight);
+        const width = Math.max(canvasSize.width, pane.scrollWidth, pane.clientWidth);
+        const height = Math.max(canvasSize.height, pane.scrollHeight, pane.clientHeight);
         linkLayer.setAttribute("viewBox", `0 0 ${width} ${height}`);
         linkLayer.setAttribute("width", width);
         linkLayer.setAttribute("height", height);
@@ -777,7 +1073,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (!source || !target) {
                 return;
             }
-            const { start, end } = connectorLinePoints(source, target, connector.orientation);
+            const { start, end } = connectorLinePoints(source, target, connector);
             const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
             line.setAttribute("x1", start.x);
             line.setAttribute("y1", start.y);
@@ -799,7 +1095,7 @@ document.addEventListener("DOMContentLoaded", function () {
             linkLayer.appendChild(line);
         });
         if (connectorDrag && connectorDrag.preview) {
-            const start = connectorPoint(connectorDrag.source, connectorDrag.orientation, "source");
+            const start = connectorPoint(connectorDrag.source, connectorDrag.sourceSide);
             const end = connectorDrag.orientation === "vertical"
                 ? { x: start.x, y: connectorDrag.preview.y }
                 : { x: connectorDrag.preview.x, y: start.y };
@@ -813,9 +1109,30 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    horizontalConnectorButton?.addEventListener("click", () => setConnectorMode("horizontal"));
-    verticalConnectorButton?.addEventListener("click", () => setConnectorMode("vertical"));
-    cancelConnectorButton?.addEventListener("click", clearConnectorMode);
+    function armConnectorTool(event) {
+        const orientation = event.currentTarget?.dataset.orientation || "horizontal";
+        setConnectorMode(orientation);
+        if (event.type === "dragstart") {
+            event.dataTransfer.effectAllowed = "copy";
+            event.dataTransfer.setData("text/plain", `${orientation} connector`);
+        }
+    }
+
+    horizontalConnectorButton?.addEventListener("click", armConnectorTool);
+    horizontalConnectorButton?.addEventListener("pointerdown", armConnectorTool);
+    horizontalConnectorButton?.addEventListener("dragstart", armConnectorTool);
+    verticalConnectorButton?.addEventListener("click", armConnectorTool);
+    verticalConnectorButton?.addEventListener("pointerdown", armConnectorTool);
+    verticalConnectorButton?.addEventListener("dragstart", armConnectorTool);
+    document.addEventListener("pointerdown", function (event) {
+        if (!connectorMode) {
+            return;
+        }
+        if (event.target.closest(".org-connector-controls") || pane.contains(event.target)) {
+            return;
+        }
+        clearConnectorMode();
+    });
     document.querySelectorAll(".org-chart-draggable, .org-canvas-label").forEach(attachDragHandler);
     pane.querySelectorAll(".org-canvas-node[data-person-ref]").forEach((node) => hideTrayPerson(node.dataset.personRef));
     addLabelButton?.addEventListener("click", addLabel);
@@ -854,7 +1171,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const source = findNodeByAnyId(connector.source_node_id, connector.source_local_id);
             const target = findNodeByAnyId(connector.target_node_id, connector.target_local_id);
             if (!source || !target) return;
-            const { start, end } = connectorLinePoints(source, target, connector.orientation);
+            const { start, end } = connectorLinePoints(source, target, connector);
             ctx.beginPath();
             ctx.moveTo(start.x, start.y);
             ctx.lineTo(end.x, end.y);

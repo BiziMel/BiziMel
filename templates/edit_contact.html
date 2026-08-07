@@ -51,7 +51,7 @@
             <span>Remove current photo</span>
         </label>
     {% endif %}
-    <input type="file" id="photo" name="photo" accept=".png,.jpg,.jpeg">
+    <input type="file" id="photo" name="photo" accept="image/*">
 
     <label for="name">Name</label>
     <input type="text" id="name" name="name" value="{{ contact.name }}" required>

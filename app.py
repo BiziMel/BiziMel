@@ -17,6 +17,12 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from flask import Flask, render_template, request, redirect, url_for, Response, send_file, send_from_directory, session, abort, jsonify
 from werkzeug.exceptions import HTTPException
 from werkzeug.utils import secure_filename
+try:
+    from PIL import Image, ImageOps, UnidentifiedImageError
+except ModuleNotFoundError:
+    Image = None
+    ImageOps = None
+    UnidentifiedImageError = Exception
 from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members, decode_broadcast_companies, set_user_company_memberships, user_company_names
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
@@ -25,7 +31,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.7.0"
 APP_RELEASE_DATE = "2026-08-07"
-APP_BUILD = "2026-08-07-v2.7.0-manual-org-chart-connectors-r1"
+APP_BUILD = "2026-08-07-v2.7.0-org-chart-image-upload-r2"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -46,6 +52,10 @@ RELEASE_NOTES = [
         "fixed": [
             "Replaced automatic org chart relationship line rendering with manual horizontal and vertical connectors drawn directly between tiles.",
             "Added persistent org chart connector storage so manually drawn lines reopen, print and export with the chart.",
+            "Added centre-side connector dots so horizontal connectors use left or right tile centres and vertical connectors use top or bottom tile centres.",
+            "Added click-and-drag multi-select movement so several org chart tiles or labels can be moved together.",
+            "Expanded the org chart canvas dynamically as tiles are placed or moved further across the palette.",
+            "Updated account logo and contact photo uploads to accept recognised image formats and resize them into display-safe images.",
         ],
     },
     {
@@ -831,17 +841,20 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
                  'Click the account name to open the account record.',
                  'Use Org Chart from the account table or account record to map stakeholders.'],
   'steps': ['Create the account with account name, business organisation, tier, industry, country, city and website.',
-            'Upload a customer logo as jpg or png when available.',
+            'Upload a customer logo when available. PipeFlow accepts recognised image formats and resizes the logo for account screens.',
             'Confirm Account Owner. New accounts default to the logged-in user, but the owner can be reassigned where required.',
             'Set Pipeline Target USD ACV and PG Bible order for dashboard, PG Progress and PG Bible reporting.',
             'Select one or more Sales Plays from configured Sales Play entries.',
             'Open the account record to review contacts, partner involvement, outreach history, timeline and sharing.',
             'Use Account Sharing when another user needs access to the full account package.',
-            'Open Org Chart, drag each contact tile once onto the grid-aligned chart, and place tiles beside existing tiles to draw '
-            'relationship lines.'],
+            'Open Org Chart and drag each contact tile once onto the grid-aligned chart.',
+            'Use the Connectors palette to choose a horizontal or vertical line. PipeFlow then shows side-centre dots on each tile.',
+            'Drag from a dot on one tile to a matching side dot on another tile to create a connector.',
+            'Click and drag across several tiles or labels to select them, then drag the selected group to move it together.'],
   'tips': ['Business organisation helps distinguish accounts with the same name or multiple internal groups.',
            'Account Sales Play associations constrain the Sales Play dropdown in Outreach and Campaign Builder.',
-           'Revoking a share returns assigned tasks for that user back to the account owner.']},
+           'Revoking a share returns assigned tasks for that user back to the account owner.',
+           'Connector mode ends after a connector is completed or when you click away from the chart area; select another connector when you need a new line.']},
  {'slug': 'contacts',
   'title': 'Contacts',
   'summary': 'Capture customer stakeholders, role context and relationship data for account coverage and outreach targeting.',
@@ -850,7 +863,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
                  'Use the linked account name to return to account context.'],
   'steps': ['Create the contact and select the correct account and business organisation context.',
             'Capture name, job title, category, relationship, responsibilities, email, phone and LinkedIn where known.',
-            'Upload or replace a contact photo where useful.',
+            'Upload, replace or remove a contact photo where useful. PipeFlow accepts recognised image formats and resizes them for display.',
             'Keep contact status current so inactive contacts do not incorrectly drive PG Progress or reports.',
             'Use Print Contact when a clean contact sheet is needed.',
             'Update relationship and role details when outreach shows new influence or decision-making context.'],
@@ -1315,34 +1328,29 @@ def csv_safe_row(values):
     return [csv_safe(value) for value in values]
 
 
-def upload_has_allowed_image_signature(upload, extension):
-    try:
-        position = upload.stream.tell()
-    except Exception:
-        position = 0
-    header = upload.stream.read(16)
-    upload.stream.seek(position)
-    if extension == ".png":
-        return header.startswith(b"\x89PNG\r\n\x1a\n")
-    if extension in {".jpg", ".jpeg"}:
-        return header.startswith(b"\xff\xd8\xff")
-    return False
-
-
-def upload_image_data_uri(upload, extension):
+def upload_image_data_uri(upload, max_size=(420, 420)):
     try:
         upload.stream.seek(0)
     except Exception:
         pass
-    data = upload.stream.read()
+    raw_data = upload.stream.read()
     try:
         upload.stream.seek(0)
     except Exception:
         pass
-    if not data:
+    if not raw_data or Image is None:
         return ""
-    mime_type = "image/png" if extension == ".png" else "image/jpeg"
-    return f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"
+    try:
+        with Image.open(io.BytesIO(raw_data)) as source:
+            image = ImageOps.exif_transpose(source)
+            if image.mode not in ("RGB", "RGBA"):
+                image = image.convert("RGBA" if "A" in image.getbands() else "RGB")
+            image.thumbnail(max_size, Image.Resampling.LANCZOS)
+            output = io.BytesIO()
+            image.save(output, format="PNG", optimize=True)
+    except (UnidentifiedImageError, OSError, ValueError):
+        return ""
+    return f"data:image/png;base64,{base64.b64encode(output.getvalue()).decode('ascii')}"
 
 
 def account_logo_storage_dir():
@@ -1395,14 +1403,9 @@ def save_contact_photo(upload, existing_photo="", remove_photo=False):
         return ""
     if not upload or not upload.filename:
         return existing_photo or ""
-    extension = Path(upload.filename).suffix.lower()
-    if extension not in {".png", ".jpg", ".jpeg"}:
-        return existing_photo or ""
-    if not upload_has_allowed_image_signature(upload, extension):
-        return existing_photo or ""
-    # Store new uploads in the database so hosted deployments do not lose images
-    # when the app filesystem is rebuilt. Legacy filename/path values still work.
-    return upload_image_data_uri(upload, extension)
+    # Store resized PNG data in the database so any browser-supported/Pillow-
+    # readable image can display consistently in compact contact photo frames.
+    return upload_image_data_uri(upload, max_size=(420, 420)) or existing_photo or ""
 
 
 def save_account_logo(upload, existing_logo="", remove_logo=False):
@@ -1410,14 +1413,9 @@ def save_account_logo(upload, existing_logo="", remove_logo=False):
         return ""
     if not upload or not upload.filename:
         return existing_logo or ""
-    extension = Path(upload.filename).suffix.lower()
-    if extension not in {".png", ".jpg", ".jpeg"}:
-        return existing_logo or ""
-    if not upload_has_allowed_image_signature(upload, extension):
-        return existing_logo or ""
-    # Store new uploads in the database so hosted deployments do not lose images
-    # when the app filesystem is rebuilt. Legacy filename/path values still work.
-    return upload_image_data_uri(upload, extension)
+    # Logo uploads are normalised to a modest PNG payload so wide/tall logos fit
+    # the account table, page header and reports without distorting the layout.
+    return upload_image_data_uri(upload, max_size=(420, 260)) or existing_logo or ""
 
 
 def account_logo_url(value):
@@ -1439,11 +1437,25 @@ def data_uri_image_payload(value):
         return None
     header, payload = image_value.split(",", 1)
     mime_type = header.split(";", 1)[0].replace("data:", "", 1)
-    if mime_type not in {"image/png", "image/jpeg"}:
+    if not mime_type.startswith("image/"):
         return None
     try:
-        return mime_type, base64.b64decode(payload, validate=True)
+        image_bytes = base64.b64decode(payload, validate=True)
     except Exception:
+        return None
+    if mime_type in {"image/png", "image/jpeg"}:
+        return mime_type, image_bytes
+    if Image is None:
+        return None
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as source:
+            image = ImageOps.exif_transpose(source)
+            if image.mode not in ("RGB", "RGBA"):
+                image = image.convert("RGBA" if "A" in image.getbands() else "RGB")
+            output = io.BytesIO()
+            image.save(output, format="PNG", optimize=True)
+            return "image/png", output.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError):
         return None
 
 
@@ -11412,6 +11424,14 @@ def normalise_org_chart_connector_orientation(value):
     return orientation
 
 
+def normalise_org_chart_connector_side(value, orientation):
+    side = (value or "").strip().lower()
+    allowed = {"left", "right"} if orientation == "horizontal" else {"top", "bottom"}
+    if side not in allowed:
+        side = "right" if orientation == "horizontal" else "bottom"
+    return side
+
+
 def org_chart_level_for_relationship(connection, chart_id, relationship, related_node_id):
     relationship = normalise_org_chart_relationship(relationship)
     offset = {"above": -1, "with": 0, "under": 1}.get(relationship, 0)
@@ -12100,6 +12120,8 @@ def save_account_org_chart_layout(account_id, chart_id):
             if not source_exists or not target_exists:
                 continue
             orientation = normalise_org_chart_connector_orientation(action.get("orientation"))
+            source_side = normalise_org_chart_connector_side(action.get("source_side"), orientation)
+            target_side = normalise_org_chart_connector_side(action.get("target_side"), orientation)
             existing_connector = connection.execute("""
                 SELECT id
                 FROM account_org_chart_connectors
@@ -12107,8 +12129,10 @@ def save_account_org_chart_layout(account_id, chart_id):
                   AND account_id = ?
                   AND source_node_id = ?
                   AND target_node_id = ?
+                  AND source_side = ?
+                  AND target_side = ?
                   AND orientation = ?
-            """, (chart_id, account_id, source_node_id, target_node_id, orientation)).fetchone()
+            """, (chart_id, account_id, source_node_id, target_node_id, source_side, target_side, orientation)).fetchone()
             if existing_connector:
                 continue
             cursor = connection.execute("""
@@ -12117,15 +12141,19 @@ def save_account_org_chart_layout(account_id, chart_id):
                     account_id,
                     source_node_id,
                     target_node_id,
+                    source_side,
+                    target_side,
                     orientation
                 )
-                VALUES (?, ?, ?, ?, ?)
-            """, (chart_id, account_id, source_node_id, target_node_id, orientation))
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (chart_id, account_id, source_node_id, target_node_id, source_side, target_side, orientation))
             audit_record_create(connection, "account_org_chart_connector", cursor.lastrowid, {
                 "account_id": account_id,
                 "chart_id": chart_id,
                 "source_node_id": source_node_id,
                 "target_node_id": target_node_id,
+                "source_side": source_side,
+                "target_side": target_side,
                 "orientation": orientation,
             })
             saved_count += 1

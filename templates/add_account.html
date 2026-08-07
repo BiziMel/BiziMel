@@ -43,8 +43,8 @@
     <input type="url" name="website" value="{{ prefill.website or '' }}" placeholder="https://www.example.com">
 
     <label>Customer Logo</label>
-    <input type="file" name="customer_logo" accept=".jpg,.jpeg,.png,image/jpeg,image/png">
-    <p class="field-help">Upload a JPG or PNG logo for this account.</p>
+    <input type="file" name="customer_logo" accept="image/*">
+    <p class="field-help">Upload an image logo. PipeFlow will resize it to fit account views.</p>
 
     <label>Pipeline Target USD $ ACV</label>
     <input type="number" id="pipeline_target" name="pipeline_target" step="0.01" min="0" value="{{ prefill.pipeline_target or '' }}" placeholder="0.00">

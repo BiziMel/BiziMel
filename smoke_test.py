@@ -1,5 +1,7 @@
 import os
 import re
+import base64
+import io
 import json
 import sqlite3
 import tempfile
@@ -339,7 +341,7 @@ def main():
         ).fetchone()["id"]
         connection.close()
         org_chart_html = client.get(f"/accounts/{account_id}/org-chart?chart_id={chart_id}").get_data(as_text=True)
-        assert_ok("Horizontal Line" in org_chart_html and "Vertical Line" in org_chart_html, "Manual org chart connector controls missing")
+        assert_ok("Connectors" in org_chart_html and "org-connector-dot" in org_chart_html, "Manual org chart connector controls missing")
         layout_actions = [
             {
                 "type": "person",
@@ -361,6 +363,8 @@ def main():
                 "type": "connector",
                 "source_local_id": "smoke-contact-1",
                 "target_local_id": "smoke-contact-2",
+                "source_side": "right",
+                "target_side": "left",
                 "orientation": "horizontal",
             },
         ]
@@ -375,11 +379,25 @@ def main():
         assert_ok(response.status_code in (302, 303), "Org chart manual connector layout save failed")
         connection = sqlite3.connect(db_path)
         connector_count = connection.execute(
-            "SELECT COUNT(*) FROM account_org_chart_connectors WHERE chart_id = ? AND orientation = ?",
-            (chart_id, "horizontal"),
+            """
+            SELECT COUNT(*)
+            FROM account_org_chart_connectors
+            WHERE chart_id = ? AND orientation = ? AND source_side = ? AND target_side = ?
+            """,
+            (chart_id, "horizontal", "right", "left"),
         ).fetchone()[0]
         connection.close()
-        assert_ok(connector_count == 1, "Org chart manual connector was not persisted")
+        assert_ok(connector_count == 1, "Org chart manual connector was not persisted with side-centre anchors")
+
+        image = pipeflow_app.Image.new("RGB", (900, 320), (40, 120, 220))
+        image_buffer = io.BytesIO()
+        image.save(image_buffer, format="BMP")
+        image_buffer.seek(0)
+        image_upload = type("Upload", (), {"stream": image_buffer})()
+        image_uri = pipeflow_app.upload_image_data_uri(image_upload, max_size=(160, 120))
+        assert_ok(image_uri.startswith("data:image/png;base64,"), "Uploaded image was not normalised to PNG")
+        normalised = pipeflow_app.Image.open(io.BytesIO(base64.b64decode(image_uri.split(",", 1)[1])))
+        assert_ok(normalised.width <= 160 and normalised.height <= 120, "Uploaded image was not resized to fit display bounds")
 
         connection = sqlite3.connect(db_path)
         connection.row_factory = sqlite3.Row

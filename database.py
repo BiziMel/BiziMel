@@ -391,6 +391,8 @@ def initialise_database(force=False):
             account_id INTEGER NOT NULL,
             source_node_id INTEGER NOT NULL,
             target_node_id INTEGER NOT NULL,
+            source_side TEXT DEFAULT '',
+            target_side TEXT DEFAULT '',
             orientation TEXT NOT NULL DEFAULT 'horizontal',
             date_created TEXT DEFAULT CURRENT_TIMESTAMP,
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -495,6 +497,8 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "account_org_chart_connectors", "account_id", "INTEGER")
     add_column_if_missing(cursor, "account_org_chart_connectors", "source_node_id", "INTEGER")
     add_column_if_missing(cursor, "account_org_chart_connectors", "target_node_id", "INTEGER")
+    add_column_if_missing(cursor, "account_org_chart_connectors", "source_side", "TEXT DEFAULT ''")
+    add_column_if_missing(cursor, "account_org_chart_connectors", "target_side", "TEXT DEFAULT ''")
     add_column_if_missing(cursor, "account_org_chart_connectors", "orientation", "TEXT DEFAULT 'horizontal'")
     add_column_if_missing(cursor, "account_org_chart_connectors", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "account_org_chart_connectors", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")

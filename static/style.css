@@ -6002,16 +6002,51 @@ body {
     background: #eff6ff;
 }
 
+.org-connector-controls strong {
+    color: #1e3a8a;
+    font-size: 12px;
+    font-weight: 900;
+}
+
 .org-connector-controls span {
     color: #334155;
     font-size: 12px;
     font-weight: 700;
 }
 
+.org-connector-tool {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid #93c5fd;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #1d4ed8;
+    cursor: grab;
+}
+
 .org-connector-tool.active-tab {
     border-color: #1d4ed8;
     background: #1d4ed8;
     color: #ffffff;
+}
+
+.org-connector-icon {
+    display: block;
+    border-radius: 999px;
+    background: currentColor;
+}
+
+.org-connector-icon-horizontal {
+    width: 22px;
+    height: 3px;
+}
+
+.org-connector-icon-vertical {
+    width: 3px;
+    height: 22px;
 }
 
 .org-single-pane {
@@ -6023,6 +6058,15 @@ body {
     border-radius: 8px;
     background: #ffffff;
     resize: vertical;
+}
+
+.org-canvas-expander {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1200px;
+    height: 760px;
+    pointer-events: none;
 }
 
 .org-link-layer {
@@ -6058,6 +6102,23 @@ body {
     stroke-width: 3;
     stroke-dasharray: 8 6;
     pointer-events: none;
+}
+
+.org-selection-box {
+    position: absolute;
+    z-index: 5;
+    border: 1px dashed #2563eb;
+    background: rgba(37, 99, 235, 0.10);
+    pointer-events: none;
+}
+
+.org-selection-box[hidden] {
+    display: none;
+}
+
+.org-selected {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14), 0 8px 18px rgba(15, 23, 42, 0.08);
 }
 
 .org-connector-mode .org-canvas-node {
@@ -6182,6 +6243,47 @@ body {
     top: 0;
     right: 0;
     margin: 0;
+}
+
+.org-connector-dot {
+    position: absolute;
+    z-index: 4;
+    display: none;
+    width: 13px;
+    height: 13px;
+    border: 2px solid #ffffff;
+    border-radius: 999px;
+    background: #2563eb;
+    box-shadow: 0 0 0 1px #1d4ed8;
+    cursor: crosshair;
+}
+
+.org-connector-mode .org-connector-dot {
+    display: block;
+}
+
+.org-connector-dot-top {
+    top: -7px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.org-connector-dot-right {
+    top: 50%;
+    right: -7px;
+    transform: translateY(-50%);
+}
+
+.org-connector-dot-bottom {
+    bottom: -7px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.org-connector-dot-left {
+    top: 50%;
+    left: -7px;
+    transform: translateY(-50%);
 }
 
 .org-canvas-label {

@@ -71,8 +71,8 @@
             </label>
         </div>
     {% endif %}
-    <input type="file" name="customer_logo" accept=".jpg,.jpeg,.png,image/jpeg,image/png">
-    <p class="field-help">Upload a JPG or PNG to add or replace the customer logo.</p>
+    <input type="file" name="customer_logo" accept="image/*">
+    <p class="field-help">Upload an image to add or replace the customer logo. PipeFlow resizes it for display.</p>
 
     <label>Pipeline Target USD $ ACV</label>
     <input type="number" name="pipeline_target" step="0.01" min="0"
