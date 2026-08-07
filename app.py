@@ -31,7 +31,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.7.0"
 APP_RELEASE_DATE = "2026-08-07"
-APP_BUILD = "2026-08-07-v2.7.0-org-chart-click-connectors-r3"
+APP_BUILD = "2026-08-07-v2.7.0-pg-rag-qualification-r4"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -59,6 +59,9 @@ RELEASE_NOTES = [
             "Changed org chart connectors to a click sequence: select a connector, click the first tile, then click the second tile.",
             "Changed org chart connector lines and connector handles to dark green.",
             "Updated org chart PNG export and print/PDF title handling to use the configured org chart name as the export filename basis.",
+            "Centralised PG Progress account RAG qualification so automatic Green requires a booked meeting outcome with a valid scheduled meeting date.",
+            "Changed automatic PG Progress Amber to only appear as a 14-day inactivity degradation after Green progress, with 30-day inactivity returning the account to Red.",
+            "Added a Use Automatic RAG reset so manual account overrides can be removed without losing the underlying automated calculation.",
         ],
     },
     {
@@ -937,15 +940,15 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
                  'Use Reports > PG Progress for a read-only reporting view with XLS and PDF export buttons.'],
   'steps': ['Review PG Goals for FY target, current pipeline and gap.',
             'Review PG Plan grouped by user for manager views, then by account, business organisation where present and Sales Play.',
-            'Read PG RAG dots: red means no useful response, amber means positive/negative response or Discovery booked, and green means '
-            'NBM or executive meeting booked.',
+            'Read PG RAG dots: green means a booked meeting outcome has a valid scheduled meeting date, amber means previously green '
+            'progress has had no scheduled or closed activity for 14 days, and red means no confirmed scheduled meeting or 30-day inactivity.',
             'Use checkboxes for Completed Discovery Meeting, Exec First and NBM Completed. Checked means Yes; unchecked means No.',
             'Review Last 30 Days Activity for completed or updated recent activity.',
             'Review Future Planned Actions for active open outreach tasks due in the future.',
             'Contacts with no activity in the last 30 days and no open future task do not display in the PG Progress table.'],
-  'tips': ['RAG is calculated per active contact and aggregated to the account level when any active contact meets a stronger metric.',
-           'Inactive contacts are excluded from the live PG Progress metric calculation.',
-           'Deleted tasks are excluded from PG Progress and PG Bible task views.']},
+  'tips': ['Automatic account RAG recalculates from current outreach activity each time PG Progress is loaded.',
+           'Manual RAG overrides set by authorised users or managers take precedence until Use Automatic is selected.',
+           'Deleted and cancelled tasks are excluded from PG Progress and PG Bible task views.']},
  {'slug': 'reports',
   'title': 'Reports, Sales Play Reports and PG Bible',
   'summary': 'Use reports and exports to review execution, coverage, Sales Play usage, PG Progress and PG Bible output.',
@@ -6624,6 +6627,203 @@ def normalise_manual_rag_status(value, default="red"):
     return default
 
 
+def normalise_manual_rag_override(value):
+    status = str(value or "").strip().lower()
+    return status if status in {"red", "amber", "green"} else ""
+
+
+def pg_rag_label(status):
+    return normalise_manual_rag_status(status, "red").title()
+
+
+def outreach_row_value(row, key, default=""):
+    if not row:
+        return default
+    if hasattr(row, "keys"):
+        return row[key] if key in row.keys() else default
+    return row.get(key, default) if isinstance(row, dict) else default
+
+
+def valid_pg_rag_date(value):
+    parsed = parse_progress_date(value)
+    return parsed if parsed else None
+
+
+def pg_activity_reference_date(activity):
+    status = (outreach_row_value(activity, "task_status") or "").strip()
+    scheduled_candidates = (
+        outreach_row_value(activity, "scheduled_meeting_date"),
+        outreach_row_value(activity, "next_action_date"),
+        outreach_row_value(activity, "activity_date"),
+    )
+    closed_candidates = (
+        outreach_row_value(activity, "completed_at"),
+        outreach_row_value(activity, "last_updated"),
+        outreach_row_value(activity, "activity_date"),
+    )
+    candidates = closed_candidates if is_closed_task_status(status) else scheduled_candidates
+    parsed_dates = [valid_pg_rag_date(value) for value in candidates]
+    parsed_dates = [value for value in parsed_dates if value]
+    return max(parsed_dates) if parsed_dates else None
+
+
+def activity_has_future_pg_schedule(activity, today):
+    status = (outreach_row_value(activity, "task_status") or "").strip()
+    if status in {"Deleted", "Cancelled"} or is_closed_task_status(status):
+        return False
+    for field_name in ("scheduled_meeting_date", "next_action_date", "activity_date"):
+        parsed = valid_pg_rag_date(outreach_row_value(activity, field_name))
+        if parsed and parsed >= today:
+            return True
+    return False
+
+
+def activity_has_booked_meeting_with_date(activity):
+    outcome = normalise_outreach_outcome(outreach_row_value(activity, "outcome"))
+    if not outcome_requires_scheduled_meeting(outcome):
+        return False
+    return bool(valid_pg_rag_date(outreach_row_value(activity, "scheduled_meeting_date")))
+
+
+def calculate_automated_pg_rag_status(activities, today=None):
+    """Central PG Progress RAG engine.
+
+    Green requires a booked-meeting outcome with a valid scheduled meeting date.
+    Amber is only used when a previously Green account has no scheduled or
+    closed activity for at least 14 days. Without the booked meeting + date
+    qualification, every account remains Red.
+    """
+    today = today or current_app_datetime().date()
+    rows = [
+        activity for activity in activities
+        if (outreach_row_value(activity, "task_status") or "").strip() not in {"Deleted", "Cancelled"}
+    ]
+    if not any(activity_has_booked_meeting_with_date(activity) for activity in rows):
+        return {
+            "automatedRagStatus": "red",
+            "reason": "Automatic RAG: no booked meeting outcome with a valid scheduled meeting date.",
+            "lastActivityDate": None,
+        }
+    if any(activity_has_future_pg_schedule(activity, today) for activity in rows):
+        return {
+            "automatedRagStatus": "green",
+            "reason": "Automatic RAG: booked meeting is confirmed and future activity is scheduled.",
+            "lastActivityDate": None,
+        }
+    activity_dates = [pg_activity_reference_date(activity) for activity in rows]
+    activity_dates = [value for value in activity_dates if value]
+    most_recent = max(activity_dates) if activity_dates else None
+    if not most_recent:
+        return {
+            "automatedRagStatus": "green",
+            "reason": "Automatic RAG: booked meeting is confirmed with a scheduled meeting date.",
+            "lastActivityDate": None,
+        }
+    days_since_activity = (today - most_recent).days
+    if days_since_activity >= 30:
+        return {
+            "automatedRagStatus": "red",
+            "reason": f"Automatic RAG: no scheduled or closed activity for {days_since_activity} days after meeting progress.",
+            "lastActivityDate": most_recent,
+        }
+    if days_since_activity >= 14:
+        return {
+            "automatedRagStatus": "amber",
+            "reason": f"Automatic RAG: no scheduled or closed activity for {days_since_activity} days after meeting progress.",
+            "lastActivityDate": most_recent,
+        }
+    return {
+        "automatedRagStatus": "green",
+        "reason": "Automatic RAG: booked meeting is confirmed and recent activity remains within 14 days.",
+        "lastActivityDate": most_recent,
+    }
+
+
+def effective_pg_rag_payload(automated_payload, manual_override=""):
+    automated_status = normalise_manual_rag_status(
+        automated_payload.get("automatedRagStatus") if automated_payload else "",
+        "red",
+    )
+    manual_status = normalise_manual_rag_override(manual_override)
+    effective_status = manual_status or automated_status
+    return {
+        "automatedRagStatus": automated_status,
+        "manualRagOverride": manual_status,
+        "effectiveRagStatus": effective_status,
+        "status": effective_status,
+        "label": pg_rag_label(effective_status),
+        "automated_status": automated_status,
+        "automated_label": pg_rag_label(automated_status),
+        "manual_override": manual_status,
+        "manual_label": pg_rag_label(manual_status) if manual_status else "",
+        "reason": (
+            f"Manual override: {pg_rag_label(manual_status)}. Automatic status is {pg_rag_label(automated_status)}."
+            if manual_status
+            else (automated_payload.get("reason") if automated_payload else "Automatic RAG status")
+        ),
+    }
+
+
+def account_pg_rag_activities(connection, account_id):
+    return connection.execute("""
+        SELECT
+            id,
+            outcome,
+            activity_type,
+            activity_date,
+            next_action_date,
+            scheduled_meeting_date,
+            completed_at,
+            last_updated,
+            task_status
+        FROM outreach
+        WHERE account_id = ?
+          AND COALESCE(task_status, '') NOT IN ('Deleted', 'Cancelled')
+    """, (account_id,)).fetchall()
+
+
+def account_pg_rag_payload(connection, account_id, action_update=None, today=None):
+    automated = calculate_automated_pg_rag_status(
+        account_pg_rag_activities(connection, account_id),
+        today=today,
+    )
+    manual_override = ""
+    if action_update:
+        if "manual_rag_override" in action_update.keys():
+            manual_override = normalise_manual_rag_override(action_update["manual_rag_override"])
+        if not manual_override and "rag_status" in action_update.keys():
+            manual_override = normalise_manual_rag_override(action_update["rag_status"])
+    payload = effective_pg_rag_payload(automated, manual_override)
+    persist_pg_account_automated_rag(connection, account_id, payload)
+    return payload
+
+
+def persist_pg_account_automated_rag(connection, account_id, payload):
+    existing = connection.execute(
+        "SELECT id FROM pg_action_updates WHERE account_id = ?",
+        (account_id,),
+    ).fetchone()
+    automated_status = payload["automatedRagStatus"]
+    manual_override = payload["manualRagOverride"]
+    if existing:
+        connection.execute("""
+            UPDATE pg_action_updates
+            SET automated_rag_status = ?,
+                manual_rag_override = COALESCE(NULLIF(manual_rag_override, ''), NULLIF(rag_status, '')),
+                last_updated = CURRENT_TIMESTAMP
+            WHERE account_id = ?
+        """, (automated_status, account_id))
+    else:
+        connection.execute("""
+            INSERT INTO pg_action_updates (
+                account_id,
+                automated_rag_status,
+                manual_rag_override
+            )
+            VALUES (?, ?, ?)
+        """, (account_id, automated_status, manual_override))
+
+
 def manual_pg_rag_payload(value, default="red"):
     status = normalise_manual_rag_status(value, default)
     return {
@@ -6646,12 +6846,18 @@ def pg_progress_contact_update(connection, contact_id, legacy_action_update=None
     )
     completed_discovery = manual_completed_discovery or ""
     nbm_completed = action_update["nbm_completed"] if action_update and "nbm_completed" in action_update.keys() else ""
+    manual_override = ""
+    if action_update:
+        if "manual_rag_override" in action_update.keys():
+            manual_override = action_update["manual_rag_override"]
+        if not manual_override and "rag_status" in action_update.keys():
+            manual_override = action_update["rag_status"]
     return {
         "action_update": action_update,
         "completed_discovery": completed_discovery,
         "nbm_completed": nbm_completed,
         "rag": manual_pg_rag_payload(
-            action_update["rag_status"] if action_update and "rag_status" in action_update.keys() else "",
+            manual_override,
             "red",
         ),
     }
@@ -8860,10 +9066,7 @@ def pg_dashboard_context(connection):
             FROM pg_action_updates
             WHERE account_id = ?
         """, (account_id,)).fetchone()
-        account_rag = manual_pg_rag_payload(
-            legacy_action_update["rag_status"] if legacy_action_update and "rag_status" in legacy_action_update.keys() else "",
-            "red",
-        )
+        account_rag = account_pg_rag_payload(connection, account_id, legacy_action_update)
         pg_plan_rows.append({
             "account_id": account_id,
             "target_number": pg_target_number,
@@ -8871,6 +9074,10 @@ def pg_dashboard_context(connection):
             "rag_status": account_rag["status"],
             "rag_label": account_rag["label"],
             "rag_reason": account_rag["reason"],
+            "automated_rag_status": account_rag["automatedRagStatus"],
+            "automated_rag_label": account_rag["automated_label"],
+            "manual_rag_override": account_rag["manualRagOverride"],
+            "effective_rag_status": account_rag["effectiveRagStatus"],
             "sales_play": pg_sales_play,
             "account_name": account["account_name"],
             "business_org": account["business_unit"] or "",
@@ -8980,9 +9187,16 @@ def pg_dashboard_context(connection):
                 "account_rag_status": account_rag["status"],
                 "account_rag_label": account_rag["label"],
                 "account_rag_reason": account_rag["reason"],
+                "account_automated_rag_status": account_rag["automatedRagStatus"],
+                "account_manual_rag_override": account_rag["manualRagOverride"],
                 "rag_status": contact_rag["status"],
                 "rag_label": contact_rag["label"],
                 "rag_reason": contact_rag["reason"],
+                "manual_rag_override": (
+                    action_update["manual_rag_override"]
+                    if action_update and "manual_rag_override" in action_update.keys() and action_update["manual_rag_override"]
+                    else (action_update["rag_status"] if action_update and "rag_status" in action_update.keys() else "")
+                ),
                 "account_name": account["account_name"],
                 "sales_play": pg_sales_play or "No sales play entered",
                 "targeted_discovery": contact["name"] or "No contact name",
@@ -9094,9 +9308,12 @@ def pg_dashboard_context(connection):
                 "account_rag_status": account_rag["status"],
                 "account_rag_label": account_rag["label"],
                 "account_rag_reason": account_rag["reason"],
+                "account_automated_rag_status": account_rag["automatedRagStatus"],
+                "account_manual_rag_override": account_rag["manualRagOverride"],
                 "rag_status": partner_rag["status"],
                 "rag_label": partner_rag["label"],
                 "rag_reason": partner_rag["reason"],
+                "manual_rag_override": "",
                 "account_name": account["account_name"],
                 "sales_play": pg_sales_play or "No sales play entered",
                 "targeted_discovery": compact_join(partner_contact_names, 3) if partner_contact_names else "Partner activity",
@@ -9192,7 +9409,7 @@ def save_manual_pg_progress(connection, form):
     for account_id in form.getlist("pg_plan_account_id"):
         if not str(account_id).isdigit():
             continue
-        rag_status = normalise_manual_rag_status(form.get(f"rag_account_{account_id}"), "red")
+        manual_override = normalise_manual_rag_override(form.get(f"rag_account_{account_id}"))
         existing = connection.execute(
             "SELECT id FROM pg_action_updates WHERE account_id = ?",
             (account_id,),
@@ -9201,14 +9418,15 @@ def save_manual_pg_progress(connection, form):
             connection.execute("""
                 UPDATE pg_action_updates
                 SET rag_status = ?,
+                    manual_rag_override = ?,
                     last_updated = CURRENT_TIMESTAMP
                 WHERE account_id = ?
-            """, (rag_status, account_id))
+            """, (manual_override, manual_override, account_id))
         else:
             connection.execute("""
-                INSERT INTO pg_action_updates (account_id, rag_status)
-                VALUES (?, ?)
-            """, (account_id, rag_status))
+                INSERT INTO pg_action_updates (account_id, rag_status, manual_rag_override)
+                VALUES (?, ?, ?)
+            """, (account_id, manual_override, manual_override))
     for contact_id in form.getlist("pg_action_contact_id"):
         if not str(contact_id).isdigit():
             continue
@@ -9216,7 +9434,7 @@ def save_manual_pg_progress(connection, form):
         completed = "Yes" if form.get(f"completed_discovery_contact_{contact_id}") == "Yes" else "No"
         exec_first = "Yes" if form.get(f"exec_first_contact_{contact_id}") == "Yes" else "No"
         nbm_completed = "Yes" if form.get(f"nbm_completed_contact_{contact_id}") == "Yes" else "No"
-        rag_status = normalise_manual_rag_status(form.get(f"rag_contact_{contact_id}"), "red")
+        rag_status = normalise_manual_rag_override(form.get(f"rag_contact_{contact_id}"))
         next_action = form.get(f"next_action_contact_{contact_id}", "")
         existing = connection.execute(
             "SELECT id FROM pg_action_contact_updates WHERE contact_id = ?",
@@ -9229,10 +9447,11 @@ def save_manual_pg_progress(connection, form):
                     exec_first = ?,
                     nbm_completed = ?,
                     rag_status = ?,
+                    manual_rag_override = ?,
                     next_action_override = ?,
                     last_updated = CURRENT_TIMESTAMP
                 WHERE contact_id = ?
-            """, (completed, exec_first, nbm_completed, rag_status, next_action, contact_id))
+            """, (completed, exec_first, nbm_completed, rag_status, rag_status, next_action, contact_id))
         else:
             connection.execute("""
                 INSERT INTO pg_action_contact_updates (
@@ -9242,10 +9461,11 @@ def save_manual_pg_progress(connection, form):
                     exec_first,
                     nbm_completed,
                     rag_status,
+                    manual_rag_override,
                     next_action_override
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (account_id, contact_id, completed, exec_first, nbm_completed, rag_status, next_action))
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (account_id, contact_id, completed, exec_first, nbm_completed, rag_status, rag_status, next_action))
 
 
 def pg_progress_report_context(selected_user_id=""):

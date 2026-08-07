@@ -151,6 +151,8 @@ def initialise_database(force=False):
             exec_first TEXT,
             nbm_completed TEXT,
             rag_status TEXT,
+            automated_rag_status TEXT,
+            manual_rag_override TEXT,
             next_action_override TEXT,
             date_created TEXT DEFAULT CURRENT_TIMESTAMP,
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP
@@ -164,6 +166,8 @@ def initialise_database(force=False):
             contact_id INTEGER NOT NULL UNIQUE,
             completed_discovery_meeting TEXT,
             rag_status TEXT,
+            automated_rag_status TEXT,
+            manual_rag_override TEXT,
             next_action_override TEXT,
             date_created TEXT DEFAULT CURRENT_TIMESTAMP,
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP
@@ -551,6 +555,8 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "pg_action_updates", "exec_first", "TEXT")
     add_column_if_missing(cursor, "pg_action_updates", "nbm_completed", "TEXT")
     add_column_if_missing(cursor, "pg_action_updates", "rag_status", "TEXT")
+    add_column_if_missing(cursor, "pg_action_updates", "automated_rag_status", "TEXT")
+    add_column_if_missing(cursor, "pg_action_updates", "manual_rag_override", "TEXT")
     add_column_if_missing(cursor, "pg_action_updates", "next_action_override", "TEXT")
     add_column_if_missing(cursor, "pg_action_updates", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "pg_action_updates", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
@@ -558,6 +564,8 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "pg_action_contact_updates", "contact_id", "INTEGER")
     add_column_if_missing(cursor, "pg_action_contact_updates", "completed_discovery_meeting", "TEXT")
     add_column_if_missing(cursor, "pg_action_contact_updates", "rag_status", "TEXT")
+    add_column_if_missing(cursor, "pg_action_contact_updates", "automated_rag_status", "TEXT")
+    add_column_if_missing(cursor, "pg_action_contact_updates", "manual_rag_override", "TEXT")
     add_column_if_missing(cursor, "pg_action_contact_updates", "next_action_override", "TEXT")
     add_column_if_missing(cursor, "pg_action_contact_updates", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "pg_action_contact_updates", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")

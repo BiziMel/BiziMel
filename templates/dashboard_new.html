@@ -115,10 +115,14 @@
                             <td class="pg-plan-rag-cell">
                                 {% if can_edit_pg_rag and not pg_progress_read_only %}
                                     <input type="hidden" name="pg_plan_account_id" value="{{ row.account_id }}">
-                                    <input type="hidden" name="rag_account_{{ row.account_id }}" value="{{ row.rag_status }}" data-rag-input="account-{{ row.account_id }}">
+                                    <input type="hidden"
+                                           name="rag_account_{{ row.account_id }}"
+                                           value="{{ row.manual_rag_override or '' }}"
+                                           data-rag-input="account-{{ row.account_id }}"
+                                           data-rag-auto="{{ row.automated_rag_status or 'red' }}">
                                     <button type="button"
                                             class="pg-rag-dot pg-rag-{{ row.rag_status }} pg-rag-picker-trigger"
-                                            title="Set account RAG status"
+                                            title="{{ row.rag_reason }}"
                                             aria-label="Set account RAG status for {{ row.account_name }}"
                                             data-rag-trigger
                                             data-rag-target="account-{{ row.account_id }}"></button>
@@ -231,7 +235,11 @@
                         <tr>
                             <td class="pg-rag-cell">
                                 {% if not row.is_partner_row and can_edit_pg_rag and not pg_progress_read_only %}
-                                    <input type="hidden" name="rag_contact_{{ row.contact_id }}" value="{{ row.rag_status }}" data-rag-input="contact-{{ row.contact_id }}">
+                                    <input type="hidden"
+                                           name="rag_contact_{{ row.contact_id }}"
+                                           value="{{ row.manual_rag_override or row.rag_status }}"
+                                           data-rag-input="contact-{{ row.contact_id }}"
+                                           data-rag-auto="red">
                                     <button type="button"
                                             class="pg-rag-dot pg-rag-{{ row.rag_status }} pg-rag-picker-trigger"
                                             title="Set contact RAG status"
@@ -337,6 +345,7 @@
             <button type="button" class="pg-rag-dot pg-rag-amber pg-rag-picker-option" data-rag-choice="amber" aria-label="Amber"></button>
             <button type="button" class="pg-rag-dot pg-rag-green pg-rag-picker-option" data-rag-choice="green" aria-label="Green"></button>
         </div>
+        <button type="button" class="btn btn-secondary pg-rag-auto-option" data-rag-choice="">Use Automatic</button>
     </div>
 </div>
 
@@ -374,11 +383,12 @@
 
     document.querySelectorAll("[data-rag-choice]").forEach((choice) => {
         choice.addEventListener("click", () => {
-            const status = choice.dataset.ragChoice;
             const input = document.querySelector(`[data-rag-input="${activeRagTarget}"]`);
-            if (input && status) {
+            if (input) {
+                const status = choice.dataset.ragChoice || "";
+                const displayStatus = status || input.dataset.ragAuto || "red";
                 input.value = status;
-                document.querySelectorAll(`[data-rag-target="${activeRagTarget}"]`).forEach((dot) => setRagDotStatus(dot, status));
+                document.querySelectorAll(`[data-rag-target="${activeRagTarget}"]`).forEach((dot) => setRagDotStatus(dot, displayStatus));
             }
             closePgRagPicker();
         });

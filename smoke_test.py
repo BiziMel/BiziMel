@@ -232,6 +232,38 @@ def main():
             "diagnostic error code is too long",
         )
         today = pipeflow_app.current_app_datetime().date()
+        calc = pipeflow_app.calculate_automated_pg_rag_status
+        meeting_future = today + timedelta(days=7)
+        stale_amber = today - timedelta(days=15)
+        stale_red = today - timedelta(days=31)
+        assert_ok(
+            calc([{"outcome": "Positive Response", "scheduled_meeting_date": "", "task_status": "Completed", "completed_at": today.isoformat()}], today=today)["automatedRagStatus"] == "red",
+            "PG RAG should stay red for a positive response without a scheduled booked meeting",
+        )
+        assert_ok(
+            calc([{"outcome": "NBM Booked", "scheduled_meeting_date": "", "task_status": "Not Started", "next_action_date": meeting_future.isoformat()}], today=today)["automatedRagStatus"] == "red",
+            "PG RAG should stay red when a meeting outcome has no scheduled meeting date",
+        )
+        assert_ok(
+            calc([{"outcome": "No Response", "scheduled_meeting_date": meeting_future.isoformat(), "task_status": "Not Started", "next_action_date": meeting_future.isoformat()}], today=today)["automatedRagStatus"] == "red",
+            "PG RAG should stay red when a scheduled date exists without a booked meeting outcome",
+        )
+        assert_ok(
+            calc([{"outcome": "NBM Booked", "scheduled_meeting_date": meeting_future.isoformat(), "task_status": "Not Started", "next_action_date": meeting_future.isoformat()}], today=today)["automatedRagStatus"] == "green",
+            "PG RAG should be green for a booked meeting with a valid future scheduled meeting date",
+        )
+        assert_ok(
+            calc([{"outcome": "NBM Booked", "scheduled_meeting_date": stale_amber.isoformat(), "task_status": "Completed", "completed_at": stale_amber.isoformat()}], today=today)["automatedRagStatus"] == "amber",
+            "PG RAG should degrade to amber after 14 days without scheduled or closed activity",
+        )
+        assert_ok(
+            calc([{"outcome": "NBM Booked", "scheduled_meeting_date": stale_red.isoformat(), "task_status": "Completed", "completed_at": stale_red.isoformat()}], today=today)["automatedRagStatus"] == "red",
+            "PG RAG should degrade to red after 30 days without scheduled or closed activity",
+        )
+        assert_ok(
+            pipeflow_app.effective_pg_rag_payload({"automatedRagStatus": "red", "reason": "auto"}, "green")["effectiveRagStatus"] == "green",
+            "PG RAG manual override should take precedence over automatic status",
+        )
 
         client = pipeflow_app.app.test_client()
         for path in ("/login", "/register", "/forgot-password"):
@@ -427,7 +459,7 @@ def main():
             all(row.get("account_rag_status") == plan_row["rag_status"] for row in action_rows),
             "PG Progress lower account RAG does not match top account RAG",
         )
-        assert_ok(plan_row["rag_status"] == "red", "PG Progress account RAG should default to manual red")
+        assert_ok(plan_row["rag_status"] == "red", "PG Progress account RAG should default to automatic red")
         pg_progress_html = client.get("/pg-progress").get_data(as_text=True)
         assert_ok("data-rag-trigger" in pg_progress_html, "PG Progress manual RAG picker trigger missing")
         response = client.post(
@@ -456,6 +488,24 @@ def main():
         assert_ok(plan_row["rag_status"] == "green", "PG Progress account RAG did not persist manual selection")
         assert_ok(contact_row["rag_status"] == "amber", "PG Progress contact RAG did not persist manual selection")
         assert_ok(contact_row["account_rag_status"] == "green", "PG Progress action account RAG did not mirror manual account selection")
+        response = client.post(
+            "/pg-progress",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "current_pipeline": "1000",
+                "pg_plan_account_id": [str(account_id)],
+                f"rag_account_{account_id}": "",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "PG Progress automatic RAG reset save failed")
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        pg_context = pipeflow_app.pg_dashboard_context(connection)
+        connection.close()
+        plan_row = next(row for row in pg_context["pg_plan_rows"] if row["account_id"] == account_id)
+        assert_ok(plan_row["rag_status"] == "red", "PG Progress automatic RAG did not recalculate after manual override removal")
+        assert_ok(plan_row["manual_rag_override"] == "", "PG Progress manual RAG override was not cleared")
 
         campaign_builder_html = client.get("/outreach/campaign-builder").get_data(as_text=True)
         assert_ok(

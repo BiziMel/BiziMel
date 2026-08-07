@@ -3548,6 +3548,11 @@ a:hover {
     gap: 18px;
 }
 
+.pg-rag-auto-option {
+    display: inline-flex;
+    margin: 10px auto 0;
+}
+
 .pg-rag-picker-option {
     width: 30px;
     height: 30px;
