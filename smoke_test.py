@@ -2070,6 +2070,12 @@ def main():
         assert_ok(remaining_outreach == 0, "bulk Outreach delete did not remove selected tasks")
         assert_ok(remaining_recipients == 0, "bulk Outreach delete did not remove selected recipients")
 
+        app_source = Path("app.py").read_text(encoding="utf-8")
+        assert_ok(
+            "SELECT MAX(id) AS id FROM outreach" not in app_source,
+            "Outreach inserts must not infer the saved task with SELECT MAX(id)",
+        )
+
     print("PipeFlow smoke test passed.")
 
 

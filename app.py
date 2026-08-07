@@ -25,7 +25,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.6.9"
 APP_RELEASE_DATE = "2026-07-29"
-APP_BUILD = "2026-07-31-v2.6.9-manual-activity-start-backdate-r14"
+APP_BUILD = "2026-08-06-v2.6.9-campaign-save-id-hardening-r15"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -74,6 +74,7 @@ RELEASE_NOTES = [
             "Reclassified Campaign Builder duplicate and historic-learning notices so successful campaign creation is shown as success information, not as an error.",
             "Simplified Campaign Builder duplicate handling so repeated submissions quietly preserve existing generated tasks instead of showing duplicate activity details.",
             "Added a subtle Last Outreach date to the Contacts table, based on each contact's latest active outreach task.",
+            "Hardened Campaign Builder and new Outreach saves so inserted task IDs are taken from the actual insert operation, preventing live campaigns from partially saving and then failing while linking recipients.",
         ],
     },
     {
@@ -7465,6 +7466,30 @@ def validate_outreach_update_with_recovery(connection, outreach_id, new_values, 
             )
 
 
+def inserted_outreach_id(connection, cursor, context):
+    """Return the id from the insert that just ran on this connection.
+
+    Hosted Postgres uses the adapter's RETURNING id support. SQLite exposes
+    lastrowid on the cursor; if that is unavailable, last_insert_rowid() is
+    still scoped to this connection. Never fall back to SELECT MAX(id), because
+    another live user can insert a row between the campaign row and recipient
+    mapping, which can create partial campaigns and internal errors.
+    """
+    outreach_id = getattr(cursor, "lastrowid", None)
+    if outreach_id:
+        return outreach_id
+    if not using_postgres():
+        row = connection.execute("SELECT last_insert_rowid() AS id").fetchone()
+        if row:
+            try:
+                outreach_id = row["id"]
+            except (KeyError, TypeError, IndexError):
+                outreach_id = row[0]
+            if outreach_id:
+                return outreach_id
+    raise RuntimeError(f"{context} save completed without returning the inserted Outreach id.")
+
+
 def persist_new_outreach(connection, form, requested_status, sales_play_value, recipients):
     contact_id, partner_contact_id = recipients[0] if recipients else (None, None)
     outcome_value = normalise_outreach_outcome(form.get("outcome"))
@@ -7505,12 +7530,7 @@ def persist_new_outreach(connection, form, requested_status, sales_play_value, r
         completed_at,
         assigned_to
     ))
-    outreach_id = cursor.lastrowid
-    if not outreach_id:
-        row = connection.execute("SELECT MAX(id) AS id FROM outreach").fetchone()
-        outreach_id = row["id"] if row and "id" in row.keys() else None
-    if not outreach_id:
-        raise RuntimeError("Outreach save completed without returning a record id.")
+    outreach_id = inserted_outreach_id(connection, cursor, "Outreach")
     save_outreach_recipients(connection, outreach_id, recipients)
     audit_values = {
         "fy": form.get("fy"),
@@ -7675,12 +7695,7 @@ def insert_campaign_outreach_row(connection, values):
         "Not Started",
         values["assigned_to"],
     ))
-    outreach_id = cursor.lastrowid
-    if not outreach_id:
-        row = connection.execute("SELECT MAX(id) AS id FROM outreach").fetchone()
-        outreach_id = row["id"] if row and "id" in row.keys() else None
-    if not outreach_id:
-        raise RuntimeError("Campaign outreach save completed without returning a record id.")
+    outreach_id = inserted_outreach_id(connection, cursor, "Campaign Outreach")
     connection.commit()
     return outreach_id
 
