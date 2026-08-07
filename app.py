@@ -23,9 +23,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.6.9"
-APP_RELEASE_DATE = "2026-07-29"
-APP_BUILD = "2026-08-07-v2.6.9-postgres-transaction-recovery-r16"
+APP_VERSION = "2.7.0"
+APP_RELEASE_DATE = "2026-08-07"
+APP_BUILD = "2026-08-07-v2.7.0-manual-org-chart-connectors-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -39,6 +39,15 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.7.0",
+        "release_date": "2026-08-07",
+        "title": "Manual org chart connectors",
+        "fixed": [
+            "Replaced automatic org chart relationship line rendering with manual horizontal and vertical connectors drawn directly between tiles.",
+            "Added persistent org chart connector storage so manually drawn lines reopen, print and export with the chart.",
+        ],
+    },
     {
         "version": "2.6.9",
         "release_date": "2026-07-29",
@@ -11396,6 +11405,13 @@ def normalise_org_chart_relationship(value):
     return relationship
 
 
+def normalise_org_chart_connector_orientation(value):
+    orientation = (value or "horizontal").strip().lower()
+    if orientation not in ("horizontal", "vertical"):
+        orientation = "horizontal"
+    return orientation
+
+
 def org_chart_level_for_relationship(connection, chart_id, relationship, related_node_id):
     relationship = normalise_org_chart_relationship(relationship)
     offset = {"above": -1, "with": 0, "under": 1}.get(relationship, 0)
@@ -11687,10 +11703,17 @@ def org_chart_context(connection, account, chart_id=None):
             sort_org_chart_nodes(people)
         sort_org_chart_nodes(unmapped)
     chart_labels = []
+    chart_connectors = []
     if active_chart:
         chart_labels = connection.execute("""
             SELECT *
             FROM account_org_chart_labels
+            WHERE chart_id = ?
+            ORDER BY id
+        """, (active_chart["id"],)).fetchall()
+        chart_connectors = connection.execute("""
+            SELECT *
+            FROM account_org_chart_connectors
             WHERE chart_id = ?
             ORDER BY id
         """, (active_chart["id"],)).fetchall()
@@ -11719,6 +11742,7 @@ def org_chart_context(connection, account, chart_id=None):
         "roots_by_group_levels": roots_by_group_levels,
         "chart_roots": chart_roots,
         "chart_labels": chart_labels,
+        "chart_connectors": chart_connectors,
         "visible_levels": visible_levels,
         "unmapped": unmapped,
     }
@@ -11808,6 +11832,7 @@ def delete_account_org_chart(account_id, chart_id):
     """, (account_id, chart_id)).fetchone()
     if chart:
         audit_record_delete(connection, "account_org_chart", chart_id, chart["chart_name"])
+        connection.execute("DELETE FROM account_org_chart_connectors WHERE chart_id = ?", (chart_id,))
         connection.execute("DELETE FROM account_org_chart_labels WHERE chart_id = ?", (chart_id,))
         connection.execute("DELETE FROM account_org_chart_people WHERE chart_id = ?", (chart_id,))
         connection.execute("DELETE FROM account_org_charts WHERE id = ?", (chart_id,))
@@ -11839,9 +11864,13 @@ def save_account_org_chart_layout(account_id, chart_id):
     saved_count = 0
     error_message = ""
     local_node_ids = {}
+    connector_actions = []
     try:
         for action in actions:
             if not isinstance(action, dict):
+                continue
+            if action.get("type") in ("connector", "delete_connector"):
+                connector_actions.append(action)
                 continue
             if action.get("type") == "label":
                 label_text = (action.get("label_text") or "").strip()
@@ -11973,6 +12002,8 @@ def save_account_org_chart_layout(account_id, chart_id):
                     }
                 )
                 saved_count += 1
+                if local_node_id:
+                    local_node_ids[local_node_id] = existing_node["id"]
                 continue
 
             visual_level_int = parse_optional_int(visual_level)
@@ -12027,6 +12058,75 @@ def save_account_org_chart_layout(account_id, chart_id):
                 "person_type": person_type,
                 "contact_id": contact_id,
                 "partner_contact_id": partner_contact_id,
+            })
+            saved_count += 1
+        for action in connector_actions:
+            if action.get("type") == "delete_connector":
+                connector_id = parse_optional_int(action.get("connector_id"))
+                if connector_id:
+                    connection.execute("""
+                        DELETE FROM account_org_chart_connectors
+                        WHERE chart_id = ?
+                          AND account_id = ?
+                          AND id = ?
+                    """, (chart_id, account_id, connector_id))
+                    saved_count += 1
+                continue
+
+            source_node_id = parse_optional_int(action.get("source_node_id"))
+            target_node_id = parse_optional_int(action.get("target_node_id"))
+            source_local_id = action.get("source_local_id") or ""
+            target_local_id = action.get("target_local_id") or ""
+            if not source_node_id and source_local_id:
+                source_node_id = local_node_ids.get(source_local_id)
+            if not target_node_id and target_local_id:
+                target_node_id = local_node_ids.get(target_local_id)
+            if not source_node_id or not target_node_id or source_node_id == target_node_id:
+                continue
+            source_exists = connection.execute("""
+                SELECT id
+                FROM account_org_chart_people
+                WHERE account_id = ?
+                  AND chart_id = ?
+                  AND id = ?
+            """, (account_id, chart_id, source_node_id)).fetchone()
+            target_exists = connection.execute("""
+                SELECT id
+                FROM account_org_chart_people
+                WHERE account_id = ?
+                  AND chart_id = ?
+                  AND id = ?
+            """, (account_id, chart_id, target_node_id)).fetchone()
+            if not source_exists or not target_exists:
+                continue
+            orientation = normalise_org_chart_connector_orientation(action.get("orientation"))
+            existing_connector = connection.execute("""
+                SELECT id
+                FROM account_org_chart_connectors
+                WHERE chart_id = ?
+                  AND account_id = ?
+                  AND source_node_id = ?
+                  AND target_node_id = ?
+                  AND orientation = ?
+            """, (chart_id, account_id, source_node_id, target_node_id, orientation)).fetchone()
+            if existing_connector:
+                continue
+            cursor = connection.execute("""
+                INSERT INTO account_org_chart_connectors (
+                    chart_id,
+                    account_id,
+                    source_node_id,
+                    target_node_id,
+                    orientation
+                )
+                VALUES (?, ?, ?, ?, ?)
+            """, (chart_id, account_id, source_node_id, target_node_id, orientation))
+            audit_record_create(connection, "account_org_chart_connector", cursor.lastrowid, {
+                "account_id": account_id,
+                "chart_id": chart_id,
+                "source_node_id": source_node_id,
+                "target_node_id": target_node_id,
+                "orientation": orientation,
             })
             saved_count += 1
         connection.commit()
@@ -12172,6 +12272,11 @@ def delete_account_org_chart_person(account_id, chart_id, node_id):
           AND id = ?
     """, (account_id, chart_id, node_id)).fetchone()
     if node:
+        connection.execute("""
+            DELETE FROM account_org_chart_connectors
+            WHERE chart_id = ?
+              AND (source_node_id = ? OR target_node_id = ?)
+        """, (chart_id, node_id, node_id))
         connection.execute("""
             UPDATE account_org_chart_people
             SET manager_node_id = ?

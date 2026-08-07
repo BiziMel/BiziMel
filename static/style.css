@@ -5991,6 +5991,29 @@ body {
     gap: 10px;
 }
 
+.org-connector-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid #dbeafe;
+    border-radius: 8px;
+    background: #eff6ff;
+}
+
+.org-connector-controls span {
+    color: #334155;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.org-connector-tool.active-tab {
+    border-color: #1d4ed8;
+    background: #1d4ed8;
+    color: #ffffff;
+}
+
 .org-single-pane {
     position: relative;
     min-height: 680px;
@@ -6008,7 +6031,7 @@ body {
     z-index: 1;
     min-width: 1200px;
     min-height: 760px;
-    pointer-events: none;
+    pointer-events: auto;
     overflow: visible;
 }
 
@@ -6016,6 +6039,34 @@ body {
     stroke: #1d4ed8;
     stroke-width: 3;
     stroke-linecap: round;
+}
+
+.org-manual-connector {
+    cursor: pointer;
+    pointer-events: stroke;
+}
+
+.org-manual-connector:hover,
+.org-manual-connector:focus {
+    stroke: #b91c1c;
+    stroke-width: 5;
+    outline: none;
+}
+
+.org-connector-preview {
+    stroke: #0f766e;
+    stroke-width: 3;
+    stroke-dasharray: 8 6;
+    pointer-events: none;
+}
+
+.org-connector-mode .org-canvas-node {
+    cursor: crosshair;
+}
+
+.org-connector-source {
+    border-color: #0f766e;
+    box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.16);
 }
 
 .org-canvas-node {
@@ -6131,25 +6182,6 @@ body {
     top: 0;
     right: 0;
     margin: 0;
-}
-
-.org-border-target {
-    border-color: #2563eb;
-    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
-}
-
-.org-border-target::after {
-    content: attr(data-border-zone);
-    position: absolute;
-    right: 8px;
-    bottom: 8px;
-    padding: 3px 6px;
-    border-radius: 6px;
-    background: #1d4ed8;
-    color: #ffffff;
-    font-size: 10px;
-    font-weight: 800;
-    text-transform: uppercase;
 }
 
 .org-canvas-label {

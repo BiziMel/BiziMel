@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import sqlite3
 import tempfile
 from datetime import date, timedelta
@@ -319,6 +320,66 @@ def main():
         assert_ok(add_contact_path in account_html, "Account page Add Contact link is not account-specific")
         add_contact_html = client.get(add_contact_path).get_data(as_text=True)
         assert_ok(f'value="{account_id}"' in add_contact_html and "selected" in add_contact_html, "Add Contact account prefill missing")
+
+        response = client.post(
+            f"/accounts/{account_id}/org-chart/create",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "chart_name": "Smoke Manual Connector Chart",
+                "notes": "Manual connector smoke coverage",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "Org chart create failed")
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        chart_id = connection.execute(
+            "SELECT id FROM account_org_charts WHERE account_id = ? ORDER BY id DESC LIMIT 1",
+            (account_id,),
+        ).fetchone()["id"]
+        connection.close()
+        org_chart_html = client.get(f"/accounts/{account_id}/org-chart?chart_id={chart_id}").get_data(as_text=True)
+        assert_ok("Horizontal Line" in org_chart_html and "Vertical Line" in org_chart_html, "Manual org chart connector controls missing")
+        layout_actions = [
+            {
+                "type": "person",
+                "local_node_id": "smoke-contact-1",
+                "person_ref": f"contact:{contact_id}",
+                "x_position": 32,
+                "y_position": 32,
+                "sort_order": 1,
+            },
+            {
+                "type": "person",
+                "local_node_id": "smoke-contact-2",
+                "person_ref": f"contact:{second_contact_id}",
+                "x_position": 288,
+                "y_position": 32,
+                "sort_order": 2,
+            },
+            {
+                "type": "connector",
+                "source_local_id": "smoke-contact-1",
+                "target_local_id": "smoke-contact-2",
+                "orientation": "horizontal",
+            },
+        ]
+        response = client.post(
+            f"/accounts/{account_id}/org-chart/{chart_id}/layout/save",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "layout_actions": json.dumps(layout_actions),
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "Org chart manual connector layout save failed")
+        connection = sqlite3.connect(db_path)
+        connector_count = connection.execute(
+            "SELECT COUNT(*) FROM account_org_chart_connectors WHERE chart_id = ? AND orientation = ?",
+            (chart_id, "horizontal"),
+        ).fetchone()[0]
+        connection.close()
+        assert_ok(connector_count == 1, "Org chart manual connector was not persisted")
 
         connection = sqlite3.connect(db_path)
         connection.row_factory = sqlite3.Row

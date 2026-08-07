@@ -385,6 +385,20 @@ def initialise_database(force=False):
     """)
 
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS account_org_chart_connectors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chart_id INTEGER NOT NULL,
+            account_id INTEGER NOT NULL,
+            source_node_id INTEGER NOT NULL,
+            target_node_id INTEGER NOT NULL,
+            orientation TEXT NOT NULL DEFAULT 'horizontal',
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(chart_id) REFERENCES account_org_charts(id)
+        )
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS timeline_entries (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             related_type TEXT NOT NULL,
@@ -477,6 +491,13 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "account_org_chart_labels", "y_position", "INTEGER DEFAULT 0")
     add_column_if_missing(cursor, "account_org_chart_labels", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "account_org_chart_labels", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "account_org_chart_connectors", "chart_id", "INTEGER")
+    add_column_if_missing(cursor, "account_org_chart_connectors", "account_id", "INTEGER")
+    add_column_if_missing(cursor, "account_org_chart_connectors", "source_node_id", "INTEGER")
+    add_column_if_missing(cursor, "account_org_chart_connectors", "target_node_id", "INTEGER")
+    add_column_if_missing(cursor, "account_org_chart_connectors", "orientation", "TEXT DEFAULT 'horizontal'")
+    add_column_if_missing(cursor, "account_org_chart_connectors", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "account_org_chart_connectors", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
 
     # Safe migrations for accounts
     add_column_if_missing(cursor, "accounts", "team_id", "INTEGER DEFAULT 1")
@@ -815,6 +836,7 @@ def initialise_database(force=False):
         ("idx_account_org_charts_account", "account_org_charts", ["account_id"]),
         ("idx_account_org_chart_people_chart", "account_org_chart_people", ["chart_id"]),
         ("idx_account_org_chart_people_account", "account_org_chart_people", ["account_id"]),
+        ("idx_account_org_chart_connectors_chart", "account_org_chart_connectors", ["chart_id"]),
         ("idx_audit_entity", "audit_entries", ["entity_type", "entity_id"]),
         ("idx_non_working_blocks_dates", "non_working_blocks", ["start_date", "end_date"]),
     ]

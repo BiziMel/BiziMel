@@ -30,6 +30,7 @@ USER_TABLES = {
     "account_sales_plays",
     "account_org_charts",
     "account_org_chart_people",
+    "account_org_chart_connectors",
     "timeline_entries",
     "audit_entries",
     "user_profile",

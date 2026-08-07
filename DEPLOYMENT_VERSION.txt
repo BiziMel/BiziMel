@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
-Version: 2.6.7
-Release date: 2026-07-08
-Build: 2026-07-08-v2.6.7-quick-outreach-broadcast-admin-companies-r1
+Version: 2.7.0
+Release date: 2026-08-07
+Build: 2026-08-07-v2.7.0-manual-org-chart-connectors-r1
 Package purpose: Hosted enterprise deployment only.

@@ -7,7 +7,7 @@
 <div class="page-header">
     <div>
         <h1>{{ account.account_name }} Org Chart</h1>
-        <p>Drag account contacts into one pane, then drop tiles onto tile borders to create the hierarchy.</p>
+        <p>Drag account contacts into one pane, then draw manual horizontal or vertical connectors between tiles.</p>
     </div>
     <div class="button-group">
         <a href="{{ url_for('view_account', account_id=account.id) }}" class="btn btn-secondary">Back to Account</a>
@@ -50,7 +50,7 @@
         <div class="section-header">
             <div>
                 <h2>Org Chart Builder</h2>
-                <p>Drop onto the top, bottom, left or right border of another tile to place and link people.</p>
+                <p>Place tiles on the canvas, then use the connector tools to draw visible links between people.</p>
             </div>
         </div>
 
@@ -139,7 +139,7 @@
                 <div class="org-canvas-header">
                     <div>
                         <h3>{{ active_chart.chart_name }}</h3>
-                        <p>Standalone drops stay as independent pillars until linked to another tile.</p>
+                        <p>Tiles snap to the invisible grid. Connector tools let you draw horizontal or vertical lines between tiles.</p>
                     </div>
                     <form method="POST"
                           action="{{ url_for('save_account_org_chart_layout', account_id=account.id, chart_id=active_chart.id) }}"
@@ -157,6 +157,13 @@
                 <div class="org-label-controls">
                     <input type="text" id="orgLabelText" placeholder="Organisation or business unit label">
                     <button type="button" class="btn btn-secondary" id="orgAddLabelButton">Add Label</button>
+                </div>
+
+                <div class="org-connector-controls" aria-label="Org chart connector tools">
+                    <button type="button" class="btn btn-secondary org-connector-tool" id="orgHorizontalConnectorButton" data-orientation="horizontal">Horizontal Line</button>
+                    <button type="button" class="btn btn-secondary org-connector-tool" id="orgVerticalConnectorButton" data-orientation="vertical">Vertical Line</button>
+                    <button type="button" class="btn btn-secondary" id="orgCancelConnectorButton" disabled>Cancel Line</button>
+                    <span id="orgConnectorStatus">Select a line type, then drag from one tile to another.</span>
                 </div>
 
                 <div class="org-single-pane" id="orgChartPane" aria-label="Org chart canvas">
@@ -183,8 +190,6 @@
                              data-person-title="{{ node.title or '' }}"
                              data-person-group="{{ node.group_name or '' }}"
                              data-person-photo="{{ contact_photo_url(node.photo) }}"
-                             data-related-node-id="{{ node.related_node_id or node.manager_node_id or '' }}"
-                             data-relationship="{{ node.relationship_type or 'with' }}"
                              style="left: {{ node.x_position or (60 + (loop.index0 % 4) * 240) }}px; top: {{ node.y_position or (70 + (loop.index0 // 4) * 150) }}px;">
                             <a href="{{ node.link }}" class="org-person-view">
                                 <span class="org-person-image">
@@ -226,12 +231,28 @@ document.addEventListener("DOMContentLoaded", function () {
     const pendingList = document.getElementById("orgChartPendingList");
     const labelInput = document.getElementById("orgLabelText");
     const addLabelButton = document.getElementById("orgAddLabelButton");
+    const horizontalConnectorButton = document.getElementById("orgHorizontalConnectorButton");
+    const verticalConnectorButton = document.getElementById("orgVerticalConnectorButton");
+    const cancelConnectorButton = document.getElementById("orgCancelConnectorButton");
+    const connectorStatus = document.getElementById("orgConnectorStatus");
     const printPdfButton = document.getElementById("orgPrintPdfButton");
     const exportPngButton = document.getElementById("orgExportPngButton");
     const exportCanvas = document.getElementById("orgExportCanvas");
     const stagedActions = new Map();
+    const manualConnectors = [
+        {% for connector in chart_connectors %}
+            {
+                id: "{{ connector.id }}",
+                source_node_id: "{{ connector.source_node_id }}",
+                target_node_id: "{{ connector.target_node_id }}",
+                orientation: "{{ connector.orientation or 'horizontal' }}"
+            }{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ];
     let draggedItem = null;
     let pointerDrag = null;
+    let connectorMode = "";
+    let connectorDrag = null;
 
     if (!pane) {
         return;
@@ -341,10 +362,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 restoreTrayPerson(element.dataset.personRef || "");
             }
             delete element.dataset.orgPlaced;
-            document.querySelectorAll(".org-border-target").forEach(function (target) {
-                target.classList.remove("org-border-target");
-                target.removeAttribute("data-border-zone");
-            });
             window.requestAnimationFrame(drawLinks);
         });
         attachPointerDragHandler(element);
@@ -373,6 +390,10 @@ document.addEventListener("DOMContentLoaded", function () {
         element.dataset.pointerDragAttached = "true";
         element.addEventListener("pointerdown", function (event) {
             if (event.button !== 0 || event.target.closest("button, input, select, textarea")) {
+                return;
+            }
+            if (connectorMode && element.classList.contains("org-canvas-node")) {
+                startConnectorDrag(element, event);
                 return;
             }
             pointerDrag = {
@@ -423,17 +444,6 @@ document.addEventListener("DOMContentLoaded", function () {
         element.addEventListener("pointercancel", cancelPointerDrag);
     }
 
-    function pointerDropTarget(event, movingNode) {
-        const previousPointerEvents = movingNode.style.pointerEvents;
-        movingNode.style.pointerEvents = "none";
-        const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(".org-canvas-node") || null;
-        movingNode.style.pointerEvents = previousPointerEvents;
-        if (target && nodeLinkId(target) !== (movingNode.dataset.nodeId || movingNode.dataset.localId)) {
-            return target;
-        }
-        return null;
-    }
-
     function finishPointerDrag(event) {
         if (!pointerDrag || pointerDrag.pointerId !== event.pointerId) {
             return;
@@ -451,9 +461,7 @@ document.addEventListener("DOMContentLoaded", function () {
             placeLabel(drag.node, panePoint(event));
             return;
         }
-        const target = pointerDropTarget(event, drag.node);
-        const zone = target ? borderZone(target, event) : "";
-        const placement = placementForDrop(panePoint(event), target, zone);
+        const placement = placementForDrop(panePoint(event));
         if (drag.item.type === "person") {
             drag.item.element.dataset.orgPlaced = "true";
         }
@@ -486,16 +494,10 @@ document.addEventListener("DOMContentLoaded", function () {
         node.dataset.personName = item.name;
         node.dataset.personTitle = item.title;
         node.dataset.personGroup = item.group;
-        node.dataset.relatedNodeId = "";
-        node.dataset.relationship = "with";
         node.innerHTML = `<div class="org-person-view">${tileHtml(item)}</div>`;
         pane.appendChild(node);
         attachDragHandler(node);
         return node;
-    }
-
-    function nodeLinkId(node) {
-        return node.dataset.nodeId || node.dataset.localId || "";
     }
 
     function hideTrayPerson(personRef) {
@@ -516,19 +518,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    function borderZone(target, event) {
-        const rect = target.getBoundingClientRect();
-        const threshold = 28;
-        const top = event.clientY - rect.top;
-        const left = event.clientX - rect.left;
-        if (top <= threshold) return "top";
-        if (rect.height - top <= threshold) return "bottom";
-        if (left <= threshold) return "left";
-        if (rect.width - left <= threshold) return "right";
-        return "";
-    }
-
-    function placementForDrop(point, target, zone) {
+    function placementForDrop(point) {
         const metrics = gridMetrics();
         const width = metrics.width;
         const height = metrics.height;
@@ -538,42 +528,15 @@ document.addEventListener("DOMContentLoaded", function () {
         function snapY(value) {
             return snapGrid(value, metrics.originY, metrics.yStep);
         }
-        if (!target || !zone) {
-            return {
-                relationship: "with",
-                related_node_id: "",
-                x: clamp(snapX(point.x - width / 2), 12, pane.scrollWidth - width - 12),
-                y: clamp(snapY(point.y - height / 2), 12, pane.scrollHeight - height - 12)
-            };
-        }
-        const left = target.offsetLeft;
-        const top = target.offsetTop;
-        const targetWidth = target.offsetWidth;
-        const targetHeight = target.offsetHeight;
-        const relatedNodeId = target.dataset.nodeId || "";
-        const relatedLocalId = target.dataset.localId || "";
-        const placements = {
-            top: { relationship: "above", x: left, y: top - metrics.yStep },
-            bottom: { relationship: "under", x: left, y: top + metrics.yStep },
-            left: { relationship: "with", x: left - metrics.xStep, y: top },
-            right: { relationship: "with", x: left + metrics.xStep, y: top }
-        };
-        const placement = placements[zone] || placements.right;
         return {
-            relationship: placement.relationship,
-            related_node_id: relatedNodeId,
-            related_local_id: relatedLocalId,
-            x: clamp(snapX(placement.x), 12, pane.scrollWidth - width - 12),
-            y: clamp(snapY(placement.y), 12, pane.scrollHeight - height - 12)
+            x: clamp(snapX(point.x - width / 2), 12, pane.scrollWidth - width - 12),
+            y: clamp(snapY(point.y - height / 2), 12, pane.scrollHeight - height - 12)
         };
     }
 
     function placeNode(node, placement, item) {
         node.style.left = `${placement.x}px`;
         node.style.top = `${placement.y}px`;
-        node.dataset.relatedNodeId = placement.related_node_id || "";
-        node.dataset.relatedLocalId = placement.related_local_id || "";
-        node.dataset.relationship = placement.relationship || "with";
         node.classList.add("org-move-staged");
 
         const key = node.dataset.nodeId ? `node:${node.dataset.nodeId}` : `person:${item.person_ref}`;
@@ -583,23 +546,11 @@ document.addEventListener("DOMContentLoaded", function () {
             local_node_id: node.dataset.localId || "",
             person_ref: item.person_ref || "",
             person_name: item.name || node.dataset.personName || "",
-            relationship: placement.relationship,
-            related_node_id: placement.related_node_id,
-            related_local_id: placement.related_local_id || "",
             x_position: placement.x,
             y_position: placement.y,
             sort_order: stagedActions.size + 1
         });
         window.requestAnimationFrame(drawLinks);
-    }
-
-    function currentPlacement(node) {
-        return {
-            relationship: node.dataset.relationship || "with",
-            related_node_id: node.dataset.relatedNodeId || "",
-            x: Math.round(node.offsetLeft),
-            y: Math.round(node.offsetTop)
-        };
     }
 
     function placeLabel(label, point) {
@@ -619,23 +570,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
     pane.addEventListener("dragover", function (event) {
         event.preventDefault();
-        const target = event.target.closest(".org-canvas-node");
-        document.querySelectorAll(".org-border-target").forEach(function (item) {
-            if (item !== target) {
-                item.classList.remove("org-border-target");
-                item.removeAttribute("data-border-zone");
-            }
-        });
-        if (target && draggedItem && nodeLinkId(target) !== (draggedItem.node_id || draggedItem.local_id)) {
-            const zone = borderZone(target, event);
-            if (zone) {
-                target.classList.add("org-border-target");
-                target.dataset.borderZone = zone;
-            } else {
-                target.classList.remove("org-border-target");
-                target.removeAttribute("data-border-zone");
-            }
-        }
     });
 
     pane.addEventListener("drop", function (event) {
@@ -650,12 +584,7 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
-        let target = event.target.closest(".org-canvas-node");
-        if (target && nodeLinkId(target) === (draggedItem.node_id || draggedItem.local_id)) {
-            target = null;
-        }
-        const zone = target ? borderZone(target, event) : "";
-        const placement = placementForDrop(point, target, zone);
+        const placement = placementForDrop(point);
         let node = draggedItem.element;
         if (draggedItem.type === "person") {
             node = createCanvasNode(draggedItem);
@@ -682,24 +611,156 @@ document.addEventListener("DOMContentLoaded", function () {
         labelInput.value = "";
     }
 
-    function connectionPoint(element, relationship, endpoint) {
+    function normaliseOrientation(value) {
+        return value === "vertical" ? "vertical" : "horizontal";
+    }
+
+    function setConnectorMode(orientation) {
+        connectorMode = normaliseOrientation(orientation);
+        connectorDrag = null;
+        pane.classList.add("org-connector-mode");
+        horizontalConnectorButton?.classList.toggle("active-tab", connectorMode === "horizontal");
+        verticalConnectorButton?.classList.toggle("active-tab", connectorMode === "vertical");
+        if (cancelConnectorButton) {
+            cancelConnectorButton.disabled = false;
+        }
+        if (connectorStatus) {
+            connectorStatus.textContent = `${connectorMode === "vertical" ? "Vertical" : "Horizontal"} line: drag from one tile to another.`;
+        }
+    }
+
+    function clearConnectorMode() {
+        connectorMode = "";
+        connectorDrag = null;
+        pane.classList.remove("org-connector-mode");
+        horizontalConnectorButton?.classList.remove("active-tab");
+        verticalConnectorButton?.classList.remove("active-tab");
+        if (cancelConnectorButton) {
+            cancelConnectorButton.disabled = true;
+        }
+        if (connectorStatus) {
+            connectorStatus.textContent = "Select a line type, then drag from one tile to another.";
+        }
+        drawLinks();
+    }
+
+    function connectorPoint(element, orientation, endpoint, otherElement) {
         const left = element.offsetLeft;
         const top = element.offsetTop;
         const width = element.offsetWidth;
         const height = element.offsetHeight;
-        if (relationship === "above") {
-            return endpoint === "from"
-                ? { x: left + width / 2, y: top }
-                : { x: left + width / 2, y: top + height };
+        const otherLeft = otherElement ? otherElement.offsetLeft : left + width;
+        const otherTop = otherElement ? otherElement.offsetTop : top + height;
+        if (orientation === "vertical") {
+            const useBottom = endpoint === "source" ? otherTop >= top : otherTop < top;
+            return { x: left + width / 2, y: useBottom ? top + height : top };
         }
-        if (relationship === "under") {
-            return endpoint === "from"
-                ? { x: left + width / 2, y: top + height }
-                : { x: left + width / 2, y: top };
+        const useRight = endpoint === "source" ? otherLeft >= left : otherLeft < left;
+        return { x: useRight ? left + width : left, y: top + height / 2 };
+    }
+
+    function connectorLinePoints(source, target, orientation) {
+        const normalised = normaliseOrientation(orientation);
+        return {
+            start: connectorPoint(source, normalised, "source", target),
+            end: connectorPoint(target, normalised, "target", source)
+        };
+    }
+
+    function findNodeByAnyId(nodeId, localId) {
+        if (nodeId) {
+            const node = pane.querySelector(`.org-canvas-node[data-node-id="${nodeId}"]`);
+            if (node) return node;
         }
-        return endpoint === "from"
-            ? { x: left + width, y: top + height / 2 }
-            : { x: left, y: top + height / 2 };
+        if (localId) {
+            return pane.querySelector(`.org-canvas-node[data-local-id="${localId}"]`);
+        }
+        return null;
+    }
+
+    function startConnectorDrag(sourceNode, event) {
+        event.preventDefault();
+        event.stopPropagation();
+        connectorDrag = {
+            source: sourceNode,
+            pointerId: event.pointerId,
+            orientation: connectorMode,
+            preview: null
+        };
+        sourceNode.setPointerCapture?.(event.pointerId);
+        sourceNode.classList.add("org-connector-source");
+        if (connectorStatus) {
+            connectorStatus.textContent = "Release over another tile to create the connector.";
+        }
+        drawLinks();
+    }
+
+    function stageConnector(sourceNode, targetNode, orientation) {
+        const connector = {
+            id: "",
+            local_id: `connector-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            source_node_id: sourceNode.dataset.nodeId || "",
+            target_node_id: targetNode.dataset.nodeId || "",
+            source_local_id: sourceNode.dataset.localId || "",
+            target_local_id: targetNode.dataset.localId || "",
+            orientation: normaliseOrientation(orientation)
+        };
+        manualConnectors.push(connector);
+        stageAction(`connector:${connector.local_id}`, {
+            type: "connector",
+            source_node_id: connector.source_node_id,
+            target_node_id: connector.target_node_id,
+            source_local_id: connector.source_local_id,
+            target_local_id: connector.target_local_id,
+            orientation: connector.orientation
+        });
+        clearConnectorMode();
+    }
+
+    pane.addEventListener("pointermove", function (event) {
+        if (!connectorDrag || connectorDrag.pointerId !== event.pointerId) {
+            return;
+        }
+        const point = panePoint(event);
+        connectorDrag.preview = point;
+        drawLinks();
+    });
+
+    pane.addEventListener("pointerup", function (event) {
+        if (!connectorDrag || connectorDrag.pointerId !== event.pointerId) {
+            return;
+        }
+        event.preventDefault();
+        const drag = connectorDrag;
+        connectorDrag = null;
+        drag.source.releasePointerCapture?.(event.pointerId);
+        drag.source.classList.remove("org-connector-source");
+        const previousPointerEvents = drag.source.style.pointerEvents;
+        drag.source.style.pointerEvents = "none";
+        const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(".org-canvas-node") || null;
+        drag.source.style.pointerEvents = previousPointerEvents;
+        if (target && target !== drag.source) {
+            stageConnector(drag.source, target, drag.orientation);
+            return;
+        }
+        clearConnectorMode();
+    });
+
+    function removeConnector(connector) {
+        const index = manualConnectors.indexOf(connector);
+        if (index >= 0) {
+            manualConnectors.splice(index, 1);
+        }
+        if (connector.id) {
+            stageAction(`delete-connector:${connector.id}`, {
+                type: "delete_connector",
+                connector_id: connector.id
+            });
+        } else if (connector.local_id) {
+            stagedActions.delete(`connector:${connector.local_id}`);
+            updatePendingDisplay();
+        }
+        drawLinks();
     }
 
     function drawLinks() {
@@ -710,31 +771,51 @@ document.addEventListener("DOMContentLoaded", function () {
         linkLayer.setAttribute("width", width);
         linkLayer.setAttribute("height", height);
 
-        pane.querySelectorAll(".org-canvas-node").forEach(function (node) {
-            const relatedId = node.dataset.relatedNodeId || node.dataset.relatedLocalId;
-            if (!relatedId) {
+        manualConnectors.forEach(function (connector) {
+            const source = findNodeByAnyId(connector.source_node_id, connector.source_local_id);
+            const target = findNodeByAnyId(connector.target_node_id, connector.target_local_id);
+            if (!source || !target) {
                 return;
             }
-            const related = pane.querySelector(`.org-canvas-node[data-node-id="${relatedId}"], .org-canvas-node[data-local-id="${relatedId}"]`);
-            if (!related) {
-                return;
-            }
-            const relationship = node.dataset.relationship || "with";
-            let start = connectionPoint(related, relationship, "from");
-            let end = connectionPoint(node, relationship, "to");
-            if (relationship === "with" && node.offsetLeft < related.offsetLeft) {
-                start = { x: related.offsetLeft, y: related.offsetTop + related.offsetHeight / 2 };
-                end = { x: node.offsetLeft + node.offsetWidth, y: node.offsetTop + node.offsetHeight / 2 };
-            }
+            const { start, end } = connectorLinePoints(source, target, connector.orientation);
             const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
             line.setAttribute("x1", start.x);
             line.setAttribute("y1", start.y);
             line.setAttribute("x2", end.x);
             line.setAttribute("y2", end.y);
+            line.classList.add("org-manual-connector");
+            line.setAttribute("tabindex", "0");
+            line.setAttribute("role", "button");
+            line.setAttribute("aria-label", "Remove connector");
+            line.addEventListener("click", function () {
+                removeConnector(connector);
+            });
+            line.addEventListener("keydown", function (event) {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    removeConnector(connector);
+                }
+            });
             linkLayer.appendChild(line);
         });
+        if (connectorDrag && connectorDrag.preview) {
+            const start = connectorPoint(connectorDrag.source, connectorDrag.orientation, "source");
+            const end = connectorDrag.orientation === "vertical"
+                ? { x: start.x, y: connectorDrag.preview.y }
+                : { x: connectorDrag.preview.x, y: start.y };
+            const preview = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            preview.setAttribute("x1", start.x);
+            preview.setAttribute("y1", start.y);
+            preview.setAttribute("x2", end.x);
+            preview.setAttribute("y2", end.y);
+            preview.classList.add("org-connector-preview");
+            linkLayer.appendChild(preview);
+        }
     }
 
+    horizontalConnectorButton?.addEventListener("click", () => setConnectorMode("horizontal"));
+    verticalConnectorButton?.addEventListener("click", () => setConnectorMode("vertical"));
+    cancelConnectorButton?.addEventListener("click", clearConnectorMode);
     document.querySelectorAll(".org-chart-draggable, .org-canvas-label").forEach(attachDragHandler);
     pane.querySelectorAll(".org-canvas-node[data-person-ref]").forEach((node) => hideTrayPerson(node.dataset.personRef));
     addLabelButton?.addEventListener("click", addLabel);
@@ -769,14 +850,11 @@ document.addEventListener("DOMContentLoaded", function () {
         ctx.fillText({{ (active_chart.chart_name if active_chart else account.account_name ~ " Org Chart")|tojson }}, 32, 42);
         ctx.strokeStyle = "#2563eb";
         ctx.lineWidth = 2;
-        nodes.forEach(function (node) {
-            const relatedId = node.dataset.relatedNodeId || node.dataset.relatedLocalId;
-            if (!relatedId) return;
-            const related = pane.querySelector(`.org-canvas-node[data-node-id="${relatedId}"], .org-canvas-node[data-local-id="${relatedId}"]`);
-            if (!related) return;
-            const relationship = node.dataset.relationship || "with";
-            const start = connectionPoint(related, relationship, "from");
-            const end = connectionPoint(node, relationship, "to");
+        manualConnectors.forEach(function (connector) {
+            const source = findNodeByAnyId(connector.source_node_id, connector.source_local_id);
+            const target = findNodeByAnyId(connector.target_node_id, connector.target_local_id);
+            if (!source || !target) return;
+            const { start, end } = connectorLinePoints(source, target, connector.orientation);
             ctx.beginPath();
             ctx.moveTo(start.x, start.y);
             ctx.lineTo(end.x, end.y);
