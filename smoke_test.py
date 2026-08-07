@@ -342,6 +342,7 @@ def main():
         connection.close()
         org_chart_html = client.get(f"/accounts/{account_id}/org-chart?chart_id={chart_id}").get_data(as_text=True)
         assert_ok("Connectors" in org_chart_html and "org-connector-dot" in org_chart_html, "Manual org chart connector controls missing")
+        assert_ok("click the first tile" in org_chart_html, "Org chart click-to-connect guidance missing")
         layout_actions = [
             {
                 "type": "person",

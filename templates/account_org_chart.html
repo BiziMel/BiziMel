@@ -167,7 +167,7 @@
                     <button type="button" class="org-connector-tool" id="orgVerticalConnectorButton" data-orientation="vertical" draggable="true" aria-label="Vertical connector">
                         <span class="org-connector-icon org-connector-icon-vertical"></span>
                     </button>
-                    <span id="orgConnectorStatus">Drag a connector from the palette, then connect side dots on tiles.</span>
+                    <span id="orgConnectorStatus">Select a connector, click the first tile, then click the second tile.</span>
                 </div>
 
                 <div class="org-single-pane" id="orgChartPane" aria-label="Org chart canvas">
@@ -249,6 +249,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const printPdfButton = document.getElementById("orgPrintPdfButton");
     const exportPngButton = document.getElementById("orgExportPngButton");
     const exportCanvas = document.getElementById("orgExportCanvas");
+    const chartExportName = {{ (active_chart.chart_name if active_chart else account.account_name ~ " Org Chart")|tojson }};
     const stagedActions = new Map();
     const manualConnectors = [
         {% for connector in chart_connectors %}
@@ -267,7 +268,7 @@ document.addEventListener("DOMContentLoaded", function () {
     let selectionDrag = null;
     let groupDrag = null;
     let connectorMode = "";
-    let connectorDrag = null;
+    let connectorSelection = null;
     let canvasSize = { width: 1200, height: 760 };
 
     if (!pane) {
@@ -441,11 +442,8 @@ document.addEventListener("DOMContentLoaded", function () {
             if (event.button !== 0 || event.target.closest("button, input, select, textarea")) {
                 return;
             }
-            const connectorDot = event.target.closest(".org-connector-dot");
             if (connectorMode && element.classList.contains("org-canvas-node")) {
-                if (connectorDot) {
-                    startConnectorDrag(connectorDot, event);
-                }
+                handleConnectorTileClick(element, event);
                 return;
             }
             if (element.classList.contains("org-selected") && selectedElements().length > 1) {
@@ -515,6 +513,12 @@ document.addEventListener("DOMContentLoaded", function () {
         });
         element.addEventListener("pointerup", finishPointerDrag);
         element.addEventListener("pointercancel", cancelPointerDrag);
+        element.addEventListener("click", function (event) {
+            if (connectorMode) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        });
     }
 
     function startGroupDrag(anchor, event) {
@@ -770,6 +774,14 @@ document.addEventListener("DOMContentLoaded", function () {
         return value === "vertical" ? "vertical" : "horizontal";
     }
 
+    function safeFilename(value, fallback) {
+        const cleaned = String(value || fallback || "PipeFlow Org Chart")
+            .replace(/[\\/:*?"<>|]+/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+        return cleaned || fallback || "PipeFlow Org Chart";
+    }
+
     function sideAllowedForOrientation(side, orientation) {
         if (normaliseOrientation(orientation) === "vertical") {
             return side === "top" || side === "bottom";
@@ -777,39 +789,34 @@ document.addEventListener("DOMContentLoaded", function () {
         return side === "left" || side === "right";
     }
 
-    function defaultSideForEndpoint(element, otherElement, orientation, endpoint) {
+    function defaultSideForEndpoint(element, otherElement, orientation) {
         const normalised = normaliseOrientation(orientation);
         if (normalised === "vertical") {
-            const useBottom = endpoint === "source"
-                ? otherElement.offsetTop >= element.offsetTop
-                : otherElement.offsetTop < element.offsetTop;
-            return useBottom ? "bottom" : "top";
+            return otherElement.offsetTop >= element.offsetTop ? "bottom" : "top";
         }
-        const useRight = endpoint === "source"
-            ? otherElement.offsetLeft >= element.offsetLeft
-            : otherElement.offsetLeft < element.offsetLeft;
-        return useRight ? "right" : "left";
+        return otherElement.offsetLeft >= element.offsetLeft ? "right" : "left";
     }
 
     function setConnectorMode(orientation) {
         connectorMode = normaliseOrientation(orientation);
-        connectorDrag = null;
+        connectorSelection = null;
         pane.classList.add("org-connector-mode");
         horizontalConnectorButton?.classList.toggle("active-tab", connectorMode === "horizontal");
         verticalConnectorButton?.classList.toggle("active-tab", connectorMode === "vertical");
         if (connectorStatus) {
-            connectorStatus.textContent = `${connectorMode === "vertical" ? "Vertical" : "Horizontal"} connector active: drag between matching side dots.`;
+            connectorStatus.textContent = `${connectorMode === "vertical" ? "Vertical" : "Horizontal"} connector active: click the first tile.`;
         }
     }
 
     function clearConnectorMode() {
         connectorMode = "";
-        connectorDrag = null;
+        connectorSelection = null;
         pane.classList.remove("org-connector-mode");
+        pane.querySelectorAll(".org-connector-source").forEach((node) => node.classList.remove("org-connector-source"));
         horizontalConnectorButton?.classList.remove("active-tab");
         verticalConnectorButton?.classList.remove("active-tab");
         if (connectorStatus) {
-            connectorStatus.textContent = "Drag a connector from the palette, then connect side dots on tiles.";
+            connectorStatus.textContent = "Select a connector, click the first tile, then click the second tile.";
         }
         drawLinks();
     }
@@ -833,8 +840,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function connectorLinePoints(source, target, connector) {
         const normalised = normaliseOrientation(connector.orientation);
-        const sourceSide = connector.source_side || defaultSideForEndpoint(source, target, normalised, "source");
-        const targetSide = connector.target_side || defaultSideForEndpoint(target, source, normalised, "target");
+        const sourceSide = connector.source_side || defaultSideForEndpoint(source, target, normalised);
+        const targetSide = connector.target_side || defaultSideForEndpoint(target, source, normalised);
         return {
             start: connectorPoint(source, sourceSide),
             end: connectorPoint(target, targetSide)
@@ -852,10 +859,12 @@ document.addEventListener("DOMContentLoaded", function () {
         return null;
     }
 
-    function startConnectorDrag(sourceDot, event) {
-        const sourceNode = sourceDot.closest(".org-canvas-node");
-        const sourceSide = sourceDot.dataset.side || "";
-        if (!sourceNode || !sideAllowedForOrientation(sourceSide, connectorMode)) {
+    function handleConnectorTileClick(node, event) {
+        event.preventDefault();
+        event.stopPropagation();
+        const dot = event.target.closest(".org-connector-dot");
+        const selectedSide = dot?.dataset.side || "";
+        if (selectedSide && !sideAllowedForOrientation(selectedSide, connectorMode)) {
             if (connectorStatus) {
                 connectorStatus.textContent = connectorMode === "vertical"
                     ? "Vertical connectors use the top or bottom dots."
@@ -863,41 +872,39 @@ document.addEventListener("DOMContentLoaded", function () {
             }
             return;
         }
-        event.preventDefault();
-        event.stopPropagation();
-        connectorDrag = {
-            source: sourceNode,
-            sourceSide,
-            pointerId: event.pointerId,
-            orientation: connectorMode,
-            preview: null
-        };
-        sourceNode.setPointerCapture?.(event.pointerId);
-        sourceNode.classList.add("org-connector-source");
-        if (connectorStatus) {
-            connectorStatus.textContent = "Release over a matching side dot on another tile.";
+        if (!connectorSelection) {
+            connectorSelection = {
+                source: node,
+                sourceSide: selectedSide,
+                orientation: connectorMode
+            };
+            node.classList.add("org-connector-source");
+            if (connectorStatus) {
+                connectorStatus.textContent = "First tile selected. Click the second tile to add the connector.";
+            }
+            return;
         }
-        drawLinks();
+        if (node === connectorSelection.source) {
+            if (connectorStatus) {
+                connectorStatus.textContent = "Choose a different second tile for the connector.";
+            }
+            return;
+        }
+        stageConnectorNodes(connectorSelection.source, node, connectorSelection.orientation, connectorSelection.sourceSide, selectedSide);
     }
 
-    function stageConnector(sourceDot, targetDot, orientation) {
-        const sourceNode = sourceDot.closest(".org-canvas-node");
-        const targetNode = targetDot.closest(".org-canvas-node");
-        const sourceSide = sourceDot.dataset.side || "";
-        const targetSide = targetDot.dataset.side || "";
+    function stageConnectorNodes(sourceNode, targetNode, orientation, requestedSourceSide, requestedTargetSide) {
         if (!sourceNode || !targetNode || sourceNode === targetNode) {
             clearConnectorMode();
             return;
         }
-        if (!sideAllowedForOrientation(sourceSide, orientation) || !sideAllowedForOrientation(targetSide, orientation)) {
-            if (connectorStatus) {
-                connectorStatus.textContent = normaliseOrientation(orientation) === "vertical"
-                    ? "Vertical connectors can only use top or bottom dots."
-                    : "Horizontal connectors can only use left or right dots.";
-            }
-            connectorDrag = null;
-            return;
-        }
+        const normalised = normaliseOrientation(orientation);
+        const sourceSide = sideAllowedForOrientation(requestedSourceSide, normalised)
+            ? requestedSourceSide
+            : defaultSideForEndpoint(sourceNode, targetNode, normalised);
+        const targetSide = sideAllowedForOrientation(requestedTargetSide, normalised)
+            ? requestedTargetSide
+            : defaultSideForEndpoint(targetNode, sourceNode, normalised);
         const connector = {
             id: "",
             local_id: `connector-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -907,7 +914,7 @@ document.addEventListener("DOMContentLoaded", function () {
             target_local_id: targetNode.dataset.localId || "",
             source_side: sourceSide,
             target_side: targetSide,
-            orientation: normaliseOrientation(orientation)
+            orientation: normalised
         };
         manualConnectors.push(connector);
         stageAction(`connector:${connector.local_id}`, {
@@ -922,40 +929,6 @@ document.addEventListener("DOMContentLoaded", function () {
         });
         clearConnectorMode();
     }
-
-    pane.addEventListener("pointermove", function (event) {
-        if (!connectorDrag || connectorDrag.pointerId !== event.pointerId) {
-            return;
-        }
-        const point = panePoint(event);
-        connectorDrag.preview = point;
-        drawLinks();
-    });
-
-    pane.addEventListener("pointerup", function (event) {
-        if (!connectorDrag || connectorDrag.pointerId !== event.pointerId) {
-            return;
-        }
-        event.preventDefault();
-        const drag = connectorDrag;
-        connectorDrag = null;
-        drag.source.releasePointerCapture?.(event.pointerId);
-        drag.source.classList.remove("org-connector-source");
-        const previousPointerEvents = drag.source.style.pointerEvents;
-        drag.source.style.pointerEvents = "none";
-        const targetDot = document.elementFromPoint(event.clientX, event.clientY)?.closest(".org-connector-dot") || null;
-        drag.source.style.pointerEvents = previousPointerEvents;
-        if (targetDot && targetDot.closest(".org-canvas-node") !== drag.source) {
-            const sourceDot = drag.source.querySelector(`.org-connector-dot[data-side="${drag.sourceSide}"]`);
-            if (sourceDot) {
-                stageConnector(sourceDot, targetDot, drag.orientation);
-                return;
-            }
-        } else if (connectorStatus) {
-            connectorStatus.textContent = "Connector cancelled. Drag a line again when ready.";
-        }
-        clearConnectorMode();
-    });
 
     function selectionRectFromDrag(drag, currentPoint) {
         const left = Math.min(drag.start.x, currentPoint.x);
@@ -987,7 +960,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     pane.addEventListener("pointerdown", function (event) {
-        if (connectorMode && !event.target.closest(".org-connector-dot")) {
+        if (connectorMode && !event.target.closest(".org-canvas-node")) {
             clearConnectorMode();
             return;
         }
@@ -1094,19 +1067,6 @@ document.addEventListener("DOMContentLoaded", function () {
             });
             linkLayer.appendChild(line);
         });
-        if (connectorDrag && connectorDrag.preview) {
-            const start = connectorPoint(connectorDrag.source, connectorDrag.sourceSide);
-            const end = connectorDrag.orientation === "vertical"
-                ? { x: start.x, y: connectorDrag.preview.y }
-                : { x: connectorDrag.preview.x, y: start.y };
-            const preview = document.createElementNS("http://www.w3.org/2000/svg", "line");
-            preview.setAttribute("x1", start.x);
-            preview.setAttribute("y1", start.y);
-            preview.setAttribute("x2", end.x);
-            preview.setAttribute("y2", end.y);
-            preview.classList.add("org-connector-preview");
-            linkLayer.appendChild(preview);
-        }
     }
 
     function armConnectorTool(event) {
@@ -1144,9 +1104,14 @@ document.addEventListener("DOMContentLoaded", function () {
     });
     window.addEventListener("resize", drawLinks);
     printPdfButton?.addEventListener("click", function () {
+        const previousTitle = document.title;
+        document.title = safeFilename(chartExportName, "PipeFlow Org Chart");
         pane.classList.add("org-print-target");
         window.print();
-        setTimeout(() => pane.classList.remove("org-print-target"), 300);
+        setTimeout(() => {
+            pane.classList.remove("org-print-target");
+            document.title = previousTitle;
+        }, 300);
     });
     exportPngButton?.addEventListener("click", function () {
         if (!exportCanvas) return;
@@ -1165,7 +1130,7 @@ document.addEventListener("DOMContentLoaded", function () {
         ctx.fillStyle = "#0f172a";
         ctx.font = "700 22px Arial";
         ctx.fillText({{ (active_chart.chart_name if active_chart else account.account_name ~ " Org Chart")|tojson }}, 32, 42);
-        ctx.strokeStyle = "#2563eb";
+        ctx.strokeStyle = "#166534";
         ctx.lineWidth = 2;
         manualConnectors.forEach(function (connector) {
             const source = findNodeByAnyId(connector.source_node_id, connector.source_local_id);
@@ -1235,7 +1200,7 @@ document.addEventListener("DOMContentLoaded", function () {
             });
         });
         const link = document.createElement("a");
-        link.download = "pipeflow-org-chart.png";
+        link.download = `${safeFilename(chartExportName, "PipeFlow Org Chart")}.png`;
         link.href = exportCanvas.toDataURL("image/png");
         link.click();
     });

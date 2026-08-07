@@ -31,7 +31,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.7.0"
 APP_RELEASE_DATE = "2026-08-07"
-APP_BUILD = "2026-08-07-v2.7.0-org-chart-image-upload-r2"
+APP_BUILD = "2026-08-07-v2.7.0-org-chart-click-connectors-r3"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -56,6 +56,9 @@ RELEASE_NOTES = [
             "Added click-and-drag multi-select movement so several org chart tiles or labels can be moved together.",
             "Expanded the org chart canvas dynamically as tiles are placed or moved further across the palette.",
             "Updated account logo and contact photo uploads to accept recognised image formats and resize them into display-safe images.",
+            "Changed org chart connectors to a click sequence: select a connector, click the first tile, then click the second tile.",
+            "Changed org chart connector lines and connector handles to dark green.",
+            "Updated org chart PNG export and print/PDF title handling to use the configured org chart name as the export filename basis.",
         ],
     },
     {
@@ -849,12 +852,14 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
             'Use Account Sharing when another user needs access to the full account package.',
             'Open Org Chart and drag each contact tile once onto the grid-aligned chart.',
             'Use the Connectors palette to choose a horizontal or vertical line. PipeFlow then shows side-centre dots on each tile.',
-            'Drag from a dot on one tile to a matching side dot on another tile to create a connector.',
+            'Click the first tile, then click the second tile. PipeFlow adds a dark green connector between the two tiles and stages it for save.',
             'Click and drag across several tiles or labels to select them, then drag the selected group to move it together.'],
   'tips': ['Business organisation helps distinguish accounts with the same name or multiple internal groups.',
            'Account Sales Play associations constrain the Sales Play dropdown in Outreach and Campaign Builder.',
            'Revoking a share returns assigned tasks for that user back to the account owner.',
-           'Connector mode ends after a connector is completed or when you click away from the chart area; select another connector when you need a new line.']},
+           'Connector dots only display while a horizontal or vertical connector is selected.',
+           'Connector mode ends after a connector is completed or when you click away from the chart area; select another connector when you need a new line.',
+           'PNG export and browser print/PDF use the configured org chart name as the filename/title basis.']},
  {'slug': 'contacts',
   'title': 'Contacts',
   'summary': 'Capture customer stakeholders, role context and relationship data for account coverage and outreach targeting.',
