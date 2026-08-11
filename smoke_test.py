@@ -58,6 +58,20 @@ def seed_validation_data(db_path):
         "UPDATE accounts SET pipeline_target = ?, current_pipeline = ?, account_tier = ? WHERE id = ?",
         ("£1,250,000", "$250,000", "Tier 1", account_id),
     )
+    sales_play_id = connection.execute(
+        """
+        INSERT INTO sales_plays (sales_play_title, sales_play_description, sales_play_products)
+        VALUES (?, ?, ?)
+        """,
+        ("Smoke Test Play", "Configured smoke Sales Play", "Smoke Product"),
+    ).lastrowid
+    connection.execute(
+        """
+        INSERT INTO account_sales_plays (account_id, sales_play_id)
+        VALUES (?, ?)
+        """,
+        (account_id, sales_play_id),
+    )
     contact_id = connection.execute(
         """
         INSERT INTO contacts (account_id, category, name, job_title, email, phone, location)
@@ -126,6 +140,51 @@ def seed_validation_data(db_path):
             "Smoke Tester",
         ),
     ).lastrowid
+    connection.execute(
+        """
+        UPDATE outreach
+        SET scheduled_meeting_date = ?,
+            scheduled_meeting_time = ?
+        WHERE id = ?
+        """,
+        ("2026-05-06", "10:30", outreach_id),
+    )
+    connection.execute(
+        """
+        INSERT INTO outreach (
+            fy, quarter, account_id, contact_id, campaign, sales_play, campaign_start_date,
+            campaign_end_date, campaign_tasks_per_week, campaign_total_tasks, activity_date,
+            activity_time, activity_type, subject, notes, outcome, next_action,
+            next_action_date, next_action_time, scheduled_meeting_date, scheduled_meeting_time,
+            task_status, assigned_to
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "FY27",
+            "Q1",
+            account_id,
+            contact_id,
+            "NBM Smoke Campaign",
+            "Smoke Test Play",
+            "2026-05-01",
+            "2026-05-29",
+            1,
+            1,
+            "2026-05-04",
+            "09:30",
+            "Meeting",
+            "NBM booked smoke",
+            "NBM booked smoke coverage",
+            "NBM Booked",
+            "Attend NBM",
+            "2026-05-08",
+            "10:30",
+            "2026-05-08",
+            "10:30",
+            "Not Started",
+            "Smoke Tester",
+        ),
+    )
     connection.execute(
         """
         INSERT INTO outreach (
@@ -358,7 +417,7 @@ def main():
 
         contacts_html = client.get("/contacts").get_data(as_text=True)
         assert_ok("Last Outreach" in contacts_html, "Contacts table last outreach column missing")
-        assert_ok("05-05-2026 10:00" in contacts_html, "Contacts table did not show the latest active outreach date")
+        assert_ok("08-05-2026 10:30" in contacts_html, "Contacts table did not show the latest active outreach date")
         assert_ok("05-08-2026 11:30" not in contacts_html, "Contacts table used a deleted outreach as the last active outreach date")
 
         accounts_html = client.get("/accounts").get_data(as_text=True)
@@ -479,7 +538,7 @@ def main():
             all(row.get("account_rag_status") == plan_row["rag_status"] for row in action_rows),
             "PG Progress lower account RAG does not match top account RAG",
         )
-        assert_ok(plan_row["rag_status"] == "red", "PG Progress account RAG should default to automatic red")
+        assert_ok(plan_row["rag_status"] == "green", "PG Progress account RAG should reflect booked scheduled meeting evidence")
         pg_progress_html = client.get("/pg-progress").get_data(as_text=True)
         assert_ok("data-rag-trigger" in pg_progress_html, "PG Progress manual RAG picker trigger missing")
         response = client.post(
@@ -524,7 +583,7 @@ def main():
         pg_context = pipeflow_app.pg_dashboard_context(connection)
         connection.close()
         plan_row = next(row for row in pg_context["pg_plan_rows"] if row["account_id"] == account_id)
-        assert_ok(plan_row["rag_status"] == "red", "PG Progress automatic RAG did not recalculate after manual override removal")
+        assert_ok(plan_row["rag_status"] == "green", "PG Progress automatic RAG did not recalculate booked scheduled meeting evidence after manual override removal")
         assert_ok(plan_row["manual_rag_override"] == "", "PG Progress manual RAG override was not cleared")
 
         campaign_builder_html = client.get("/outreach/campaign-builder").get_data(as_text=True)
@@ -2211,6 +2270,31 @@ def main():
         response = client.get("/reports/pg-bible/export")
         assert_ok(response.status_code == 200, f"PG Bible export returned {response.status_code}")
         assert_ok(response.headers.get("Content-Disposition"), "PG Bible did not download")
+        from excel_exporter import PGBibleExporter
+        from openpyxl import load_workbook
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        report = pipeflow_app.build_pg_bible_report_from_db(connection)
+        connection.close()
+        pg_bible_output = PGBibleExporter(
+            Path(pipeflow_app.__file__).resolve().parent / "pg_bible_templates" / "PGBible_Template_May2026.xlsx",
+            Path(tmp) / "pg_bible_exports",
+        ).export(report)
+        pg_workbook = load_workbook(pg_bible_output, data_only=False)
+        pg_sheet = pg_workbook.active
+        assert_ok(pg_sheet["B5"].value is not None, "PG Bible Pipeline Added was not written to the merged input anchor")
+        assert_ok(pg_sheet["L5"].value == "=(F3+B5)-L3", "PG Bible pipeline gap formula was not adapted for the unchanged merged template")
+        assert_ok(pg_sheet["L11"].value == "Smoke Test Account - BMC", "PG Bible PG PLAN customer did not include business organisation")
+        assert_ok(pg_sheet["D11"].value == "Smoke Test Play", "PG Bible PG PLAN Sales Play did not use configured account Sales Play")
+        pg_action_row = next(
+            row
+            for row in range(33, 80)
+            if (pg_sheet[f"C{row}"].value or "").startswith("Smoke Test Contact")
+        )
+        assert_ok("Smoke Test Account - BMC" in (pg_sheet[f"C{pg_action_row}"].value or ""), "PG Bible PG ACTIONS contact label missing account context")
+        assert_ok(pg_sheet[f"F{pg_action_row}"].value == "Yes", "PG Bible Discovery Meeting did not map from a booked meeting with a scheduled date")
+        assert_ok("08-05-2026" in (pg_sheet[f"J{pg_action_row}"].value or ""), "PG Bible NBM booked column did not include scheduled meeting date")
+        assert_ok(pipeflow_app.money_value(pg_sheet[f"T{pg_action_row}"].value) > 0, "PG Bible VO Value did not map for qualified scheduled meeting progress")
 
         response = client.post(
             "/outreach/bulk-action",

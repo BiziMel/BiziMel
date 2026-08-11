@@ -409,11 +409,14 @@ class PGBibleExporter:
             return
         self._write_coordinate(ws, "F3", goals.starting_pipeline)
         self._write_coordinate(ws, "L3", goals.pipeline_target)
-        # The May 2026 template has no visible "Pipeline Added" label, but L5
-        # calculates the gap with =(F3+F5)-L3, making F5 the intended input.
-        # F5 is inside a merged area, so _write_coordinate stores the value on
-        # the merged range anchor while preserving the workbook structure.
+        # The May 2026 template has no visible "Pipeline Added" label. Its
+        # display area is merged as B5:G6, so F5 cannot store a real value even
+        # though the template formula references F5. Keep the template file
+        # unchanged, write the value to the merged anchor, and adapt the formula
+        # in the exported workbook so the visible input calculates correctly.
         self._write_coordinate(ws, "F5", goals.pipeline_added)
+        if str(ws["L5"].value or "").replace("$", "") == "=(F3+F5)-L3":
+            ws["L5"].value = "=(F3+B5)-L3"
 
     def _write_plan(self, ws, report: OwnerReport) -> int:
         if "PG PLAN" not in self.sections:

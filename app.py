@@ -29,9 +29,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.7.1"
+APP_VERSION = "2.7.2"
 APP_RELEASE_DATE = "2026-08-11"
-APP_BUILD = "2026-08-11-v2.7.1-outreach-report-filters-r1"
+APP_BUILD = "2026-08-11-v2.7.2-pg-bible-mapping-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -45,6 +45,18 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.7.2",
+        "release_date": "2026-08-11",
+        "title": "PG Bible mapping correction",
+        "fixed": [
+            "Updated PG Bible export logic to adapt the Pipeline Added formula in generated workbooks without changing the source template.",
+            "Changed PG PLAN customer mapping to include business organisation where available so duplicate account names are distinguishable.",
+            "Changed PG PLAN Sales Play mapping to use configured account Sales Play associations, with legacy account summary fallback.",
+            "Tightened PG ACTIONS meeting mapping so Discovery, NBM and VO fields require a booked meeting outcome with a valid scheduled meeting date.",
+            "Added account/business organisation context to PG ACTIONS contact labels where available.",
+        ],
+    },
     {
         "version": "2.7.1",
         "release_date": "2026-08-11",
@@ -16105,10 +16117,7 @@ def documented_sales_play(row):
 def pg_bible_meeting_datetime_label(row):
     if not row:
         return ""
-    parts = [row["scheduled_meeting_date"] or ""]
-    if row["scheduled_meeting_time"]:
-        parts.append(row["scheduled_meeting_time"])
-    return " ".join(part for part in parts if part).strip()
+    return format_display_datetime(row["scheduled_meeting_date"], row["scheduled_meeting_time"])
 
 
 def pg_bible_outreach_people_label(connection, outreach_row):
@@ -16153,6 +16162,32 @@ def pg_bible_outreach_people_label(connection, outreach_row):
     return "; ".join(labels)
 
 
+def pg_bible_account_sales_play_label(connection, account_id, fallback=""):
+    rows = connection.execute("""
+        SELECT sales_plays.sales_play_title
+        FROM account_sales_plays
+        JOIN sales_plays ON sales_plays.id = account_sales_plays.sales_play_id
+        WHERE account_sales_plays.account_id = ?
+        ORDER BY sales_plays.sales_play_title
+    """, (account_id,)).fetchall()
+    titles = [row["sales_play_title"] for row in rows if row["sales_play_title"]]
+    if titles:
+        return "; ".join(dict.fromkeys(titles))
+    return (fallback or "").strip()
+
+
+def pg_bible_qualified_meeting_filter(alias="outreach"):
+    outcomes = ",".join("?" for _ in SCHEDULED_MEETING_OUTCOMES)
+    return (
+        f"COALESCE({alias}.outcome, '') IN ({outcomes}) "
+        f"AND NULLIF(TRIM(COALESCE({alias}.scheduled_meeting_date, '')), '') IS NOT NULL"
+    )
+
+
+def pg_bible_qualified_meeting_params():
+    return tuple(SCHEDULED_MEETING_OUTCOMES)
+
+
 def build_pg_bible_report_from_db(connection):
     from models import ActionItem, OwnerReport, PlanItem, UserProfile, WeeklyResultRow
 
@@ -16175,14 +16210,15 @@ def build_pg_bible_report_from_db(connection):
     plan_items = []
     for account in accounts:
         account_pipeline_target = money_value(account["pipeline_target"])
+        account_sales_play = pg_bible_account_sales_play_label(connection, account["id"], account["sales_play"])
         plan_items.append(PlanItem(
             pg_bible_order=account["pg_bible_order"],
             account_tier=account["account_tier"] or "",
             pipeline_target_value=account_pipeline_target,
             notes=account["notes"] or "",
             nbm_target=str(account["pg_bible_order"] or ""),
-            customer=account["account_name"] or "",
-            sales_play=account["sales_play"] or "",
+            customer=account_context_label(account),
+            sales_play=account_sales_play,
             estimated_value=account_pipeline_target,
         ))
 
@@ -16191,6 +16227,7 @@ def build_pg_bible_report_from_db(connection):
             contacts.*,
             accounts.pipeline_target,
             accounts.account_name,
+            accounts.business_unit,
             accounts.pg_bible_order,
             accounts.sales_play AS account_sales_play
         FROM contacts
@@ -16245,12 +16282,20 @@ def build_pg_bible_report_from_db(connection):
             (latest_outreach["sales_play"] or documented_sales_play(latest_outreach)).strip()
             if latest_outreach else ""
         ) or (contact["account_sales_play"] or "")
+        account_sales_play = pg_bible_account_sales_play_label(connection, contact["account_id"], contact["account_sales_play"])
+        if not contact_sales_play:
+            contact_sales_play = account_sales_play
         discovery_target_parts = [
             ", ".join(part for part in [contact["name"], contact["job_title"]] if part)
         ]
         if contact_sales_play:
             discovery_target_parts.append(contact_sales_play)
+        account_label = account_context_label(contact)
+        if account_label:
+            discovery_target_parts.append(account_label)
 
+        qualified_meeting_filter = pg_bible_qualified_meeting_filter("outreach")
+        qualified_meeting_params = pg_bible_qualified_meeting_params()
         meeting_count = connection.execute(f"""
             SELECT COUNT(*)
             FROM outreach
@@ -16262,12 +16307,9 @@ def build_pg_bible_report_from_db(connection):
                         WHERE contact_id = ?
                     )
             )
-              AND (
-                    outcome IN ('Discovery Booked', 'NBM Booked', 'Exec Meeting Booked', 'Meeting Booked')
-                 OR activity_type = 'Meeting'
-              )
+              AND {qualified_meeting_filter}
               AND {report_visible_task_sql("outreach")}
-        """, (contact["id"], contact["id"], *report_visible_task_params())).fetchone()[0]
+        """, (contact["id"], contact["id"], *qualified_meeting_params, *report_visible_task_params())).fetchone()[0]
         discovery_meeting_count = connection.execute(f"""
             SELECT COUNT(*)
             FROM outreach
@@ -16282,8 +16324,8 @@ def build_pg_bible_report_from_db(connection):
               AND (
                     outcome = 'Discovery Booked'
                  OR outcome = 'Meeting Booked'
-                 OR activity_type = 'Meeting'
               )
+              AND NULLIF(TRIM(COALESCE(scheduled_meeting_date, '')), '') IS NOT NULL
               AND {report_visible_task_sql("outreach")}
         """, (contact["id"], contact["id"], *report_visible_task_params())).fetchone()[0]
         pg_progress_update = connection.execute("""
