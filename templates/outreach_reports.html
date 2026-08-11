@@ -53,80 +53,102 @@
     </div>
 </div>
 
-<div class="report-card report-filter-card">
+<div class="report-card report-filter-card outreach-report-filter-card">
     <h3>Filters</h3>
     <p>Shows every outreach record that matches the selected filters.</p>
 
-    <form method="get" action="/reports/outreach" class="filter-form">
-        <label>Activity Start</label>
-        <input type="date" name="start_date" value="{{ selected_start_date }}">
+    <form method="get" action="/reports/outreach" class="filter-form outreach-report-filter-form">
+        <div class="filter-field filter-field-wide">
+            <label>Company / Account</label>
+            <select name="company_id">
+                <option value="">All Companies / Accounts</option>
+                {% for account in accounts %}
+                    <option value="{{ account['id'] }}" {% if selected_account == account['id']|string %}selected{% endif %}>
+                        {{ account['account_name'] }}{% if account['business_unit'] %} - {{ account['business_unit'] }}{% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
 
-        <label>Activity End</label>
-        <input type="date" name="end_date" value="{{ selected_end_date }}">
+        <div class="filter-field filter-field-wide">
+            <label>Contact</label>
+            <select name="contact_id">
+                <option value="">All Contacts</option>
+                {% for contact in contacts %}
+                    <option value="{{ contact['id'] }}" {% if selected_contact == contact['id']|string %}selected{% endif %}>
+                        {{ contact['name'] }}{% if contact['job_title'] %} - {{ contact['job_title'] }}{% endif %}{% if contact['account_name'] %} ({{ contact['account_name'] }}{% if contact['business_unit'] %} - {{ contact['business_unit'] }}{% endif %}){% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
 
-        <label>Company / Account</label>
-        <select name="company_id">
-            <option value="">All Companies / Accounts</option>
-            {% for account in accounts %}
-                <option value="{{ account['id'] }}" {% if selected_account == account['id']|string %}selected{% endif %}>
-                    {{ account['account_name'] }}{% if account['business_unit'] %} - {{ account['business_unit'] }}{% endif %}
-                </option>
-            {% endfor %}
-        </select>
+        <div class="filter-field">
+            <label>Outreach Type</label>
+            <select name="activity_type">
+                <option value="">All Outreach Types</option>
+                {% for item in activity_types %}
+                    <option value="{{ item['activity_type'] }}" {% if selected_activity_type == item['activity_type'] %}selected{% endif %}>
+                        {{ item['activity_type'] }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
 
-        <label>Contact</label>
-        <select name="contact_id">
-            <option value="">All Contacts</option>
-            {% for contact in contacts %}
-                <option value="{{ contact['id'] }}" {% if selected_contact == contact['id']|string %}selected{% endif %}>
-                    {{ contact['name'] }}{% if contact['job_title'] %} - {{ contact['job_title'] }}{% endif %}{% if contact['account_name'] %} ({{ contact['account_name'] }}{% if contact['business_unit'] %} - {{ contact['business_unit'] }}{% endif %}){% endif %}
-                </option>
-            {% endfor %}
-        </select>
+        <div class="filter-field">
+            <label>Status</label>
+            <select name="task_status">
+                <option value="">All Statuses</option>
+                {% for item in task_statuses %}
+                    <option value="{{ item['task_status'] }}" {% if selected_task_status == item['task_status'] %}selected{% endif %}>
+                        {{ item['task_status'] }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
 
-        <label>Outreach Type</label>
-        <select name="activity_type">
-            <option value="">All Outreach Types</option>
-            {% for item in activity_types %}
-                <option value="{{ item['activity_type'] }}" {% if selected_activity_type == item['activity_type'] %}selected{% endif %}>
-                    {{ item['activity_type'] }}
-                </option>
-            {% endfor %}
-        </select>
+        <div class="filter-field">
+            <label>Outcome</label>
+            <select name="outcome">
+                <option value="">All Outcomes</option>
+                {% for item in outcomes %}
+                    <option value="{{ item['outcome'] }}" {% if selected_outcome == item['outcome'] %}selected{% endif %}>
+                        {{ item['outcome'] }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
 
-        <label>Status</label>
-        <select name="task_status">
-            <option value="">All Statuses</option>
-            {% for item in task_statuses %}
-                <option value="{{ item['task_status'] }}" {% if selected_task_status == item['task_status'] %}selected{% endif %}>
-                    {{ item['task_status'] }}
-                </option>
-            {% endfor %}
-        </select>
+        <div class="filter-field">
+            <label>Activity Start</label>
+            <input type="date" name="start_date" value="{{ selected_start_date }}">
+        </div>
 
-        <label>Due From</label>
-        <input type="date" name="due_start_date" value="{{ selected_due_start_date }}">
+        <div class="filter-field">
+            <label>Activity End</label>
+            <input type="date" name="end_date" value="{{ selected_end_date }}">
+        </div>
 
-        <label>Due To</label>
-        <input type="date" name="due_end_date" value="{{ selected_due_end_date }}">
+        <div class="filter-field">
+            <label>Due From</label>
+            <input type="date" name="due_start_date" value="{{ selected_due_start_date }}">
+        </div>
 
-        <label>Last Updated From</label>
-        <input type="date" name="last_updated_start" value="{{ selected_last_updated_start }}">
+        <div class="filter-field">
+            <label>Due To</label>
+            <input type="date" name="due_end_date" value="{{ selected_due_end_date }}">
+        </div>
 
-        <label>Last Updated To</label>
-        <input type="date" name="last_updated_end" value="{{ selected_last_updated_end }}">
+        <div class="filter-field">
+            <label>Last Updated From</label>
+            <input type="date" name="last_updated_start" value="{{ selected_last_updated_start }}">
+        </div>
 
-        <label>Outcome</label>
-        <select name="outcome">
-            <option value="">All Outcomes</option>
-            {% for item in outcomes %}
-                <option value="{{ item['outcome'] }}" {% if selected_outcome == item['outcome'] %}selected{% endif %}>
-                    {{ item['outcome'] }}
-                </option>
-            {% endfor %}
-        </select>
+        <div class="filter-field">
+            <label>Last Updated To</label>
+            <input type="date" name="last_updated_end" value="{{ selected_last_updated_end }}">
+        </div>
 
-        <div class="button-group">
+        <div class="button-group filter-actions">
             <button type="submit" class="btn btn-primary">Apply Filters</button>
             <a href="/reports/outreach" class="btn btn-secondary">Clear Filters</a>
         </div>

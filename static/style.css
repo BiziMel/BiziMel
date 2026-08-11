@@ -1614,6 +1614,86 @@ a:hover {
 .filter-form a {
     white-space: nowrap;
 }
+
+.outreach-report-filter-form {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    align-items: start;
+    padding-top: 6px;
+}
+
+.outreach-report-filter-form .filter-field {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+}
+
+.outreach-report-filter-form .filter-field-wide {
+    grid-column: span 2;
+}
+
+.outreach-report-filter-form label {
+    margin-bottom: 0;
+    min-height: 16px;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.outreach-report-filter-form select,
+.outreach-report-filter-form input {
+    min-height: 42px;
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+.outreach-report-filter-form .filter-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+    padding-top: 4px;
+    border-top: 1px solid #e2e8f0;
+}
+
+.outreach-report-filter-card {
+    border: 1px solid #d8e2dc;
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+}
+
+.outreach-report-filter-card:hover {
+    transform: none;
+}
+
+.outreach-report-filter-card h3 {
+    margin-bottom: 4px;
+}
+
+.outreach-report-filter-card p {
+    color: #64748b;
+    font-size: 13px;
+}
+
+@media (max-width: 1100px) {
+    .outreach-report-filter-form {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 640px) {
+    .outreach-report-filter-form {
+        grid-template-columns: 1fr;
+    }
+
+    .outreach-report-filter-form .filter-field-wide {
+        grid-column: auto;
+    }
+
+    .outreach-report-filter-form .filter-actions {
+        justify-content: stretch;
+    }
+}
 .table-container {
     margin-top: 40px;
     background: white;
