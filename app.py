@@ -29,9 +29,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.7.0"
-APP_RELEASE_DATE = "2026-08-07"
-APP_BUILD = "2026-08-07-v2.7.0-pg-rag-qualification-r4"
+APP_VERSION = "2.7.1"
+APP_RELEASE_DATE = "2026-08-11"
+APP_BUILD = "2026-08-11-v2.7.1-outreach-report-filters-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -45,6 +45,18 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.7.1",
+        "release_date": "2026-08-11",
+        "title": "Outreach type and report filtering update",
+        "fixed": [
+            "Added SMS/WhatsApp as an Outreach activity type for individual Outreach tasks and Campaign Builder generated campaigns.",
+            "Changed Outreach Reports to show every outreach record that matches the selected filters instead of defaulting to a limited recent window.",
+            "Added Outreach Report filters for company/account, contact, outreach type, last updated date, status and due date.",
+            "Updated Outreach Report CSV and XLSX exports to use the same filtered record set as the on-screen report.",
+            "Added Last Updated to the Outreach Report table and export output.",
+        ],
+    },
     {
         "version": "2.7.0",
         "release_date": "2026-08-07",
@@ -890,7 +902,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
             'Select a Sales Play already used for that account or associated to that account from the Sales Play form.',
             'Select one or more contacts. The first selected contact is the primary report contact and additional contacts are retained as '
             'recipients.',
-            'Set task status, assignee, activity type, activity start date/time, activity due date/time and subject.',
+            'Set task status, assignee, activity type including SMS/WhatsApp where appropriate, activity start date/time, activity due date/time and subject.',
             'Choose an outcome when known. Scheduled Meeting Date / Time only appears for Meeting Booked, NBM Booked, Discovery Booked or '
             'Exec Meeting Booked.',
             'Add an Activity Update before completing, closing or cancelling the task.',
@@ -908,7 +920,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
   'steps': ['Choose an account that has active contacts.',
             'Select one or more contacts for the campaign.',
             'Select one Sales Play that is available for the selected account.',
-            'Optionally tick activity types to constrain the generated campaign mix.',
+            'Optionally tick activity types, including SMS/WhatsApp, to constrain the generated campaign mix.',
             'Set PG Week, campaign start, campaign end, total task quantity and tasks per week.',
             'Generate the campaign. PipeFlow creates dated tasks across selected contacts.',
             'Review generated tasks, assignees and due dates in Outreach before starting execution.'],
@@ -1906,7 +1918,7 @@ PAGE_INSTRUCTIONS = {
         "title": "Campaign Builder Guidance",
         "items": [
             "Campaigns use one sales play only and can be generated for multiple contacts on the selected account.",
-            "Use Campaign Activity Types to limit generated tasks to selected activities, or leave them blank for a varied mix.",
+            "Use Campaign Activity Types to limit generated tasks to selected activities, including SMS/WhatsApp, or leave them blank for a varied mix.",
             "Every generated campaign starts with VITO before moving into the selected or varied follow-up activity mix.",
             "Campaign start date cannot be earlier than today and generated tasks stay on or after the configured start date.",
             "Auto-scheduling avoids weekends, configured non-working dates and duplicate time slots where possible.",
@@ -1939,8 +1951,9 @@ PAGE_INSTRUCTIONS = {
     "outreach_reports": {
         "title": "Outreach Reports Guidance",
         "items": [
-            "Review all outreach activity in one table. The report opens on the last 7 days by default.",
-            "Use filters to widen the date range or narrow reporting by account, outcome or activity type.",
+            "Review every outreach activity that matches the selected filters in one table.",
+            "Use filters to narrow reporting by company/account, contact, outreach type, last updated date, status, due date, activity date or outcome.",
+            "CSV and XLSX exports use the same filters as the page and include each record's Last Updated date.",
             "Compare Discovery Booked, NBM Booked and executive meeting outcomes to improve future campaign recommendations.",
         ],
     },
@@ -3315,6 +3328,13 @@ def campaign_step_templates():
             "subject_prefix": "Phone outreach",
             "next_action": "Call contact and progress the sales play",
             "time": "14:00"
+        },
+        {
+            "campaign": "SMS/WhatsApp",
+            "activity_type": "SMS/WhatsApp",
+            "subject_prefix": "SMS/WhatsApp outreach",
+            "next_action": "Send a concise SMS or WhatsApp message and track the response",
+            "time": "14:30"
         },
         {
             "campaign": "Events",
@@ -17104,18 +17124,30 @@ def outreach_reports():
     connection = get_db_connection()
 
     report_today = current_app_datetime().date()
-    default_start = report_today - timedelta(days=6)
-    selected_start_date = request.args.get("start_date", default_start.isoformat())
-    selected_end_date = request.args.get("end_date", report_today.isoformat())
-    selected_account = request.args.get("account_id", "")
+    selected_start_date = request.args.get("start_date", "")
+    selected_end_date = request.args.get("end_date", "")
+    selected_account = request.args.get("company_id") or request.args.get("account_id", "")
+    selected_contact = request.args.get("contact_id", "")
     selected_activity_type = request.args.get("activity_type", "")
     selected_outcome = request.args.get("outcome", "")
+    selected_task_status = request.args.get("task_status", "")
+    selected_due_start_date = request.args.get("due_start_date", "")
+    selected_due_end_date = request.args.get("due_end_date", "")
+    selected_last_updated_start = request.args.get("last_updated_start", "")
+    selected_last_updated_end = request.args.get("last_updated_end", "")
 
     accounts = safe_report_fetchall(connection, """
         SELECT id, account_name, business_unit
         FROM accounts
         ORDER BY account_name, business_unit
     """, stage="outreach_reports_accounts")
+
+    contacts = safe_report_fetchall(connection, """
+        SELECT contacts.id, contacts.name, contacts.job_title, contacts.account_id, accounts.account_name, accounts.business_unit
+        FROM contacts
+        LEFT JOIN accounts ON accounts.id = contacts.account_id
+        ORDER BY accounts.account_name, accounts.business_unit, contacts.name
+    """, stage="outreach_reports_contacts")
 
     activity_types = safe_report_fetchall(connection, """
         SELECT DISTINCT activity_type
@@ -17124,6 +17156,12 @@ def outreach_reports():
           AND activity_type != ''
         ORDER BY activity_type
     """, stage="outreach_reports_activity_types")
+
+    task_statuses = safe_report_fetchall(connection, """
+        SELECT DISTINCT COALESCE(NULLIF(task_status, ''), 'Not Started') AS task_status
+        FROM outreach
+        ORDER BY task_status
+    """, stage="outreach_reports_task_statuses")
 
     outcomes = safe_report_fetchall(connection, """
         SELECT DISTINCT outcome
@@ -17148,11 +17186,13 @@ def outreach_reports():
             outreach.subject,
             outreach.next_action,
             outreach.assigned_to,
+            outreach.last_updated,
             outreach.fy,
             outreach.quarter,
             accounts.account_name,
             accounts.business_unit,
             accounts.account_tier,
+            contacts.id AS contact_id,
             contacts.name AS contact_name,
             COALESCE(
                 (
@@ -17180,30 +17220,55 @@ def outreach_reports():
         ORDER BY outreach.activity_date DESC, outreach.activity_time DESC, outreach.id DESC
     """, stage="outreach_reports_rows")
 
+    recipient_rows = safe_report_fetchall(connection, """
+        SELECT outreach_id, contact_id
+        FROM outreach_recipients
+        WHERE contact_id IS NOT NULL
+    """, stage="outreach_reports_recipients")
+
     connection.close()
 
     def parse_report_date(value):
-        if not value:
-            return None
-        try:
-            return datetime.strptime(str(value), "%Y-%m-%d").date()
-        except ValueError:
-            return None
+        return report_date_value(value)
 
     start_date = parse_report_date(selected_start_date)
     end_date = parse_report_date(selected_end_date)
+    due_start_date = parse_report_date(selected_due_start_date)
+    due_end_date = parse_report_date(selected_due_end_date)
+    last_updated_start = parse_report_date(selected_last_updated_start)
+    last_updated_end = parse_report_date(selected_last_updated_end)
+    recipient_contact_map = {}
+    for row in recipient_rows:
+        recipient_contact_map.setdefault(row["outreach_id"], set()).add(str(row["contact_id"]))
 
     def include_item(item):
         activity_date = parse_report_date(item["activity_date"])
+        due_date = parse_report_date(item["next_action_date"])
+        last_updated = parse_report_date(item["last_updated"])
+        contact_ids = set(recipient_contact_map.get(item["id"], set()))
+        if item["contact_id"]:
+            contact_ids.add(str(item["contact_id"]))
         if start_date and (not activity_date or activity_date < start_date):
             return False
         if end_date and (not activity_date or activity_date > end_date):
             return False
+        if due_start_date and (not due_date or due_date < due_start_date):
+            return False
+        if due_end_date and (not due_date or due_date > due_end_date):
+            return False
+        if last_updated_start and (not last_updated or last_updated < last_updated_start):
+            return False
+        if last_updated_end and (not last_updated or last_updated > last_updated_end):
+            return False
         if selected_account and str(item["account_id"] or "") != selected_account:
+            return False
+        if selected_contact and selected_contact not in contact_ids:
             return False
         if selected_activity_type and (item["activity_type"] or "") != selected_activity_type:
             return False
         if selected_outcome and (item["outcome"] or "") != selected_outcome:
+            return False
+        if selected_task_status and (item["task_status"] or "Not Started") != selected_task_status:
             return False
         return True
 
@@ -17228,6 +17293,7 @@ def outreach_reports():
     )
     email_count = sum(1 for item in filtered_outreach if (item["activity_type"] or "").lower() == "email")
     phone_count = sum(1 for item in filtered_outreach if (item["activity_type"] or "").lower() == "phone")
+    sms_whatsapp_count = sum(1 for item in filtered_outreach if (item["activity_type"] or "").lower() == "sms/whatsapp")
     linkedin_count = sum(1 for item in filtered_outreach if "linkedin" in (item["activity_type"] or "").lower())
     meeting_count = sum(1 for item in filtered_outreach if (item["activity_type"] or "").lower() == "meeting" or (item["outcome"] or "") in ("Meeting Booked", "NBM Booked", "Discovery Booked", "Exec Meeting Booked"))
     response_count = sum(1 for item in filtered_outreach if (item["outcome"] or "") not in ("", "Unknown", "No Response", "No Response Yet"))
@@ -17280,6 +17346,31 @@ def outreach_reports():
         if (activity_date := parse_report_date(item["activity_date"]))
         and working_week_start <= activity_date <= working_week_end
     ]
+    export_args = {
+        key: value
+        for key, value in {
+            "start_date": selected_start_date,
+            "end_date": selected_end_date,
+            "company_id": selected_account,
+            "contact_id": selected_contact,
+            "activity_type": selected_activity_type,
+            "outcome": selected_outcome,
+            "task_status": selected_task_status,
+            "due_start_date": selected_due_start_date,
+            "due_end_date": selected_due_end_date,
+            "last_updated_start": selected_last_updated_start,
+            "last_updated_end": selected_last_updated_end,
+        }.items()
+        if value not in (None, "")
+    }
+    date_bits = []
+    if selected_start_date or selected_end_date:
+        date_bits.append(f"Activity {format_display_date(selected_start_date) if selected_start_date else 'Any'} to {format_display_date(selected_end_date) if selected_end_date else 'Any'}")
+    if selected_due_start_date or selected_due_end_date:
+        date_bits.append(f"Due {format_display_date(selected_due_start_date) if selected_due_start_date else 'Any'} to {format_display_date(selected_due_end_date) if selected_due_end_date else 'Any'}")
+    if selected_last_updated_start or selected_last_updated_end:
+        date_bits.append(f"Updated {format_display_date(selected_last_updated_start) if selected_last_updated_start else 'Any'} to {format_display_date(selected_last_updated_end) if selected_last_updated_end else 'Any'}")
+    report_range_label = "; ".join(date_bits) if date_bits else "All outreach records"
 
     return render_template(
         "outreach_reports.html",
@@ -17289,6 +17380,7 @@ def outreach_reports():
         overdue_tasks=overdue_tasks,
         email_count=email_count,
         phone_count=phone_count,
+        sms_whatsapp_count=sms_whatsapp_count,
         linkedin_count=linkedin_count,
         meeting_count=meeting_count,
         response_count=response_count,
@@ -17305,25 +17397,49 @@ def outreach_reports():
         outreach_items=filtered_outreach,
         working_week_outreach=working_week_outreach,
         accounts=accounts,
+        contacts=contacts,
         activity_types=activity_types,
+        task_statuses=task_statuses,
         outcomes=outcomes,
         selected_start_date=selected_start_date,
         selected_end_date=selected_end_date,
         selected_account=selected_account,
+        selected_contact=selected_contact,
         selected_activity_type=selected_activity_type,
         selected_outcome=selected_outcome,
+        selected_task_status=selected_task_status,
+        selected_due_start_date=selected_due_start_date,
+        selected_due_end_date=selected_due_end_date,
+        selected_last_updated_start=selected_last_updated_start,
+        selected_last_updated_end=selected_last_updated_end,
+        export_csv_args=export_args,
+        export_xlsx_args={**export_args, "format": "xlsx"},
         working_week_start=working_week_start.isoformat(),
         working_week_end=working_week_end.isoformat(),
-        report_range_label=f"{format_display_date(selected_start_date)} to {format_display_date(selected_end_date)}",
+        report_range_label=report_range_label,
     )
 
 
 @app.route("/reports/outreach/export")
 def export_outreach_reports():
     connection = get_db_connection()
+    selected_start_date = request.args.get("start_date", "")
+    selected_end_date = request.args.get("end_date", "")
+    selected_account = request.args.get("company_id") or request.args.get("account_id", "")
+    selected_contact = request.args.get("contact_id", "")
+    selected_activity_type = request.args.get("activity_type", "")
+    selected_outcome = request.args.get("outcome", "")
+    selected_task_status = request.args.get("task_status", "")
+    selected_due_start_date = request.args.get("due_start_date", "")
+    selected_due_end_date = request.args.get("due_end_date", "")
+    selected_last_updated_start = request.args.get("last_updated_start", "")
+    selected_last_updated_end = request.args.get("last_updated_end", "")
 
-    outreach_items = safe_report_fetchall(connection, """
+    all_outreach = safe_report_fetchall(connection, """
         SELECT
+            outreach.id,
+            outreach.account_id,
+            outreach.contact_id,
             outreach.activity_date,
             outreach.activity_time,
             outreach.next_action_date,
@@ -17339,14 +17455,67 @@ def export_outreach_reports():
             outreach.activity_type,
             outreach.outcome,
             outreach.next_action,
-            outreach.notes
+            outreach.notes,
+            outreach.last_updated
         FROM outreach
         LEFT JOIN accounts ON outreach.account_id = accounts.id
         LEFT JOIN contacts ON outreach.contact_id = contacts.id
-        ORDER BY outreach.activity_date DESC
+        ORDER BY outreach.activity_date DESC, outreach.activity_time DESC, outreach.last_updated DESC, outreach.id DESC
     """, stage="outreach_reports_export")
 
+    recipient_rows = safe_report_fetchall(connection, """
+        SELECT outreach_id, contact_id
+        FROM outreach_recipients
+        WHERE contact_id IS NOT NULL
+    """, stage="outreach_reports_export_recipients")
+
     connection.close()
+
+    def parse_report_date(value):
+        return report_date_value(value)
+
+    start_date = parse_report_date(selected_start_date)
+    end_date = parse_report_date(selected_end_date)
+    due_start_date = parse_report_date(selected_due_start_date)
+    due_end_date = parse_report_date(selected_due_end_date)
+    last_updated_start = parse_report_date(selected_last_updated_start)
+    last_updated_end = parse_report_date(selected_last_updated_end)
+    recipient_contact_map = {}
+    for row in recipient_rows:
+        recipient_contact_map.setdefault(row["outreach_id"], set()).add(str(row["contact_id"]))
+
+    def include_item(item):
+        activity_date = parse_report_date(item["activity_date"])
+        due_date = parse_report_date(item["next_action_date"])
+        last_updated = parse_report_date(item["last_updated"])
+        contact_ids = set(recipient_contact_map.get(item["id"], set()))
+        if item["contact_id"]:
+            contact_ids.add(str(item["contact_id"]))
+        if start_date and (not activity_date or activity_date < start_date):
+            return False
+        if end_date and (not activity_date or activity_date > end_date):
+            return False
+        if due_start_date and (not due_date or due_date < due_start_date):
+            return False
+        if due_end_date and (not due_date or due_date > due_end_date):
+            return False
+        if last_updated_start and (not last_updated or last_updated < last_updated_start):
+            return False
+        if last_updated_end and (not last_updated or last_updated > last_updated_end):
+            return False
+        if selected_account and str(item["account_id"] or "") != selected_account:
+            return False
+        if selected_contact and selected_contact not in contact_ids:
+            return False
+        if selected_activity_type and (item["activity_type"] or "") != selected_activity_type:
+            return False
+        if selected_outcome and (item["outcome"] or "") != selected_outcome:
+            return False
+        if selected_task_status and (item["task_status"] or "Not Started") != selected_task_status:
+            return False
+        return True
+
+    outreach_items = [item for item in all_outreach if include_item(item)]
 
     headers = [
         "Date",
@@ -17364,12 +17533,13 @@ def export_outreach_reports():
         "Activity Type",
         "Outcome",
         "Activity Update",
-        "System Metadata"
+        "System Metadata",
+        "Last Updated"
     ]
     rows = [[
-            item["activity_date"],
+            format_display_datetime(item["activity_date"], item["activity_time"]),
             item["activity_time"],
-            item["next_action_date"],
+            format_display_datetime(item["next_action_date"], item["next_action_time"]),
             item["next_action_time"],
             item["task_status"],
             item["fy"],
@@ -17382,7 +17552,8 @@ def export_outreach_reports():
             item["activity_type"],
             item["outcome"],
             item["next_action"],
-            item["notes"]
+            item["notes"],
+            format_display_datetime(item["last_updated"]),
         ] for item in outreach_items]
     if request.args.get("format") == "xlsx":
         return report_xlsx_response("outreach_reports", "Outreach Reports", headers, rows)

@@ -6,8 +6,8 @@
 
 <div class="button-group">
     <a href="/reports" class="btn btn-secondary">Back to Reports</a>
-    <a href="{{ url_for('export_outreach_reports') }}" class="btn btn-primary">Export CSV</a>
-    <a href="{{ url_for('export_outreach_reports', format='xlsx') }}" class="btn btn-secondary">Export XLSX</a>
+    <a href="{{ url_for('export_outreach_reports', **export_csv_args) }}" class="btn btn-primary">Export CSV</a>
+    <a href="{{ url_for('export_outreach_reports', **export_xlsx_args) }}" class="btn btn-secondary">Export XLSX</a>
 </div>
 
 <div class="dashboard-grid report-metric-grid outreach-report-metrics">
@@ -48,25 +48,25 @@
     </div>
     <div class="dashboard-card report-metric-card report-metric-blue">
         <h3>Channel Mix</h3>
-        <p>{{ email_count + phone_count + linkedin_count }}</p>
-        <span>Email {{ email_count }}, phone {{ phone_count }}, LinkedIn {{ linkedin_count }}</span>
+        <p>{{ email_count + phone_count + linkedin_count + sms_whatsapp_count }}</p>
+        <span>Email {{ email_count }}, phone {{ phone_count }}, LinkedIn {{ linkedin_count }}, SMS/WhatsApp {{ sms_whatsapp_count }}</span>
     </div>
 </div>
 
 <div class="report-card report-filter-card">
     <h3>Filters</h3>
-    <p>Defaults to the last 7 days. Change the date range to review older or wider outreach activity.</p>
+    <p>Shows every outreach record that matches the selected filters.</p>
 
     <form method="get" action="/reports/outreach" class="filter-form">
-        <label>Start Date</label>
+        <label>Activity Start</label>
         <input type="date" name="start_date" value="{{ selected_start_date }}">
 
-        <label>End Date</label>
+        <label>Activity End</label>
         <input type="date" name="end_date" value="{{ selected_end_date }}">
 
-        <label>Account</label>
-        <select name="account_id">
-            <option value="">All Accounts</option>
+        <label>Company / Account</label>
+        <select name="company_id">
+            <option value="">All Companies / Accounts</option>
             {% for account in accounts %}
                 <option value="{{ account['id'] }}" {% if selected_account == account['id']|string %}selected{% endif %}>
                     {{ account['account_name'] }}{% if account['business_unit'] %} - {{ account['business_unit'] }}{% endif %}
@@ -74,15 +74,47 @@
             {% endfor %}
         </select>
 
-        <label>Activity Type</label>
+        <label>Contact</label>
+        <select name="contact_id">
+            <option value="">All Contacts</option>
+            {% for contact in contacts %}
+                <option value="{{ contact['id'] }}" {% if selected_contact == contact['id']|string %}selected{% endif %}>
+                    {{ contact['name'] }}{% if contact['job_title'] %} - {{ contact['job_title'] }}{% endif %}{% if contact['account_name'] %} ({{ contact['account_name'] }}{% if contact['business_unit'] %} - {{ contact['business_unit'] }}{% endif %}){% endif %}
+                </option>
+            {% endfor %}
+        </select>
+
+        <label>Outreach Type</label>
         <select name="activity_type">
-            <option value="">All Activity Types</option>
+            <option value="">All Outreach Types</option>
             {% for item in activity_types %}
                 <option value="{{ item['activity_type'] }}" {% if selected_activity_type == item['activity_type'] %}selected{% endif %}>
                     {{ item['activity_type'] }}
                 </option>
             {% endfor %}
         </select>
+
+        <label>Status</label>
+        <select name="task_status">
+            <option value="">All Statuses</option>
+            {% for item in task_statuses %}
+                <option value="{{ item['task_status'] }}" {% if selected_task_status == item['task_status'] %}selected{% endif %}>
+                    {{ item['task_status'] }}
+                </option>
+            {% endfor %}
+        </select>
+
+        <label>Due From</label>
+        <input type="date" name="due_start_date" value="{{ selected_due_start_date }}">
+
+        <label>Due To</label>
+        <input type="date" name="due_end_date" value="{{ selected_due_end_date }}">
+
+        <label>Last Updated From</label>
+        <input type="date" name="last_updated_start" value="{{ selected_last_updated_start }}">
+
+        <label>Last Updated To</label>
+        <input type="date" name="last_updated_end" value="{{ selected_last_updated_end }}">
 
         <label>Outcome</label>
         <select name="outcome">
@@ -96,7 +128,7 @@
 
         <div class="button-group">
             <button type="submit" class="btn btn-primary">Apply Filters</button>
-            <a href="/reports/outreach" class="btn btn-secondary">Last 7 Days</a>
+            <a href="/reports/outreach" class="btn btn-secondary">Clear Filters</a>
         </div>
     </form>
 </div>
@@ -188,6 +220,7 @@
                     <th>Outcome</th>
                     <th>Due</th>
                     <th>Status</th>
+                    <th>Last Updated</th>
                     <th>Assigned To</th>
                 </tr>
             </thead>
@@ -211,11 +244,12 @@
                         <td>{{ item["outcome"] or "Unknown" }}</td>
                         <td>{{ item["next_action_date"]|display_datetime(item["next_action_time"]) or "Not set" }}</td>
                         <td>{{ item["task_status"] or "Not Started" }}</td>
+                        <td>{{ item["last_updated"]|display_datetime or "Not set" }}</td>
                         <td>{{ item["assigned_to"] or "Unassigned" }}</td>
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="9">No outreach found for the selected range.</td>
+                        <td colspan="10">No outreach found for the selected filters.</td>
                     </tr>
                 {% endfor %}
             </tbody>

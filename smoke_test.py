@@ -336,6 +336,26 @@ def main():
             html = response.get_data(as_text=True)
             assert_ok(response.status_code == 200 and marker in html, f"{path} failed")
 
+        add_outreach_html = client.get("/outreach/add").get_data(as_text=True)
+        campaign_builder_html = client.get("/outreach/campaign-builder").get_data(as_text=True)
+        assert_ok("SMS/WhatsApp" in add_outreach_html, "Add Outreach activity type list missing SMS/WhatsApp")
+        assert_ok("SMS/WhatsApp" in campaign_builder_html, "Campaign Builder activity type list missing SMS/WhatsApp")
+
+        outreach_report_html = client.get("/reports/outreach").get_data(as_text=True)
+        assert_ok("Older PG Progress Marker" in outreach_report_html, "Outreach Reports did not show all records by default")
+        assert_ok("name=\"company_id\"" in outreach_report_html, "Outreach Reports company/account filter missing")
+        assert_ok("name=\"contact_id\"" in outreach_report_html, "Outreach Reports contact filter missing")
+        assert_ok("name=\"last_updated_start\"" in outreach_report_html, "Outreach Reports last updated filter missing")
+        assert_ok("name=\"task_status\"" in outreach_report_html, "Outreach Reports status filter missing")
+        assert_ok("name=\"due_start_date\"" in outreach_report_html, "Outreach Reports due date filter missing")
+        assert_ok("Last Updated" in outreach_report_html, "Outreach Reports table last updated column missing")
+        filtered_export = client.get(
+            f"/reports/outreach/export?company_id={account_id}&contact_id={second_contact_id}&activity_type=Email&due_start_date=2026-05-02&due_end_date=2026-05-02"
+        ).get_data(as_text=True)
+        assert_ok("Last Updated" in filtered_export, "Outreach Reports export missing Last Updated header")
+        assert_ok("Review older outreach route" in filtered_export, "Outreach Reports export did not include matching filtered outreach")
+        assert_ok("Follow up" not in filtered_export, "Outreach Reports export ignored selected filters")
+
         contacts_html = client.get("/contacts").get_data(as_text=True)
         assert_ok("Last Outreach" in contacts_html, "Contacts table last outreach column missing")
         assert_ok("05-05-2026 10:00" in contacts_html, "Contacts table did not show the latest active outreach date")
