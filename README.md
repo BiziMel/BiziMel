@@ -1,6 +1,6 @@
 # PipeFlow PG Bible Export
 
-This export creates a single-sheet PG Bible workbook by cloning the `Real example` worksheet from `PG Bible FY27.xlsx`.
+This export creates a single-sheet PG Bible workbook from the bundled May 2026 PG Bible template.
 
 ## Setup
 
@@ -15,13 +15,13 @@ Set the API environment variables:
 ```bash
 export PIPEFLOW_BASE_URL="http://localhost:5050"
 export PIPEFLOW_API_TOKEN="your-token"
-export PG_BIBLE_TEMPLATE_PATH="/Users/memcgove/Downloads/PG Bible FY27.xlsx"
+export PG_BIBLE_TEMPLATE_PATH="/path/to/PGBible_Template_May2026.xlsx"
 ```
 
 Run:
 
 ```bash
-python3 main.py --api --template "/Users/memcgove/Downloads/PG Bible FY27.xlsx" --output-dir outputs
+python3 main.py --api --template "/path/to/PGBible_Template_May2026.xlsx" --output-dir outputs
 ```
 
 API endpoint paths are isolated in `pipeflow_client.py` until the PipeFlow API contract is final.
@@ -29,7 +29,7 @@ API endpoint paths are isolated in `pipeflow_client.py` until the PipeFlow API c
 ## JSON mode
 
 ```bash
-python3 main.py --json sample_report.json --template "/Users/memcgove/Downloads/PG Bible FY27.xlsx" --output-dir outputs
+python3 main.py --json sample_report.json --template "/path/to/PGBible_Template_May2026.xlsx" --output-dir outputs
 ```
 
 Expected top-level keys:
@@ -50,7 +50,7 @@ Expected top-level keys:
 
 The Reports page includes `Export PG Bible`.
 
-The local app route reads the template path from `PG_BIBLE_TEMPLATE_PATH`. If it is not set, it uses `/Users/memcgove/Downloads/PG Bible FY27.xlsx`.
+The local app route reads the template path from `PG_BIBLE_TEMPLATE_PATH`. If it is not set, it uses the bundled `pg_bible_templates/PGBible_Template_May2026.xlsx` file.
 
 PG GOALS inputs are deliberately explicit. Set these before starting the app if you want the button to generate the workbook from local PipeFlow data:
 
@@ -65,7 +65,7 @@ If `PIPEFLOW_PG_STARTING_PIPELINE` or `PIPEFLOW_PG_PIPELINE_ADDED` is missing, t
 ## CSV mode
 
 ```bash
-python3 main.py --csv sample_report.csv --template "/Users/memcgove/Downloads/PG Bible FY27.xlsx" --output-dir outputs
+python3 main.py --csv sample_report.csv --template "/path/to/PGBible_Template_May2026.xlsx" --output-dir outputs
 ```
 
 CSV rows use `record_type` with these values:

@@ -9,6 +9,10 @@
     </div>
 </div>
 
+{% if pg_bible_error %}
+    <div class="alert-error" role="alert">{{ pg_bible_error }}</div>
+{% endif %}
+
 <div class="report-grid">
 
     <div class="report-card">
@@ -93,12 +97,116 @@
         <p>Export a single-sheet PG Bible workbook from the PipeFlow data set.</p>
 
         <div class="button-group">
-            <a href="{{ url_for('export_pg_bible') }}" class="btn btn-primary">
+            <button type="button" class="btn btn-primary" id="openPgBibleExportDialog">
                 Export PG Bible
-            </a>
+            </button>
         </div>
     </div>
 
 </div>
+
+<dialog id="pgBibleExportDialog" class="pipeflow-dialog pg-bible-export-dialog">
+    <div class="dialog-header">
+        <h3>Export PG Bible</h3>
+        <button type="button" class="dialog-close-button" id="closePgBibleExportDialog" aria-label="Close">&times;</button>
+    </div>
+    <form method="GET" action="{{ url_for('export_pg_bible') }}" id="pgBibleExportForm" class="pg-bible-export-form">
+        <p>Select one or more fiscal years and quarters. Only matching PipeFlow data will be included.</p>
+
+        <label for="pgBibleFyToggle">FY</label>
+        <div class="checkbox-select" data-period-picker>
+            <button type="button" id="pgBibleFyToggle" class="checkbox-select-toggle" aria-expanded="false">
+                Select FY
+            </button>
+            <div class="checkbox-select-panel" hidden>
+                {% for fiscal_year in pg_bible_fiscal_years %}
+                    <label class="checkbox-select-option">
+                        <input type="checkbox" name="fy" value="{{ fiscal_year }}">
+                        <span>{{ fiscal_year }}</span>
+                    </label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <label for="pgBibleQuarterToggle">Quarter</label>
+        <div class="checkbox-select" data-period-picker>
+            <button type="button" id="pgBibleQuarterToggle" class="checkbox-select-toggle" aria-expanded="false">
+                Select Quarter(s)
+            </button>
+            <div class="checkbox-select-panel" hidden>
+                {% for quarter in pg_bible_quarters %}
+                    <label class="checkbox-select-option">
+                        <input type="checkbox" name="quarter" value="{{ quarter }}">
+                        <span>{{ quarter }}</span>
+                    </label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="alert-error" id="pgBibleSelectionError" role="alert" hidden>
+            Select at least one FY and one Quarter.
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Create Export</button>
+            <button type="button" class="btn btn-secondary" id="cancelPgBibleExportDialog">Cancel</button>
+        </div>
+    </form>
+</dialog>
+
+<script>
+    const pgBibleDialog = document.getElementById("pgBibleExportDialog");
+    const pgBibleForm = document.getElementById("pgBibleExportForm");
+    const pgBibleSelectionError = document.getElementById("pgBibleSelectionError");
+
+    function setPgBibleDialogOpen(open) {
+        if (!pgBibleDialog) return;
+        if (open && typeof pgBibleDialog.showModal === "function") {
+            pgBibleDialog.showModal();
+        } else if (open) {
+            pgBibleDialog.setAttribute("open", "open");
+        } else if (typeof pgBibleDialog.close === "function") {
+            pgBibleDialog.close();
+        } else {
+            pgBibleDialog.removeAttribute("open");
+        }
+    }
+
+    document.getElementById("openPgBibleExportDialog")?.addEventListener("click", () => setPgBibleDialogOpen(true));
+    document.getElementById("closePgBibleExportDialog")?.addEventListener("click", () => setPgBibleDialogOpen(false));
+    document.getElementById("cancelPgBibleExportDialog")?.addEventListener("click", () => setPgBibleDialogOpen(false));
+
+    document.querySelectorAll("[data-period-picker]").forEach((picker) => {
+        const toggle = picker.querySelector(".checkbox-select-toggle");
+        const panel = picker.querySelector(".checkbox-select-panel");
+        const checks = Array.from(picker.querySelectorAll("input[type='checkbox']"));
+        const emptyLabel = toggle.textContent.trim();
+        const updateLabel = () => {
+            const selected = checks.filter((check) => check.checked).map((check) => check.value);
+            toggle.textContent = selected.length ? selected.join(", ") : emptyLabel;
+        };
+        toggle.addEventListener("click", () => {
+            const opening = panel.hidden;
+            document.querySelectorAll("[data-period-picker] .checkbox-select-panel").forEach((other) => {
+                other.hidden = true;
+            });
+            panel.hidden = !opening;
+            toggle.setAttribute("aria-expanded", String(opening));
+        });
+        checks.forEach((check) => check.addEventListener("change", updateLabel));
+    });
+
+    pgBibleForm?.addEventListener("submit", (event) => {
+        const hasFy = Boolean(pgBibleForm.querySelector("input[name='fy']:checked"));
+        const hasQuarter = Boolean(pgBibleForm.querySelector("input[name='quarter']:checked"));
+        pgBibleSelectionError.hidden = hasFy && hasQuarter;
+        if (!hasFy || !hasQuarter) {
+            event.preventDefault();
+        }
+    });
+
+    {% if pg_bible_error %}
+        setPgBibleDialogOpen(true);
+    {% endif %}
+</script>
 
 {% endblock %}

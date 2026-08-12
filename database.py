@@ -73,7 +73,6 @@ def initialise_database(force=False):
             customer_logo TEXT,
             pipeline_target REAL,
             current_pipeline REAL,
-            nbm_target TEXT,
             sales_play TEXT,
             owner_user_id INTEGER,
             owner_name TEXT,
@@ -519,7 +518,6 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "accounts", "website", "TEXT")
     add_column_if_missing(cursor, "accounts", "pipeline_target", "REAL")
     add_column_if_missing(cursor, "accounts", "current_pipeline", "REAL")
-    add_column_if_missing(cursor, "accounts", "nbm_target", "TEXT")
     add_column_if_missing(cursor, "accounts", "sales_play", "TEXT")
     add_column_if_missing(cursor, "accounts", "customer_logo", "TEXT")
     add_column_if_missing(cursor, "accounts", "owner_user_id", "INTEGER")
@@ -818,7 +816,6 @@ def initialise_database(force=False):
         ("idx_accounts_pg_bible_order", "accounts", ["pg_bible_order", "account_name"]),
         ("idx_accounts_tier", "accounts", ["account_tier"]),
         ("idx_accounts_owner", "accounts", ["owner_user_id"]),
-        ("idx_accounts_nbm_target", "accounts", ["nbm_target"]),
         ("idx_sales_plays_title", "sales_plays", ["sales_play_title"]),
         ("idx_sales_play_assets_play", "sales_play_assets", ["sales_play_id"]),
         ("idx_account_sales_plays_account", "account_sales_plays", ["account_id"]),

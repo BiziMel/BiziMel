@@ -49,10 +49,6 @@
     <label>Pipeline Target USD $ ACV</label>
     <input type="number" id="pipeline_target" name="pipeline_target" step="0.01" min="0" value="{{ prefill.pipeline_target or '' }}" placeholder="0.00">
 
-    <label>NBM Target</label>
-    <input type="number" name="nbm_target" min="1" step="1" value="{{ prefill.nbm_target or '' }}" placeholder="Example: 1">
-    <p class="field-help">Used to map this account into the PG Goals dashboard plan and actions tables.</p>
-
     <label for="account_sales_play_toggle">Sales Play(s)</label>
     <div class="checkbox-select" id="account_sales_play_picker">
         <button type="button"

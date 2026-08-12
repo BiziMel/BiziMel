@@ -25,6 +25,7 @@ from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.cell_range import CellRange
 
 from models import GoalsSummary, OwnerReport, PGBibleExportError
 
@@ -164,9 +165,16 @@ class PGBibleExporter:
         self.sections: dict[str, Section] = {}
         self.header_cache: dict[str, TableRegion] = {}
         self.weekly_key: WeeklyKey | None = None
+        self.plan_entry_rows = list(PLAN_ENTRY_ROWS)
+        self.action_entry_rows = list(ACTION_ENTRY_ROWS)
 
     def export(self, report: OwnerReport, reporting_date: date | None = None) -> Path:
         reporting_date = reporting_date or date.today()
+        self.sections = {}
+        self.header_cache = {}
+        self.weekly_key = None
+        self.plan_entry_rows = list(PLAN_ENTRY_ROWS)
+        self.action_entry_rows = list(ACTION_ENTRY_ROWS)
         wb = load_workbook(self.template_path, data_only=False)
 
         if "Real example" in wb.sheetnames:
@@ -189,12 +197,13 @@ class PGBibleExporter:
         print(f"sheet name final: {final_sheet_name}")
 
         self._discover_template(ws)
-        baseline = self._structural_snapshot(ws)
         report.goals = report.goals or self._compute_goals(report, reporting_date)
 
         self._clear_template_inputs(ws)
         if "PG RESULTS" in self.header_cache:
             self._clear_weekly_rows(ws, self.header_cache["PG RESULTS"])
+        self._prepare_dynamic_rows(ws, report)
+        baseline = self._structural_snapshot(ws)
 
         self._write_goals(ws, report.goals)
         plan_count = self._write_plan(ws, report)
@@ -428,15 +437,12 @@ class PGBibleExporter:
                 item.customer.casefold(),
             ),
         )
-        writable_rows = list(PLAN_ENTRY_ROWS)
-        if len(rows) > len(writable_rows):
-            LOGGER.warning("PG Bible plan has %s accounts but only %s rows; extra accounts were not exported.", len(rows), len(writable_rows))
-        for row, item in zip(writable_rows, rows):
+        for row, item in zip(self.plan_entry_rows, rows):
             self._write_nbm_target(ws, f"B{row}", item.nbm_target)
             self._write_coordinate(ws, f"D{row}", item.sales_play)
             self._write_coordinate(ws, f"L{row}", item.customer)
             self._write_coordinate(ws, f"M{row}", item.estimated_value)
-        return min(len(rows), len(writable_rows))
+        return len(rows)
 
     def _write_monthly_plan(self, ws, report: OwnerReport) -> int:
         if "PG PLAN" not in self.sections:
@@ -455,10 +461,7 @@ class PGBibleExporter:
     def _write_actions(self, ws, report: OwnerReport) -> int:
         if "PG ACTIONS" not in self.sections:
             return 0
-        writable_rows = list(ACTION_ENTRY_ROWS)
-        if len(report.action_items) > len(writable_rows):
-            LOGGER.warning("PG Bible actions has %s contacts but only %s rows; extra contacts were not exported.", len(report.action_items), len(writable_rows))
-        for row, item in zip(writable_rows, report.action_items):
+        for row, item in zip(self.action_entry_rows, report.action_items):
             discovery_target = item.discovery_target_name_title or " ".join(part for part in [item.person_name, item.person_title] if part)
             nbm_booked = " ".join(part for part in [item.nbm_booked_date, item.nbm_booked_name_title] if part)
             self._write_nbm_target(ws, f"B{row}", item.related_nbm_target)
@@ -472,7 +475,7 @@ class PGBibleExporter:
             self._write_coordinate(ws, f"P{row}", self._yes_no(item.nbm_completed, default_no=True))
             self._write_coordinate(ws, f"Q{row}", item.nbm_next_action or item.discovery_next_action or "No next action set")
             self._write_coordinate(ws, f"T{row}", item.vo_value)
-        return min(len(report.action_items), len(writable_rows))
+        return len(report.action_items)
 
     def _write_weekly_results(self, ws, report: OwnerReport) -> int:
         region = self.header_cache["PG RESULTS"]
@@ -520,6 +523,77 @@ class PGBibleExporter:
         for row in ACTION_ENTRY_ROWS:
             for col in ("B", "C", "F", "G", "J", "M", "N", "O", "P", "Q", "T"):
                 self._write_coordinate(ws, f"{col}{row}", None)
+
+    def _prepare_dynamic_rows(self, ws, report: OwnerReport) -> None:
+        # Rows 11:29 are the template's account-plan capacity. Extra account
+        # rows must be inserted before PG ACTIONS so column B remains mapped for
+        # every exported account without overwriting the action section.
+        extra_plan_rows = max(0, len(report.plan_items) - len(PLAN_ENTRY_ROWS))
+        if extra_plan_rows:
+            self._insert_formatted_rows(ws, PLAN_ENTRY_ROWS.stop, extra_plan_rows, PLAN_ENTRY_ROWS.stop - 1)
+        self.plan_entry_rows = list(range(PLAN_ENTRY_ROWS.start, PLAN_ENTRY_ROWS.start + max(len(PLAN_ENTRY_ROWS), len(report.plan_items))))
+
+        action_section = self.sections.get("PG ACTIONS")
+        if not action_section:
+            self.action_entry_rows = []
+            return
+        action_start = action_section.row + 2
+        base_action_capacity = len(ACTION_ENTRY_ROWS)
+        extra_action_rows = max(0, len(report.action_items) - base_action_capacity)
+        if extra_action_rows:
+            insert_at = action_start + base_action_capacity
+            self._insert_formatted_rows(ws, insert_at, extra_action_rows, insert_at - 1)
+        self.action_entry_rows = list(range(action_start, action_start + max(base_action_capacity, len(report.action_items))))
+
+    def _insert_formatted_rows(self, ws, insert_at: int, count: int, source_row: int) -> None:
+        if count <= 0:
+            return
+        merged_ranges = [CellRange(str(merged)) for merged in ws.merged_cells.ranges]
+        source_merges = [
+            merged
+            for merged in merged_ranges
+            if merged.min_row == source_row and merged.max_row == source_row
+        ]
+        row_heights = {
+            row: ws.row_dimensions[row].height
+            for row in range(insert_at, ws.max_row + 1)
+            if ws.row_dimensions[row].height is not None
+        }
+        for merged in list(ws.merged_cells.ranges):
+            ws.unmerge_cells(str(merged))
+        ws.insert_rows(insert_at, count)
+
+        for row, height in sorted(row_heights.items(), reverse=True):
+            ws.row_dimensions[row + count].height = height
+        for merged in merged_ranges:
+            if merged.min_row >= insert_at:
+                merged.shift(row_shift=count)
+            elif merged.max_row >= insert_at:
+                merged.max_row += count
+            ws.merge_cells(str(merged))
+
+        for offset in range(count):
+            target_row = insert_at + offset
+            self._copy_row_style(ws, source_row, target_row)
+            for merged in source_merges:
+                ws.merge_cells(
+                    start_row=target_row,
+                    start_column=merged.min_col,
+                    end_row=target_row,
+                    end_column=merged.max_col,
+                )
+        self._shift_discovered_rows(insert_at, count)
+
+    def _shift_discovered_rows(self, insert_at: int, count: int) -> None:
+        for section in self.sections.values():
+            if section.row >= insert_at:
+                section.row += count
+        for region in self.header_cache.values():
+            region.header_rows = {row + count if row >= insert_at else row for row in region.header_rows}
+            if region.start_row >= insert_at:
+                region.start_row += count
+            if region.end_row >= insert_at:
+                region.end_row += count
 
     def _clear_table(self, ws, region: TableRegion) -> None:
         for row in range(region.start_row, region.end_row + 1):

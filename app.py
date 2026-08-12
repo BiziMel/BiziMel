@@ -29,9 +29,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.7.2"
-APP_RELEASE_DATE = "2026-08-11"
-APP_BUILD = "2026-08-11-v2.7.2-pg-bible-mapping-r1"
+APP_VERSION = "2.7.3"
+APP_RELEASE_DATE = "2026-08-12"
+APP_BUILD = "2026-08-12-v2.7.3-pg-bible-period-filter-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -45,6 +45,17 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.7.3",
+        "release_date": "2026-08-12",
+        "title": "PG Bible period selection and target mapping",
+        "fixed": [
+            "Added a PG Bible export dialog requiring one or more fiscal years and quarters before the workbook is generated.",
+            "Filtered PG PLAN, PG ACTIONS, weekly calculations and derived totals to the selected fiscal periods.",
+            "Removed the obsolete NBM Target field from Account forms and supporting account data exports without changing PG Bible target numbering.",
+            "Mapped every populated PG PLAN and PG ACTIONS NBM target cell from Account PG Bible Order, including dynamically added rows when the template capacity is exceeded.",
+        ],
+    },
     {
         "version": "2.7.2",
         "release_date": "2026-08-11",
@@ -985,9 +996,11 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
             'Open Sales Play Reports to filter Sales Play usage by selected accounts, contacts and dates.',
             'Use the Sales Play quantity and last-used report to understand adoption and recency.',
             'Open PG Progress Reports for team or user reporting where permitted and export the visible report to XLS or PDF.',
-            'Export PG Bible to create the formatted Excel workbook based on the May 2026 template.'],
+            'Select Export PG Bible, choose one or more FY values and one or more Quarters, then select Create Export.',
+            'Review the downloaded workbook, which contains only account and outreach data matching every selected fiscal-period filter.'],
   'tips': ['PG Bible export preserves the workbook template formatting, merged cells, formulas, month labels and column widths.',
            'PG Bible maps PG Goals, left-side PG Plan account rows, monthly plan tracker placeholders and PG Actions rows.',
+           'PG Bible Order controls the numbered and colour-coded NBM Target shown for each account in PG PLAN and PG ACTIONS.',
            'Reports use the same date/time display format as the application.']},
  {'slug': 'profile',
   'title': 'Profile, Teams and Scheduling',
@@ -1942,6 +1955,7 @@ PAGE_INSTRUCTIONS = {
             "Use reports to review account coverage, contacts, outreach execution and PG Bible export readiness.",
             "Exports reflect the current fields used across the application.",
             "PG Bible export uses the May 2026 template mapping stored on the server.",
+            "Select at least one FY and one Quarter in the PG Bible popup; only data matching those selections is exported.",
         ],
     },
     "account_reports": {
@@ -9735,7 +9749,6 @@ def render_full_data_workbook():
             website,
             pipeline_target,
             current_pipeline,
-            nbm_target,
             sales_play,
             owner_name,
             owner_email,
@@ -9751,12 +9764,12 @@ def render_full_data_workbook():
     """)
     add_export_worksheet(workbook, "Accounts", [
         "Account ID", "PG Bible Order", "Account Name", "Business Org", "Tier", "Industry", "Country", "City",
-        "Website", "Pipeline Target", "Current Pipeline", "NBM Target", "Sales Play(s)", "Owner Name",
+        "Website", "Pipeline Target", "Current Pipeline", "Sales Play(s)", "Owner Name",
         "Owner Email", "Notes", "Date Created", "Last Updated", "Exported At"
     ], [[
         row["id"], row["pg_bible_order"], row["account_name"], row["business_unit"], row["account_tier"],
         row["industry"], row["country"], row["city"], row["website"], row["pipeline_target"],
-        row["current_pipeline"], row["nbm_target"], row["sales_play"], row["owner_name"],
+        row["current_pipeline"], row["sales_play"], row["owner_name"],
         row["owner_email"], row["notes"], row["date_created"], row["last_updated"], exported_at
     ] for row in accounts])
 
@@ -10920,8 +10933,8 @@ def add_account():
         try:
             cursor = connection.execute("""
                 INSERT INTO accounts
-                (account_name, pg_bible_order, account_tier, industry, business_unit, country, city, website, customer_logo, pipeline_target, nbm_target, sales_play, owner_user_id, owner_name, owner_email, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (account_name, pg_bible_order, account_tier, industry, business_unit, country, city, website, customer_logo, pipeline_target, sales_play, owner_user_id, owner_name, owner_email, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 request.form.get("account_name"),
                 request.form.get("pg_bible_order") or None,
@@ -10933,7 +10946,6 @@ def add_account():
                 normalise_external_url(request.form.get("website")),
                 customer_logo,
                 request.form.get("pipeline_target") or None,
-                request.form.get("nbm_target"),
                 sales_play_summary,
                 owner["owner_user_id"],
                 owner["owner_name"],
@@ -10952,7 +10964,6 @@ def add_account():
                 "website": normalise_external_url(request.form.get("website")),
                 "customer_logo": customer_logo,
                 "pipeline_target": request.form.get("pipeline_target"),
-                "nbm_target": request.form.get("nbm_target"),
                 "sales_play": sales_play_summary,
                 "owner_name": owner["owner_name"],
                 "notes": request.form.get("notes"),
@@ -11381,7 +11392,6 @@ def edit_account(account_id):
                 request.form.get("remove_customer_logo") == "1",
             ),
             "pipeline_target": request.form.get("pipeline_target"),
-            "nbm_target": request.form.get("nbm_target"),
             "sales_play": sales_play_summary,
             "notes": request.form.get("notes")
         }
@@ -11397,7 +11407,6 @@ def edit_account(account_id):
             "website": "Website",
             "customer_logo": "Customer logo",
             "pipeline_target": "Pipeline target",
-            "nbm_target": "NBM target",
             "sales_play": "Account sales play or initiative",
             "owner_user_id": "Account owner",
             "owner_name": "Account owner name",
@@ -11431,7 +11440,6 @@ def edit_account(account_id):
                 website = ?,
                 customer_logo = ?,
                 pipeline_target = ?,
-                nbm_target = ?,
                 sales_play = ?,
                 owner_user_id = ?,
                 owner_name = ?,
@@ -11450,7 +11458,6 @@ def edit_account(account_id):
             new_values["website"],
             new_values["customer_logo"],
             new_values["pipeline_target"],
-            new_values["nbm_target"],
             new_values["sales_play"],
             new_values["owner_user_id"],
             new_values["owner_name"],
@@ -15677,7 +15684,24 @@ def delete_profile_data():
 
 @app.route("/reports")
 def reports():
-    return render_template("reports.html")
+    connection = get_db_connection()
+    fiscal_year_rows = connection.execute("""
+        SELECT DISTINCT TRIM(fy) AS fy
+        FROM outreach
+        WHERE NULLIF(TRIM(COALESCE(fy, '')), '') IS NOT NULL
+        ORDER BY fy
+    """).fetchall()
+    connection.close()
+    fiscal_years = list(normalise_pg_bible_fiscal_year_values(row["fy"] for row in fiscal_year_rows))
+    current_fy = current_fiscal_year_label()
+    if current_fy not in fiscal_years:
+        fiscal_years.append(current_fy)
+    return render_template(
+        "reports.html",
+        pg_bible_fiscal_years=fiscal_years,
+        pg_bible_quarters=DROPDOWN_VALUES["quarters"],
+        pg_bible_error=request.args.get("pg_bible_error", ""),
+    )
 
 
 @app.route("/reports/full-export.xlsx")
@@ -16188,8 +16212,50 @@ def pg_bible_qualified_meeting_params():
     return tuple(SCHEDULED_MEETING_OUTCOMES)
 
 
-def build_pg_bible_report_from_db(connection):
+def current_fiscal_year_label(now=None):
+    current = now or current_app_datetime()
+    ending_year = current.year + 1 if current.month >= 4 else current.year
+    return f"FY{str(ending_year)[-2:]}"
+
+
+def normalise_pg_bible_period_values(values):
+    return tuple(dict.fromkeys(str(value or "").strip() for value in values if str(value or "").strip()))
+
+
+def normalise_pg_bible_fiscal_year_values(values):
+    normalised = []
+    for value in values:
+        token = str(value or "").strip().upper()
+        if token.startswith("FY"):
+            token = token[2:]
+        if not token.isdigit():
+            continue
+        token = token[-2:].zfill(2)
+        label = f"FY{token}"
+        if label not in normalised:
+            normalised.append(label)
+    return tuple(normalised)
+
+
+def pg_bible_activity_scope_sql(alias, fiscal_years=(), quarters=()):
+    clauses = []
+    params = []
+    if fiscal_years:
+        clauses.append(f"UPPER(REPLACE(TRIM(COALESCE({alias}.fy, '')), 'FY', '')) IN ({','.join('?' for _ in fiscal_years)})")
+        params.extend(fiscal_year.replace("FY", "") for fiscal_year in fiscal_years)
+    if quarters:
+        clauses.append(f"TRIM(COALESCE({alias}.quarter, '')) IN ({','.join('?' for _ in quarters)})")
+        params.extend(quarters)
+    return (" AND ".join(clauses) if clauses else "1 = 1", tuple(params))
+
+
+def build_pg_bible_report_from_db(connection, fiscal_years=(), quarters=()):
     from models import ActionItem, OwnerReport, PlanItem, UserProfile, WeeklyResultRow
+
+    fiscal_years = normalise_pg_bible_fiscal_year_values(fiscal_years)
+    quarters = normalise_pg_bible_period_values(quarters)
+    period_filter, period_params = pg_bible_activity_scope_sql("selected_outreach", fiscal_years, quarters)
+    selected_periods = bool(fiscal_years or quarters)
 
     profile = connection.execute("""
         SELECT *
@@ -16198,14 +16264,28 @@ def build_pg_bible_report_from_db(connection):
     """).fetchone()
 
     profile_name = (profile["full_name"] if profile and profile["full_name"] else "PipeFlow")
-    accounts = connection.execute("""
+    account_filter = ""
+    account_filter_params = ()
+    if selected_periods:
+        account_filter = f"""
+            WHERE EXISTS (
+                SELECT 1
+                FROM outreach AS selected_outreach
+                WHERE selected_outreach.account_id = accounts.id
+                  AND {period_filter}
+                  AND {report_visible_task_sql('selected_outreach')}
+            )
+        """
+        account_filter_params = (*period_params, *report_visible_task_params())
+    accounts = connection.execute(f"""
         SELECT *
         FROM accounts
+        {account_filter}
         ORDER BY
             CASE WHEN pg_bible_order IS NULL THEN 1 ELSE 0 END,
             pg_bible_order,
             account_name
-    """).fetchall()
+    """, account_filter_params).fetchall()
 
     plan_items = []
     for account in accounts:
@@ -16222,7 +16302,27 @@ def build_pg_bible_report_from_db(connection):
             estimated_value=account_pipeline_target,
         ))
 
-    contacts = connection.execute("""
+    contact_filter = ""
+    contact_filter_params = ()
+    if selected_periods:
+        contact_filter = f"""
+            WHERE EXISTS (
+                SELECT 1
+                FROM outreach AS selected_outreach
+                WHERE (
+                        selected_outreach.contact_id = contacts.id
+                     OR selected_outreach.id IN (
+                            SELECT outreach_id
+                            FROM outreach_recipients
+                            WHERE contact_id = contacts.id
+                        )
+                )
+                  AND {period_filter}
+                  AND {report_visible_task_sql('selected_outreach')}
+            )
+        """
+        contact_filter_params = (*period_params, *report_visible_task_params())
+    contacts = connection.execute(f"""
         SELECT
             contacts.*,
             accounts.pipeline_target,
@@ -16232,18 +16332,20 @@ def build_pg_bible_report_from_db(connection):
             accounts.sales_play AS account_sales_play
         FROM contacts
         LEFT JOIN accounts ON contacts.account_id = accounts.id
+        {contact_filter}
         ORDER BY
             CASE WHEN accounts.pg_bible_order IS NULL THEN 1 ELSE 0 END,
             accounts.pg_bible_order,
             accounts.account_name,
             contacts.name
-    """).fetchall()
+    """, contact_filter_params).fetchall()
 
     action_items = []
     stale_contact_cutoff = (datetime.now() - timedelta(days=30)).date()
     for contact in contacts:
-        if not contact_has_recent_or_open_activity(connection, contact["id"], stale_contact_cutoff):
+        if not selected_periods and not contact_has_recent_or_open_activity(connection, contact["id"], stale_contact_cutoff):
             continue
+        activity_filter, activity_filter_params = pg_bible_activity_scope_sql("outreach", fiscal_years, quarters)
         latest_outreach = connection.execute(f"""
             SELECT *
             FROM outreach
@@ -16255,10 +16357,11 @@ def build_pg_bible_report_from_db(connection):
                     WHERE contact_id = ?
                  )
             )
+              AND {activity_filter}
               AND {report_visible_task_sql("outreach")}
             ORDER BY activity_date DESC, activity_time DESC
             LIMIT 1
-        """, (contact["id"], contact["id"], *report_visible_task_params())).fetchone()
+        """, (contact["id"], contact["id"], *activity_filter_params, *report_visible_task_params())).fetchone()
         open_outreach = connection.execute(f"""
             SELECT *
             FROM outreach
@@ -16270,10 +16373,11 @@ def build_pg_bible_report_from_db(connection):
                         WHERE contact_id = ?
                     )
             )
+              AND {activity_filter}
               AND {report_visible_task_sql("outreach")}
             ORDER BY next_action_date ASC, next_action_time ASC, id DESC
             LIMIT 1
-        """, (contact["id"], contact["id"], *report_visible_task_params())).fetchone()
+        """, (contact["id"], contact["id"], *activity_filter_params, *report_visible_task_params())).fetchone()
         next_action_text = (
             (open_outreach["next_action"] or open_outreach["subject"] or "").strip()
             if open_outreach else ""
@@ -16307,9 +16411,10 @@ def build_pg_bible_report_from_db(connection):
                         WHERE contact_id = ?
                     )
             )
+              AND {activity_filter}
               AND {qualified_meeting_filter}
               AND {report_visible_task_sql("outreach")}
-        """, (contact["id"], contact["id"], *qualified_meeting_params, *report_visible_task_params())).fetchone()[0]
+        """, (contact["id"], contact["id"], *activity_filter_params, *qualified_meeting_params, *report_visible_task_params())).fetchone()[0]
         discovery_meeting_count = connection.execute(f"""
             SELECT COUNT(*)
             FROM outreach
@@ -16321,13 +16426,14 @@ def build_pg_bible_report_from_db(connection):
                         WHERE contact_id = ?
                     )
             )
+              AND {activity_filter}
               AND (
                     outcome = 'Discovery Booked'
                  OR outcome = 'Meeting Booked'
               )
               AND NULLIF(TRIM(COALESCE(scheduled_meeting_date, '')), '') IS NOT NULL
               AND {report_visible_task_sql("outreach")}
-        """, (contact["id"], contact["id"], *report_visible_task_params())).fetchone()[0]
+        """, (contact["id"], contact["id"], *activity_filter_params, *report_visible_task_params())).fetchone()[0]
         pg_progress_update = connection.execute("""
             SELECT completed_discovery_meeting
             FROM pg_action_contact_updates
@@ -16349,13 +16455,14 @@ def build_pg_bible_report_from_db(connection):
                         WHERE contact_id = ?
                     )
             )
+              AND {activity_filter}
               AND outcome = 'NBM Booked'
               AND scheduled_meeting_date IS NOT NULL
               AND scheduled_meeting_date != ''
               AND {report_visible_task_sql("outreach")}
             ORDER BY scheduled_meeting_date DESC, scheduled_meeting_time DESC, id DESC
             LIMIT 1
-        """, (contact["id"], contact["id"], *report_visible_task_params())).fetchone()
+        """, (contact["id"], contact["id"], *activity_filter_params, *report_visible_task_params())).fetchone()
         nbm_booked_date = pg_bible_meeting_datetime_label(nbm_booked_outreach)
         nbm_booked_people = pg_bible_outreach_people_label(connection, nbm_booked_outreach)
 
@@ -16376,6 +16483,7 @@ def build_pg_bible_report_from_db(connection):
             vo_value=money_value(contact["pipeline_target"]) if meeting_count else 0,
         ))
 
+    weekly_period_filter, weekly_period_params = pg_bible_activity_scope_sql("outreach", fiscal_years, quarters)
     weekly_source_rows = connection.execute(f"""
         SELECT
             outreach.activity_date,
@@ -16389,8 +16497,9 @@ def build_pg_bible_report_from_db(connection):
         LEFT JOIN contacts ON outreach.contact_id = contacts.id
         WHERE activity_date IS NOT NULL
           AND activity_date != ''
+          AND {weekly_period_filter}
           AND {report_visible_task_sql("outreach")}
-    """, report_visible_task_params()).fetchall()
+    """, (*weekly_period_params, *report_visible_task_params())).fetchall()
 
     weekly_totals = {}
     for row in weekly_source_rows:
@@ -16471,6 +16580,20 @@ def build_pg_bible_report_from_db(connection):
 
 @app.route("/reports/pg-bible/export")
 def export_pg_bible():
+    fiscal_years = normalise_pg_bible_fiscal_year_values(request.args.getlist("fy"))
+    quarters = normalise_pg_bible_period_values(request.args.getlist("quarter"))
+    if not fiscal_years or not quarters:
+        return redirect(url_for(
+            "reports",
+            pg_bible_error="Select at least one FY and one Quarter before exporting the PG Bible.",
+        ))
+    invalid_quarters = [quarter for quarter in quarters if quarter not in DROPDOWN_VALUES["quarters"]]
+    if invalid_quarters:
+        return redirect(url_for(
+            "reports",
+            pg_bible_error="One or more selected quarters are not valid. Review the selections and try again.",
+        ))
+
     template_setting = os.environ.get("PG_BIBLE_TEMPLATE_PATH", "").strip()
     if not template_setting:
         template_dir = Path(__file__).resolve().parent / "pg_bible_templates"
@@ -16499,23 +16622,50 @@ def export_pg_bible():
         )
 
     connection = get_db_connection()
-    report = build_pg_bible_report_from_db(connection)
-    connection.close()
+    try:
+        available_fys = set(normalise_pg_bible_fiscal_year_values(
+            row["fy"] for row in connection.execute("""
+                SELECT DISTINCT TRIM(fy) AS fy
+                FROM outreach
+                WHERE NULLIF(TRIM(COALESCE(fy, '')), '') IS NOT NULL
+            """).fetchall()
+        ))
+        available_fys.add(current_fiscal_year_label())
+        if any(fiscal_year not in available_fys for fiscal_year in fiscal_years):
+            return redirect(url_for(
+                "reports",
+                pg_bible_error="One or more selected fiscal years are not available. Review the selections and try again.",
+            ))
+        report = build_pg_bible_report_from_db(connection, fiscal_years, quarters)
+    except Exception as exc:
+        code = log_diagnostic_exception("PGBIBLE", exc, {"stage": "build_report"})
+        return redirect(url_for(
+            "reports",
+            pg_bible_error=f"PipeFlow could not prepare the selected PG Bible data. Error code: {code}",
+        ))
+    finally:
+        connection.close()
 
     try:
         output_dir = Path(os.environ.get("PIPEFLOW_DATA_DIR", Path(__file__).resolve().parent / "server_data")) / "exports"
         output_path = PGBibleExporter(template_path, output_dir).export(report)
     except PGBibleExportError as exc:
-        return Response(
-            f"{exc.error_code}: {exc.human_message}\n" + "\n".join(exc.details),
-            status=400,
-            mimetype="text/plain",
-        )
+        return redirect(url_for(
+            "reports",
+            pg_bible_error=f"PG Bible export could not be completed: {exc.human_message} ({exc.error_code})",
+        ))
+    except Exception as exc:
+        code = log_diagnostic_exception("PGBIBLE", exc, {"stage": "write_workbook"})
+        return redirect(url_for(
+            "reports",
+            pg_bible_error=f"PipeFlow could not create the PG Bible workbook. Error code: {code}",
+        ))
 
+    period_label = "_".join((*fiscal_years, *quarters))
     return send_file(
         output_path,
         as_attachment=True,
-        download_name=output_path.name,
+        download_name=f"PGBible_{period_label}.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 

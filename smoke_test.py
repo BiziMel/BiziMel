@@ -1600,12 +1600,15 @@ def main():
                 "next_action_time": "10:00",
                 "subject": "Smoke multi-contact outreach",
                 "outcome": "NBM Booked",
-                "scheduled_meeting_at": "2026-08-12T09:30",
+                "scheduled_meeting_at": "2026-08-13T09:30",
                 "next_action": "",
             },
             follow_redirects=False,
         )
-        assert_ok(response.status_code in (302, 303), "multi-contact outreach add failed")
+        assert_ok(
+            response.status_code in (302, 303),
+            f"multi-contact outreach add failed ({response.status_code}): {response.get_data(as_text=True)[:5000]}",
+        )
 
         response = client.post(
             "/outreach/add",
@@ -2267,15 +2270,26 @@ def main():
             assert_ok(response.status_code == 200, f"{path} returned {response.status_code}")
             assert_ok(response.headers.get("Content-Disposition"), f"{path} did not download")
 
-        response = client.get("/reports/pg-bible/export")
+        response = client.get("/reports")
+        assert_ok(response.status_code == 200, f"Reports page returned {response.status_code}")
+        assert_ok(b'id="pgBibleExportDialog"' in response.data, "PG Bible period selection dialog was not rendered")
+        assert_ok(b'name="fy"' in response.data and b'name="quarter"' in response.data, "PG Bible FY and Quarter selectors were not rendered")
+
+        response = client.get("/reports/pg-bible/export", follow_redirects=False)
+        assert_ok(response.status_code in (302, 303), "PG Bible export without FY and Quarter was not redirected")
+
+        response = client.get("/reports/pg-bible/export?fy=FY27&quarter=Q1")
         assert_ok(response.status_code == 200, f"PG Bible export returned {response.status_code}")
         assert_ok(response.headers.get("Content-Disposition"), "PG Bible did not download")
         from excel_exporter import PGBibleExporter
         from openpyxl import load_workbook
         connection = sqlite3.connect(db_path)
         connection.row_factory = sqlite3.Row
-        report = pipeflow_app.build_pg_bible_report_from_db(connection)
+        report = pipeflow_app.build_pg_bible_report_from_db(connection, ("FY27",), ("Q1",))
+        excluded_period_report = pipeflow_app.build_pg_bible_report_from_db(connection, ("FY27",), ("Q4",))
         connection.close()
+        assert_ok(not excluded_period_report.plan_items, "PG Bible period filters included accounts from an unselected quarter")
+        assert_ok(not excluded_period_report.action_items, "PG Bible period filters included actions from an unselected quarter")
         pg_bible_output = PGBibleExporter(
             Path(pipeflow_app.__file__).resolve().parent / "pg_bible_templates" / "PGBible_Template_May2026.xlsx",
             Path(tmp) / "pg_bible_exports",
@@ -2286,15 +2300,56 @@ def main():
         assert_ok(pg_sheet["L5"].value == "=(F3+B5)-L3", "PG Bible pipeline gap formula was not adapted for the unchanged merged template")
         assert_ok(pg_sheet["L11"].value == "Smoke Test Account - BMC", "PG Bible PG PLAN customer did not include business organisation")
         assert_ok(pg_sheet["D11"].value == "Smoke Test Play", "PG Bible PG PLAN Sales Play did not use configured account Sales Play")
+        assert_ok(str(pg_sheet["B11"].value) == "1", "PG Bible PG PLAN NBM target did not map Account PG Bible Order")
         pg_action_row = next(
             row
             for row in range(33, 80)
             if (pg_sheet[f"C{row}"].value or "").startswith("Smoke Test Contact")
         )
         assert_ok("Smoke Test Account - BMC" in (pg_sheet[f"C{pg_action_row}"].value or ""), "PG Bible PG ACTIONS contact label missing account context")
+        assert_ok(str(pg_sheet[f"B{pg_action_row}"].value) == "1", "PG Bible PG ACTIONS target did not map Account PG Bible Order")
         assert_ok(pg_sheet[f"F{pg_action_row}"].value == "Yes", "PG Bible Discovery Meeting did not map from a booked meeting with a scheduled date")
         assert_ok("08-05-2026" in (pg_sheet[f"J{pg_action_row}"].value or ""), "PG Bible NBM booked column did not include scheduled meeting date")
         assert_ok(pipeflow_app.money_value(pg_sheet[f"T{pg_action_row}"].value) > 0, "PG Bible VO Value did not map for qualified scheduled meeting progress")
+
+        from models import ActionItem, OwnerReport, PlanItem
+        expanded_report = OwnerReport(
+            profile=report.profile,
+            goals=report.goals,
+            calc_payload=report.calc_payload,
+            plan_items=[
+                PlanItem(
+                    pg_bible_order=index,
+                    nbm_target=str(index),
+                    customer=f"Capacity Account {index}",
+                )
+                for index in range(1, 22)
+            ],
+            action_items=[
+                ActionItem(
+                    related_nbm_target=str((index % 21) + 1),
+                    discovery_target_name_title=f"Capacity Contact {index + 1}",
+                )
+                for index in range(50)
+            ],
+        )
+        expanded_output = PGBibleExporter(
+            Path(pipeflow_app.__file__).resolve().parent / "pg_bible_templates" / "PGBible_Template_May2026.xlsx",
+            Path(tmp) / "pg_bible_capacity_exports",
+        ).export(expanded_report)
+        expanded_sheet = load_workbook(expanded_output, data_only=False).active
+        assert_ok(str(expanded_sheet["B31"].value) == "21", "PG Bible did not extend PG PLAN NBM target mapping beyond row 29")
+        assert_ok(expanded_sheet["B33"].value == "PG ACTIONS", "Extended PG PLAN rows did not preserve the PG ACTIONS section")
+        assert_ok(str(expanded_sheet["B35"].value) == "1", "Extended PG ACTIONS target mapping did not start in the shifted action row")
+        assert_ok(str(expanded_sheet["B84"].value) == "8", "PG Bible did not extend NBM target mapping through every action row")
+
+        app_source = Path("app.py").read_text(encoding="utf-8")
+        account_templates = (
+            Path("templates/add_account.html").read_text(encoding="utf-8")
+            + Path("templates/edit_account.html").read_text(encoding="utf-8")
+        )
+        assert_ok('request.form.get("nbm_target")' not in app_source, "Removed Account NBM Target is still accepted by save handlers")
+        assert_ok('name="nbm_target"' not in account_templates, "Removed Account NBM Target is still displayed on Account forms")
 
         response = client.post(
             "/outreach/bulk-action",
@@ -2321,7 +2376,6 @@ def main():
         assert_ok(remaining_outreach == 0, "bulk Outreach delete did not remove selected tasks")
         assert_ok(remaining_recipients == 0, "bulk Outreach delete did not remove selected recipients")
 
-        app_source = Path("app.py").read_text(encoding="utf-8")
         assert_ok(
             "SELECT MAX(id) AS id FROM outreach" not in app_source,
             "Outreach inserts must not infer the saved task with SELECT MAX(id)",

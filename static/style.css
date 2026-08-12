@@ -4606,6 +4606,24 @@ body {
     margin: 16px 18px;
 }
 
+.pg-bible-export-form {
+    display: grid;
+    gap: 10px;
+    padding: 18px;
+}
+
+.pg-bible-export-form > p,
+.pg-bible-export-form > label,
+.pg-bible-export-form > .form-actions,
+.pg-bible-export-form > .alert-error {
+    margin: 0;
+}
+
+.pg-bible-export-form .checkbox-select-panel {
+    position: static;
+    margin-top: 4px;
+}
+
 .secret-phrase-change-form {
     margin-top: 16px;
     padding-top: 16px;
