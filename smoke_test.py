@@ -1336,10 +1336,19 @@ def main():
             "full-width outreach-auto-schedule-panel" not in add_html,
             "Add Outreach auto-schedule control should not be full width",
         )
-        default_activity_date = input_value(add_html, "activity_date")
-        default_due_date = input_value(add_html, "next_action_date")
-        assert_ok(default_activity_date >= today.isoformat(), "new Outreach default activity date is in the past")
-        assert_ok(default_due_date >= today.isoformat(), "new Outreach default due date is in the past")
+        for field_id in ("activity_date", "activity_time", "next_action_date", "next_action_time", "scheduled_meeting_at"):
+            assert_ok(input_value(add_html, field_id) == "", f"new Outreach {field_id} should open blank")
+        for prefill_url in (
+            f"/outreach/add?account_id={account_id}",
+            f"/outreach/add?contact_id={contact_id}",
+            f"/outreach/add?prefill_from={outreach_id}",
+        ):
+            prefilled_add_html = client.get(prefill_url).get_data(as_text=True)
+            for field_id in ("activity_date", "activity_time", "next_action_date", "next_action_time"):
+                assert_ok(
+                    input_value(prefilled_add_html, field_id) == "",
+                    f"prefilled new Outreach {field_id} should remain blank",
+                )
         activity_start_input = re.search(r'<input[^>]+id="activity_date"[^>]*>', add_html)
         due_date_input = re.search(r'<input[^>]+id="next_action_date"[^>]*>', add_html)
         assert_ok(
@@ -1356,9 +1365,17 @@ def main():
         )
 
         campaign_builder_html = client.get("/outreach/campaign-builder").get_data(as_text=True)
-        assert_ok(input_value(campaign_builder_html, "campaign_start_date") >= today.isoformat(), "Campaign Builder default start date is in the past")
-        assert_ok(input_value(campaign_builder_html, "campaign_end_date") >= today.isoformat(), "Campaign Builder default end date is in the past")
-        assert_ok(input_value(campaign_builder_html, "pg_week_start") >= today.isoformat(), "Campaign Builder default PG week date is in the past")
+        for field_id in ("campaign_start_date", "campaign_end_date", "pg_week_start"):
+            assert_ok(input_value(campaign_builder_html, field_id) == "", f"Campaign Builder {field_id} should open blank")
+        assert_ok("setDefaultCampaignWindow" not in campaign_builder_html, "Campaign Builder still auto-populates dates in the browser")
+        prefilled_campaign_html = client.get(
+            f"/outreach/campaign-builder?account_id={account_id}&contact_id={contact_id}"
+        ).get_data(as_text=True)
+        for field_id in ("campaign_start_date", "campaign_end_date", "pg_week_start"):
+            assert_ok(
+                input_value(prefilled_campaign_html, field_id) == "",
+                f"prefilled Campaign Builder {field_id} should remain blank",
+            )
 
         response = client.get(f"/outreach/{outreach_id}/edit")
         edit_outreach_html = response.get_data(as_text=True)

@@ -56,6 +56,7 @@ RELEASE_NOTES = [
             "Allowed ordered rescheduling to continue beyond the tasks' original planned end dates while retaining working-hour, non-working-day and contact-spacing rules.",
             "Changed Account creation to assign the next unique PG Bible Order automatically, while retaining controlled editing with duplicate-number validation.",
             "Enforced unique PG Bible ordering for all accounts so PG Bible plan and action output follows one unambiguous numeric sequence.",
+            "Changed Add Outreach and Campaign Builder so all date and time fields open blank and are populated only by the user or the explicit Outreach Auto Schedule action.",
         ],
     },
     {
@@ -944,6 +945,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
             'Add an Activity Update before completing, closing or cancelling the task.',
             'Save the task, or use Complete and Create Follow-on from edit when the next action needs a new task.'],
   'tips': ['Outreach tasks should never remain unassigned; new tasks default to the logged-in creator unless reassigned.',
+           'New Outreach date and time fields open blank. Enter them manually or select Auto Schedule after choosing the account and contact.',
            'Completed tasks can be reopened for 10 days before the system moves them to Closed.',
            'For bulk rescheduling, select the required rows and choose Reschedule Selected. PipeFlow preserves their current order and finds collision-free working slots without using the original campaign end date as a limit.',
            'Sales Play assets appear under contact information when the selected Sales Play has configured assets.',
@@ -962,6 +964,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
             'Generate the campaign. PipeFlow creates dated tasks across selected contacts.',
             'Review generated tasks, assignees and due dates in Outreach before starting execution.'],
   'tips': ['Every generated campaign starts with VITO.',
+           'Campaign date fields open blank and are never inferred from PG Week; enter all three dates before generation.',
            'If no activity types are selected, PipeFlow varies later steps rather than repeating one activity.',
            'Campaign scheduling avoids weekends, configured non-working dates and duplicate time slots where possible.']},
  {'slug': 'partners',
@@ -1847,6 +1850,7 @@ PAGE_INSTRUCTIONS = {
             "Completed records can be reopened and updated for 10 days from completion. After that, PipeFlow moves them to the system-only Closed status.",
             "Use Save Assignment after changing the assignee. The selected user must already have access to the account.",
             "Select several rows and use Reschedule Selected to retain their current order while moving them into the next collision-free working slots.",
+            "New Outreach schedule fields open blank; use Auto Schedule only when you want PipeFlow to populate them.",
             "Open the task to complete it, add a mandatory Activity Update or create a follow-on task.",
         ],
     },
@@ -1935,6 +1939,7 @@ PAGE_INSTRUCTIONS = {
         "title": "Add Outreach Guidance",
         "items": [
             "Use one record per outreach task or next action.",
+            "All schedule fields begin blank. Enter dates and times manually, or choose Auto Schedule after selecting the account and contact.",
             "Activity Start Date is maintained inside the activity record. Activity Due Date is shown on the Outreach table because it drives next-action execution.",
             "Leave Activity Update blank until there is a real update to record.",
         ],
@@ -1961,6 +1966,7 @@ PAGE_INSTRUCTIONS = {
             "Campaigns use one sales play only and can be generated for multiple contacts on the selected account.",
             "Use Campaign Activity Types to limit generated tasks to selected activities, including SMS/WhatsApp, or leave them blank for a varied mix.",
             "Every generated campaign starts with VITO before moving into the selected or varied follow-up activity mix.",
+            "PG Week Start, Campaign Start and Campaign End begin blank and must be entered by the user.",
             "Campaign start date cannot be earlier than today and generated tasks stay on or after the configured start date.",
             "Auto-scheduling avoids weekends, configured non-working dates and duplicate time slots where possible.",
         ],
@@ -3921,15 +3927,6 @@ def calculate_new_outreach_auto_schedule(connection, recipients):
     )
 
 
-def default_future_outreach_slot(profile=None, non_working_blocks=None, now=None):
-    return next_available_outreach_slot(
-        now or current_app_datetime(),
-        profile=profile,
-        reserved_slots=set(),
-        non_working_blocks=non_working_blocks,
-    )
-
-
 def form_datetime_value(date_value, time_value="", default_time=time(23, 59, 59)):
     date_value = str(date_value or "").strip()
     if not date_value:
@@ -3957,17 +3954,6 @@ def future_datetime_validation_error(date_value, time_value, label, now=None):
     if selected < (now or current_app_datetime()).replace(second=0, microsecond=0):
         return f"{label} cannot be earlier than the current date and time."
     return ""
-
-
-def apply_new_outreach_defaults(prefill, profile=None, non_working_blocks=None, now=None):
-    now = (now or current_app_datetime()).replace(second=0, microsecond=0)
-    rounded_now = round_datetime_to_next_slot(now)
-    prefill.setdefault("activity_date", rounded_now.date().isoformat())
-    prefill.setdefault("activity_time", rounded_now.strftime("%H:%M"))
-    next_action_date, next_action_time = default_future_outreach_slot(profile, non_working_blocks, rounded_now)
-    prefill.setdefault("next_action_date", next_action_date)
-    prefill.setdefault("next_action_time", next_action_time)
-    return prefill
 
 
 def build_campaign_schedule(campaign_start, campaign_end, total_tasks, times_per_week, templates=None, profile=None, reserved_slots=None, non_working_blocks=None, submitted_at=None):
@@ -13598,8 +13584,6 @@ def add_outreach():
 
     connection, profile, non_working_block_rows, non_working_blocks = campaign_profile_and_blocks(connection)
     prefill.setdefault("assigned_to", default_outreach_assignee())
-    if request.method != "POST":
-        apply_new_outreach_defaults(prefill, profile, non_working_blocks)
     prefill["scheduled_meeting_at"] = scheduled_meeting_datetime_value(
         prefill.get("scheduled_meeting_date", ""),
         prefill.get("scheduled_meeting_time", ""),
@@ -13661,12 +13645,6 @@ def campaign_builder_impl():
     selected_campaign_activity_types = request.form.getlist("campaign_activity_types")
     success_context_summary = ""
     connection, profile, non_working_block_rows, non_working_blocks = campaign_profile_and_blocks(connection)
-    if request.method != "POST":
-        today = current_app_datetime().date()
-        selected_campaign_start = selected_campaign_start or today.isoformat()
-        selected_campaign_end = selected_campaign_end or (today + timedelta(days=28)).isoformat()
-        selected_pg_week_start = selected_pg_week_start or (today + timedelta(days=29)).isoformat()
-
     if request.method == "POST":
         account_id = request.form.get("account_id")
         pg_week_start_raw = request.form.get("pg_week_start", "")

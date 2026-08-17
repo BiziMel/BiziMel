@@ -263,9 +263,6 @@
 </div>
 
 <script>
-    const pgWeekInput = document.getElementById("pg_week_start");
-    const campaignStartInput = document.getElementById("campaign_start_date");
-    const campaignEndInput = document.getElementById("campaign_end_date");
     const accountInput = document.getElementById("account_id");
     const salesPlayInput = document.getElementById("sales_play");
     const contactOptions = Array.from(document.querySelectorAll(".campaign-contact-option"));
@@ -275,53 +272,6 @@
         value: option.value,
         accountId: option.dataset.accountId || ""
     })) : [];
-
-    function isoDate(date) {
-        return date.toISOString().slice(0, 10);
-    }
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayIso = isoDate(today);
-
-    if (campaignStartInput) {
-        campaignStartInput.min = todayIso;
-        if (campaignStartInput.value && campaignStartInput.value < todayIso) {
-            campaignStartInput.value = todayIso;
-        }
-    }
-
-    function setDefaultCampaignWindow() {
-        if (!pgWeekInput || !pgWeekInput.value) {
-            return;
-        }
-        const pgWeekStart = new Date(`${pgWeekInput.value}T00:00:00`);
-        if (!campaignStartInput.value) {
-            const startDate = new Date(pgWeekStart);
-            startDate.setDate(startDate.getDate() - 28);
-            if (startDate < today) {
-                startDate.setTime(today.getTime());
-            }
-            campaignStartInput.value = isoDate(startDate);
-        }
-        if (!campaignEndInput.value) {
-            const endDate = new Date(pgWeekStart);
-            endDate.setDate(endDate.getDate() - 1);
-            if (endDate < today) {
-                endDate.setTime(today.getTime());
-            }
-            campaignEndInput.value = isoDate(endDate);
-        }
-    }
-
-    if (pgWeekInput) {
-        pgWeekInput.addEventListener("change", () => {
-            campaignStartInput.value = "";
-            campaignEndInput.value = "";
-            setDefaultCampaignWindow();
-        });
-        setDefaultCampaignWindow();
-    }
 
     function filterContactsForAccount() {
         if (!accountInput) return;
