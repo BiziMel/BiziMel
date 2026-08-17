@@ -5549,6 +5549,31 @@ body {
     flex-wrap: wrap;
 }
 
+.outreach-bulk-choice-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: auto;
+    padding-left: 12px;
+    border-left: 2px solid #b8c8bc;
+}
+
+.outreach-bulk-reschedule-button {
+    border: 1px solid #1f5f43;
+    background: #2f6f45;
+    color: #ffffff !important;
+}
+
+.outreach-bulk-reschedule-button:hover {
+    background: #255a38;
+}
+
+.outreach-bulk-delete-button {
+    border: 1px solid #b33b3b;
+    background: #f6d5d5;
+    color: #681d1d !important;
+}
+
 .outreach-floating-action-bar {
     position: sticky;
     top: 8px;

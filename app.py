@@ -29,9 +29,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.7.3"
-APP_RELEASE_DATE = "2026-08-12"
-APP_BUILD = "2026-08-12-v2.7.3-pg-bible-period-filter-r1"
+APP_VERSION = "2.8.0"
+APP_RELEASE_DATE = "2026-08-17"
+APP_BUILD = "2026-08-17-v2.8.0-ordered-bulk-rescheduling-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -45,6 +45,19 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.8.0",
+        "release_date": "2026-08-17",
+        "title": "Ordered bulk Outreach rescheduling",
+        "fixed": [
+            "Added a clearly separated Reschedule Selected action beside bulk delete on the Outreach table.",
+            "Changed bulk rescheduling to preserve the selected tasks' existing chronological order while finding new working-time slots.",
+            "Expanded collision detection to include activity starts and due dates across every non-deleted Outreach record, with at least 15 minutes between scheduled events.",
+            "Allowed ordered rescheduling to continue beyond the tasks' original planned end dates while retaining working-hour, non-working-day and contact-spacing rules.",
+            "Changed Account creation to assign the next unique PG Bible Order automatically, while retaining controlled editing with duplicate-number validation.",
+            "Enforced unique PG Bible ordering for all accounts so PG Bible plan and action output follows one unambiguous numeric sequence.",
+        ],
+    },
     {
         "version": "2.7.3",
         "release_date": "2026-08-12",
@@ -932,6 +945,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
             'Save the task, or use Complete and Create Follow-on from edit when the next action needs a new task.'],
   'tips': ['Outreach tasks should never remain unassigned; new tasks default to the logged-in creator unless reassigned.',
            'Completed tasks can be reopened for 10 days before the system moves them to Closed.',
+           'For bulk rescheduling, select the required rows and choose Reschedule Selected. PipeFlow preserves their current order and finds collision-free working slots without using the original campaign end date as a limit.',
            'Sales Play assets appear under contact information when the selected Sales Play has configured assets.',
            'No Response outcomes are used as negative signals in insights and PG Progress RAG.']},
  {'slug': 'campaign-builder',
@@ -1832,6 +1846,7 @@ PAGE_INSTRUCTIONS = {
             "Use the filters to focus active work. All Open excludes Completed, Closed and Cancelled records.",
             "Completed records can be reopened and updated for 10 days from completion. After that, PipeFlow moves them to the system-only Closed status.",
             "Use Save Assignment after changing the assignee. The selected user must already have access to the account.",
+            "Select several rows and use Reschedule Selected to retain their current order while moving them into the next collision-free working slots.",
             "Open the task to complete it, add a mandatory Activity Update or create a follow-on task.",
         ],
     },
@@ -1847,7 +1862,7 @@ PAGE_INSTRUCTIONS = {
         "title": "Add Account Guidance",
         "items": [
             "The creator becomes the account owner by default.",
-            "Set PG Bible Order when the account must appear in a specific export sequence.",
+            "PipeFlow assigns the next PG Bible Order automatically when the account is saved.",
             "Enter Pipeline Target USD ACV so dashboard PG target totals and PG Bible exports remain accurate.",
         ],
     },
@@ -1855,6 +1870,7 @@ PAGE_INSTRUCTIONS = {
         "title": "Edit Account Guidance",
         "items": [
             "Changing Account Owner transfers ownership rights when you save.",
+            "PG Bible Order can be changed here, but every account must retain a unique positive number.",
             "Only the owner can share or revoke sharing for this account.",
             "Use Cancel if you need to leave without committing changes.",
         ],
@@ -3819,7 +3835,7 @@ def next_available_outreach_slot(start_at, profile=None, reserved_slots=None, no
             candidate = datetime.combine(next_day, start_time)
             continue
         slot = (candidate.date().isoformat(), candidate.strftime("%H:%M"))
-        if slot not in reserved_slots:
+        if not campaign_slot_conflicts(candidate.date(), candidate.strftime("%H:%M"), reserved_slots):
             reserved_slots.add(slot)
             for contact_key in contact_keys:
                 reserved_contact_dates.setdefault(contact_key, set()).add(slot[0])
@@ -10913,6 +10929,30 @@ def add_partner_account_relationship(partner_id):
     return redirect(url_for("view_partner", partner_id=partner_id))
 
 
+def next_account_pg_bible_order(connection):
+    row = connection.execute("""
+        SELECT COALESCE(MAX(pg_bible_order), 0) + 1 AS next_order
+        FROM accounts
+        WHERE pg_bible_order IS NOT NULL
+          AND pg_bible_order > 0
+    """).fetchone()
+    return int(row["next_order"] or 1)
+
+
+def pg_bible_order_unique_error(exc):
+    message = str(exc or "").casefold()
+    return "pg_bible_order" in message and ("unique" in message or "duplicate" in message)
+
+
+def account_pg_bible_order_conflict(connection, pg_bible_order, exclude_account_id=None):
+    query = "SELECT id FROM accounts WHERE pg_bible_order = ?"
+    params = [pg_bible_order]
+    if exclude_account_id is not None:
+        query += " AND id != ?"
+        params.append(exclude_account_id)
+    return connection.execute(query, tuple(params)).fetchone() is not None
+
+
 @app.route("/accounts/add", methods=("GET", "POST"))
 def add_account():
     custom_fields = account_custom_field_payload(active_only=True)
@@ -10931,31 +10971,41 @@ def add_account():
             "owner_email": selected_owner["email"],
         } if selected_owner else current_user_owner_payload()
         try:
-            cursor = connection.execute("""
-                INSERT INTO accounts
-                (account_name, pg_bible_order, account_tier, industry, business_unit, country, city, website, customer_logo, pipeline_target, sales_play, owner_user_id, owner_name, owner_email, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                request.form.get("account_name"),
-                request.form.get("pg_bible_order") or None,
-                request.form.get("account_tier"),
-                request.form.get("industry"),
-                request.form.get("business_unit"),
-                request.form.get("country"),
-                request.form.get("city"),
-                normalise_external_url(request.form.get("website")),
-                customer_logo,
-                request.form.get("pipeline_target") or None,
-                sales_play_summary,
-                owner["owner_user_id"],
-                owner["owner_name"],
-                owner["owner_email"],
-                request.form.get("notes")
-            ))
+            cursor = None
+            pg_bible_order = None
+            for attempt in range(3):
+                pg_bible_order = next_account_pg_bible_order(connection)
+                try:
+                    cursor = connection.execute("""
+                        INSERT INTO accounts
+                        (account_name, pg_bible_order, account_tier, industry, business_unit, country, city, website, customer_logo, pipeline_target, sales_play, owner_user_id, owner_name, owner_email, notes)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        request.form.get("account_name"),
+                        pg_bible_order,
+                        request.form.get("account_tier"),
+                        request.form.get("industry"),
+                        request.form.get("business_unit"),
+                        request.form.get("country"),
+                        request.form.get("city"),
+                        normalise_external_url(request.form.get("website")),
+                        customer_logo,
+                        request.form.get("pipeline_target") or None,
+                        sales_play_summary,
+                        owner["owner_user_id"],
+                        owner["owner_name"],
+                        owner["owner_email"],
+                        request.form.get("notes")
+                    ))
+                    break
+                except Exception as exc:
+                    connection.rollback()
+                    if attempt == 2 or not pg_bible_order_unique_error(exc):
+                        raise
             account_id = cursor.lastrowid
             audit_record_create(connection, "account", account_id, {
                 "account_name": request.form.get("account_name"),
-                "pg_bible_order": request.form.get("pg_bible_order") or None,
+                "pg_bible_order": pg_bible_order,
                 "account_tier": request.form.get("account_tier"),
                 "industry": request.form.get("industry"),
                 "business_unit": request.form.get("business_unit"),
@@ -11373,13 +11423,44 @@ def edit_account(account_id):
     sales_play_options = sales_play_catalog(connection)
     selected_sales_play_ids = account_selected_sales_play_ids(connection, account_id)
 
+    def render_edit_error(message):
+        submitted_account = dict(account)
+        for field_name in (
+            "account_name", "pg_bible_order", "account_tier", "industry", "business_unit",
+            "country", "city", "website", "pipeline_target", "notes",
+        ):
+            if field_name in request.form:
+                submitted_account[field_name] = request.form.get(field_name)
+        connection.close()
+        return render_template(
+            "edit_account.html",
+            account=submitted_account,
+            custom_fields=custom_fields,
+            custom_values=custom_values,
+            assignable_users=list_assignable_users(),
+            sales_play_options=sales_play_options,
+            selected_sales_play_ids=selected_sales_play_ids,
+            owner=account_owner_payload(submitted_account),
+            error=message,
+        )
+
     if request.method == "POST":
         selected_sales_play_ids = request.form.getlist("sales_play_ids")
         selected_sales_play_titles = sales_play_titles_for_ids(connection, selected_sales_play_ids)
         sales_play_summary = ", ".join(selected_sales_play_titles)
+        try:
+            pg_bible_order = int(str(request.form.get("pg_bible_order") or "").strip())
+        except ValueError:
+            return render_edit_error("Enter a whole PG Bible Order number greater than zero.")
+        if pg_bible_order < 1:
+            return render_edit_error("Enter a whole PG Bible Order number greater than zero.")
+        if account_pg_bible_order_conflict(connection, pg_bible_order, account_id):
+            return render_edit_error(
+                f"PG Bible Order {pg_bible_order} is already allocated to another account. Choose a unique number."
+            )
         new_values = {
             "account_name": request.form.get("account_name"),
-            "pg_bible_order": request.form.get("pg_bible_order") or None,
+            "pg_bible_order": pg_bible_order,
             "account_tier": request.form.get("account_tier"),
             "industry": request.form.get("industry"),
             "business_unit": request.form.get("business_unit"),
@@ -11428,43 +11509,51 @@ def edit_account(account_id):
         changes = build_change_log(account, new_values, labels)
         changes.extend(build_custom_field_changes(custom_fields, custom_values, request.form))
 
-        connection.execute("""
-            UPDATE accounts
-            SET account_name = ?,
-                pg_bible_order = ?,
-                account_tier = ?,
-                industry = ?,
-                business_unit = ?,
-                country = ?,
-                city = ?,
-                website = ?,
-                customer_logo = ?,
-                pipeline_target = ?,
-                sales_play = ?,
-                owner_user_id = ?,
-                owner_name = ?,
-                owner_email = ?,
-                notes = ?,
-                last_updated = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """, (
-            new_values["account_name"],
-            new_values["pg_bible_order"],
-            new_values["account_tier"],
-            new_values["industry"],
-            new_values["business_unit"],
-            new_values["country"],
-            new_values["city"],
-            new_values["website"],
-            new_values["customer_logo"],
-            new_values["pipeline_target"],
-            new_values["sales_play"],
-            new_values["owner_user_id"],
-            new_values["owner_name"],
-            new_values["owner_email"],
-            new_values["notes"],
-            account_id
-        ))
+        try:
+            connection.execute("""
+                UPDATE accounts
+                SET account_name = ?,
+                    pg_bible_order = ?,
+                    account_tier = ?,
+                    industry = ?,
+                    business_unit = ?,
+                    country = ?,
+                    city = ?,
+                    website = ?,
+                    customer_logo = ?,
+                    pipeline_target = ?,
+                    sales_play = ?,
+                    owner_user_id = ?,
+                    owner_name = ?,
+                    owner_email = ?,
+                    notes = ?,
+                    last_updated = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (
+                new_values["account_name"],
+                new_values["pg_bible_order"],
+                new_values["account_tier"],
+                new_values["industry"],
+                new_values["business_unit"],
+                new_values["country"],
+                new_values["city"],
+                new_values["website"],
+                new_values["customer_logo"],
+                new_values["pipeline_target"],
+                new_values["sales_play"],
+                new_values["owner_user_id"],
+                new_values["owner_name"],
+                new_values["owner_email"],
+                new_values["notes"],
+                account_id
+            ))
+        except Exception as exc:
+            connection.rollback()
+            if pg_bible_order_unique_error(exc):
+                return render_edit_error(
+                    f"PG Bible Order {pg_bible_order} was allocated to another account while you were editing. Choose a unique number."
+                )
+            raise
 
         save_account_custom_values(connection, account_id, custom_fields, request.form)
         save_account_sales_play_links(connection, account_id, selected_sales_play_ids)
@@ -11512,7 +11601,8 @@ def edit_account(account_id):
         assignable_users=list_assignable_users(),
         sales_play_options=sales_play_options,
         selected_sales_play_ids=selected_sales_play_ids,
-        owner=account_owner_payload(account)
+        owner=account_owner_payload(account),
+        error="",
     )
 
 
@@ -14112,20 +14202,19 @@ def update_outreach_due_date_records(connection, outreach_ids, next_action_date,
     return updated_count
 
 
-def existing_open_outreach_slots(connection, exclude_ids=None):
-    exclude_ids = {str(value) for value in (exclude_ids or []) if str(value or "").isdigit()}
-    rows = connection.execute(f"""
-        SELECT id, next_action_date, next_action_time
+def existing_outreach_schedule_slots(connection, exclude_due_ids=None):
+    """Return all live activity slots, excluding only due slots being rescheduled."""
+    exclude_due_ids = {str(value) for value in (exclude_due_ids or []) if str(value or "").isdigit()}
+    rows = connection.execute("""
+        SELECT id, activity_date, activity_time, next_action_date, next_action_time
         FROM outreach
-        WHERE next_action_date IS NOT NULL
-          AND next_action_date != ''
-          AND COALESCE(task_status, '') NOT IN ({",".join("?" for _ in INACTIVE_TASK_STATUSES)})
-    """, open_task_params()).fetchall()
+        WHERE COALESCE(task_status, '') NOT IN ('Deleted', 'Cancelled')
+    """).fetchall()
     slots = set()
     for row in rows:
-        if str(row["id"]) in exclude_ids:
-            continue
-        if row["next_action_date"]:
+        if row["activity_date"]:
+            slots.add((row["activity_date"], (row["activity_time"] or "09:00")[:5]))
+        if str(row["id"]) not in exclude_due_ids and row["next_action_date"]:
             slots.add((row["next_action_date"], (row["next_action_time"] or "09:00")[:5]))
     return slots
 
@@ -14151,24 +14240,22 @@ def outreach_contact_schedule_keys(connection, outreach_item):
     return keys
 
 
-def existing_contact_scheduled_dates(connection, exclude_ids=None):
-    exclude_ids = {str(value) for value in (exclude_ids or []) if str(value or "").isdigit()}
+def existing_contact_scheduled_dates(connection, exclude_due_ids=None):
+    exclude_due_ids = {str(value) for value in (exclude_due_ids or []) if str(value or "").isdigit()}
     rows = connection.execute(f"""
-        SELECT id, contact_id, partner_contact_id, next_action_date
+        SELECT id, contact_id, partner_contact_id, activity_date, next_action_date
         FROM outreach
-        WHERE next_action_date IS NOT NULL
-          AND next_action_date != ''
-          AND COALESCE(task_status, '') NOT IN ({",".join("?" for _ in INACTIVE_TASK_STATUSES)})
-    """, open_task_params()).fetchall()
+        WHERE COALESCE(task_status, '') NOT IN ('Deleted', 'Cancelled')
+    """).fetchall()
     scheduled_dates = {}
     for row in rows:
-        if str(row["id"]) in exclude_ids:
-            continue
-        date_key = row["next_action_date"]
-        if not date_key:
-            continue
+        date_keys = set()
+        if row["activity_date"]:
+            date_keys.add(row["activity_date"])
+        if str(row["id"]) not in exclude_due_ids and row["next_action_date"]:
+            date_keys.add(row["next_action_date"])
         for contact_key in outreach_contact_schedule_keys(connection, row):
-            scheduled_dates.setdefault(contact_key, set()).add(date_key)
+            scheduled_dates.setdefault(contact_key, set()).update(date_keys)
     return scheduled_dates
 
 
@@ -14188,7 +14275,7 @@ def auto_reschedule_outreach_records(connection, outreach_ids, actor_label):
         ORDER BY start_date, end_date, id
     """).fetchall()
     non_working_blocks = parse_non_working_blocks(non_working_rows)
-    reserved_slots = existing_open_outreach_slots(connection, outreach_ids)
+    reserved_slots = existing_outreach_schedule_slots(connection, outreach_ids)
     reserved_contact_dates = existing_contact_scheduled_dates(connection, outreach_ids)
     updated_count = 0
     labels = {
@@ -14201,20 +14288,28 @@ def auto_reschedule_outreach_records(connection, outreach_ids, actor_label):
         if outreach_item and task_can_be_modified(outreach_item):
             rows.append(outreach_item)
     rows.sort(key=lambda row: (
-        row["next_action_date"] or "9999-12-31",
-        row["next_action_time"] or "99:99",
+        row["next_action_date"] or row["activity_date"] or "9999-12-31",
+        row["next_action_time"] or row["activity_time"] or "99:99",
         row["id"],
     ))
+    sequence_cursor = round_datetime_to_next_slot(current_app_datetime())
+    ordered_bulk = len(rows) > 1
     for outreach_item in rows:
         contact_keys = outreach_contact_schedule_keys(connection, outreach_item)
+        # Bulk tasks share one cursor so checkbox/ID order cannot reorder the schedule.
+        search_from = sequence_cursor if ordered_bulk else outreach_reschedule_start(outreach_item)
         next_action_date, next_action_time = next_available_outreach_slot(
-            outreach_reschedule_start(outreach_item),
+            search_from,
             profile=profile,
             reserved_slots=reserved_slots,
             non_working_blocks=non_working_blocks,
             contact_keys=contact_keys,
             reserved_contact_dates=reserved_contact_dates,
         )
+        sequence_cursor = datetime.strptime(
+            f"{next_action_date} {next_action_time}",
+            "%Y-%m-%d %H:%M",
+        ) + timedelta(minutes=15)
         new_values = {
             "next_action_date": next_action_date,
             "next_action_time": next_action_time,
@@ -15015,11 +15110,19 @@ def share_full_account_to_member(source_schema, account_id, target_member, actor
         return "The selected account could not be found."
 
     existing_account = target_connection.execute(
-        "SELECT id FROM accounts WHERE account_name = ?",
+        "SELECT id, pg_bible_order FROM accounts WHERE account_name = ?",
         (account["account_name"],),
     ).fetchone()
+    source_pg_bible_order = sort_number_value(account["pg_bible_order"], 0)
+    if source_pg_bible_order < 1:
+        source_pg_bible_order = next_account_pg_bible_order(target_connection)
     if existing_account:
         target_account_id = existing_account["id"]
+        target_pg_bible_order = source_pg_bible_order
+        if account_pg_bible_order_conflict(target_connection, target_pg_bible_order, target_account_id):
+            # Preserve the destination account's allocation when another account
+            # already owns the source workspace number.
+            target_pg_bible_order = existing_account["pg_bible_order"] or next_account_pg_bible_order(target_connection)
         target_connection.execute("DELETE FROM partner_contacts WHERE account_id = ?", (target_account_id,))
         target_connection.execute("DELETE FROM account_partners WHERE account_id = ?", (target_account_id,))
         target_connection.execute("DELETE FROM account_custom_values WHERE account_id = ?", (target_account_id,))
@@ -15043,7 +15146,7 @@ def share_full_account_to_member(source_schema, account_id, target_member, actor
                 last_updated = CURRENT_TIMESTAMP
             WHERE id = ?
         """, (
-            account["pg_bible_order"],
+            target_pg_bible_order,
             account["account_tier"],
             account["industry"],
             account["business_unit"],
@@ -15059,11 +15162,15 @@ def share_full_account_to_member(source_schema, account_id, target_member, actor
             target_account_id,
         ))
     else:
+        target_pg_bible_order = source_pg_bible_order
+        if account_pg_bible_order_conflict(target_connection, target_pg_bible_order):
+            target_pg_bible_order = next_account_pg_bible_order(target_connection)
         target_account_id = insert_copied_row(
             target_connection,
             "accounts",
             ["account_name", "pg_bible_order", "account_tier", "industry", "business_unit", "country", "city", "website", "customer_logo", "pipeline_target", "owner_user_id", "owner_name", "owner_email", "notes"],
             account,
+            {"pg_bible_order": target_pg_bible_order},
         )
 
     contact_id_map = {}

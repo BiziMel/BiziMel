@@ -51,6 +51,42 @@ def create_index_if_missing(cursor, index_name, table_name, columns):
     )
 
 
+def normalise_account_pg_bible_orders(cursor):
+    """Give every account one positive, unique PG Bible sequence number."""
+    rows = cursor.execute("""
+        SELECT id, pg_bible_order
+        FROM accounts
+        ORDER BY
+            CASE WHEN pg_bible_order IS NULL OR pg_bible_order < 1 THEN 1 ELSE 0 END,
+            pg_bible_order,
+            account_name,
+            id
+    """).fetchall()
+    valid_values = []
+    for row in rows:
+        try:
+            value = int(row["pg_bible_order"])
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            valid_values.append(value)
+    next_value = max(valid_values, default=0) + 1
+    used = set()
+    for row in rows:
+        try:
+            value = int(row["pg_bible_order"])
+        except (TypeError, ValueError):
+            value = 0
+        if value < 1 or value in used:
+            value = next_value
+            next_value += 1
+            cursor.execute(
+                "UPDATE accounts SET pg_bible_order = ? WHERE id = ?",
+                (value, row["id"]),
+            )
+        used.add(value)
+
+
 def initialise_database(force=False):
     cache_key = database_initialisation_key()
     if not force and cache_key in _INITIALISED_DATABASES:
@@ -811,6 +847,9 @@ def initialise_database(force=False):
             SELECT 1 FROM user_profile WHERE id = 1
         )
     """)
+
+    normalise_account_pg_bible_orders(cursor)
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_accounts_pg_bible_order ON accounts (pg_bible_order)")
 
     index_definitions = [
         ("idx_accounts_pg_bible_order", "accounts", ["pg_bible_order", "account_name"]),

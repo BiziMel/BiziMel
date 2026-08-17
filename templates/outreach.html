@@ -141,15 +141,23 @@
             <input type="time" id="bulk_next_action_time" name="bulk_next_action_time" form="bulk-outreach-form">
             <input type="hidden" name="return_to" value="{{ request.full_path }}" form="bulk-outreach-form">
             <button type="submit" form="bulk-outreach-form" name="bulk_action" value="update_due" class="btn btn-primary btn-small">Save Bulk Changes</button>
-            <button type="submit" form="bulk-outreach-form" name="bulk_action" value="auto_reschedule" class="btn btn-secondary btn-small">Auto Reschedule</button>
-            <button type="submit"
-                    form="bulk-outreach-form"
-                    name="bulk_action"
-                    value="delete"
-                    class="btn btn-danger btn-small"
-                    onclick="return confirm('Delete the selected outreach records? This cannot be undone.');">
-                Delete Selected
-            </button>
+            <div class="outreach-bulk-choice-group" aria-label="Selected outreach actions">
+                <button type="submit"
+                        form="bulk-outreach-form"
+                        name="bulk_action"
+                        value="auto_reschedule"
+                        class="btn btn-small outreach-bulk-reschedule-button">
+                    Reschedule Selected
+                </button>
+                <button type="submit"
+                        form="bulk-outreach-form"
+                        name="bulk_action"
+                        value="delete"
+                        class="btn btn-danger btn-small outreach-bulk-delete-button"
+                        onclick="return confirm('Delete the selected outreach records? This cannot be undone.');">
+                    Delete Selected
+                </button>
+            </div>
         </div>
 
         <div class="table-container outreach-table-container">

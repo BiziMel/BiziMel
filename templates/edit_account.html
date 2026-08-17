@@ -26,13 +26,16 @@
 </div>
 
 <div class="form-card">
+{% if error %}
+    <div class="alert-error">{{ error }}</div>
+{% endif %}
 <form method="POST" class="pipeflow-form" enctype="multipart/form-data">
     <label>Account Name</label>
     <input type="text" name="account_name" value="{{ account['account_name'] }}" required>
 
     <label>PG Bible Order</label>
     <input type="number" name="pg_bible_order" min="1" step="1" value="{{ account['pg_bible_order'] or '' }}" placeholder="Example: 1">
-    <p class="field-help">Controls the account sequence in the PG Bible export. Leave blank to sort after numbered accounts.</p>
+    <p class="field-help">Controls account ordering and NBM Target mapping in the PG Bible export. The number must be unique.</p>
 
     <label>Account Tier</label>
     <select name="account_tier">

@@ -5,7 +5,7 @@ import io
 import json
 import sqlite3
 import tempfile
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 
@@ -329,6 +329,7 @@ def main():
             response = client.get(path)
             assert_ok(response.status_code == 200, f"{path} returned {response.status_code}")
 
+        future_meeting_date = (today + timedelta(days=14)).isoformat()
         response = client.post(
             "/register",
             data={
@@ -1247,6 +1248,65 @@ def main():
             "Release Notes is not stacked below User Guide before the main nav",
         )
 
+        add_account_html = client.get("/accounts/add").get_data(as_text=True)
+        assert_ok(
+            'name="pg_bible_order"' not in add_account_html
+            and "assigns the next available PG Bible number" in add_account_html,
+            "Account creation still allows manual PG Bible Order entry",
+        )
+        connection = sqlite3.connect(db_path)
+        expected_pg_bible_order = connection.execute(
+            "SELECT COALESCE(MAX(pg_bible_order), 0) + 1 FROM accounts"
+        ).fetchone()[0]
+        connection.close()
+        response = client.post(
+            "/accounts/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "account_name": "Smoke Auto Number Account",
+                "country": "United Kingdom",
+                "account_tier": "2",
+                "pipeline_target": "50000",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "Account auto-number creation failed")
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        auto_number_account = connection.execute(
+            "SELECT id, pg_bible_order FROM accounts WHERE account_name = ?",
+            ("Smoke Auto Number Account",),
+        ).fetchone()
+        connection.close()
+        assert_ok(
+            auto_number_account is not None
+            and auto_number_account["pg_bible_order"] == expected_pg_bible_order,
+            "Account creation did not assign the next PG Bible Order",
+        )
+        response = client.post(
+            f"/accounts/{auto_number_account['id']}/edit",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "account_name": "Smoke Auto Number Account",
+                "pg_bible_order": "1",
+                "country": "United Kingdom",
+                "account_tier": "2",
+                "pipeline_target": "50000",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(
+            response.status_code == 200
+            and "is already allocated to another account" in response.get_data(as_text=True),
+            "Duplicate PG Bible Order edit did not return clear validation",
+        )
+        response = client.post(
+            f"/accounts/{auto_number_account['id']}/delete",
+            data={"csrf_token": csrf_from_session(client)},
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "Smoke auto-number account cleanup failed")
+
         response = client.post(
             f"/tasks/{outreach_id}/update",
             data={
@@ -1600,7 +1660,7 @@ def main():
                 "next_action_time": "10:00",
                 "subject": "Smoke multi-contact outreach",
                 "outcome": "NBM Booked",
-                "scheduled_meeting_at": "2026-08-13T09:30",
+                "scheduled_meeting_at": f"{future_meeting_date}T09:30",
                 "next_action": "",
             },
             follow_redirects=False,
@@ -1953,7 +2013,7 @@ def main():
                 "next_action_time": "10:00",
                 "subject": "Smoke multi-contact outreach",
                 "outcome": "Exec Meeting Booked",
-                "scheduled_meeting_at": "2026-08-13T10:30",
+                "scheduled_meeting_at": f"{future_meeting_date}T10:30",
                 "next_action": "",
             },
             follow_redirects=False,
@@ -2051,6 +2111,8 @@ def main():
         assert_ok("next_action_date_" in outreach_html, "inline Outreach due-date control missing")
         assert_ok('data-select-all="bulk-outreach-form"' in outreach_html, "bulk Outreach select-all control missing")
         assert_ok("outreach-auto-reschedule-form" in outreach_html, "row Outreach auto-reschedule control missing")
+        assert_ok("Reschedule Selected" in outreach_html, "bulk Outreach reschedule action missing")
+        assert_ok("outreach-bulk-reschedule-button" in outreach_html, "bulk reschedule action is not visually distinguished")
 
         connection = sqlite3.connect(db_path)
         connection.execute("DROP TABLE timeline_entries")
@@ -2137,6 +2199,20 @@ def main():
         assert_ok(date.fromisoformat(auto_due["next_action_date"]).weekday() < 5, "single auto-reschedule selected a weekend")
         assert_ok(auto_due["next_action_date"] not in blocked_contact_dates, "single auto-reschedule selected a date already used by the same contact")
 
+        first_original_due = (today + timedelta(days=31)).isoformat()
+        second_original_due = (today + timedelta(days=30)).isoformat()
+        connection = sqlite3.connect(db_path)
+        connection.execute(
+            "UPDATE outreach SET next_action_date = ?, next_action_time = '11:00' WHERE id = ?",
+            (first_original_due, outreach_id),
+        )
+        connection.execute(
+            "UPDATE outreach SET next_action_date = ?, next_action_time = '10:00' WHERE id = ?",
+            (second_original_due, multi_outreach["id"]),
+        )
+        connection.commit()
+        connection.close()
+
         response = client.post(
             "/outreach/bulk-action",
             data={
@@ -2151,13 +2227,46 @@ def main():
         connection = sqlite3.connect(db_path)
         connection.row_factory = sqlite3.Row
         auto_bulk_rows = connection.execute(
-            "SELECT id, next_action_date, next_action_time FROM outreach WHERE id IN (?, ?) ORDER BY id",
+            "SELECT id, next_action_date, next_action_time FROM outreach WHERE id IN (?, ?)",
+            (outreach_id, multi_outreach["id"]),
+        ).fetchall()
+        other_schedule_rows = connection.execute(
+            """
+            SELECT id, activity_date, activity_time, next_action_date, next_action_time
+            FROM outreach
+            WHERE COALESCE(task_status, '') NOT IN ('Deleted', 'Cancelled')
+              AND id NOT IN (?, ?)
+            """,
             (outreach_id, multi_outreach["id"]),
         ).fetchall()
         connection.close()
         auto_bulk_slots = {(row["next_action_date"], row["next_action_time"]) for row in auto_bulk_rows}
         assert_ok(len(auto_bulk_rows) == 2 and len(auto_bulk_slots) == 2, "bulk auto-reschedule created clashing due slots")
         assert_ok(all(date.fromisoformat(row["next_action_date"]).weekday() < 5 for row in auto_bulk_rows), "bulk auto-reschedule selected a weekend")
+        bulk_by_id = {row["id"]: row for row in auto_bulk_rows}
+        earlier_slot = datetime.fromisoformat(
+            f"{bulk_by_id[multi_outreach['id']]['next_action_date']}T{bulk_by_id[multi_outreach['id']]['next_action_time']}"
+        )
+        later_slot = datetime.fromisoformat(
+            f"{bulk_by_id[outreach_id]['next_action_date']}T{bulk_by_id[outreach_id]['next_action_time']}"
+        )
+        assert_ok(earlier_slot < later_slot, "bulk auto-reschedule did not preserve the tasks' original chronological order")
+        assert_ok((later_slot - earlier_slot).total_seconds() >= 15 * 60, "bulk auto-reschedule did not keep tasks 15 minutes apart")
+        other_slots = []
+        for row in other_schedule_rows:
+            if row["activity_date"]:
+                other_slots.append(datetime.fromisoformat(f"{row['activity_date']}T{(row['activity_time'] or '09:00')[:5]}"))
+            if row["next_action_date"]:
+                other_slots.append(datetime.fromisoformat(f"{row['next_action_date']}T{(row['next_action_time'] or '09:00')[:5]}"))
+        for selected_slot in (earlier_slot, later_slot):
+            assert_ok(
+                all(
+                    selected_slot.date() != occupied.date()
+                    or abs((selected_slot - occupied).total_seconds()) >= 15 * 60
+                    for occupied in other_slots
+                ),
+                "bulk auto-reschedule clashed with an existing Outreach schedule slot",
+            )
 
         connection = sqlite3.connect(db_path)
         connection.execute("ALTER TABLE outreach DROP COLUMN scheduled_meeting_time")

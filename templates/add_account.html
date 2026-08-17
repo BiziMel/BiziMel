@@ -13,8 +13,7 @@
     <input type="text" name="account_name" value="{{ prefill.account_name or '' }}" required>
 
     <label>PG Bible Order</label>
-    <input type="number" name="pg_bible_order" min="1" step="1" value="{{ prefill.pg_bible_order or '' }}" placeholder="Example: 1">
-    <p class="field-help">Controls the account sequence in the PG Bible export. Leave blank to sort after numbered accounts.</p>
+    <p class="field-help">PipeFlow assigns the next available PG Bible number when this account is saved. It can be changed later from Edit Account.</p>
 
     <label>Account Tier</label>
     <select name="account_tier">
