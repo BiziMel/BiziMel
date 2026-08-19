@@ -471,7 +471,9 @@ def initialise_database(force=False):
         CREATE TABLE IF NOT EXISTS non_working_blocks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             start_date TEXT NOT NULL,
+            start_time TEXT,
             end_date TEXT NOT NULL,
+            end_time TEXT,
             reason TEXT,
             date_created TEXT DEFAULT CURRENT_TIMESTAMP,
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP
@@ -812,7 +814,9 @@ def initialise_database(force=False):
 
     # Safe migrations for non-working blocks
     add_column_if_missing(cursor, "non_working_blocks", "start_date", "TEXT")
+    add_column_if_missing(cursor, "non_working_blocks", "start_time", "TEXT")
     add_column_if_missing(cursor, "non_working_blocks", "end_date", "TEXT")
+    add_column_if_missing(cursor, "non_working_blocks", "end_time", "TEXT")
     add_column_if_missing(cursor, "non_working_blocks", "reason", "TEXT")
     add_column_if_missing(cursor, "non_working_blocks", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "non_working_blocks", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")

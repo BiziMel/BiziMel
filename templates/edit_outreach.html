@@ -255,14 +255,24 @@
     const profileWorkEnd = "{{ profile.work_day_end or '17:00' }}";
     const nonWorkingBlocks = {{ non_working_blocks | map(attribute='start_date') | list | tojson }}.map((start, index) => ({
         start,
-        end: {{ non_working_blocks | map(attribute='end_date') | list | tojson }}[index] || start
+        startTime: {{ non_working_blocks | map(attribute='start_time') | list | tojson }}[index] || "",
+        end: {{ non_working_blocks | map(attribute='end_date') | list | tojson }}[index] || start,
+        endTime: {{ non_working_blocks | map(attribute='end_time') | list | tojson }}[index] || ""
     }));
 
-    function isNonWorkingDate(value) {
+    function isNonWorkingSchedule(value, selectedTime = "") {
         if (!value) return false;
         const date = new Date(`${value}T00:00:00`);
         if (date.getDay() === 0 || date.getDay() === 6) return true;
-        return nonWorkingBlocks.some((block) => value >= block.start && value <= block.end);
+        return nonWorkingBlocks.some((block) => {
+            if (!selectedTime) {
+                return !block.startTime && !block.endTime && value >= block.start && value <= block.end;
+            }
+            const candidate = `${value}T${selectedTime}`;
+            const startAt = `${block.start}T${block.startTime || "00:00"}`;
+            const endAt = `${block.end}T${block.endTime || "24:00"}`;
+            return candidate >= startAt && candidate < endAt;
+        });
     }
 
     function warnManualSchedule(dateInputId, timeInputId) {
@@ -272,7 +282,7 @@
         function checkSchedule() {
             const selectedDate = dateInput.value;
             const selectedTime = timeInput ? timeInput.value : "";
-            if (isNonWorkingDate(selectedDate)) {
+            if (isNonWorkingSchedule(selectedDate, selectedTime)) {
                 alert("This date is configured as non working in your profile. You can still save it manually if this is intentional.");
             } else if (selectedTime && (selectedTime < profileWorkStart || selectedTime > profileWorkEnd)) {
                 alert("This time is outside your configured working day. You can still save it manually if this is intentional.");
@@ -529,7 +539,7 @@
             const timeInput = document.getElementById(timeId);
             const selectedDate = dateInput ? dateInput.value : "";
             const selectedTime = timeInput ? timeInput.value : "";
-            if (isNonWorkingDate(selectedDate) || (selectedTime && (selectedTime < profileWorkStart || selectedTime > profileWorkEnd))) {
+            if (isNonWorkingSchedule(selectedDate, selectedTime) || (selectedTime && (selectedTime < profileWorkStart || selectedTime > profileWorkEnd))) {
                 if (!confirm("This schedule is outside your configured working pattern. Select OK to save anyway, or Cancel to return to the date/time field.")) {
                     event.preventDefault();
                     (dateInput || timeInput)?.focus();

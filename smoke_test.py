@@ -342,7 +342,12 @@ def main():
             follow_redirects=True,
         )
         assert_ok(response.status_code == 200, f"register returned {response.status_code}")
-        assert_ok(client.get("/health/version").status_code == 200, "health/version failed")
+        version_response = client.get("/health/version")
+        assert_ok(
+            version_response.status_code == 200
+            and "pipeflow_version=2.8.1" in version_response.get_data(as_text=True),
+            "health/version did not report Release 2.8.1",
+        )
 
         response = client.post(
             "/logout",
@@ -400,6 +405,130 @@ def main():
         campaign_builder_html = client.get("/outreach/campaign-builder").get_data(as_text=True)
         assert_ok("SMS/WhatsApp" in add_outreach_html, "Add Outreach activity type list missing SMS/WhatsApp")
         assert_ok("SMS/WhatsApp" in campaign_builder_html, "Campaign Builder activity type list missing SMS/WhatsApp")
+
+        availability_date = today + timedelta(days=120)
+        while availability_date.weekday() >= 5:
+            availability_date += timedelta(days=1)
+        parsed_part_day_block = pipeflow_app.parse_non_working_blocks([{
+            "start_date": availability_date.isoformat(),
+            "start_time": "11:45",
+            "end_date": availability_date.isoformat(),
+            "end_time": "13:00",
+        }])[0]
+        assert_ok(
+            pipeflow_app.datetime_within_blocks(
+                datetime.combine(availability_date, datetime.strptime("12:15", "%H:%M").time()),
+                [parsed_part_day_block],
+            ),
+            "part-day non-working interval did not block an unavailable time",
+        )
+        assert_ok(
+            not pipeflow_app.datetime_within_blocks(
+                datetime.combine(availability_date, datetime.strptime("13:00", "%H:%M").time()),
+                [parsed_part_day_block],
+            ),
+            "part-day non-working interval incorrectly blocked its return time",
+        )
+        campaign_slot_date, campaign_slot_time = pipeflow_app.next_campaign_working_slot(
+            availability_date,
+            availability_date,
+            "12:00",
+            profile={"work_day_start": "09:00", "work_day_end": "17:00"},
+            reserved_slots=set(),
+            non_working_blocks=[parsed_part_day_block],
+        )
+        assert_ok(
+            campaign_slot_date == availability_date and campaign_slot_time == "13:00",
+            "Campaign Builder scheduling did not move beyond a part-day absence",
+        )
+
+        connection = sqlite3.connect(db_path)
+        availability_task_ids = []
+        for index, (scheduled_time, selected_contact_id) in enumerate(
+            (("12:00", contact_id), ("12:15", second_contact_id), ("13:00", contact_id)),
+            start=1,
+        ):
+            cursor = connection.execute(
+                """
+                INSERT INTO outreach (
+                    fy, quarter, account_id, contact_id, campaign, sales_play,
+                    activity_date, activity_time, activity_type, subject, outcome,
+                    next_action, next_action_date, next_action_time, task_status, assigned_to
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "27", "Q1", account_id, selected_contact_id, "Availability smoke", "Smoke Test Play",
+                    availability_date.isoformat(), scheduled_time, "Email",
+                    f"Availability ordered task {index}", "No Response", "Continue engagement",
+                    availability_date.isoformat(), scheduled_time, "Not Started", "Smoke Test Admin",
+                ),
+            )
+            availability_task_ids.append(cursor.lastrowid)
+        connection.commit()
+        connection.close()
+        response = client.post(
+            "/profile/non-working/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "start_date": availability_date.isoformat(),
+                "start_time": "11:45",
+                "end_date": availability_date.isoformat(),
+                "end_time": "13:00",
+                "reason": "Part-day smoke absence",
+            },
+            follow_redirects=True,
+        )
+        availability_html = response.get_data(as_text=True)
+        assert_ok(
+            response.status_code == 200
+            and "3 open Outreach task(s) were rescheduled from the first conflict onward" in availability_html
+            and "From Time" in availability_html
+            and "To Time" in availability_html,
+            "part-day non-working block was not saved or reported clearly",
+        )
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        moved_rows = connection.execute(
+            "SELECT id, activity_date, activity_time, next_action_date, next_action_time FROM outreach WHERE id IN (?, ?, ?)",
+            tuple(availability_task_ids),
+        ).fetchall()
+        moved_rows_by_id = {row["id"]: row for row in moved_rows}
+        first_moved = datetime.fromisoformat(
+            f"{moved_rows_by_id[availability_task_ids[0]]['next_action_date']}T{moved_rows_by_id[availability_task_ids[0]]['next_action_time']}"
+        )
+        second_moved = datetime.fromisoformat(
+            f"{moved_rows_by_id[availability_task_ids[1]]['next_action_date']}T{moved_rows_by_id[availability_task_ids[1]]['next_action_time']}"
+        )
+        third_moved = datetime.fromisoformat(
+            f"{moved_rows_by_id[availability_task_ids[2]]['next_action_date']}T{moved_rows_by_id[availability_task_ids[2]]['next_action_time']}"
+        )
+        assert_ok(first_moved < second_moved < third_moved, "availability rescheduling did not preserve the original task order")
+        assert_ok(
+            all(not pipeflow_app.datetime_within_blocks(value, [parsed_part_day_block]) for value in (first_moved, second_moved, third_moved)),
+            "availability rescheduling left a task inside the new part-day absence",
+        )
+        expired_date = (today - timedelta(days=3)).isoformat()
+        expired_cursor = connection.execute(
+            "INSERT INTO non_working_blocks (start_date, start_time, end_date, end_time, reason) VALUES (?, ?, ?, ?, ?)",
+            (expired_date, "09:00", expired_date, "10:00", "Expired smoke block"),
+        )
+        expired_block_id = expired_cursor.lastrowid
+        connection.commit()
+        connection.close()
+        client.get("/profile")
+        connection = sqlite3.connect(db_path)
+        expired_count = connection.execute(
+            "SELECT COUNT(*) FROM non_working_blocks WHERE id = ?",
+            (expired_block_id,),
+        ).fetchone()[0]
+        assert_ok(expired_count == 0, "expired profile non-working block was not removed automatically")
+        connection.execute(
+            "DELETE FROM outreach WHERE id IN (?, ?, ?)",
+            tuple(availability_task_ids),
+        )
+        connection.execute("DELETE FROM non_working_blocks WHERE reason = ?", ("Part-day smoke absence",))
+        connection.commit()
+        connection.close()
 
         outreach_report_html = client.get("/reports/outreach").get_data(as_text=True)
         assert_ok("Older PG Progress Marker" in outreach_report_html, "Outreach Reports did not show all records by default")

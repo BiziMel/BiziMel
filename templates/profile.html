@@ -146,8 +146,8 @@
 <div class="form-card">
     <div class="section-header">
         <div>
-            <h2>Non-Working Dates</h2>
-            <p>Add holidays, travel, annual leave or other unavailable date blocks. Weekends are already excluded automatically.</p>
+            <h2>Non-Working Dates and Times</h2>
+            <p>Add full-day or part-day absences. Expired blocks are removed automatically, and conflicting open Outreach tasks are moved in their existing order.</p>
         </div>
     </div>
 
@@ -158,8 +158,17 @@
                 <input type="date" id="start_date" name="start_date" required>
             </div>
             <div class="form-group">
+                <label for="start_time">From Time</label>
+                <input type="time" id="start_time" name="start_time">
+                <p class="field-help">Optional. Leave both times blank for full days.</p>
+            </div>
+            <div class="form-group">
                 <label for="end_date">End Date</label>
                 <input type="date" id="end_date" name="end_date">
+            </div>
+            <div class="form-group">
+                <label for="end_time">To Time</label>
+                <input type="time" id="end_time" name="end_time">
             </div>
             <div class="form-group">
                 <label for="reason">Reason</label>
@@ -177,7 +186,9 @@
                 <thead>
                     <tr>
                         <th>Start Date</th>
+                        <th>From</th>
                         <th>End Date</th>
+                        <th>To</th>
                         <th>Reason</th>
                         <th>Action</th>
                     </tr>
@@ -185,8 +196,10 @@
                 <tbody>
                     {% for block in non_working_blocks %}
                         <tr>
-                            <td>{{ block.start_date }}</td>
-                            <td>{{ block.end_date }}</td>
+                            <td>{{ block.start_date | display_date }}</td>
+                            <td>{{ block.start_time | display_time if block.start_time else "Start of day" }}</td>
+                            <td>{{ block.end_date | display_date }}</td>
+                            <td>{{ block.end_time | display_time if block.end_time else "End of day" }}</td>
                             <td>{{ block.reason or "-" }}</td>
                             <td>
                                 <form method="POST"

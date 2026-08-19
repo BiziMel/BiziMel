@@ -29,9 +29,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
 
 
-APP_VERSION = "2.8.0"
-APP_RELEASE_DATE = "2026-08-17"
-APP_BUILD = "2026-08-17-v2.8.0-ordered-bulk-rescheduling-r1"
+APP_VERSION = "2.8.1"
+APP_RELEASE_DATE = "2026-08-19"
+APP_BUILD = "2026-08-19-v2.8.1-profile-availability-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -45,6 +45,17 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.8.1",
+        "release_date": "2026-08-19",
+        "title": "Part-day availability and schedule reflow",
+        "fixed": [
+            "Added optional From Time and To Time fields to profile non-working blocks while preserving full-day absence behavior when times are blank.",
+            "Changed expired non-working blocks to be removed automatically when profile or scheduling availability is loaded.",
+            "Applied full-day and part-day availability to new Outreach Auto Schedule, Campaign Builder, and single or bulk automatic rescheduling.",
+            "Changed new availability blocks to reflow future open Outreach tasks from the first conflict onward, preserving their existing chronological order and avoiding all unavailable or occupied slots.",
+        ],
+    },
     {
         "version": "2.8.0",
         "release_date": "2026-08-17",
@@ -1021,18 +1032,19 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
            'Reports use the same date/time display format as the application.']},
  {'slug': 'profile',
   'title': 'Profile, Teams and Scheduling',
-  'summary': 'Maintain your profile, secret phrase, active team, working hours and non-working dates.',
+  'summary': 'Maintain your profile, secret phrase, active team, working hours and full-day or part-day non-working periods.',
   'navigation': ['Open Profile from the main navigation when personal details or scheduling availability changes.',
                  'Use the reveal button to display your own secret phrase in a dialog.',
                  'Use the active team selector when you belong to more than one team.'],
   'steps': ['Confirm your full name, job title, company and active team.',
             'Update your secret phrase from your own profile when required.',
             'Set work day start and end times for campaign scheduling.',
-            'Add non-working date blocks for holidays, travel or unavailable periods.',
-            'Delete outdated non-working blocks when they no longer apply.',
+            'Add non-working date blocks for holidays, travel or unavailable periods, with optional From and To times for part-day absences.',
+            'Review the resulting message when a new block reflows future Outreach tasks from the first conflict onward.',
             'Save changes before using Campaign Builder so scheduling logic uses current availability.'],
   'tips': ['Only the logged-in user can access their own secret phrase data.',
            'Saturday and Sunday are treated as non-working by auto-scheduling.',
+           'Expired availability blocks are removed automatically.',
            'Manual date entry can still be saved after warnings when intentional.']},
  {'slug': 'admin',
   'title': 'Admin, Tenants, Users and Teams',
@@ -2017,7 +2029,8 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "Keep your full name accurate because it appears in assignment fields and audit records.",
             "Set work day start and end times so generated campaigns schedule inside your normal day.",
-            "Add non-working date blocks for holidays, travel or unavailable periods.",
+            "Add full-day non-working dates or use optional From and To times for part-day absences.",
+            "A new block reflows future open Outreach from the first conflict onward while preserving task order; expired blocks are removed automatically.",
         ],
     },
     "admin_permissions": {
@@ -3688,7 +3701,14 @@ def parse_non_working_blocks(rows):
             continue
         if end < start:
             start, end = end, start
-        blocks.append((start, end))
+        start_time_value = row["start_time"] if "start_time" in row.keys() else ""
+        end_time_value = row["end_time"] if "end_time" in row.keys() else ""
+        blocks.append({
+            "start_date": start,
+            "end_date": end,
+            "start_time": parse_time_value(start_time_value, "00:00") if start_time_value else None,
+            "end_time": parse_time_value(end_time_value, "00:00") if end_time_value else None,
+        })
     return blocks
 
 
@@ -3705,15 +3725,50 @@ def legacy_profile_non_working_block(profile):
     end = end or start
     if end < start:
         start, end = end, start
-    return [(start, end)]
+    return [{"start_date": start, "end_date": end, "start_time": None, "end_time": None}]
+
+
+def non_working_block_bounds(block):
+    start_at = datetime.combine(block["start_date"], block.get("start_time") or time.min)
+    if block.get("end_time"):
+        end_at = datetime.combine(block["end_date"], block["end_time"])
+    else:
+        end_at = datetime.combine(block["end_date"] + timedelta(days=1), time.min)
+    return start_at, end_at
+
+
+def non_working_datetime(action_date, action_time, profile=None, non_working_blocks=None):
+    if action_date.weekday() >= 5:
+        return True
+    candidate = datetime.combine(action_date, action_time)
+    blocks = list(non_working_blocks or []) + legacy_profile_non_working_block(profile)
+    return any(start_at <= candidate < end_at for start_at, end_at in map(non_working_block_bounds, blocks))
+
+
+def cleanup_expired_non_working_blocks(connection, now=None):
+    now = (now or current_app_datetime()).replace(second=0, microsecond=0)
+    rows = connection.execute("SELECT * FROM non_working_blocks").fetchall()
+    expired_ids = []
+    for row in rows:
+        parsed = parse_non_working_blocks([row])
+        if parsed and non_working_block_bounds(parsed[0])[1] <= now:
+            expired_ids.append(row["id"])
+    for block_id in expired_ids:
+        connection.execute("DELETE FROM non_working_blocks WHERE id = ?", (block_id,))
+    if expired_ids:
+        connection.commit()
+    return len(expired_ids)
 
 
 def is_non_working_date(action_date, profile=None, non_working_blocks=None):
     if action_date.weekday() >= 5:
         return True
     blocks = list(non_working_blocks or []) + legacy_profile_non_working_block(profile)
-    for start, end in blocks:
-        if start <= action_date <= end:
+    day_start = datetime.combine(action_date, time.min)
+    day_end = datetime.combine(action_date + timedelta(days=1), time.min)
+    for block in blocks:
+        start_at, end_at = non_working_block_bounds(block)
+        if start_at <= day_start and end_at >= day_end:
             return True
     return False
 
@@ -3761,7 +3816,7 @@ def reserve_campaign_slot(action_date, action_time, reserved_slots=None):
         reserved_slots.add((action_date.isoformat(), str(action_time or "")[:5]))
 
 
-def available_campaign_time(action_date, preferred_time, profile=None, reserved_slots=None, earliest_time=None):
+def available_campaign_time(action_date, preferred_time, profile=None, reserved_slots=None, non_working_blocks=None, earliest_time=None):
     if reserved_slots is None:
         reserved_slots = set()
     start_time = parse_time_value(profile["work_day_start"] if profile and profile["work_day_start"] else "", "09:00")
@@ -3772,7 +3827,10 @@ def available_campaign_time(action_date, preferred_time, profile=None, reserved_
     end_dt = datetime.combine(action_date, end_time)
     while current_dt <= end_dt:
         slot_time = current_dt.strftime("%H:%M")
-        if not campaign_slot_conflicts(action_date, slot_time, reserved_slots):
+        if (
+            not non_working_datetime(action_date, current_dt.time(), profile, non_working_blocks)
+            and not campaign_slot_conflicts(action_date, slot_time, reserved_slots)
+        ):
             reserve_campaign_slot(action_date, slot_time, reserved_slots)
             return current_dt.strftime("%H:%M")
         current_dt += timedelta(minutes=15)
@@ -3792,6 +3850,7 @@ def next_campaign_working_slot(action_date, campaign_end, preferred_time, profil
             preferred_time,
             profile,
             reserved_slots,
+            non_working_blocks,
             earliest_time=candidate_earliest,
         )
         if slot_time:
@@ -3839,6 +3898,9 @@ def next_available_outreach_slot(start_at, profile=None, reserved_slots=None, no
         if candidate.time() > end_time:
             next_day = candidate_date + timedelta(days=1)
             candidate = datetime.combine(next_day, start_time)
+            continue
+        if non_working_datetime(candidate.date(), candidate.time(), profile, non_working_blocks):
+            candidate += timedelta(minutes=15)
             continue
         slot = (candidate.date().isoformat(), candidate.strftime("%H:%M"))
         if not campaign_slot_conflicts(candidate.date(), candidate.strftime("%H:%M"), reserved_slots):
@@ -8619,6 +8681,7 @@ def campaign_profile_and_blocks(connection):
         ORDER BY start_date, end_date, id
     """
     try:
+        cleanup_expired_non_working_blocks(connection)
         profile = connection.execute(query_profile).fetchone()
         non_working_block_rows = connection.execute(query_blocks).fetchall()
         return connection, profile, non_working_block_rows, parse_non_working_blocks(non_working_block_rows)
@@ -14180,9 +14243,10 @@ def update_outreach_due_date_records(connection, outreach_ids, next_action_date,
     return updated_count
 
 
-def existing_outreach_schedule_slots(connection, exclude_due_ids=None):
-    """Return all live activity slots, excluding only due slots being rescheduled."""
+def existing_outreach_schedule_slots(connection, exclude_due_ids=None, exclude_activity_ids=None):
+    """Return live slots while releasing only fields that will be rescheduled."""
     exclude_due_ids = {str(value) for value in (exclude_due_ids or []) if str(value or "").isdigit()}
+    exclude_activity_ids = {str(value) for value in (exclude_activity_ids or []) if str(value or "").isdigit()}
     rows = connection.execute("""
         SELECT id, activity_date, activity_time, next_action_date, next_action_time
         FROM outreach
@@ -14190,7 +14254,7 @@ def existing_outreach_schedule_slots(connection, exclude_due_ids=None):
     """).fetchall()
     slots = set()
     for row in rows:
-        if row["activity_date"]:
+        if str(row["id"]) not in exclude_activity_ids and row["activity_date"]:
             slots.add((row["activity_date"], (row["activity_time"] or "09:00")[:5]))
         if str(row["id"]) not in exclude_due_ids and row["next_action_date"]:
             slots.add((row["next_action_date"], (row["next_action_time"] or "09:00")[:5]))
@@ -14218,8 +14282,9 @@ def outreach_contact_schedule_keys(connection, outreach_item):
     return keys
 
 
-def existing_contact_scheduled_dates(connection, exclude_due_ids=None):
+def existing_contact_scheduled_dates(connection, exclude_due_ids=None, exclude_activity_ids=None):
     exclude_due_ids = {str(value) for value in (exclude_due_ids or []) if str(value or "").isdigit()}
+    exclude_activity_ids = {str(value) for value in (exclude_activity_ids or []) if str(value or "").isdigit()}
     rows = connection.execute(f"""
         SELECT id, contact_id, partner_contact_id, activity_date, next_action_date
         FROM outreach
@@ -14228,7 +14293,7 @@ def existing_contact_scheduled_dates(connection, exclude_due_ids=None):
     scheduled_dates = {}
     for row in rows:
         date_keys = set()
-        if row["activity_date"]:
+        if str(row["id"]) not in exclude_activity_ids and row["activity_date"]:
             date_keys.add(row["activity_date"])
         if str(row["id"]) not in exclude_due_ids and row["next_action_date"]:
             date_keys.add(row["next_action_date"])
@@ -14243,6 +14308,109 @@ def outreach_reschedule_start(outreach_item, now=None):
     if due_at and due_at >= now:
         return round_datetime_to_next_slot(due_at + timedelta(minutes=15))
     return now
+
+
+def datetime_within_blocks(value, blocks):
+    if value is None:
+        return False
+    return any(start_at <= value < end_at for start_at, end_at in map(non_working_block_bounds, blocks or []))
+
+
+def reschedule_outreach_for_new_non_working_block(connection, new_block, actor_label):
+    """Reflow the future open schedule from the first new availability conflict."""
+    now = current_app_datetime().replace(second=0, microsecond=0)
+    profile = connection.execute("SELECT * FROM user_profile WHERE id = 1").fetchone()
+    block_rows = connection.execute("""
+        SELECT * FROM non_working_blocks
+        ORDER BY start_date, start_time, end_date, end_time, id
+    """).fetchall()
+    all_blocks = parse_non_working_blocks(block_rows)
+    rows = connection.execute(f"""
+        SELECT *
+        FROM outreach
+        WHERE {open_task_sql('outreach')}
+    """, open_task_params()).fetchall()
+    scheduled_rows = []
+    first_conflict = None
+    for row in rows:
+        activity_at = task_due_datetime(row["activity_date"], row["activity_time"])
+        due_at = task_due_datetime(row["next_action_date"], row["next_action_time"])
+        future_values = [value for value in (activity_at, due_at) if value and value >= now]
+        if not future_values:
+            continue
+        scheduled_rows.append((min(future_values), row, activity_at, due_at))
+        conflicts = [value for value in future_values if datetime_within_blocks(value, [new_block])]
+        if conflicts:
+            conflict_at = min(conflicts)
+            first_conflict = conflict_at if first_conflict is None else min(first_conflict, conflict_at)
+    if first_conflict is None:
+        return 0
+    impacted = []
+    for _, row, activity_at, due_at in scheduled_rows:
+        move_activity = bool(activity_at and activity_at >= first_conflict)
+        move_due = bool(due_at and due_at >= first_conflict)
+        movable_values = [value for value in (activity_at if move_activity else None, due_at if move_due else None) if value]
+        if not movable_values:
+            continue
+        impacted.append((min(movable_values), row, move_activity, move_due))
+    impacted.sort(key=lambda item: (item[0], item[1]["id"]))
+    activity_ids = [row["id"] for _, row, move_activity, _ in impacted if move_activity]
+    due_ids = [row["id"] for _, row, _, move_due in impacted if move_due]
+    reserved_slots = existing_outreach_schedule_slots(connection, due_ids, activity_ids)
+    reserved_contact_dates = existing_contact_scheduled_dates(connection, due_ids, activity_ids)
+    sequence_cursor = round_datetime_to_next_slot(now)
+    labels = {
+        "activity_date": "Activity start date",
+        "activity_time": "Activity start time",
+        "next_action_date": "Activity due date",
+        "next_action_time": "Activity due time",
+    }
+    for original_slot, row, move_activity, move_due in impacted:
+        search_from = max(sequence_cursor, round_datetime_to_next_slot(original_slot))
+        scheduled_date, scheduled_time = next_available_outreach_slot(
+            search_from,
+            profile=profile,
+            reserved_slots=reserved_slots,
+            non_working_blocks=all_blocks,
+            contact_keys=outreach_contact_schedule_keys(connection, row),
+            reserved_contact_dates=reserved_contact_dates,
+        )
+        sequence_cursor = datetime.strptime(
+            f"{scheduled_date} {scheduled_time}",
+            "%Y-%m-%d %H:%M",
+        ) + timedelta(minutes=15)
+        new_values = {
+            "activity_date": scheduled_date if move_activity else row["activity_date"],
+            "activity_time": scheduled_time if move_activity else row["activity_time"],
+            "next_action_date": scheduled_date if move_due else row["next_action_date"],
+            "next_action_time": scheduled_time if move_due else row["next_action_time"],
+        }
+        changes = build_change_log(row, new_values, labels)
+        connection.execute("""
+            UPDATE outreach
+            SET activity_date = ?,
+                activity_time = ?,
+                next_action_date = ?,
+                next_action_time = ?,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (
+            new_values["activity_date"],
+            new_values["activity_time"],
+            new_values["next_action_date"],
+            new_values["next_action_time"],
+            row["id"],
+        ))
+        if changes:
+            audit_record_update(connection, "outreach", row["id"], row, new_values, labels)
+            add_timeline_entry(
+                connection,
+                "outreach",
+                row["id"],
+                "Availability Reschedule",
+                f"{actor_label}: " + "; ".join(changes),
+            )
+    return len(impacted)
 
 
 def auto_reschedule_outreach_records(connection, outreach_ids, actor_label):
@@ -15568,6 +15736,7 @@ def complete_task_from_tasks(outreach_id):
 @app.route("/profile", methods=("GET", "POST"))
 def profile():
     connection = get_db_connection()
+    cleanup_expired_non_working_blocks(connection)
     message = request.args.get("message", "")
     error = request.args.get("error", "")
     signed_in_user = current_user()
@@ -15654,7 +15823,7 @@ def profile():
     non_working_blocks = connection.execute("""
         SELECT *
         FROM non_working_blocks
-        ORDER BY start_date, end_date, id
+        ORDER BY start_date, start_time, end_date, end_time, id
     """).fetchall()
 
     connection.close()
@@ -15712,26 +15881,72 @@ def change_secret_phrase():
 
 @app.route("/profile/non-working/add", methods=("POST",))
 def add_non_working_block():
-    start_date = request.form.get("start_date")
-    end_date = request.form.get("end_date") or start_date
-    reason = request.form.get("reason", "")
+    start_date = (request.form.get("start_date") or "").strip()
+    start_time_value = (request.form.get("start_time") or "").strip()
+    end_date = (request.form.get("end_date") or start_date).strip()
+    end_time_value = (request.form.get("end_time") or "").strip()
+    reason = (request.form.get("reason") or "").strip()
     if not start_date:
         return redirect(url_for("profile", error="Non-working start date is required."))
+    try:
+        start_date_value = datetime.strptime(start_date, "%Y-%m-%d").date()
+        end_date_value = datetime.strptime(end_date, "%Y-%m-%d").date()
+        if start_time_value:
+            datetime.strptime(start_time_value, "%H:%M")
+        if end_time_value:
+            datetime.strptime(end_time_value, "%H:%M")
+    except ValueError:
+        return redirect(url_for("profile", error="Enter valid non-working dates and optional times."))
+    if end_date_value < start_date_value:
+        return redirect(url_for("profile", error="Non-working End Date cannot be earlier than Start Date."))
+    new_block = parse_non_working_blocks([{
+        "start_date": start_date,
+        "start_time": start_time_value,
+        "end_date": end_date,
+        "end_time": end_time_value,
+    }])[0]
+    start_at, end_at = non_working_block_bounds(new_block)
+    if end_at <= start_at:
+        return redirect(url_for("profile", error="Non-working To Time must be later than From Time for the selected date range."))
+    if end_at <= current_app_datetime().replace(second=0, microsecond=0):
+        return redirect(url_for("profile", error="The non-working block has already expired. Enter a current or future absence."))
     connection = get_db_connection()
-    cursor = connection.execute("""
-        INSERT INTO non_working_blocks (start_date, end_date, reason)
-        VALUES (?, ?, ?)
-    """, (start_date, end_date, reason))
-    audit_record_create(connection, "profile", 1, {
-        "non_working_block": f"{start_date} to {end_date}",
-        "non_working_reason": reason,
-    }, {
-        "non_working_block": "Non-Working Date Block",
-        "non_working_reason": "Non-Working Reason",
-    })
-    connection.commit()
+    try:
+        cleanup_expired_non_working_blocks(connection)
+        connection.execute("""
+            INSERT INTO non_working_blocks (start_date, start_time, end_date, end_time, reason)
+            VALUES (?, ?, ?, ?, ?)
+        """, (start_date, start_time_value, end_date, end_time_value, reason))
+        audit_record_create(connection, "profile", 1, {
+            "non_working_block": f"{start_date} {start_time_value or 'all day'} to {end_date} {end_time_value or 'all day'}",
+            "non_working_reason": reason,
+        }, {
+            "non_working_block": "Non-Working Date / Time Block",
+            "non_working_reason": "Non-Working Reason",
+        })
+        user = current_user()
+        rescheduled_count = reschedule_outreach_for_new_non_working_block(
+            connection,
+            new_block,
+            user["full_name"] if user else "Profile availability update",
+        )
+        connection.commit()
+    except Exception as exc:
+        connection.rollback()
+        code = log_diagnostic_exception("PROFILE", exc, {"stage": "add_non_working_block"})
+        connection.close()
+        return redirect(url_for(
+            "profile",
+            error=diagnostic_user_message(
+                "The non-working block could not be saved or applied to the Outreach schedule.",
+                code,
+            ),
+        ))
     connection.close()
-    return redirect(url_for("profile", message="Non-working block added."))
+    message = "Non-working block added."
+    if rescheduled_count:
+        message += f" {rescheduled_count} open Outreach task(s) were rescheduled from the first conflict onward in their existing order."
+    return redirect(url_for("profile", message=message))
 
 
 @app.route("/profile/non-working/<int:block_id>/delete", methods=("POST",))
