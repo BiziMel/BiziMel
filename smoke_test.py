@@ -5,7 +5,7 @@ import io
 import json
 import sqlite3
 import tempfile
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 
@@ -372,6 +372,40 @@ def main():
         yesterday = (today - timedelta(days=1)).isoformat()
         tomorrow = (today + timedelta(days=1)).isoformat()
 
+        failed_job_date = today - timedelta(days=5)
+        failed_job_now = datetime.combine(failed_job_date, time(23, 0))
+        job_token = pipeflow_app.claim_scheduled_job(
+            "nightly_outreach_schedule",
+            failed_job_date,
+            failed_job_now,
+        )
+        assert_ok(job_token, "nightly scheduler run could not be claimed")
+        assert_ok(
+            not pipeflow_app.claim_scheduled_job("nightly_outreach_schedule", failed_job_date, failed_job_now),
+            "nightly scheduler allowed the same daily run to be claimed twice",
+        )
+        pipeflow_app.finish_scheduled_job(
+            "nightly_outreach_schedule",
+            failed_job_date,
+            job_token,
+            "failed",
+            "Smoke scheduler failure",
+            failed_job_now,
+        )
+        failed_alert_html = client.get("/").get_data(as_text=True)
+        assert_ok(
+            "Nightly schedule review needs attention" in failed_alert_html
+            and "Smoke scheduler failure" in failed_alert_html,
+            "administrators were not shown the nightly service failure dialog",
+        )
+        auth_connection = pipeflow_app.get_auth_connection()
+        auth_connection.execute(
+            "UPDATE scheduled_job_runs SET status = 'completed', detail = 'Smoke recovery complete' WHERE job_key = ?",
+            (f"nightly_outreach_schedule:{failed_job_date.isoformat()}",),
+        )
+        auth_connection.commit()
+        auth_connection.close()
+
         pages = {
             "/": "Dashboard",
             "/accounts": "Accounts",
@@ -527,6 +561,117 @@ def main():
             tuple(availability_task_ids),
         )
         connection.execute("DELETE FROM non_working_blocks WHERE reason = ?", ("Part-day smoke absence",))
+        connection.commit()
+        connection.close()
+
+        nightly_block_date = today + timedelta(days=220)
+        while nightly_block_date.weekday() != 4:
+            nightly_block_date += timedelta(days=1)
+        nightly_now = datetime.combine(
+            nightly_block_date - timedelta(days=1),
+            datetime.strptime("23:00", "%H:%M").time(),
+        )
+        nightly_original_slots = [
+            datetime.combine(nightly_block_date, datetime.strptime("10:00", "%H:%M").time()),
+            datetime.combine(nightly_block_date, datetime.strptime("10:15", "%H:%M").time()),
+            datetime.combine(nightly_block_date + timedelta(days=1), datetime.strptime("10:30", "%H:%M").time()),
+        ]
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        connection.execute(
+            "INSERT INTO non_working_blocks (start_date, start_time, end_date, end_time, reason) VALUES (?, ?, ?, ?, ?)",
+            (nightly_block_date.isoformat(), "10:00", nightly_block_date.isoformat(), "12:00", "Nightly review smoke block"),
+        )
+        nightly_task_ids = []
+        for index, original_slot in enumerate(nightly_original_slots):
+            cursor = connection.execute(
+                """
+                INSERT INTO outreach (
+                    fy, quarter, account_id, contact_id, campaign, sales_play,
+                    activity_date, activity_time, activity_type, subject, outcome,
+                    next_action, next_action_date, next_action_time, task_status, assigned_to
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "27", "Q1", account_id, second_contact_id, "Nightly scheduler smoke", "Smoke Test Play",
+                    original_slot.date().isoformat(), original_slot.strftime("%H:%M"), "Email",
+                    f"Nightly ordered task {index + 1}", "", "Continue engagement",
+                    original_slot.date().isoformat(), original_slot.strftime("%H:%M"), "Not Started", "Smoke Test Admin",
+                ),
+            )
+            nightly_task_ids.append(cursor.lastrowid)
+        closed_slot = nightly_original_slots[0]
+        closed_cursor = connection.execute(
+            """
+            INSERT INTO outreach (
+                fy, quarter, account_id, contact_id, campaign, sales_play,
+                activity_date, activity_time, activity_type, subject, outcome,
+                next_action, next_action_date, next_action_time, task_status, assigned_to
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "27", "Q1", account_id, contact_id, "Nightly scheduler smoke", "Smoke Test Play",
+                closed_slot.date().isoformat(), closed_slot.strftime("%H:%M"), "Email",
+                "Nightly closed history", "Positive Response", "", closed_slot.date().isoformat(),
+                closed_slot.strftime("%H:%M"), "Closed", "Smoke Test Admin",
+            ),
+        )
+        closed_task_id = closed_cursor.lastrowid
+        nightly_test_ids = {*nightly_task_ids, closed_task_id}
+        other_task_statuses = connection.execute(
+            "SELECT id, task_status FROM outreach WHERE id NOT IN (?, ?, ?, ?)",
+            tuple(nightly_test_ids),
+        ).fetchall()
+        connection.execute(
+            "UPDATE outreach SET task_status = 'Closed' WHERE id NOT IN (?, ?, ?, ?)",
+            tuple(nightly_test_ids),
+        )
+        connection.commit()
+        moved_count = pipeflow_app.nightly_reflow_outreach_schedule(connection, nightly_now)
+        connection.commit()
+        assert_ok(moved_count == 3, "nightly review did not move every invalid open scheduled task")
+        nightly_rows = connection.execute(
+            "SELECT id, next_action_date, next_action_time FROM outreach WHERE id IN (?, ?, ?) ORDER BY next_action_date, next_action_time, id",
+            tuple(nightly_task_ids),
+        ).fetchall()
+        nightly_moved_slots = [
+            datetime.fromisoformat(f"{row['next_action_date']}T{row['next_action_time']}")
+            for row in nightly_rows
+        ]
+        assert_ok(
+            nightly_moved_slots == sorted(nightly_moved_slots) and len(set(nightly_moved_slots)) == 3,
+            "nightly review did not preserve order in distinct schedule slots",
+        )
+        assert_ok(
+            all(moved >= original for moved, original in zip(nightly_moved_slots, nightly_original_slots)),
+            "nightly review moved an Outreach task backwards",
+        )
+        assert_ok(
+            all(slot.weekday() < 5 for slot in nightly_moved_slots)
+            and all(not (slot.date() == nightly_block_date and time(10, 0) <= slot.time() < time(12, 0)) for slot in nightly_moved_slots),
+            "nightly review left Outreach inside a weekend or blocked time",
+        )
+        closed_row = connection.execute(
+            "SELECT next_action_date, next_action_time FROM outreach WHERE id = ?",
+            (closed_task_id,),
+        ).fetchone()
+        assert_ok(
+            closed_row["next_action_date"] == closed_slot.date().isoformat() and closed_row["next_action_time"] == closed_slot.strftime("%H:%M"),
+            "nightly review changed closed Outreach history",
+        )
+        connection.commit()
+        second_pass_count = pipeflow_app.nightly_reflow_outreach_schedule(connection, nightly_now)
+        assert_ok(second_pass_count == 0, "nightly review was not idempotent for an already valid schedule")
+        connection.execute(
+            "DELETE FROM outreach WHERE id IN (?, ?, ?, ?)",
+            (*nightly_task_ids, closed_task_id),
+        )
+        for task_row in other_task_statuses:
+            connection.execute(
+                "UPDATE outreach SET task_status = ? WHERE id = ?",
+                (task_row["task_status"], task_row["id"]),
+            )
+        connection.execute("DELETE FROM non_working_blocks WHERE reason = ?", ("Nightly review smoke block",))
         connection.commit()
         connection.close()
 

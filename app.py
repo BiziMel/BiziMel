@@ -10,6 +10,8 @@ import secrets
 import hashlib
 import html
 import base64
+import sqlite3
+import threading
 from datetime import date, datetime, time, timedelta
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -31,7 +33,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.8.1"
 APP_RELEASE_DATE = "2026-08-19"
-APP_BUILD = "2026-08-19-v2.8.1-profile-availability-r1"
+APP_BUILD = "2026-08-19-v2.8.1-nightly-schedule-reflow-r2"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -54,6 +56,8 @@ RELEASE_NOTES = [
             "Changed expired non-working blocks to be removed automatically when profile or scheduling availability is loaded.",
             "Applied full-day and part-day availability to new Outreach Auto Schedule, Campaign Builder, and single or bulk automatic rescheduling.",
             "Changed new availability blocks to reflow future open Outreach tasks from the first conflict onward, preserving their existing chronological order and avoiding all unavailable or occupied slots.",
+            "Added a daily 23:00 Europe/London schedule review that moves open Outreach activities forward when they clash or fall outside configured working days, working hours or availability blocks.",
+            "Protected the nightly review with a shared daily run record so only one live application worker can reshuffle a workspace schedule.",
         ],
     },
     {
@@ -959,6 +963,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
            'New Outreach date and time fields open blank. Enter them manually or select Auto Schedule after choosing the account and contact.',
            'Completed tasks can be reopened for 10 days before the system moves them to Closed.',
            'For bulk rescheduling, select the required rows and choose Reschedule Selected. PipeFlow preserves their current order and finds collision-free working slots without using the original campaign end date as a limit.',
+           'At 23:00 Europe/London each day, PipeFlow reviews open scheduled tasks in their current order and only moves work forward when a slot is unavailable or clashes.',
            'Sales Play assets appear under contact information when the selected Sales Play has configured assets.',
            'No Response outcomes are used as negative signals in insights and PG Progress RAG.']},
  {'slug': 'campaign-builder',
@@ -1045,6 +1050,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
   'tips': ['Only the logged-in user can access their own secret phrase data.',
            'Saturday and Sunday are treated as non-working by auto-scheduling.',
            'Expired availability blocks are removed automatically.',
+           'The nightly 23:00 review applies current working hours and availability blocks to every open scheduled Outreach task. Administrators receive an in-app dialog if that service run fails.',
            'Manual date entry can still be saved after warnings when intentional.']},
  {'slug': 'admin',
   'title': 'Admin, Tenants, Users and Teams',
@@ -1821,9 +1827,10 @@ def rate_limit_exceeded(bucket, key):
 
 @app.context_processor
 def inject_dropdown_values():
+    signed_in_user = current_user()
     return {
         "dropdown_values": DROPDOWN_VALUES,
-        "current_user": current_user(),
+        "current_user": signed_in_user,
         "app_name": "PipeFlow PG Manager",
         "app_version": APP_VERSION,
         "app_build": APP_BUILD,
@@ -1835,6 +1842,7 @@ def inject_dropdown_values():
         "format_display_datetime": format_display_datetime,
         "page_instructions": page_instructions_for_endpoint(request.endpoint),
         "csrf_token": csrf_token,
+        "nightly_service_alert": nightly_service_alert_for_user(signed_in_user),
     }
 
 
@@ -1863,6 +1871,7 @@ PAGE_INSTRUCTIONS = {
             "Use Save Assignment after changing the assignee. The selected user must already have access to the account.",
             "Select several rows and use Reschedule Selected to retain their current order while moving them into the next collision-free working slots.",
             "New Outreach schedule fields open blank; use Auto Schedule only when you want PipeFlow to populate them.",
+            "The daily 23:00 schedule review keeps open work in its existing order and moves only unavailable or clashing tasks to later valid slots.",
             "Open the task to complete it, add a mandatory Activity Update or create a follow-on task.",
         ],
     },
@@ -14484,6 +14493,296 @@ def auto_reschedule_outreach_records(connection, outreach_ids, actor_label):
     return updated_count
 
 
+def nightly_reflow_outreach_schedule(connection, now=None):
+    """Move open scheduled work forward into valid slots without changing its order."""
+    now = round_datetime_to_next_slot(now or current_app_datetime())
+    profile = connection.execute("SELECT * FROM user_profile WHERE id = 1").fetchone()
+    block_rows = connection.execute("""
+        SELECT * FROM non_working_blocks
+        ORDER BY start_date, start_time, end_date, end_time, id
+    """).fetchall()
+    non_working_blocks = parse_non_working_blocks(block_rows)
+    rows = connection.execute(f"""
+        SELECT *
+        FROM outreach
+        WHERE {open_task_sql('outreach')}
+          AND COALESCE(task_status, '') != 'Deleted'
+          AND (
+                NULLIF(TRIM(COALESCE(next_action_date, '')), '') IS NOT NULL
+             OR NULLIF(TRIM(COALESCE(activity_date, '')), '') IS NOT NULL
+          )
+    """, open_task_params()).fetchall()
+
+    scheduled_rows = []
+    for row in rows:
+        activity_at = task_due_datetime(row["activity_date"], row["activity_time"])
+        due_at = task_due_datetime(row["next_action_date"], row["next_action_time"])
+        if not activity_at and not due_at:
+            continue
+        # The due date is the live execution schedule. A past activity start is
+        # retained as history when a future due date is being moved.
+        move_due = bool(due_at)
+        move_activity = bool(activity_at and (activity_at >= now or not due_at))
+        original_slot = due_at or activity_at
+        scheduled_rows.append((original_slot, row, move_activity, move_due))
+
+    scheduled_rows.sort(key=lambda item: (item[0], item[1]["id"]))
+    activity_ids = [row["id"] for _, row, move_activity, _ in scheduled_rows if move_activity]
+    due_ids = [row["id"] for _, row, _, move_due in scheduled_rows if move_due]
+    reserved_slots = existing_outreach_schedule_slots(connection, due_ids, activity_ids)
+    reserved_contact_dates = existing_contact_scheduled_dates(connection, due_ids, activity_ids)
+    sequence_cursor = now
+    updated_count = 0
+    labels = {
+        "activity_date": "Activity start date",
+        "activity_time": "Activity start time",
+        "next_action_date": "Activity due date",
+        "next_action_time": "Activity due time",
+    }
+
+    for original_slot, row, move_activity, move_due in scheduled_rows:
+        # max() guarantees that the nightly process never pulls work earlier.
+        search_from = max(sequence_cursor, round_datetime_to_next_slot(original_slot))
+        scheduled_date, scheduled_time = next_available_outreach_slot(
+            search_from,
+            profile=profile,
+            reserved_slots=reserved_slots,
+            non_working_blocks=non_working_blocks,
+            contact_keys=outreach_contact_schedule_keys(connection, row),
+            reserved_contact_dates=reserved_contact_dates,
+        )
+        scheduled_at = datetime.strptime(
+            f"{scheduled_date} {scheduled_time}",
+            "%Y-%m-%d %H:%M",
+        )
+        sequence_cursor = scheduled_at + timedelta(minutes=15)
+        new_values = {
+            "activity_date": scheduled_date if move_activity else row["activity_date"],
+            "activity_time": scheduled_time if move_activity else row["activity_time"],
+            "next_action_date": scheduled_date if move_due else row["next_action_date"],
+            "next_action_time": scheduled_time if move_due else row["next_action_time"],
+        }
+        changes = build_change_log(row, new_values, labels)
+        if not changes:
+            continue
+        connection.execute("""
+            UPDATE outreach
+            SET activity_date = ?,
+                activity_time = ?,
+                next_action_date = ?,
+                next_action_time = ?,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (
+            new_values["activity_date"],
+            new_values["activity_time"],
+            new_values["next_action_date"],
+            new_values["next_action_time"],
+            row["id"],
+        ))
+        add_timeline_entry(
+            connection,
+            "outreach",
+            row["id"],
+            "Nightly Schedule Review",
+            "PipeFlow 23:00 schedule review: " + "; ".join(changes),
+            "PipeFlow Scheduler",
+        )
+        updated_count += 1
+    return updated_count
+
+
+def claim_scheduled_job(job_name, run_date, now=None):
+    """Atomically claim one named daily job across all live app workers."""
+    now = now or current_app_datetime()
+    job_key = f"{job_name}:{run_date.isoformat()}"
+    run_token = secrets.token_hex(8)
+    connection = get_auth_connection()
+    connection.execute("""
+        INSERT INTO scheduled_job_runs (
+            job_key, job_name, run_date, status, run_token, started_at, detail
+        ) VALUES (?, ?, ?, 'running', ?, ?, '')
+        ON CONFLICT(job_key) DO NOTHING
+    """, (job_key, job_name, run_date.isoformat(), run_token, app_datetime_key(now)))
+    connection.commit()
+    row = connection.execute(
+        "SELECT * FROM scheduled_job_runs WHERE job_key = ?",
+        (job_key,),
+    ).fetchone()
+    if row and row["run_token"] == run_token:
+        connection.close()
+        return run_token
+
+    retry_after = parse_app_datetime(row["completed_at"] or row["started_at"]) if row else None
+    retryable = bool(
+        row
+        and row["status"] in {"failed", "running"}
+        and retry_after
+        and now - retry_after >= timedelta(minutes=15 if row["status"] == "failed" else 30)
+    )
+    if retryable:
+        previous_token = row["run_token"]
+        connection.execute("""
+            UPDATE scheduled_job_runs
+            SET status = 'running',
+                run_token = ?,
+                started_at = ?,
+                completed_at = NULL,
+                detail = ''
+            WHERE job_key = ?
+              AND run_token = ?
+        """, (run_token, app_datetime_key(now), job_key, previous_token))
+        connection.commit()
+        row = connection.execute(
+            "SELECT run_token FROM scheduled_job_runs WHERE job_key = ?",
+            (job_key,),
+        ).fetchone()
+    connection.close()
+    return run_token if row and row["run_token"] == run_token else ""
+
+
+def finish_scheduled_job(job_name, run_date, run_token, status, detail, now=None):
+    connection = get_auth_connection()
+    connection.execute("""
+        UPDATE scheduled_job_runs
+        SET status = ?,
+            completed_at = ?,
+            detail = ?
+        WHERE job_key = ?
+          AND run_token = ?
+    """, (
+        status,
+        app_datetime_key(now or current_app_datetime()),
+        str(detail or "")[:4000],
+        f"{job_name}:{run_date.isoformat()}",
+        run_token,
+    ))
+    connection.commit()
+    connection.close()
+
+
+def scheduled_workspace_connections():
+    """Yield each user workspace once for the nightly cross-tenant review."""
+    users = list_users()
+    if using_postgres():
+        seen = set()
+        for user in users:
+            schema = user["workspace_schema"] if "workspace_schema" in user.keys() else ""
+            if not schema or schema in seen:
+                continue
+            seen.add(schema)
+            yield schema, user["full_name"] or user["email"], get_schema_connection(schema=schema)
+        return
+
+    data_root = Path(os.environ.get("PIPEFLOW_DATA_DIR", Path(__file__).resolve().parent / "server_data"))
+    for user in users:
+        database_path = data_root / "users" / str(user["id"]) / "pipeflow.db"
+        if not database_path.exists():
+            continue
+        connection = sqlite3.connect(database_path)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA busy_timeout = 5000")
+        yield f"user:{user['id']}", user["full_name"] or user["email"], connection
+
+
+def run_nightly_schedule_review(now=None, force=False):
+    now = (now or current_app_datetime()).replace(second=0, microsecond=0)
+    if not force and now.hour < 23:
+        return {"status": "not_due", "updated": 0, "workspaces": 0}
+    job_name = "nightly_outreach_schedule"
+    run_token = claim_scheduled_job(job_name, now.date(), now)
+    if not run_token:
+        return {"status": "already_claimed", "updated": 0, "workspaces": 0}
+
+    updated_total = 0
+    workspace_total = 0
+    failures = []
+    try:
+        for workspace_key, workspace_label, connection in scheduled_workspace_connections():
+            workspace_total += 1
+            try:
+                updated_total += nightly_reflow_outreach_schedule(connection, now)
+                connection.commit()
+            except Exception as exc:
+                try:
+                    connection.rollback()
+                except Exception:
+                    pass
+                failures.append(f"{workspace_label} ({workspace_key}): {type(exc).__name__}")
+                app.logger.exception("Nightly Outreach schedule review failed for %s", workspace_key)
+            finally:
+                connection.close()
+        if failures:
+            detail = (
+                f"PipeFlow could not complete the 23:00 Outreach schedule review for "
+                f"{len(failures)} of {workspace_total} workspace(s). "
+                "No partial changes were retained in the affected workspace(s). "
+                + " ".join(failures)
+            )
+            finish_scheduled_job(job_name, now.date(), run_token, "failed", detail, now)
+            return {"status": "failed", "updated": updated_total, "workspaces": workspace_total, "detail": detail}
+        detail = f"Reviewed {workspace_total} workspace(s) and moved {updated_total} open Outreach task(s)."
+        finish_scheduled_job(job_name, now.date(), run_token, "completed", detail, now)
+        return {"status": "completed", "updated": updated_total, "workspaces": workspace_total, "detail": detail}
+    except Exception as exc:
+        detail = "PipeFlow could not start or complete the 23:00 Outreach schedule review. The service will retry automatically."
+        finish_scheduled_job(job_name, now.date(), run_token, "failed", detail, now)
+        app.logger.exception("Nightly Outreach schedule coordinator failed")
+        return {"status": "failed", "updated": updated_total, "workspaces": workspace_total, "detail": detail}
+
+
+def nightly_service_alert_for_user(user):
+    if not user or user["role"] not in {"admin", "company_admin"}:
+        return None
+    try:
+        connection = get_auth_connection()
+        row = connection.execute("""
+            SELECT run_date, completed_at, detail
+            FROM scheduled_job_runs
+            WHERE job_name = 'nightly_outreach_schedule'
+              AND status = 'failed'
+            ORDER BY run_date DESC, completed_at DESC
+            LIMIT 1
+        """).fetchone()
+        if row:
+            later_success = connection.execute("""
+                SELECT 1
+                FROM scheduled_job_runs
+                WHERE job_name = 'nightly_outreach_schedule'
+                  AND status = 'completed'
+                  AND run_date >= ?
+                LIMIT 1
+            """, (row["run_date"],)).fetchone()
+            if later_success:
+                row = None
+        connection.close()
+        if row:
+            return {
+                "run_date": format_display_date(row["run_date"]),
+                "completed_at": format_display_datetime(row["completed_at"]),
+                "detail": row["detail"] or "The nightly Outreach schedule review did not complete.",
+            }
+        scheduler_enabled = os.environ.get("PIPEFLOW_NIGHTLY_SCHEDULER", "0") == "1"
+        hosted_service = bool(os.environ.get("RENDER") or using_postgres())
+        scheduler_thread = globals().get("_NIGHTLY_SCHEDULER_THREAD")
+        if hosted_service and not scheduler_enabled:
+            return {
+                "run_date": format_display_date(current_app_datetime().date()),
+                "completed_at": "",
+                "detail": "The nightly Outreach scheduler is not enabled for this hosted service. Set PIPEFLOW_NIGHTLY_SCHEDULER to 1 and redeploy.",
+            }
+        if scheduler_enabled and (not scheduler_thread or not scheduler_thread.is_alive()):
+            return {
+                "run_date": format_display_date(current_app_datetime().date()),
+                "completed_at": "",
+                "detail": "The nightly Outreach scheduler is not running. Restart the PipeFlow service and review the service logs.",
+            }
+        return None
+    except Exception:
+        app.logger.exception("Nightly scheduler failure alert could not be loaded")
+        return None
+
+
 def auto_reschedule_outreach_with_recovery(connection, outreach_ids, actor_label):
     try:
         updated_count = auto_reschedule_outreach_records(connection, outreach_ids, actor_label)
@@ -18533,6 +18832,36 @@ def export_outreach():
     response.headers["Content-Disposition"] = "attachment; filename=pipeflow_outreach_export.csv"
 
     return response
+
+
+_NIGHTLY_SCHEDULER_STOP = threading.Event()
+_NIGHTLY_SCHEDULER_THREAD = None
+
+
+def nightly_scheduler_loop():
+    while not _NIGHTLY_SCHEDULER_STOP.is_set():
+        try:
+            with app.app_context():
+                run_nightly_schedule_review()
+        except Exception:
+            app.logger.exception("Nightly Outreach scheduler loop failed")
+        _NIGHTLY_SCHEDULER_STOP.wait(60)
+
+
+def start_nightly_scheduler():
+    global _NIGHTLY_SCHEDULER_THREAD
+    if _NIGHTLY_SCHEDULER_THREAD and _NIGHTLY_SCHEDULER_THREAD.is_alive():
+        return
+    _NIGHTLY_SCHEDULER_THREAD = threading.Thread(
+        target=nightly_scheduler_loop,
+        name="pipeflow-nightly-outreach-scheduler",
+        daemon=True,
+    )
+    _NIGHTLY_SCHEDULER_THREAD.start()
+
+
+if os.environ.get("PIPEFLOW_NIGHTLY_SCHEDULER", "0") == "1":
+    start_nightly_scheduler()
 
 
 if __name__ == "__main__":

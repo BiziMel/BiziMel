@@ -204,6 +204,18 @@ def initialise_auth_database() -> None:
         )
     """)
     connection.execute("""
+        CREATE TABLE IF NOT EXISTS scheduled_job_runs (
+            job_key TEXT PRIMARY KEY,
+            job_name TEXT NOT NULL,
+            run_date TEXT NOT NULL,
+            status TEXT NOT NULL,
+            run_token TEXT NOT NULL,
+            started_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            completed_at TEXT,
+            detail TEXT
+        )
+    """)
+    connection.execute("""
         CREATE TABLE IF NOT EXISTS teams (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             team_name TEXT NOT NULL UNIQUE,

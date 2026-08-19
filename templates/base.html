@@ -80,9 +80,31 @@
         {% block content %}{% endblock %}
     </main>
 
+    {% if nightly_service_alert %}
+    <dialog id="nightlyServiceAlert" class="pipeflow-dialog" aria-labelledby="nightlyServiceAlertTitle">
+        <div class="dialog-header">
+            <h3 id="nightlyServiceAlertTitle">Nightly schedule review needs attention</h3>
+            <button type="button" class="dialog-close-button" data-close-nightly-alert aria-label="Close">&times;</button>
+        </div>
+        <p>The 23:00 Outreach schedule review did not complete on {{ nightly_service_alert.run_date }}{% if nightly_service_alert.completed_at %} at {{ nightly_service_alert.completed_at }}{% endif %}.</p>
+        <p>{{ nightly_service_alert.detail }}</p>
+        <p>PipeFlow will retry automatically while the live service remains available. Review the Render service logs if this message continues.</p>
+        <div class="form-actions">
+            <button type="button" class="btn btn-primary" data-close-nightly-alert>Close</button>
+        </div>
+    </dialog>
+    {% endif %}
+
     <script>
         window.PIPEFLOW_CSRF_TOKEN = "{{ csrf_token() }}";
         document.addEventListener("DOMContentLoaded", () => {
+            const nightlyAlert = document.getElementById("nightlyServiceAlert");
+            if (nightlyAlert) {
+                nightlyAlert.showModal();
+                nightlyAlert.querySelectorAll("[data-close-nightly-alert]").forEach((button) => {
+                    button.addEventListener("click", () => nightlyAlert.close());
+                });
+            }
             document.querySelectorAll("form").forEach((form) => {
                 const method = (form.getAttribute("method") || "GET").toUpperCase();
                 if (method === "POST" && !form.querySelector("input[name='csrf_token']")) {

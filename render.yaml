@@ -11,5 +11,9 @@ services:
         generateValue: true
       - key: PIPEFLOW_DATA_DIR
         value: /tmp/pipeflow-server-data
+      - key: PIPEFLOW_NIGHTLY_SCHEDULER
+        value: "1"
+      - key: PIPEFLOW_TIMEZONE
+        value: Europe/London
       - key: DATABASE_URL
         sync: false
