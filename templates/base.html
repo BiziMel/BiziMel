@@ -99,6 +99,19 @@
     </dialog>
     {% endif %}
 
+    {% if page_not_found_alert %}
+    <dialog id="pageNotFoundAlert" class="pipeflow-dialog" aria-labelledby="pageNotFoundAlertTitle">
+        <div class="dialog-header">
+            <h3 id="pageNotFoundAlertTitle">Page not found</h3>
+            <button type="button" class="dialog-close-button" data-close-page-not-found aria-label="Close">&times;</button>
+        </div>
+        <p>The page could not be found. You have been returned to the Insights Dashboard.</p>
+        <div class="form-actions">
+            <button type="button" class="btn btn-primary" data-close-page-not-found>Close</button>
+        </div>
+    </dialog>
+    {% endif %}
+
     <script>
         window.PIPEFLOW_CSRF_TOKEN = "{{ csrf_token() }}";
         document.addEventListener("DOMContentLoaded", () => {
@@ -107,6 +120,13 @@
                 nightlyAlert.showModal();
                 nightlyAlert.querySelectorAll("[data-close-nightly-alert]").forEach((button) => {
                     button.addEventListener("click", () => nightlyAlert.close());
+                });
+            }
+            const pageNotFoundAlert = document.getElementById("pageNotFoundAlert");
+            if (pageNotFoundAlert) {
+                pageNotFoundAlert.showModal();
+                pageNotFoundAlert.querySelectorAll("[data-close-page-not-found]").forEach((button) => {
+                    button.addEventListener("click", () => pageNotFoundAlert.close());
                 });
             }
             document.querySelectorAll("form").forEach((form) => {

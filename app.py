@@ -25,7 +25,7 @@ except ModuleNotFoundError:
     Image = None
     ImageOps = None
     UnidentifiedImageError = Exception
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members, decode_broadcast_companies, set_user_company_memberships, user_company_names
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, bulk_update_broadcast_messages, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members, decode_broadcast_companies, set_user_company_memberships, user_company_names
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
@@ -33,7 +33,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.8.1"
 APP_RELEASE_DATE = "2026-08-20"
-APP_BUILD = "2026-08-20-v2.8.1-nightly-scheduler-alerts-r3"
+APP_BUILD = "2026-08-20-v2.8.1-admin-resilience-r4"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -50,7 +50,7 @@ RELEASE_NOTES = [
     {
         "version": "2.8.1",
         "release_date": "2026-08-20",
-        "title": "Part-day availability and schedule reflow",
+        "title": "Availability resilience and admin controls",
         "fixed": [
             "Added optional From Time and To Time fields to profile non-working blocks while preserving full-day absence behavior when times are blank.",
             "Changed expired non-working blocks to be removed automatically when profile or scheduling availability is loaded.",
@@ -60,6 +60,12 @@ RELEASE_NOTES = [
             "Protected the nightly review with a shared daily run record so only one live application worker can reshuffle a workspace schedule.",
             "Changed scheduler failure warnings so they are assessed only after a 23:00 run becomes due and are visible only to Application Admins.",
             "Added persistent Confirm handling for scheduler failure dialogs and a read-only 30-day scheduler run history on the Admin page.",
+            "Moved Nightly Scheduler History to the bottom of Admin and kept it visible only to Application Admins.",
+            "Separated Create Team and Create User Profile into distinct admin capabilities with clearer visual boundaries.",
+            "Changed existing Broadcast Messages into an editable table with one transaction-based Save All Broadcasts action.",
+            "Decoupled profile availability saves from Outreach schedule reflow so a valid block is retained even when a dependent task cannot be rescheduled.",
+            "Added a friendly Page Not Found dialog that returns signed-in users to the Insights Dashboard.",
+            "Changed Insights Recommended Move logic to rank successful activity types and channels instead of recommending a Sales Play.",
         ],
     },
     {
@@ -1845,6 +1851,7 @@ def inject_dropdown_values():
         "external_url": normalise_external_url,
         "format_display_datetime": format_display_datetime,
         "page_instructions": page_instructions_for_endpoint(request.endpoint),
+        "page_not_found_alert": request.args.get("page_not_found") == "1",
         "csrf_token": csrf_token,
         "nightly_service_alert": nightly_service_alert_for_user(signed_in_user),
     }
@@ -2226,6 +2233,11 @@ def apply_security_headers(response):
     if request.is_secure or app.config.get("SESSION_COOKIE_SECURE"):
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
+
+
+@app.errorhandler(404)
+def handle_page_not_found(_exc):
+    return redirect(url_for("home", page_not_found="1"))
 
 
 @app.errorhandler(Exception)
@@ -2773,6 +2785,64 @@ def admin_update_broadcast(message_id):
     if error:
         return redirect(url_for("admin_users", error=error))
     return redirect(url_for("admin_users", message="Broadcast message updated."))
+
+
+@app.route("/admin/broadcasts/bulk-update", methods=("POST",))
+@admin_required
+def admin_bulk_update_broadcasts():
+    actor = current_user()
+    guard = require_broadcast_admin_redirect()
+    if guard:
+        return guard
+    message_ids = [value for value in request.form.getlist("broadcast_ids") if value.isdigit()]
+    if not message_ids:
+        return redirect(url_for("admin_users", error="There are no broadcast rows to save."))
+    updates = []
+    for message_id_text in message_ids:
+        message_id = int(message_id_text)
+        existing = get_broadcast_message(message_id)
+        if not existing:
+            return redirect(url_for("admin_users", error="One broadcast no longer exists. Refresh Admin and try again."))
+        if is_company_admin(actor) and not company_admin_can_manage_broadcast(actor, existing):
+            return redirect(url_for("admin_users", error="You can only update broadcasts for your own company."))
+        if is_application_admin(actor):
+            share_all = request.form.get(f"target_all_companies_{message_id}") == "1"
+            target_companies = [] if share_all else request.form.getlist(f"target_companies_{message_id}")
+            if not share_all and not target_companies:
+                return redirect(url_for(
+                    "admin_users",
+                    error=f"Select at least one company or All companies for broadcast row {message_id}.",
+                ))
+        else:
+            target_companies = [actor["company"]]
+        updates.append({
+            "id": message_id,
+            "title": request.form.get(f"title_{message_id}", ""),
+            "message": request.form.get(f"message_{message_id}", ""),
+            "severity": request.form.get(f"severity_{message_id}", "info"),
+            "start_at": request.form.get(f"start_at_{message_id}", ""),
+            "stop_at": request.form.get(f"stop_at_{message_id}", ""),
+            "is_active": request.form.get(f"is_active_{message_id}") == "1",
+            "target_companies": target_companies,
+        })
+    try:
+        error = bulk_update_broadcast_messages(updates)
+    except Exception as exc:
+        code = log_diagnostic_exception("ADMIN", exc, {"stage": "bulk_update_broadcasts"})
+        return redirect(url_for(
+            "admin_users",
+            error=diagnostic_user_message("Broadcast messages could not be saved.", code),
+        ))
+    if error:
+        return redirect(url_for("admin_users", error=error))
+    log_admin_audit(
+        actor,
+        "Broadcasts bulk updated",
+        "Broadcast Messages",
+        f"{len(updates)} rows",
+        "Saved editable broadcast fields from the Admin table.",
+    )
+    return redirect(url_for("admin_users", message=f"Saved {len(updates)} broadcast message(s)."))
 
 
 @app.route("/admin/broadcasts/<int:message_id>/deactivate", methods=("POST",))
@@ -4674,43 +4744,32 @@ def strategic_gtm_recommendation(connection, account_label, failed_activity_type
     placeholders = ",".join("?" for _ in success_outcomes)
     row = connection.execute(f"""
         SELECT
-            outreach.sales_play,
             outreach.activity_type,
-            contacts.category,
-            contacts.bmc_relationship,
             COUNT(*) AS total,
             SUM(CASE WHEN outreach.outcome IN ('NBM Booked', 'NBM Meeting') THEN 1 ELSE 0 END) AS nbm_total,
-            SUM(CASE WHEN outreach.outcome IN ('Discovery Booked', 'NBM Booked', 'NBM Meeting', 'Exec Meeting Booked', 'Meeting Booked') THEN 1 ELSE 0 END) AS meeting_total
+            SUM(CASE WHEN outreach.outcome IN ('Discovery Booked', 'NBM Booked', 'NBM Meeting', 'Exec Meeting Booked', 'Meeting Booked') THEN 1 ELSE 0 END) AS meeting_total,
+            SUM(CASE WHEN outreach.outcome IN ({placeholders}) THEN 1 ELSE 0 END) AS positive_total
         FROM outreach
-        LEFT JOIN contacts ON contacts.id = outreach.contact_id
         WHERE outreach.outcome IN ({placeholders})
-          AND (
-                COALESCE(outreach.activity_type, '') != ?
-             OR COALESCE(outreach.sales_play, '') != ?
-          )
-        GROUP BY outreach.sales_play, outreach.activity_type, contacts.category, contacts.bmc_relationship
-        ORDER BY nbm_total DESC, meeting_total DESC, total DESC
+          AND NULLIF(TRIM(COALESCE(outreach.activity_type, '')), '') IS NOT NULL
+          AND COALESCE(outreach.task_status, '') != 'Deleted'
+          AND COALESCE(outreach.activity_type, '') != ?
+        GROUP BY outreach.activity_type
+        ORDER BY nbm_total DESC, meeting_total DESC, positive_total DESC, total DESC
         LIMIT 1
-    """, (*success_outcomes, failed_activity_type or "", failed_sales_play or "")).fetchone()
+    """, (*success_outcomes, *success_outcomes, failed_activity_type or "")).fetchone()
     if not row:
         return strategic_pipeline_playbook_recommendation(account_label, failed_activity_type, failed_sales_play)
-    route = compact_join([
-        row["sales_play"],
-        row["activity_type"],
-        row["category"],
-        row["bmc_relationship"],
-    ], 4)
     return (
-        f"For {account_label}, pivot to a go-to-market route that is working elsewhere: {route}. "
-        f"That pattern has produced {row['nbm_total'] or 0} NBM booking(s) and {row['meeting_total'] or 0} meeting signal(s). "
-        "Use it to create a new contact angle or campaign touchpoint aimed specifically at booking a customer meeting. "
+        f"For {account_label}, use {row['activity_type']} as the next activity because it is the strongest current success signal. "
+        f"It has produced {row['nbm_total'] or 0} NBM booking(s), {row['meeting_total'] or 0} meeting outcome(s), "
+        f"and {row['positive_total'] or 0} positive response(s). Use that activity with a new contact angle and a specific customer meeting ask. "
         f"{strategic_pipeline_playbook_recommendation(account_label, failed_activity_type, failed_sales_play, compact=True)}"
     )
 
 
 def strategic_pipeline_playbook_recommendation(account_label, failed_activity_type="", failed_sales_play="", compact=False):
-    """Static SaaS/software sales plays keep dashboard guidance useful offline."""
-    play_context = f" for {failed_sales_play}" if failed_sales_play else ""
+    """Static activity guidance keeps dashboard recommendations useful offline."""
     failed_context = f" after {failed_activity_type}" if failed_activity_type else ""
     options = [
         (
@@ -4739,7 +4798,7 @@ def strategic_pipeline_playbook_recommendation(account_label, failed_activity_ty
     if compact:
         return primary
     return (
-        f"For {account_label}{play_context}{failed_context}, stop repeating the same motion. "
+        f"For {account_label}{failed_context}, stop repeating the same motion. "
         f"{primary} The success metric is a customer meeting, so end the next move with a specific Discovery or NBM ask."
     )
 
@@ -5252,7 +5311,7 @@ def build_dashboard_strategy_insights(connection, metric_values, account_health_
             "category": "Scale What Works",
             "title": f"{success_count} NBM meeting(s) booked or scheduled this week",
             "message": "NBM meetings scheduled this week are the clearest signal of current PG success.",
-            "action": "Review which account, contact route and sales play produced the NBM booking, then reuse that pattern on similar executive stakeholders.",
+            "action": strategic_gtm_recommendation(connection, "similar executive stakeholders"),
             "link": url_for("reports"),
             "priority": "positive",
         })
@@ -5749,6 +5808,7 @@ def build_learning_insights(connection):
         *overdue_task_params(),
     )
     insights = []
+    activity_recommendation = strategic_gtm_recommendation(connection, "the next priority account")
 
     sales_play_rows = add_learning_score(connection.execute(f"""
         SELECT
@@ -5771,7 +5831,7 @@ def build_learning_insights(connection):
                 f"and {sales_play['executive_success_total']} executive route signal(s) from "
                 f"{sales_play['total']} touchpoint(s)."
             ),
-            "action": "Prioritise this play for executive contacts and use the route that produced Discovery or NBM bookings.",
+            "action": activity_recommendation,
             "link": url_for("outreach")
         })
 
@@ -5888,7 +5948,7 @@ def build_learning_insights(connection):
                 f"{relationship['nbm_total']} NBM booking(s), and {relationship['positive_total']} positive signal(s) "
                 f"from {relationship['total']} touchpoint(s)."
             ),
-            "action": "Use this play when a similar executive or buying relationship appears in another account.",
+            "action": activity_recommendation,
             "link": url_for("contacts")
         })
 
@@ -16319,43 +16379,70 @@ def add_non_working_block():
         return redirect(url_for("profile", error="Non-working To Time must be later than From Time for the selected date range."))
     if end_at <= current_app_datetime().replace(second=0, microsecond=0):
         return redirect(url_for("profile", error="The non-working block has already expired. Enter a current or future absence."))
-    connection = get_db_connection()
-    try:
-        cleanup_expired_non_working_blocks(connection)
-        connection.execute("""
-            INSERT INTO non_working_blocks (start_date, start_time, end_date, end_time, reason)
-            VALUES (?, ?, ?, ?, ?)
-        """, (start_date, start_time_value, end_date, end_time_value, reason))
-        audit_record_create(connection, "profile", 1, {
-            "non_working_block": f"{start_date} {start_time_value or 'all day'} to {end_date} {end_time_value or 'all day'}",
-            "non_working_reason": reason,
-        }, {
-            "non_working_block": "Non-Working Date / Time Block",
-            "non_working_reason": "Non-Working Reason",
-        })
-        user = current_user()
-        rescheduled_count = reschedule_outreach_for_new_non_working_block(
-            connection,
-            new_block,
-            user["full_name"] if user else "Profile availability update",
-        )
-        connection.commit()
-    except Exception as exc:
-        connection.rollback()
-        code = log_diagnostic_exception("PROFILE", exc, {"stage": "add_non_working_block"})
-        connection.close()
-        return redirect(url_for(
-            "profile",
-            error=diagnostic_user_message(
-                "The non-working block could not be saved or applied to the Outreach schedule.",
+    # Persist availability before attempting the wider schedule reflow. A task
+    # scheduling edge case must never discard a valid absence from the profile.
+    for attempt in range(2):
+        connection = get_db_connection()
+        try:
+            cleanup_expired_non_working_blocks(connection)
+            connection.execute("""
+                INSERT INTO non_working_blocks (start_date, start_time, end_date, end_time, reason)
+                VALUES (?, ?, ?, ?, ?)
+            """, (start_date, start_time_value, end_date, end_time_value, reason))
+            audit_record_create(connection, "profile", 1, {
+                "non_working_block": f"{start_date} {start_time_value or 'all day'} to {end_date} {end_time_value or 'all day'}",
+                "non_working_reason": reason,
+            }, {
+                "non_working_block": "Non-Working Date / Time Block",
+                "non_working_reason": "Non-Working Reason",
+            })
+            connection.commit()
+            connection.close()
+            break
+        except Exception as exc:
+            connection.rollback()
+            connection.close()
+            if attempt == 0 and database_error_looks_like_schema_drift(exc):
+                initialise_database(force=True)
+                continue
+            code = log_diagnostic_exception("PROFILE", exc, {"stage": "save_non_working_block"})
+            return redirect(url_for(
+                "profile",
+                error=diagnostic_user_message("The non-working block could not be saved.", code),
+            ))
+
+    user = current_user()
+    actor_label = user["full_name"] if user else "Profile availability update"
+    rescheduled_count = 0
+    reflow_error = ""
+    for attempt in range(2):
+        connection = get_db_connection()
+        try:
+            rescheduled_count = reschedule_outreach_for_new_non_working_block(
+                connection,
+                new_block,
+                actor_label,
+            )
+            connection.commit()
+            connection.close()
+            break
+        except Exception as exc:
+            connection.rollback()
+            connection.close()
+            if attempt == 0 and database_error_looks_like_schema_drift(exc):
+                initialise_database(force=True)
+                continue
+            code = log_diagnostic_exception("PROFILE", exc, {"stage": "reflow_after_non_working_block"})
+            reflow_error = diagnostic_user_message(
+                "The non-working block was saved, but affected Outreach tasks could not be automatically rescheduled. Use the Outreach reschedule controls after reviewing the block.",
                 code,
-            ),
-        ))
-    connection.close()
+            )
+            break
+
     message = "Non-working block added."
     if rescheduled_count:
         message += f" {rescheduled_count} open Outreach task(s) were rescheduled from the first conflict onward in their existing order."
-    return redirect(url_for("profile", message=message))
+    return redirect(url_for("profile", message=message, error=reflow_error or None))
 
 
 @app.route("/profile/non-working/<int:block_id>/delete", methods=("POST",))

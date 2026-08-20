@@ -461,6 +461,15 @@ def main():
             html = response.get_data(as_text=True)
             assert_ok(response.status_code == 200 and marker in html, f"{path} failed")
 
+        missing_page = client.get("/this-pipeflow-page-does-not-exist", follow_redirects=True)
+        missing_page_html = missing_page.get_data(as_text=True)
+        assert_ok(
+            missing_page.status_code == 200
+            and "Page not found" in missing_page_html
+            and "returned to the Insights Dashboard" in missing_page_html,
+            "unknown pages did not redirect to the Insights Dashboard with a clear dialog",
+        )
+
         add_outreach_html = client.get("/outreach/add").get_data(as_text=True)
         campaign_builder_html = client.get("/outreach/campaign-builder").get_data(as_text=True)
         assert_ok("SMS/WhatsApp" in add_outreach_html, "Add Outreach activity type list missing SMS/WhatsApp")
@@ -589,6 +598,40 @@ def main():
         connection.execute("DELETE FROM non_working_blocks WHERE reason = ?", ("Part-day smoke absence",))
         connection.commit()
         connection.close()
+
+        original_availability_reflow = pipeflow_app.reschedule_outreach_for_new_non_working_block
+        def broken_availability_reflow(*_args, **_kwargs):
+            raise RuntimeError("forced availability reflow failure")
+        pipeflow_app.reschedule_outreach_for_new_non_working_block = broken_availability_reflow
+        isolated_block_date = availability_date + timedelta(days=7)
+        response = client.post(
+            "/profile/non-working/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "start_date": isolated_block_date.isoformat(),
+                "start_time": "14:00",
+                "end_date": isolated_block_date.isoformat(),
+                "end_time": "15:00",
+                "reason": "Reflow resilience smoke block",
+            },
+            follow_redirects=True,
+        )
+        pipeflow_app.reschedule_outreach_for_new_non_working_block = original_availability_reflow
+        assert_ok(
+            response.status_code == 200
+            and "Non-working block added" in response.get_data(as_text=True)
+            and "could not be automatically rescheduled" in response.get_data(as_text=True),
+            "a schedule reflow failure discarded or obscured a valid non-working block",
+        )
+        connection = sqlite3.connect(db_path)
+        isolated_block_count = connection.execute(
+            "SELECT COUNT(*) FROM non_working_blocks WHERE reason = ?",
+            ("Reflow resilience smoke block",),
+        ).fetchone()[0]
+        connection.execute("DELETE FROM non_working_blocks WHERE reason = ?", ("Reflow resilience smoke block",))
+        connection.commit()
+        connection.close()
+        assert_ok(isolated_block_count == 1, "availability block was rolled back when schedule reflow failed")
 
         nightly_block_date = today + timedelta(days=220)
         while nightly_block_date.weekday() != 4:
@@ -1712,6 +1755,15 @@ def main():
             "admin company membership or broadcast controls missing",
         )
         assert_ok("target_all_companies" in admin_html, "global broadcast option missing")
+        assert_ok(
+            "admin-create-team" in admin_html
+            and "admin-create-user" in admin_html,
+            "team and user creation are not presented as distinct admin capabilities",
+        )
+        assert_ok(
+            admin_html.rfind("Nightly Scheduler History") > admin_html.rfind("Audit Auto-delete"),
+            "nightly scheduler history is not at the bottom of the Admin controls",
+        )
 
         response = client.post(
             "/admin/tenants",
@@ -1759,10 +1811,10 @@ def main():
         broadcast_create_html = response.get_data(as_text=True)
         assert_ok(response.status_code == 200 and "Smoke broadcast" in broadcast_create_html, "broadcast create failed")
         assert_ok(
-            "Save Changes" in broadcast_create_html
-            and "Pause Broadcast" in broadcast_create_html
-            and "Delete Broadcast" in broadcast_create_html,
-            "broadcast edit action buttons are not grouped on existing broadcasts",
+            "broadcast-edit-table" in broadcast_create_html
+            and "Save All Broadcasts" in broadcast_create_html
+            and ">Delete</button>" in broadcast_create_html,
+            "broadcasts are not presented as an editable table with bulk save",
         )
 
         import auth as pipeflow_auth
@@ -1785,25 +1837,41 @@ def main():
         assert_ok(smoke_broadcast is not None, "created broadcast not found")
 
         response = client.post(
-            f"/admin/broadcasts/{smoke_broadcast['id']}/update",
+            "/admin/broadcasts/bulk-update",
             data={
                 "csrf_token": csrf_from_session(client),
-                "title": "Smoke broadcast updated",
-                "message": "Smoke test message updated",
-                "severity": "warning",
-                "target_companies": ["Smoke Other Company"],
-                "start_at": f"{yesterday}T10:00",
-                "stop_at": f"{tomorrow}T10:00",
-                "is_active": "1",
+                "broadcast_ids": [str(smoke_broadcast["id"])],
+                f"title_{smoke_broadcast['id']}": "Smoke broadcast updated",
+                f"message_{smoke_broadcast['id']}": "Smoke test message updated",
+                f"severity_{smoke_broadcast['id']}": "warning",
+                f"target_companies_{smoke_broadcast['id']}": ["Smoke Other Company"],
+                f"start_at_{smoke_broadcast['id']}": f"{yesterday}T10:00",
+                f"stop_at_{smoke_broadcast['id']}": f"{tomorrow}T10:00",
+                f"is_active_{smoke_broadcast['id']}": "1",
             },
             follow_redirects=True,
         )
-        assert_ok(response.status_code == 200 and "Smoke broadcast updated" in response.get_data(as_text=True), "broadcast update failed")
+        assert_ok(
+            response.status_code == 200
+            and "Saved 1 broadcast message(s)" in response.get_data(as_text=True)
+            and "Smoke broadcast updated" in response.get_data(as_text=True),
+            "broadcast bulk update failed",
+        )
 
         updated_broadcast = pipeflow_auth.get_broadcast_message(smoke_broadcast["id"])
         assert_ok(
             pipeflow_auth.decode_broadcast_companies(updated_broadcast["target_companies"]) == ["Smoke Other Company"],
             "broadcast company targets were not updated",
+        )
+
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        activity_move = pipeflow_app.strategic_gtm_recommendation(connection, "Smoke Test Account - BMC")
+        connection.close()
+        assert_ok(
+            "sales play" not in activity_move.lower()
+            and any(activity.lower() in activity_move.lower() for activity in ("Email", "Phone", "LinkedIn", "SMS/WhatsApp", "Meeting", "Follow-up", "VITO")),
+            "Insights Recommended Move still recommends a Sales Play instead of an activity type",
         )
 
         response = client.post(

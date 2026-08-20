@@ -36,53 +36,6 @@
     <div class="alert-error">{{ error }}</div>
 {% endif %}
 
-{% if is_app_admin %}
-<div class="card">
-    <div class="section-header">
-        <div>
-            <h3>Nightly Scheduler History</h3>
-            <p class="muted-text">Read-only history of the 23:00 Outreach schedule review for the last 30 days.</p>
-        </div>
-    </div>
-    <div class="table-container">
-        <table class="report-table">
-            <thead>
-                <tr>
-                    <th>Scheduled Date</th>
-                    <th>Status</th>
-                    <th>Started</th>
-                    <th>Completed</th>
-                    <th>Result</th>
-                    <th>Confirmed</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for run in scheduler_runs %}
-                    <tr>
-                        <td>{{ run.run_date|display_date }}</td>
-                        <td><span class="scheduler-status scheduler-status-{{ run.status }}">{{ run.status|title }}</span></td>
-                        <td>{{ run.started_at|display_datetime or "-" }}</td>
-                        <td>{{ run.completed_at|display_datetime or "-" }}</td>
-                        <td>{{ run.detail or "No result detail recorded." }}</td>
-                        <td>
-                            {% if run.acknowledged_at %}
-                                {{ run.acknowledged_at|display_datetime }}{% if run.acknowledged_by_name %}<br><span class="muted-text">{{ run.acknowledged_by_name }}</span>{% endif %}
-                            {% else %}
-                                -
-                            {% endif %}
-                        </td>
-                    </tr>
-                {% else %}
-                    <tr>
-                        <td colspan="6">No nightly scheduler runs have been recorded in the last 30 days.</td>
-                    </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-{% endif %}
-
 <div class="permissions-overview-card">
     <div class="section-header">
         <div>
@@ -162,20 +115,29 @@
         </div>
     </div>
 
-    <section class="admin-user-create-panel">
-        <h4>Create Team</h4>
-        <form method="POST" action="{{ url_for('admin_add_team') }}" class="admin-user-create-form">
-            <input type="text" name="team_name" placeholder="Team name" required>
-            <select name="company" required>
-                {% for tenant in tenant_options %}
-                    <option value="{{ tenant['company_name'] }}">{{ tenant['company_name'] }}</option>
-                {% endfor %}
-            </select>
-            <button type="submit" class="btn btn-primary">Create Team</button>
-        </form>
+    <div class="admin-create-capabilities">
+        <section class="admin-create-capability admin-create-team">
+            <div class="admin-create-heading">
+                <h4>Create Team</h4>
+                <p>Set up a company team before assigning its users and managers.</p>
+            </div>
+            <form method="POST" action="{{ url_for('admin_add_team') }}" class="admin-user-create-form">
+                <input type="text" name="team_name" placeholder="Team name" required>
+                <select name="company" required>
+                    {% for tenant in tenant_options %}
+                        <option value="{{ tenant['company_name'] }}">{{ tenant['company_name'] }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-primary">Create Team</button>
+            </form>
+        </section>
 
-        <h4>Create User Profile</h4>
-        <form method="POST" action="{{ url_for('admin_create_user') }}" class="admin-user-create-form">
+        <section class="admin-create-capability admin-create-user">
+            <div class="admin-create-heading">
+                <h4>Create User Profile</h4>
+                <p>Create login access, then assign company, role and team memberships.</p>
+            </div>
+            <form method="POST" action="{{ url_for('admin_create_user') }}" class="admin-user-create-form">
             <input type="text" name="full_name" placeholder="Full name" required>
             <input type="email" name="email" placeholder="Email" required>
             <select name="company" required>
@@ -219,9 +181,10 @@
             </details>
             <input type="password" name="password" minlength="8" placeholder="Temporary password" required>
             <input type="password" name="reset_phrase" minlength="12" placeholder="Secret reset phrase" required>
-            <button type="submit" class="btn btn-primary">Create User</button>
-        </form>
-    </section>
+                <button type="submit" class="btn btn-primary">Create User</button>
+            </form>
+        </section>
+    </div>
 
     <div class="table-container admin-user-table-container">
         <table class="report-table admin-user-table">
@@ -453,112 +416,90 @@
     <section class="broadcast-manage-panel">
         <div class="broadcast-panel-heading">
             <h4>Manage Broadcasts</h4>
-            <p class="muted-text">Edit the wording or schedule, pause a message, or delete it completely.</p>
+            <p class="muted-text">Edit all current messages in the table, then save every changed row together.</p>
         </div>
 
         {% if broadcast_messages %}
-            <div class="broadcast-card-grid">
-                {% for broadcast in broadcast_messages %}
-                    <article class="broadcast-management-card broadcast-{{ broadcast['severity'] }}">
-                        <div class="broadcast-management-header">
-                            <div>
-                                <span class="broadcast-status-pill {{ 'broadcast-status-active' if broadcast['is_active'] else 'broadcast-status-hidden' }}">
-                                    {{ "Active" if broadcast["is_active"] else "Paused" }}
-                                </span>
-                                <span class="broadcast-type-pill">{{ broadcast['severity']|capitalize }}</span>
-                            </div>
-                            <small>{{ broadcast['start_at'] or 'Not scheduled' }} to {{ broadcast['stop_at'] or 'Not scheduled' }}</small>
-                            <small>Company: {{ broadcast.target_company_label }}</small>
-                        </div>
-
-                        <form method="POST" action="{{ url_for('admin_update_broadcast', message_id=broadcast['id']) }}" id="broadcast-edit-form-{{ broadcast['id'] }}" class="broadcast-edit-form js-single-submit">
-                            <div class="form-group">
-                                <label>Title</label>
-                                <input type="text" name="title" value="{{ broadcast['title'] }}" required>
-                            </div>
-
-                            <div class="form-group full-width">
-                                <label>Message</label>
-                                <textarea name="message" rows="3" required>{{ broadcast['message'] }}</textarea>
-                            </div>
-
-                            <div class="form-group">
-                                <label>Type</label>
-                                <select name="severity">
-                                    <option value="info" {% if broadcast['severity'] == 'info' %}selected{% endif %}>Info</option>
-                                    <option value="success" {% if broadcast['severity'] == 'success' %}selected{% endif %}>Success</option>
-                                    <option value="warning" {% if broadcast['severity'] == 'warning' %}selected{% endif %}>Warning</option>
-                                    <option value="urgent" {% if broadcast['severity'] == 'urgent' %}selected{% endif %}>Urgent</option>
-                                </select>
-                            </div>
-
-                            {% if is_app_admin %}
-                                <div class="form-group">
-                                    <label>Companies</label>
-                                    <label class="checkbox-row broadcast-all-row">
-                                        <input type="checkbox"
-                                               name="target_all_companies"
-                                               value="1"
-                                               {% if not broadcast.target_company_names %}checked{% endif %}>
-                                        <span>Share to all companies</span>
-                                    </label>
-                                    <details class="checkbox-dropdown broadcast-company-dropdown">
-                                        <summary>{{ broadcast.target_company_label or "Select companies" }}</summary>
-                                        <div class="checkbox-dropdown-panel">
-                                            {% for tenant in broadcast_company_options %}
-                                                <label class="checkbox-row">
-                                                    <input type="checkbox"
-                                                           name="target_companies"
-                                                           value="{{ tenant.company_name }}"
-                                                           {% if tenant.company_name in broadcast.target_company_names %}checked{% endif %}>
-                                                    <span>{{ tenant.company_name }}</span>
-                                                </label>
-                                            {% endfor %}
-                                        </div>
-                                    </details>
-                                </div>
-                            {% else %}
-                                <div class="form-group">
-                                    <label>Company</label>
-                                    <input type="text" value="{{ current_user.company }}" readonly>
-                                </div>
-                            {% endif %}
-
-                            <div class="form-group">
-                                <label>Start Date & Time</label>
-                                <input type="datetime-local" name="start_at" value="{{ broadcast['start_at'] or '' }}" required>
-                            </div>
-
-                            <div class="form-group">
-                                <label>Stop Date & Time</label>
-                                <input type="datetime-local" name="stop_at" value="{{ broadcast['stop_at'] or '' }}" required>
-                            </div>
-
-                            <label class="checkbox-label broadcast-active-control">
-                                <input type="checkbox" name="is_active" value="1" {% if broadcast['is_active'] %}checked{% endif %}>
-                                Active
-                            </label>
-
-                        </form>
-
-                        <div class="broadcast-secondary-actions">
-                            <button type="submit" form="broadcast-edit-form-{{ broadcast['id'] }}" class="btn btn-secondary">Save Changes</button>
-                            {% if broadcast["is_active"] %}
-                                <form method="POST" action="{{ url_for('admin_deactivate_broadcast', message_id=broadcast['id']) }}" class="inline-form">
-                                    <button type="submit" class="btn btn-secondary">Pause Broadcast</button>
-                                </form>
-                            {% else %}
-                                <form method="POST" action="{{ url_for('admin_reactivate_broadcast', message_id=broadcast['id']) }}" class="inline-form">
-                                    <button type="submit" class="btn btn-secondary">Reactivate Broadcast</button>
-                                </form>
-                            {% endif %}
-                            <form method="POST" action="{{ url_for('admin_delete_broadcast', message_id=broadcast['id']) }}" class="inline-form broadcast-delete-form">
-                                <button type="submit" class="btn btn-danger">Delete Broadcast</button>
-                            </form>
-                        </div>
-                    </article>
-                {% endfor %}
-            </div>
+            <form method="POST" action="{{ url_for('admin_bulk_update_broadcasts') }}" class="broadcast-bulk-form js-single-submit">
+                <div class="table-container broadcast-edit-table-container">
+                    <table class="report-table broadcast-edit-table">
+                        <colgroup>
+                            <col class="broadcast-col-title">
+                            <col class="broadcast-col-message">
+                            <col class="broadcast-col-type">
+                            <col class="broadcast-col-companies">
+                            <col class="broadcast-col-date">
+                            <col class="broadcast-col-date">
+                            <col class="broadcast-col-active">
+                            <col class="broadcast-col-action">
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th>Title</th>
+                                <th>Message</th>
+                                <th>Type</th>
+                                <th>Companies</th>
+                                <th>Starts</th>
+                                <th>Stops</th>
+                                <th>Active</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for broadcast in broadcast_messages %}
+                                <tr>
+                                    <td>
+                                        <input type="hidden" name="broadcast_ids" value="{{ broadcast['id'] }}">
+                                        <input type="text" name="title_{{ broadcast['id'] }}" value="{{ broadcast['title'] }}" aria-label="Broadcast title" required>
+                                    </td>
+                                    <td><textarea name="message_{{ broadcast['id'] }}" rows="3" aria-label="Broadcast message" required>{{ broadcast['message'] }}</textarea></td>
+                                    <td>
+                                        <select name="severity_{{ broadcast['id'] }}" aria-label="Broadcast type">
+                                            <option value="info" {% if broadcast['severity'] == 'info' %}selected{% endif %}>Info</option>
+                                            <option value="success" {% if broadcast['severity'] == 'success' %}selected{% endif %}>Success</option>
+                                            <option value="warning" {% if broadcast['severity'] == 'warning' %}selected{% endif %}>Warning</option>
+                                            <option value="urgent" {% if broadcast['severity'] == 'urgent' %}selected{% endif %}>Urgent</option>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        {% if is_app_admin %}
+                                            <label class="checkbox-row broadcast-all-row">
+                                                <input type="checkbox" name="target_all_companies_{{ broadcast['id'] }}" value="1" {% if not broadcast.target_company_names %}checked{% endif %}>
+                                                <span>All companies</span>
+                                            </label>
+                                            <details class="checkbox-dropdown broadcast-company-dropdown">
+                                                <summary>{{ broadcast.target_company_label or "Select companies" }}</summary>
+                                                <div class="checkbox-dropdown-panel">
+                                                    {% for tenant in broadcast_company_options %}
+                                                        <label class="checkbox-row">
+                                                            <input type="checkbox" name="target_companies_{{ broadcast['id'] }}" value="{{ tenant.company_name }}" {% if tenant.company_name in broadcast.target_company_names %}checked{% endif %}>
+                                                            <span>{{ tenant.company_name }}</span>
+                                                        </label>
+                                                    {% endfor %}
+                                                </div>
+                                            </details>
+                                        {% else %}
+                                            <span>{{ current_user.company }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td><input type="datetime-local" name="start_at_{{ broadcast['id'] }}" value="{{ broadcast['start_at'] or '' }}" aria-label="Broadcast start" required></td>
+                                    <td><input type="datetime-local" name="stop_at_{{ broadcast['id'] }}" value="{{ broadcast['stop_at'] or '' }}" aria-label="Broadcast stop" required></td>
+                                    <td class="broadcast-active-cell">
+                                        <input type="checkbox" name="is_active_{{ broadcast['id'] }}" value="1" aria-label="Broadcast active" {% if broadcast['is_active'] %}checked{% endif %}>
+                                    </td>
+                                    <td><button type="submit" form="broadcast-delete-form-{{ broadcast['id'] }}" class="btn btn-danger btn-small">Delete</button></td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="broadcast-bulk-actions">
+                    <button type="submit" class="btn btn-primary">Save All Broadcasts</button>
+                </div>
+            </form>
+            {% for broadcast in broadcast_messages %}
+                <form id="broadcast-delete-form-{{ broadcast['id'] }}" method="POST" action="{{ url_for('admin_delete_broadcast', message_id=broadcast['id']) }}" class="broadcast-delete-form"></form>
+            {% endfor %}
         {% else %}
             <div class="empty-state broadcast-empty-state">
                 <h3>No broadcast messages yet</h3>
@@ -590,6 +531,51 @@
         <button type="submit" class="btn btn-primary">Save Auto-delete Setting</button>
     </form>
 </div>
+
+{% if is_app_admin %}
+<div class="card admin-scheduler-history">
+    <div class="section-header">
+        <div>
+            <h3>Nightly Scheduler History</h3>
+            <p class="muted-text">Read-only history of the 23:00 Outreach schedule review for the last 30 days.</p>
+        </div>
+    </div>
+    <div class="table-container">
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th>Scheduled Date</th>
+                    <th>Status</th>
+                    <th>Started</th>
+                    <th>Completed</th>
+                    <th>Result</th>
+                    <th>Confirmed</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for run in scheduler_runs %}
+                    <tr>
+                        <td>{{ run.run_date|display_date }}</td>
+                        <td><span class="scheduler-status scheduler-status-{{ run.status }}">{{ run.status|title }}</span></td>
+                        <td>{{ run.started_at|display_datetime or "-" }}</td>
+                        <td>{{ run.completed_at|display_datetime or "-" }}</td>
+                        <td>{{ run.detail or "No result detail recorded." }}</td>
+                        <td>
+                            {% if run.acknowledged_at %}
+                                {{ run.acknowledged_at|display_datetime }}{% if run.acknowledged_by_name %}<br><span class="muted-text">{{ run.acknowledged_by_name }}</span>{% endif %}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="6">No nightly scheduler runs have been recorded in the last 30 days.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
 {% endif %}
 
 <script>
@@ -611,7 +597,7 @@
 
     document.querySelectorAll(".js-single-submit").forEach((form) => {
         form.addEventListener("submit", () => {
-            const button = form.querySelector("button[type='submit']") || document.querySelector(`button[form="${form.id}"][type="submit"]`);
+            const button = form.querySelector("button[type='submit']:not([form])") || document.querySelector(`button[form="${form.id}"][type="submit"]`);
             if (button) {
                 button.disabled = true;
                 button.textContent = "Saving...";

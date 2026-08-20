@@ -1606,6 +1606,66 @@ def update_broadcast_message(message_id: int, title: str, message: str, severity
     return ""
 
 
+def bulk_update_broadcast_messages(updates):
+    normalised_updates = []
+    for update in updates or []:
+        title = (update.get("title") or "").strip()
+        message = (update.get("message") or "").strip()
+        severity = normalise_broadcast_severity(update.get("severity"))
+        start_at, stop_at, error = validate_broadcast_schedule(
+            update.get("start_at", ""),
+            update.get("stop_at", ""),
+        )
+        if not title or not message:
+            return "Every broadcast requires a title and message."
+        if error:
+            return f"{title}: {error}"
+        normalised_updates.append({
+            "id": int(update["id"]),
+            "title": title,
+            "message": message,
+            "severity": severity,
+            "target_companies": encode_broadcast_companies(
+                normalise_broadcast_companies(update.get("target_companies"))
+            ),
+            "start_at": start_at,
+            "stop_at": stop_at,
+            "is_active": 1 if update.get("is_active") else 0,
+        })
+
+    connection = get_auth_connection()
+    try:
+        for update in normalised_updates:
+            connection.execute("""
+                UPDATE broadcast_messages
+                SET title = ?,
+                    message = ?,
+                    severity = ?,
+                    target_companies = ?,
+                    start_at = ?,
+                    stop_at = ?,
+                    is_active = ?,
+                    last_updated = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (
+                update["title"],
+                update["message"],
+                update["severity"],
+                update["target_companies"],
+                update["start_at"],
+                update["stop_at"],
+                update["is_active"],
+                update["id"],
+            ))
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        connection.close()
+        raise
+    connection.close()
+    return ""
+
+
 def set_broadcast_message_active(message_id: int, is_active: bool):
     connection = get_auth_connection()
     cleanup_expired_broadcast_messages(connection)

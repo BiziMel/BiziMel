@@ -2685,17 +2685,40 @@ a:hover {
     margin-bottom: 20px;
 }
 
-.admin-user-create-panel {
-    border: 1px solid #dbe4f0;
-    border-radius: 8px;
-    background: #f8fafc;
-    padding: 16px;
+.admin-create-capabilities {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    gap: 16px;
     margin-bottom: 18px;
 }
 
-.admin-user-create-panel h4 {
-    margin: 0 0 10px;
+.admin-create-capability {
+    border: 1px solid #dbe4f0;
+    border-top: 4px solid #15803d;
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 16px;
+}
+
+.admin-create-user {
+    border-top-color: #2563eb;
+    background: #f8fbff;
+}
+
+.admin-create-heading {
+    min-height: 64px;
+    margin-bottom: 12px;
+}
+
+.admin-create-heading h4 {
+    margin: 0 0 5px;
     color: #0f172a;
+}
+
+.admin-create-heading p {
+    margin: 0;
+    color: #64748b;
+    line-height: 1.4;
 }
 
 .admin-user-create-form,
@@ -2709,6 +2732,12 @@ a:hover {
 .admin-user-create-form .btn,
 .tenant-form .form-actions {
     align-self: end;
+}
+
+@media (max-width: 1100px) {
+    .admin-create-capabilities {
+        grid-template-columns: 1fr;
+    }
 }
 
 .tenant-inline-edit-form {
@@ -4149,6 +4178,94 @@ a:hover {
 
 .broadcast-empty-state {
     margin-top: 8px;
+}
+
+.broadcast-edit-table-container {
+    overflow-x: auto;
+}
+
+.broadcast-edit-table {
+    width: 100%;
+    min-width: 1380px;
+    table-layout: fixed;
+}
+
+.broadcast-edit-table .broadcast-col-title {
+    width: 15%;
+}
+
+.broadcast-edit-table .broadcast-col-message {
+    width: 22%;
+}
+
+.broadcast-edit-table .broadcast-col-type {
+    width: 8%;
+}
+
+.broadcast-edit-table .broadcast-col-companies {
+    width: 15%;
+}
+
+.broadcast-edit-table .broadcast-col-date {
+    width: 15%;
+}
+
+.broadcast-edit-table .broadcast-col-active {
+    width: 5%;
+}
+
+.broadcast-edit-table .broadcast-col-action {
+    width: 5%;
+}
+
+.broadcast-edit-table th,
+.broadcast-edit-table td {
+    vertical-align: top;
+    padding: 10px;
+    overflow-wrap: normal;
+    word-break: normal;
+}
+
+.broadcast-edit-table input[type="text"],
+.broadcast-edit-table input[type="datetime-local"],
+.broadcast-edit-table select,
+.broadcast-edit-table textarea,
+.broadcast-edit-table details {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.broadcast-edit-table textarea {
+    resize: vertical;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: normal;
+}
+
+.broadcast-edit-table .broadcast-company-dropdown {
+    min-width: 0;
+    margin-top: 7px;
+}
+
+.broadcast-active-cell {
+    text-align: center;
+}
+
+.broadcast-active-cell input {
+    width: 18px;
+    height: 18px;
+}
+
+.broadcast-bulk-actions {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 14px;
+}
+
+.admin-scheduler-history {
+    margin-top: 20px;
+    margin-bottom: 0;
 }
 
 @media (max-width: 1100px) {
