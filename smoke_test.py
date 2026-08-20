@@ -372,7 +372,22 @@ def main():
         yesterday = (today - timedelta(days=1)).isoformat()
         tomorrow = (today + timedelta(days=1)).isoformat()
 
-        failed_job_date = today - timedelta(days=5)
+        assert_ok(
+            pipeflow_app.nightly_expected_run_date(datetime.combine(today, time(7, 14)), False) is None,
+            "nightly scheduler warned before the first 23:00 run was due",
+        )
+        assert_ok(
+            pipeflow_app.nightly_expected_run_date(datetime.combine(today, time(23, 6)), False) == today,
+            "nightly scheduler did not assess the first run after its scheduled time",
+        )
+        assert_ok(
+            pipeflow_app.nightly_service_alert_for_user({"role": "company_admin"}) is None,
+            "nightly scheduler warning was visible to a Company Admin",
+        )
+        failed_job_date = pipeflow_app.nightly_expected_run_date(
+            pipeflow_app.current_app_datetime(),
+            True,
+        )
         failed_job_now = datetime.combine(failed_job_date, time(23, 0))
         job_token = pipeflow_app.claim_scheduled_job(
             "nightly_outreach_schedule",
@@ -395,16 +410,27 @@ def main():
         failed_alert_html = client.get("/").get_data(as_text=True)
         assert_ok(
             "Nightly schedule review needs attention" in failed_alert_html
-            and "Smoke scheduler failure" in failed_alert_html,
+            and "Smoke scheduler failure" in failed_alert_html
+            and ">Confirm</button>" in failed_alert_html,
             "administrators were not shown the nightly service failure dialog",
         )
-        auth_connection = pipeflow_app.get_auth_connection()
-        auth_connection.execute(
-            "UPDATE scheduled_job_runs SET status = 'completed', detail = 'Smoke recovery complete' WHERE job_key = ?",
-            (f"nightly_outreach_schedule:{failed_job_date.isoformat()}",),
+        response = client.post(
+            "/admin/scheduler-runs/confirm",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "job_key": f"nightly_outreach_schedule:{failed_job_date.isoformat()}",
+            },
+            follow_redirects=True,
         )
-        auth_connection.commit()
-        auth_connection.close()
+        confirmed_html = response.get_data(as_text=True)
+        assert_ok(
+            response.status_code == 200
+            and "Scheduler failure confirmed" in confirmed_html
+            and "Nightly Scheduler History" in confirmed_html
+            and "Smoke scheduler failure" in confirmed_html
+            and "Nightly schedule review needs attention" not in confirmed_html,
+            "scheduler confirmation did not suppress the acknowledged warning or retain its history",
+        )
 
         pages = {
             "/": "Dashboard",

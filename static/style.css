@@ -4606,6 +4606,34 @@ body {
     margin: 16px 18px;
 }
 
+.scheduler-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 78px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.scheduler-status-completed {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.scheduler-status-failed {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.scheduler-status-running {
+    background: #fef3c7;
+    color: #92400e;
+}
+
 .pg-bible-export-form {
     display: grid;
     gap: 10px;

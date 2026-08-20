@@ -36,6 +36,53 @@
     <div class="alert-error">{{ error }}</div>
 {% endif %}
 
+{% if is_app_admin %}
+<div class="card">
+    <div class="section-header">
+        <div>
+            <h3>Nightly Scheduler History</h3>
+            <p class="muted-text">Read-only history of the 23:00 Outreach schedule review for the last 30 days.</p>
+        </div>
+    </div>
+    <div class="table-container">
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th>Scheduled Date</th>
+                    <th>Status</th>
+                    <th>Started</th>
+                    <th>Completed</th>
+                    <th>Result</th>
+                    <th>Confirmed</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for run in scheduler_runs %}
+                    <tr>
+                        <td>{{ run.run_date|display_date }}</td>
+                        <td><span class="scheduler-status scheduler-status-{{ run.status }}">{{ run.status|title }}</span></td>
+                        <td>{{ run.started_at|display_datetime or "-" }}</td>
+                        <td>{{ run.completed_at|display_datetime or "-" }}</td>
+                        <td>{{ run.detail or "No result detail recorded." }}</td>
+                        <td>
+                            {% if run.acknowledged_at %}
+                                {{ run.acknowledged_at|display_datetime }}{% if run.acknowledged_by_name %}<br><span class="muted-text">{{ run.acknowledged_by_name }}</span>{% endif %}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="6">No nightly scheduler runs have been recorded in the last 30 days.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 <div class="permissions-overview-card">
     <div class="section-header">
         <div>

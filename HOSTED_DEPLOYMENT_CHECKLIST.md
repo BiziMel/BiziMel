@@ -6,7 +6,8 @@
 4. Start with `gunicorn app:app`.
 5. Confirm `PIPEFLOW_NIGHTLY_SCHEDULER=1` and `PIPEFLOW_TIMEZONE=Europe/London` are present. They are included in `render.yaml`.
 6. Keep at least one live web-service instance available so the in-service scheduler can run at 23:00.
-7. Open `/health/version` after deployment and confirm version `2.8.1` and build `2026-08-19-v2.8.1-nightly-schedule-reflow-r2`.
+7. Open `/health/version` after deployment and confirm version `2.8.1` and build `2026-08-20-v2.8.1-nightly-scheduler-alerts-r3`.
 8. Bootstrap the first Application Admin profile.
 9. Create tenants from Admin > Tenant before adding company users.
-10. After the first 23:00 run, confirm that administrators do not see a Nightly schedule review warning dialog. If one appears, inspect the Render service logs for `Nightly Outreach schedule`.
+10. After the first 23:00 run, confirm that Application Admins do not see a Nightly schedule review warning dialog. If one appears, inspect the Render service logs for `Nightly Outreach schedule`, then use Confirm to acknowledge that specific failed run.
+11. Open Admin > Permissions & Controls and verify the read-only Nightly Scheduler History table records the run for the last 30-day period.

@@ -32,8 +32,8 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 
 APP_VERSION = "2.8.1"
-APP_RELEASE_DATE = "2026-08-19"
-APP_BUILD = "2026-08-19-v2.8.1-nightly-schedule-reflow-r2"
+APP_RELEASE_DATE = "2026-08-20"
+APP_BUILD = "2026-08-20-v2.8.1-nightly-scheduler-alerts-r3"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -49,7 +49,7 @@ except ZoneInfoNotFoundError:
 RELEASE_NOTES = [
     {
         "version": "2.8.1",
-        "release_date": "2026-08-19",
+        "release_date": "2026-08-20",
         "title": "Part-day availability and schedule reflow",
         "fixed": [
             "Added optional From Time and To Time fields to profile non-working blocks while preserving full-day absence behavior when times are blank.",
@@ -58,6 +58,8 @@ RELEASE_NOTES = [
             "Changed new availability blocks to reflow future open Outreach tasks from the first conflict onward, preserving their existing chronological order and avoiding all unavailable or occupied slots.",
             "Added a daily 23:00 Europe/London schedule review that moves open Outreach activities forward when they clash or fall outside configured working days, working hours or availability blocks.",
             "Protected the nightly review with a shared daily run record so only one live application worker can reshuffle a workspace schedule.",
+            "Changed scheduler failure warnings so they are assessed only after a 23:00 run becomes due and are visible only to Application Admins.",
+            "Added persistent Confirm handling for scheduler failure dialogs and a read-only 30-day scheduler run history on the Admin page.",
         ],
     },
     {
@@ -1050,7 +1052,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
   'tips': ['Only the logged-in user can access their own secret phrase data.',
            'Saturday and Sunday are treated as non-working by auto-scheduling.',
            'Expired availability blocks are removed automatically.',
-           'The nightly 23:00 review applies current working hours and availability blocks to every open scheduled Outreach task. Administrators receive an in-app dialog if that service run fails.',
+           'The nightly 23:00 review applies current working hours and availability blocks to every open scheduled Outreach task. Application Admins receive an in-app dialog if that service run fails.',
            'Manual date entry can still be saved after warnings when intentional.']},
  {'slug': 'admin',
   'title': 'Admin, Tenants, Users and Teams',
@@ -1067,9 +1069,11 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
             'Associate managers to one or more teams when they need team PG Progress visibility.',
             'Edit a user profile to change role, company, team memberships or active status.',
             'Deactivate users who should no longer access PipeFlow.',
+            'Application Admins review the read-only Nightly Scheduler History for the last 30 days and confirm any failure dialog after checking the service logs.',
             'Use the Audit Trail to investigate administrative and data changes.'],
   'tips': ['Managers only see team PG Progress when they are assigned as manager/admin on the team.',
            'Company Admins cannot administer users outside their tenant.',
+           'Only Application Admins receive nightly scheduler failure dialogs; confirming one suppresses that specific failed run.',
            'Admin actions are recorded in the audit trail for accountability.']},
  {'slug': 'audit-release-notes',
   'title': 'Audit and Release Notes',
@@ -2050,6 +2054,7 @@ PAGE_INSTRUCTIONS = {
             "Application Admins can select any configured tenant. Company Admins only see their own company.",
             "Use user permissions to manage role, active users and profile details.",
             "Application Admins use Tenant to create company tenancies and broadcasts to publish timed messages on login and the dashboard.",
+            "Application Admins can review the last 30 days of nightly scheduler results. A failure warning only appears after the relevant 23:00 run is due and remains suppressed after confirmation.",
             "Admin actions are recorded in the admin audit trail.",
         ],
     },
@@ -2459,6 +2464,9 @@ def render_admin_permissions():
     actor = current_user()
     tenant_options = list_tenants(actor, active_only=True)
     users = list_users(actor)
+    is_app_admin = is_application_admin(actor)
+    if is_app_admin:
+        due_nightly_schedule_run()
     return render_template(
         "admin_permissions.html",
         users=users,
@@ -2466,11 +2474,12 @@ def render_admin_permissions():
         team_options=list_teams(actor),
         user_team_ids={str(user["id"]): user_team_ids(user["id"]) for user in users},
         user_company_memberships={str(user["id"]): user_company_names(user, include_primary=True) for user in users},
-        is_app_admin=is_application_admin(actor),
+        is_app_admin=is_app_admin,
         is_company_admin=is_company_admin(actor),
-        can_manage_broadcasts=is_application_admin(actor) or is_company_admin(actor),
-        broadcast_company_options=tenant_options if is_application_admin(actor) else [],
+        can_manage_broadcasts=is_app_admin or is_company_admin(actor),
+        broadcast_company_options=tenant_options if is_app_admin else [],
         broadcast_messages=broadcast_rows_for_admin(actor),
+        scheduler_runs=scheduler_run_history(30) if is_app_admin else [],
         audit_retention_enabled=audit_retention_enabled(),
         message=request.args.get("message", ""),
         error=request.args.get("error", "")
@@ -2558,6 +2567,48 @@ def admin_users():
 @admin_required
 def admin_permissions():
     return render_admin_permissions()
+
+
+@app.route("/admin/scheduler-runs/confirm", methods=("POST",))
+@admin_required
+def admin_confirm_scheduler_failure():
+    actor = current_user()
+    if not is_application_admin(actor):
+        return redirect(url_for("admin_permissions", error="Only Application Admins can confirm scheduler failures."))
+    job_key = (request.form.get("job_key") or "").strip()
+    connection = get_auth_connection()
+    row = connection.execute("""
+        SELECT job_key, run_date, status
+        FROM scheduled_job_runs
+        WHERE job_key = ?
+          AND job_name = 'nightly_outreach_schedule'
+    """, (job_key,)).fetchone()
+    if not row or row["status"] != "failed":
+        connection.close()
+        return redirect(url_for("admin_permissions", error="That scheduler failure is no longer awaiting confirmation."))
+    connection.execute("""
+        UPDATE scheduled_job_runs
+        SET acknowledged_at = ?,
+            acknowledged_by_user_id = ?,
+            acknowledged_by_name = ?
+        WHERE job_key = ?
+          AND status = 'failed'
+    """, (
+        app_datetime_key(),
+        actor["id"],
+        actor["full_name"],
+        job_key,
+    ))
+    connection.commit()
+    connection.close()
+    log_admin_audit(
+        actor,
+        "Scheduler failure confirmed",
+        "Nightly Scheduler",
+        row["run_date"],
+        "The administrator acknowledged the failed nightly Outreach schedule review.",
+    )
+    return redirect(url_for("admin_permissions", message="Scheduler failure confirmed. The warning will not be shown again for that run."))
 
 
 @app.route("/admin/teams/add", methods=("POST",))
@@ -14731,56 +14782,115 @@ def run_nightly_schedule_review(now=None, force=False):
         return {"status": "failed", "updated": updated_total, "workspaces": workspace_total, "detail": detail}
 
 
+def nightly_expected_run_date(now, has_prior_history):
+    """Return only a run date whose 23:00 service window is already due."""
+    due_after = datetime.combine(now.date(), time(23, 5))
+    if now >= due_after:
+        return now.date()
+    # Do not create a false failure on the morning of the first deployment.
+    return now.date() - timedelta(days=1) if has_prior_history else None
+
+
+def due_nightly_schedule_run(now=None):
+    now = (now or current_app_datetime()).replace(second=0, microsecond=0)
+    connection = get_auth_connection()
+    history_row = connection.execute("""
+        SELECT COUNT(*) AS total
+        FROM scheduled_job_runs
+        WHERE job_name = 'nightly_outreach_schedule'
+          AND run_date < ?
+    """, (now.date().isoformat(),)).fetchone()
+    has_prior_history = bool(history_row and int(history_row["total"] or 0))
+    expected_date = nightly_expected_run_date(now, has_prior_history)
+    if expected_date is None:
+        connection.close()
+        return None
+
+    job_key = f"nightly_outreach_schedule:{expected_date.isoformat()}"
+    row = connection.execute(
+        "SELECT * FROM scheduled_job_runs WHERE job_key = ?",
+        (job_key,),
+    ).fetchone()
+    if not row:
+        scheduler_enabled = os.environ.get("PIPEFLOW_NIGHTLY_SCHEDULER", "0") == "1"
+        detail = (
+            "The nightly Outreach scheduler was not enabled when this run became due. Enable the scheduler and redeploy."
+            if not scheduler_enabled
+            else "PipeFlow did not record the scheduled 23:00 Outreach review. Restart the service and review the Render logs."
+        )
+        connection.execute("""
+            INSERT INTO scheduled_job_runs (
+                job_key, job_name, run_date, status, run_token,
+                started_at, completed_at, detail
+            ) VALUES (?, 'nightly_outreach_schedule', ?, 'failed', 'watchdog', ?, ?, ?)
+            ON CONFLICT(job_key) DO NOTHING
+        """, (
+            job_key,
+            expected_date.isoformat(),
+            app_datetime_key(now),
+            app_datetime_key(now),
+            detail,
+        ))
+        connection.commit()
+        row = connection.execute(
+            "SELECT * FROM scheduled_job_runs WHERE job_key = ?",
+            (job_key,),
+        ).fetchone()
+    elif row["status"] == "running":
+        started_at = parse_app_datetime(row["started_at"])
+        if started_at and now - started_at >= timedelta(minutes=30):
+            connection.execute("""
+                UPDATE scheduled_job_runs
+                SET status = 'failed',
+                    completed_at = ?,
+                    detail = ?
+                WHERE job_key = ?
+                  AND status = 'running'
+            """, (
+                app_datetime_key(now),
+                "The scheduled Outreach review did not complete within 30 minutes. PipeFlow will retry automatically.",
+                job_key,
+            ))
+            connection.commit()
+            row = connection.execute(
+                "SELECT * FROM scheduled_job_runs WHERE job_key = ?",
+                (job_key,),
+            ).fetchone()
+    connection.close()
+    return row
+
+
 def nightly_service_alert_for_user(user):
-    if not user or user["role"] not in {"admin", "company_admin"}:
+    # Scheduler operations and failure information are application-admin only.
+    if not user or user["role"] != "admin":
         return None
     try:
-        connection = get_auth_connection()
-        row = connection.execute("""
-            SELECT run_date, completed_at, detail
-            FROM scheduled_job_runs
-            WHERE job_name = 'nightly_outreach_schedule'
-              AND status = 'failed'
-            ORDER BY run_date DESC, completed_at DESC
-            LIMIT 1
-        """).fetchone()
-        if row:
-            later_success = connection.execute("""
-                SELECT 1
-                FROM scheduled_job_runs
-                WHERE job_name = 'nightly_outreach_schedule'
-                  AND status = 'completed'
-                  AND run_date >= ?
-                LIMIT 1
-            """, (row["run_date"],)).fetchone()
-            if later_success:
-                row = None
-        connection.close()
-        if row:
-            return {
-                "run_date": format_display_date(row["run_date"]),
-                "completed_at": format_display_datetime(row["completed_at"]),
-                "detail": row["detail"] or "The nightly Outreach schedule review did not complete.",
-            }
-        scheduler_enabled = os.environ.get("PIPEFLOW_NIGHTLY_SCHEDULER", "0") == "1"
-        hosted_service = bool(os.environ.get("RENDER") or using_postgres())
-        scheduler_thread = globals().get("_NIGHTLY_SCHEDULER_THREAD")
-        if hosted_service and not scheduler_enabled:
-            return {
-                "run_date": format_display_date(current_app_datetime().date()),
-                "completed_at": "",
-                "detail": "The nightly Outreach scheduler is not enabled for this hosted service. Set PIPEFLOW_NIGHTLY_SCHEDULER to 1 and redeploy.",
-            }
-        if scheduler_enabled and (not scheduler_thread or not scheduler_thread.is_alive()):
-            return {
-                "run_date": format_display_date(current_app_datetime().date()),
-                "completed_at": "",
-                "detail": "The nightly Outreach scheduler is not running. Restart the PipeFlow service and review the service logs.",
-            }
-        return None
+        row = due_nightly_schedule_run()
+        if not row or row["status"] != "failed" or row["acknowledged_at"]:
+            return None
+        return {
+            "job_key": row["job_key"],
+            "run_date": format_display_date(row["run_date"]),
+            "completed_at": format_display_datetime(row["completed_at"]),
+            "detail": row["detail"] or "The nightly Outreach schedule review did not complete.",
+        }
     except Exception:
         app.logger.exception("Nightly scheduler failure alert could not be loaded")
         return None
+
+
+def scheduler_run_history(days=30):
+    cutoff = (current_app_datetime().date() - timedelta(days=max(1, days) - 1)).isoformat()
+    connection = get_auth_connection()
+    rows = connection.execute("""
+        SELECT *
+        FROM scheduled_job_runs
+        WHERE job_name = 'nightly_outreach_schedule'
+          AND run_date >= ?
+        ORDER BY run_date DESC, started_at DESC
+    """, (cutoff,)).fetchall()
+    connection.close()
+    return rows
 
 
 def auto_reschedule_outreach_with_recovery(connection, outreach_ids, actor_label):

@@ -91,6 +91,10 @@
         <p>PipeFlow will retry automatically while the live service remains available. Review the Render service logs if this message continues.</p>
         <div class="form-actions">
             <button type="button" class="btn btn-primary" data-close-nightly-alert>Close</button>
+            <form method="POST" action="{{ url_for('admin_confirm_scheduler_failure') }}" class="inline-form">
+                <input type="hidden" name="job_key" value="{{ nightly_service_alert.job_key }}">
+                <button type="submit" class="btn btn-secondary">Confirm</button>
+            </form>
         </div>
     </dialog>
     {% endif %}

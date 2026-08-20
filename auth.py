@@ -212,7 +212,10 @@ def initialise_auth_database() -> None:
             run_token TEXT NOT NULL,
             started_at TEXT DEFAULT CURRENT_TIMESTAMP,
             completed_at TEXT,
-            detail TEXT
+            detail TEXT,
+            acknowledged_at TEXT,
+            acknowledged_by_user_id INTEGER,
+            acknowledged_by_name TEXT
         )
     """)
     connection.execute("""
@@ -275,6 +278,9 @@ def initialise_auth_database() -> None:
     add_column_if_missing(connection, "user_company_memberships", "company_name", "TEXT")
     add_column_if_missing(connection, "user_company_memberships", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(connection, "user_company_memberships", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(connection, "scheduled_job_runs", "acknowledged_at", "TEXT")
+    add_column_if_missing(connection, "scheduled_job_runs", "acknowledged_by_user_id", "INTEGER")
+    add_column_if_missing(connection, "scheduled_job_runs", "acknowledged_by_name", "TEXT")
     connection.execute(
         """
         INSERT INTO tenants (company_name, country, company_contact, is_active)
