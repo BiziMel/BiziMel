@@ -661,6 +661,23 @@ def main():
             and connection_attempts["count"] >= 2,
             "non-working block save did not recover from a transient workspace connection failure",
         )
+        duplicate_response = client.post(
+            "/profile/non-working/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "start_date": retry_block_date.isoformat(),
+                "start_time": "10:00",
+                "end_date": retry_block_date.isoformat(),
+                "end_time": "11:00",
+                "reason": "Connection retry smoke block",
+            },
+            follow_redirects=True,
+        )
+        assert_ok(
+            duplicate_response.status_code == 200
+            and "already exists" in duplicate_response.get_data(as_text=True),
+            "repeated availability submission did not explain that the existing block was retained",
+        )
         connection = sqlite3.connect(db_path)
         retry_block_count = connection.execute(
             "SELECT COUNT(*) FROM non_working_blocks WHERE reason = ?",
@@ -670,6 +687,32 @@ def main():
         connection.commit()
         connection.close()
         assert_ok(retry_block_count == 1, "connection retry created a missing or duplicate non-working block")
+
+        legacy_duplicate_date = retry_block_date + timedelta(days=1)
+        connection = sqlite3.connect(db_path)
+        connection.execute("DROP INDEX IF EXISTS idx_non_working_blocks_unique")
+        for _ in range(3):
+            connection.execute(
+                "INSERT INTO non_working_blocks (start_date, start_time, end_date, end_time, reason) VALUES (?, ?, ?, ?, ?)",
+                (legacy_duplicate_date.isoformat(), "10:00", legacy_duplicate_date.isoformat(), "13:30", "Legacy duplicate smoke block"),
+            )
+        connection.commit()
+        connection.close()
+        with client.session_transaction() as client_session:
+            session_snapshot = dict(client_session)
+        from flask import session as flask_session
+        with pipeflow_app.app.test_request_context("/profile"):
+            flask_session.update(session_snapshot)
+            pipeflow_app.initialise_database(force=True)
+        connection = sqlite3.connect(db_path)
+        migrated_duplicate_count = connection.execute(
+            "SELECT COUNT(*) FROM non_working_blocks WHERE reason = ?",
+            ("Legacy duplicate smoke block",),
+        ).fetchone()[0]
+        connection.execute("DELETE FROM non_working_blocks WHERE reason = ?", ("Legacy duplicate smoke block",))
+        connection.commit()
+        connection.close()
+        assert_ok(migrated_duplicate_count == 1, "database migration did not collapse identical legacy availability blocks")
 
         nightly_block_date = today + timedelta(days=220)
         while nightly_block_date.weekday() != 4:

@@ -821,6 +821,27 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "non_working_blocks", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "non_working_blocks", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
 
+    # Earlier request retries could create identical availability rows. Keep the
+    # first row before enforcing one canonical block at database level.
+    non_working_rows = cursor.execute("""
+        SELECT id, start_date, start_time, end_date, end_time, reason
+        FROM non_working_blocks
+        ORDER BY id
+    """).fetchall()
+    seen_non_working_blocks = set()
+    for row in non_working_rows:
+        signature = (
+            str(row["start_date"] or ""),
+            str(row["start_time"] or ""),
+            str(row["end_date"] or ""),
+            str(row["end_time"] or ""),
+            str(row["reason"] or ""),
+        )
+        if signature in seen_non_working_blocks:
+            cursor.execute("DELETE FROM non_working_blocks WHERE id = ?", (row["id"],))
+        else:
+            seen_non_working_blocks.add(signature)
+
     # Safe migrations for structured audit entries
     add_column_if_missing(cursor, "audit_entries", "team_id", "INTEGER DEFAULT 1")
     add_column_if_missing(cursor, "audit_entries", "entity_type", "TEXT")
@@ -894,6 +915,16 @@ def initialise_database(force=False):
     ]
     for index_name, table_name, columns in index_definitions:
         create_index_if_missing(cursor, index_name, table_name, columns)
+    cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_non_working_blocks_unique
+        ON non_working_blocks (
+            start_date,
+            COALESCE(start_time, ''),
+            end_date,
+            COALESCE(end_time, ''),
+            COALESCE(reason, '')
+        )
+    """)
 
     connection.commit()
     connection.close()

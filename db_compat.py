@@ -209,6 +209,10 @@ class PgCursorAdapter:
     def __iter__(self):
         return iter(self.fetchall())
 
+    @property
+    def rowcount(self):
+        return self.cursor.rowcount
+
     def __getitem__(self, index):
         row = self.fetchone()
         if row is None:

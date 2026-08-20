@@ -33,7 +33,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.8.1"
 APP_RELEASE_DATE = "2026-08-20"
-APP_BUILD = "2026-08-20-v2.8.1-profile-availability-resilience-r5"
+APP_BUILD = "2026-08-20-v2.8.1-availability-dedup-async-r6"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -69,6 +69,9 @@ RELEASE_NOTES = [
             "Added PostgreSQL connection retries for transient connection, timeout and server-reset failures across PipeFlow.",
             "Made non-working block creation idempotent and protected database acquisition, schema repair, commit and profile reload from raw server errors.",
             "Added the exact application build identifier to the version health endpoint so live deployment revisions can be verified.",
+            "Removed hosted availability rescheduling from the save response so large Outreach schedules cannot exceed the web request timeout after a block is committed.",
+            "Added database-enforced uniqueness for availability blocks and automatic cleanup of identical legacy rows created by repeated submissions.",
+            "Changed hosted availability updates to start schedule reflow in the background, with the existing nightly review retained as a fallback.",
         ],
     },
     {
@@ -14537,6 +14540,50 @@ def reschedule_outreach_for_new_non_working_block(connection, new_block, actor_l
     return len(impacted)
 
 
+def queue_non_working_schedule_reflow(workspace_schema, new_block, actor_label, session_values):
+    """Run the potentially long workspace reflow after the web response is free."""
+    def worker():
+        with app.test_request_context("/profile/non-working/reflow"):
+            session.update(session_values)
+            for attempt in range(2):
+                connection = None
+                try:
+                    connection = get_schema_connection(workspace_schema)
+                    moved_count = reschedule_outreach_for_new_non_working_block(
+                        connection,
+                        new_block,
+                        actor_label,
+                    )
+                    commit_with_retry(connection)
+                    print(
+                        f"Profile availability background reflow completed: {moved_count} Outreach task(s) moved.",
+                        file=sys.stderr,
+                    )
+                    return
+                except Exception as exc:
+                    if connection:
+                        try:
+                            connection.rollback()
+                        except Exception:
+                            pass
+                    if attempt == 0 and transient_database_error(exc):
+                        continue
+                    log_diagnostic_exception("PROFILE", exc, {"stage": "background_non_working_reflow"})
+                    return
+                finally:
+                    if connection:
+                        try:
+                            connection.close()
+                        except Exception:
+                            pass
+
+    threading.Thread(
+        target=worker,
+        name="pipeflow-profile-availability-reflow",
+        daemon=True,
+    ).start()
+
+
 def auto_reschedule_outreach_records(connection, outreach_ids, actor_label):
     profile = connection.execute("SELECT * FROM user_profile WHERE id = 1").fetchone()
     non_working_rows = connection.execute("""
@@ -16406,27 +16453,19 @@ def add_non_working_block():
     # Persist availability before attempting the wider schedule reflow. A task
     # scheduling edge case must never discard a valid absence from the profile.
     saved = False
+    created_new_block = False
     for attempt in range(2):
         connection = None
         try:
             connection = get_db_connection()
             cleanup_expired_non_working_blocks(connection)
-            existing_block = connection.execute("""
-                SELECT id
-                FROM non_working_blocks
-                WHERE start_date = ?
-                  AND COALESCE(start_time, '') = ?
-                  AND end_date = ?
-                  AND COALESCE(end_time, '') = ?
-                  AND COALESCE(reason, '') = ?
-                ORDER BY id DESC
-                LIMIT 1
-            """, (start_date, start_time_value, end_date, end_time_value, reason)).fetchone()
-            if not existing_block:
-                connection.execute("""
-                    INSERT INTO non_working_blocks (start_date, start_time, end_date, end_time, reason)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (start_date, start_time_value, end_date, end_time_value, reason))
+            insert_cursor = connection.execute("""
+                INSERT INTO non_working_blocks (start_date, start_time, end_date, end_time, reason)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT DO NOTHING
+            """, (start_date, start_time_value, end_date, end_time_value, reason))
+            created_new_block = insert_cursor.rowcount > 0
+            if created_new_block:
                 audit_record_create(connection, "profile", 1, {
                     "non_working_block": f"{start_date} {start_time_value or 'all day'} to {end_date} {end_time_value or 'all day'}",
                     "non_working_reason": reason,
@@ -16467,6 +16506,24 @@ def add_non_working_block():
 
     user = current_user()
     actor_label = user["full_name"] if user else "Profile availability update"
+    if not created_new_block:
+        return redirect(url_for("profile", message="That non-working block already exists. No duplicate was added."))
+    if using_postgres():
+        queue_non_working_schedule_reflow(
+            current_user_schema(),
+            new_block,
+            actor_label,
+            {
+                key: session.get(key)
+                for key in ("user_id", "user_email", "user_name", "workspace_schema")
+                if session.get(key) is not None
+            },
+        )
+        return redirect(url_for(
+            "profile",
+            message="Non-working block added. Outreach schedule review has started and will continue after this page loads.",
+        ))
+
     rescheduled_count = 0
     reflow_error = ""
     for attempt in range(2):
