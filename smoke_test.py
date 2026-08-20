@@ -633,6 +633,44 @@ def main():
         connection.close()
         assert_ok(isolated_block_count == 1, "availability block was rolled back when schedule reflow failed")
 
+        original_get_db_connection = pipeflow_app.get_db_connection
+        connection_attempts = {"count": 0}
+        def intermittent_workspace_connection():
+            connection_attempts["count"] += 1
+            if connection_attempts["count"] == 1:
+                raise RuntimeError("connection timeout expired")
+            return original_get_db_connection()
+        pipeflow_app.get_db_connection = intermittent_workspace_connection
+        retry_block_date = isolated_block_date + timedelta(days=1)
+        response = client.post(
+            "/profile/non-working/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "start_date": retry_block_date.isoformat(),
+                "start_time": "10:00",
+                "end_date": retry_block_date.isoformat(),
+                "end_time": "11:00",
+                "reason": "Connection retry smoke block",
+            },
+            follow_redirects=True,
+        )
+        pipeflow_app.get_db_connection = original_get_db_connection
+        assert_ok(
+            response.status_code == 200
+            and "Non-working block added" in response.get_data(as_text=True)
+            and connection_attempts["count"] >= 2,
+            "non-working block save did not recover from a transient workspace connection failure",
+        )
+        connection = sqlite3.connect(db_path)
+        retry_block_count = connection.execute(
+            "SELECT COUNT(*) FROM non_working_blocks WHERE reason = ?",
+            ("Connection retry smoke block",),
+        ).fetchone()[0]
+        connection.execute("DELETE FROM non_working_blocks WHERE reason = ?", ("Connection retry smoke block",))
+        connection.commit()
+        connection.close()
+        assert_ok(retry_block_count == 1, "connection retry created a missing or duplicate non-working block")
+
         nightly_block_date = today + timedelta(days=220)
         while nightly_block_date.weekday() != 4:
             nightly_block_date += timedelta(days=1)

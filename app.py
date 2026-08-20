@@ -28,12 +28,12 @@ except ModuleNotFoundError:
 from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, bulk_update_broadcast_messages, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members, decode_broadcast_companies, set_user_company_memberships, user_company_names
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
-from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry
+from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
 APP_VERSION = "2.8.1"
 APP_RELEASE_DATE = "2026-08-20"
-APP_BUILD = "2026-08-20-v2.8.1-admin-resilience-r4"
+APP_BUILD = "2026-08-20-v2.8.1-profile-availability-resilience-r5"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -66,6 +66,9 @@ RELEASE_NOTES = [
             "Decoupled profile availability saves from Outreach schedule reflow so a valid block is retained even when a dependent task cannot be rescheduled.",
             "Added a friendly Page Not Found dialog that returns signed-in users to the Insights Dashboard.",
             "Changed Insights Recommended Move logic to rank successful activity types and channels instead of recommending a Sales Play.",
+            "Added PostgreSQL connection retries for transient connection, timeout and server-reset failures across PipeFlow.",
+            "Made non-working block creation idempotent and protected database acquisition, schema repair, commit and profile reload from raw server errors.",
+            "Added the exact application build identifier to the version health endpoint so live deployment revisions can be verified.",
         ],
     },
     {
@@ -2319,6 +2322,7 @@ def version_health():
     lines = [
         "status=ok",
         f"pipeflow_version={APP_VERSION}",
+        f"pipeflow_build={APP_BUILD}",
     ]
     return Response("\n".join(lines), mimetype="text/plain")
 
@@ -16204,6 +16208,26 @@ def complete_task_from_tasks(outreach_id):
 
 @app.route("/profile", methods=("GET", "POST"))
 def profile():
+    for attempt in range(2):
+        try:
+            return profile_impl()
+        except Exception as exc:
+            if attempt == 0:
+                if database_error_looks_like_schema_drift(exc):
+                    try:
+                        initialise_database(force=True)
+                    except Exception as repair_exc:
+                        log_diagnostic_exception("PROFILE", repair_exc, {"stage": "profile_schema_repair"})
+                continue
+            code = log_diagnostic_exception("PROFILE", exc, {"stage": "profile_route"})
+            store_page_notice(error=diagnostic_user_message(
+                "PipeFlow could not load Profile after retrying the workspace connection. No profile changes were lost.",
+                code,
+            ))
+            return redirect(url_for("home"))
+
+
+def profile_impl():
     connection = get_db_connection()
     cleanup_expired_non_working_blocks(connection)
     message = request.args.get("message", "")
@@ -16381,56 +16405,93 @@ def add_non_working_block():
         return redirect(url_for("profile", error="The non-working block has already expired. Enter a current or future absence."))
     # Persist availability before attempting the wider schedule reflow. A task
     # scheduling edge case must never discard a valid absence from the profile.
+    saved = False
     for attempt in range(2):
-        connection = get_db_connection()
+        connection = None
         try:
+            connection = get_db_connection()
             cleanup_expired_non_working_blocks(connection)
-            connection.execute("""
-                INSERT INTO non_working_blocks (start_date, start_time, end_date, end_time, reason)
-                VALUES (?, ?, ?, ?, ?)
-            """, (start_date, start_time_value, end_date, end_time_value, reason))
-            audit_record_create(connection, "profile", 1, {
-                "non_working_block": f"{start_date} {start_time_value or 'all day'} to {end_date} {end_time_value or 'all day'}",
-                "non_working_reason": reason,
-            }, {
-                "non_working_block": "Non-Working Date / Time Block",
-                "non_working_reason": "Non-Working Reason",
-            })
-            connection.commit()
-            connection.close()
+            existing_block = connection.execute("""
+                SELECT id
+                FROM non_working_blocks
+                WHERE start_date = ?
+                  AND COALESCE(start_time, '') = ?
+                  AND end_date = ?
+                  AND COALESCE(end_time, '') = ?
+                  AND COALESCE(reason, '') = ?
+                ORDER BY id DESC
+                LIMIT 1
+            """, (start_date, start_time_value, end_date, end_time_value, reason)).fetchone()
+            if not existing_block:
+                connection.execute("""
+                    INSERT INTO non_working_blocks (start_date, start_time, end_date, end_time, reason)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (start_date, start_time_value, end_date, end_time_value, reason))
+                audit_record_create(connection, "profile", 1, {
+                    "non_working_block": f"{start_date} {start_time_value or 'all day'} to {end_date} {end_time_value or 'all day'}",
+                    "non_working_reason": reason,
+                }, {
+                    "non_working_block": "Non-Working Date / Time Block",
+                    "non_working_reason": "Non-Working Reason",
+                })
+            commit_with_retry(connection)
+            saved = True
             break
         except Exception as exc:
-            connection.rollback()
-            connection.close()
-            if attempt == 0 and database_error_looks_like_schema_drift(exc):
-                initialise_database(force=True)
+            if connection:
+                try:
+                    connection.rollback()
+                except Exception:
+                    pass
+            if attempt == 0 and (database_error_looks_like_schema_drift(exc) or transient_database_error(exc)):
+                if database_error_looks_like_schema_drift(exc):
+                    try:
+                        initialise_database(force=True)
+                    except Exception as repair_exc:
+                        log_diagnostic_exception("PROFILE", repair_exc, {"stage": "save_non_working_schema_repair"})
                 continue
             code = log_diagnostic_exception("PROFILE", exc, {"stage": "save_non_working_block"})
             return redirect(url_for(
                 "profile",
                 error=diagnostic_user_message("The non-working block could not be saved.", code),
             ))
+        finally:
+            if connection:
+                try:
+                    connection.close()
+                except Exception:
+                    pass
+
+    if not saved:
+        return redirect(url_for("profile", error="The non-working block could not be saved after retrying the workspace connection."))
 
     user = current_user()
     actor_label = user["full_name"] if user else "Profile availability update"
     rescheduled_count = 0
     reflow_error = ""
     for attempt in range(2):
-        connection = get_db_connection()
+        connection = None
         try:
+            connection = get_db_connection()
             rescheduled_count = reschedule_outreach_for_new_non_working_block(
                 connection,
                 new_block,
                 actor_label,
             )
-            connection.commit()
-            connection.close()
+            commit_with_retry(connection)
             break
         except Exception as exc:
-            connection.rollback()
-            connection.close()
-            if attempt == 0 and database_error_looks_like_schema_drift(exc):
-                initialise_database(force=True)
+            if connection:
+                try:
+                    connection.rollback()
+                except Exception:
+                    pass
+            if attempt == 0 and (database_error_looks_like_schema_drift(exc) or transient_database_error(exc)):
+                if database_error_looks_like_schema_drift(exc):
+                    try:
+                        initialise_database(force=True)
+                    except Exception as repair_exc:
+                        log_diagnostic_exception("PROFILE", repair_exc, {"stage": "reflow_non_working_schema_repair"})
                 continue
             code = log_diagnostic_exception("PROFILE", exc, {"stage": "reflow_after_non_working_block"})
             reflow_error = diagnostic_user_message(
@@ -16438,6 +16499,12 @@ def add_non_working_block():
                 code,
             )
             break
+        finally:
+            if connection:
+                try:
+                    connection.close()
+                except Exception:
+                    pass
 
     message = "Non-working block added."
     if rescheduled_count:

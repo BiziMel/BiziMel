@@ -121,6 +121,15 @@ def transient_database_error(exc):
             "could not serialize access",
             "deadlock detected",
             "connection reset",
+            "connection failed",
+            "connection refused",
+            "connection timeout",
+            "timeout expired",
+            "could not connect",
+            "server closed the connection unexpectedly",
+            "ssl connection has been closed unexpectedly",
+            "the connection is closed",
+            "consuming input failed",
             "terminating connection",
             "current transaction is aborted",
             "infailedsqltransaction",
@@ -295,7 +304,10 @@ def sqlite_connection():
 def postgres_connection(schema=None):
     if psycopg is None:
         raise RuntimeError("DATABASE_URL is set but psycopg is not installed.")
-    connection = psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row)
+    connection = execute_with_retry(
+        lambda: psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row),
+        attempts=3,
+    )
     schema = schema or current_user_schema()
     with connection.cursor() as cursor:
         cursor.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
@@ -550,7 +562,10 @@ def postgres_connection(schema=None):
         _POSTGRES_READY_SCHEMAS.add(schema)
         return connection
 
-    connection = psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row)
+    connection = execute_with_retry(
+        lambda: psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row),
+        attempts=3,
+    )
     with connection.cursor() as cursor:
         if schema not in _POSTGRES_READY_SCHEMAS:
             cursor.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
