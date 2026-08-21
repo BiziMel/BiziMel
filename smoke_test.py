@@ -345,7 +345,9 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.8.1" in version_response.get_data(as_text=True),
+            and "pipeflow_version=2.8.1" in version_response.get_data(as_text=True)
+            and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
+            and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
             "health/version did not report Release 2.8.1",
         )
 
@@ -379,6 +381,34 @@ def main():
         assert_ok(
             pipeflow_app.nightly_expected_run_date(datetime.combine(today, time(23, 6)), False) == today,
             "nightly scheduler did not assess the first run after its scheduled time",
+        )
+        assert_ok(
+            pipeflow_app.nightly_run_date_due(datetime.combine(today, time(7, 14))) == today - timedelta(days=1),
+            "nightly scheduler did not identify the previous night for morning catch-up",
+        )
+        assert_ok(
+            pipeflow_app.nightly_run_date_due(datetime.combine(today, time(23, 6))) == today,
+            "nightly scheduler did not identify the current date after 23:00",
+        )
+        original_nightly_runner = pipeflow_app.run_nightly_schedule_review
+        catch_up_call = {}
+
+        def capture_nightly_run(now=None, force=False, run_date=None):
+            catch_up_call.update({"now": now, "force": force, "run_date": run_date})
+            return {"status": "completed", "updated": 0, "workspaces": 0}
+
+        pipeflow_app.run_nightly_schedule_review = capture_nightly_run
+        try:
+            catch_up_result = pipeflow_app.run_due_nightly_schedule_review(
+                datetime.combine(today, time(7, 14))
+            )
+        finally:
+            pipeflow_app.run_nightly_schedule_review = original_nightly_runner
+        assert_ok(
+            catch_up_result["status"] == "completed"
+            and catch_up_call["force"] is True
+            and catch_up_call["run_date"] == today - timedelta(days=1),
+            "morning scheduler wake did not request a catch-up for the missed nightly run",
         )
         assert_ok(
             pipeflow_app.nightly_service_alert_for_user({"role": "company_admin"}) is None,

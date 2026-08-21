@@ -32,8 +32,8 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 
 APP_VERSION = "2.8.1"
-APP_RELEASE_DATE = "2026-08-20"
-APP_BUILD = "2026-08-20-v2.8.1-availability-dedup-async-r6"
+APP_RELEASE_DATE = "2026-08-21"
+APP_BUILD = "2026-08-21-v2.8.1-scheduler-catchup-r7"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -49,8 +49,8 @@ except ZoneInfoNotFoundError:
 RELEASE_NOTES = [
     {
         "version": "2.8.1",
-        "release_date": "2026-08-20",
-        "title": "Availability resilience and admin controls",
+        "release_date": "2026-08-21",
+        "title": "Availability and nightly scheduler resilience",
         "fixed": [
             "Added optional From Time and To Time fields to profile non-working blocks while preserving full-day absence behavior when times are blank.",
             "Changed expired non-working blocks to be removed automatically when profile or scheduling availability is loaded.",
@@ -72,6 +72,10 @@ RELEASE_NOTES = [
             "Removed hosted availability rescheduling from the save response so large Outreach schedules cannot exceed the web request timeout after a block is committed.",
             "Added database-enforced uniqueness for availability blocks and automatic cleanup of identical legacy rows created by repeated submissions.",
             "Changed hosted availability updates to start schedule reflow in the background, with the existing nightly review retained as a fallback.",
+            "Changed every availability block and working-hours update to run a full schedule review for that user's open Outreach activities.",
+            "Added automatic nightly catch-up so a missed 23:00 review runs after a service restart instead of being reported as failed without another attempt.",
+            "Made the scheduler thread self-healing on application requests and exposed enabled/alive status through the version health endpoint.",
+            "Isolated nightly workspace connection failures so every other active user is still reviewed and the Admin history records the complete result.",
         ],
     },
     {
@@ -2199,6 +2203,8 @@ def page_instructions_for_endpoint(endpoint):
 
 @app.before_request
 def require_login_and_prepare_database():
+    if os.environ.get("PIPEFLOW_NIGHTLY_SCHEDULER", "0") == "1":
+        start_nightly_scheduler()
     public_endpoints = {"login", "register", "forgot_password", "reset_password", "release_notes", "user_guide", "user_guide_section", "version_health", "storage_health", "static"}
     if request.endpoint in public_endpoints:
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
@@ -2326,6 +2332,8 @@ def version_health():
         "status=ok",
         f"pipeflow_version={APP_VERSION}",
         f"pipeflow_build={APP_BUILD}",
+        f"nightly_scheduler_enabled={os.environ.get('PIPEFLOW_NIGHTLY_SCHEDULER', '0') == '1'}",
+        f"nightly_scheduler_thread_alive={bool(_NIGHTLY_SCHEDULER_THREAD and _NIGHTLY_SCHEDULER_THREAD.is_alive())}",
     ]
     return Response("\n".join(lines), mimetype="text/plain")
 
@@ -14540,8 +14548,8 @@ def reschedule_outreach_for_new_non_working_block(connection, new_block, actor_l
     return len(impacted)
 
 
-def queue_non_working_schedule_reflow(workspace_schema, new_block, actor_label, session_values):
-    """Run the potentially long workspace reflow after the web response is free."""
+def queue_workspace_schedule_reflow(workspace_schema, actor_label, session_values, reason="Availability update"):
+    """Review one user's complete schedule after the web response is free."""
     def worker():
         with app.test_request_context("/profile/non-working/reflow"):
             session.update(session_values)
@@ -14549,14 +14557,10 @@ def queue_non_working_schedule_reflow(workspace_schema, new_block, actor_label, 
                 connection = None
                 try:
                     connection = get_schema_connection(workspace_schema)
-                    moved_count = reschedule_outreach_for_new_non_working_block(
-                        connection,
-                        new_block,
-                        actor_label,
-                    )
+                    moved_count = nightly_reflow_outreach_schedule(connection)
                     commit_with_retry(connection)
                     print(
-                        f"Profile availability background reflow completed: {moved_count} Outreach task(s) moved.",
+                        f"{reason} schedule review completed for {actor_label}: {moved_count} Outreach task(s) moved.",
                         file=sys.stderr,
                     )
                     return
@@ -14579,7 +14583,7 @@ def queue_non_working_schedule_reflow(workspace_schema, new_block, actor_label, 
 
     threading.Thread(
         target=worker,
-        name="pipeflow-profile-availability-reflow",
+        name="pipeflow-user-schedule-reflow",
         daemon=True,
     ).start()
 
@@ -14780,7 +14784,10 @@ def claim_scheduled_job(job_name, run_date, now=None):
         row
         and row["status"] in {"failed", "running"}
         and retry_after
-        and now - retry_after >= timedelta(minutes=15 if row["status"] == "failed" else 30)
+        and (
+            row["run_token"] == "watchdog"
+            or now - retry_after >= timedelta(minutes=15 if row["status"] == "failed" else 30)
+        )
     )
     if retryable:
         previous_token = row["run_token"]
@@ -14829,30 +14836,39 @@ def scheduled_workspace_connections():
     if using_postgres():
         seen = set()
         for user in users:
+            if not user["is_active"]:
+                continue
             schema = user["workspace_schema"] if "workspace_schema" in user.keys() else ""
             if not schema or schema in seen:
                 continue
             seen.add(schema)
-            yield schema, user["full_name"] or user["email"], get_schema_connection(schema=schema)
+            try:
+                connection = get_schema_connection(schema=schema)
+                yield schema, user["full_name"] or user["email"], connection, None
+            except Exception as exc:
+                yield schema, user["full_name"] or user["email"], None, exc
         return
 
     data_root = Path(os.environ.get("PIPEFLOW_DATA_DIR", Path(__file__).resolve().parent / "server_data"))
     for user in users:
+        if not user["is_active"]:
+            continue
         database_path = data_root / "users" / str(user["id"]) / "pipeflow.db"
         if not database_path.exists():
             continue
         connection = sqlite3.connect(database_path)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA busy_timeout = 5000")
-        yield f"user:{user['id']}", user["full_name"] or user["email"], connection
+        yield f"user:{user['id']}", user["full_name"] or user["email"], connection, None
 
 
-def run_nightly_schedule_review(now=None, force=False):
+def run_nightly_schedule_review(now=None, force=False, run_date=None):
     now = (now or current_app_datetime()).replace(second=0, microsecond=0)
-    if not force and now.hour < 23:
+    if run_date is None and not force and now.hour < 23:
         return {"status": "not_due", "updated": 0, "workspaces": 0}
+    run_date = run_date or now.date()
     job_name = "nightly_outreach_schedule"
-    run_token = claim_scheduled_job(job_name, now.date(), now)
+    run_token = claim_scheduled_job(job_name, run_date, now)
     if not run_token:
         return {"status": "already_claimed", "updated": 0, "workspaces": 0}
 
@@ -14860,8 +14876,16 @@ def run_nightly_schedule_review(now=None, force=False):
     workspace_total = 0
     failures = []
     try:
-        for workspace_key, workspace_label, connection in scheduled_workspace_connections():
+        for workspace_key, workspace_label, connection, connection_error in scheduled_workspace_connections():
             workspace_total += 1
+            if connection_error:
+                failures.append(f"{workspace_label} ({workspace_key}): connection could not be opened")
+                app.logger.error(
+                    "Nightly Outreach schedule could not open workspace %s: %r",
+                    workspace_key,
+                    connection_error,
+                )
+                continue
             try:
                 updated_total += nightly_reflow_outreach_schedule(connection, now)
                 connection.commit()
@@ -14881,16 +14905,31 @@ def run_nightly_schedule_review(now=None, force=False):
                 "No partial changes were retained in the affected workspace(s). "
                 + " ".join(failures)
             )
-            finish_scheduled_job(job_name, now.date(), run_token, "failed", detail, now)
+            finish_scheduled_job(job_name, run_date, run_token, "failed", detail, now)
             return {"status": "failed", "updated": updated_total, "workspaces": workspace_total, "detail": detail}
         detail = f"Reviewed {workspace_total} workspace(s) and moved {updated_total} open Outreach task(s)."
-        finish_scheduled_job(job_name, now.date(), run_token, "completed", detail, now)
+        finish_scheduled_job(job_name, run_date, run_token, "completed", detail, now)
         return {"status": "completed", "updated": updated_total, "workspaces": workspace_total, "detail": detail}
     except Exception as exc:
         detail = "PipeFlow could not start or complete the 23:00 Outreach schedule review. The service will retry automatically."
-        finish_scheduled_job(job_name, now.date(), run_token, "failed", detail, now)
+        finish_scheduled_job(job_name, run_date, run_token, "failed", detail, now)
         app.logger.exception("Nightly Outreach schedule coordinator failed")
         return {"status": "failed", "updated": updated_total, "workspaces": workspace_total, "detail": detail}
+
+
+def nightly_run_date_due(now=None):
+    now = (now or current_app_datetime()).replace(second=0, microsecond=0)
+    return now.date() if now.hour >= 23 else now.date() - timedelta(days=1)
+
+
+def run_due_nightly_schedule_review(now=None):
+    """Run tonight's review or catch up the previous night after a restart."""
+    now = (now or current_app_datetime()).replace(second=0, microsecond=0)
+    return run_nightly_schedule_review(
+        now=now,
+        force=True,
+        run_date=nightly_run_date_due(now),
+    )
 
 
 def nightly_expected_run_date(now, has_prior_history):
@@ -14924,10 +14963,13 @@ def due_nightly_schedule_run(now=None):
     ).fetchone()
     if not row:
         scheduler_enabled = os.environ.get("PIPEFLOW_NIGHTLY_SCHEDULER", "0") == "1"
+        if scheduler_enabled:
+            connection.close()
+            start_nightly_scheduler()
+            wake_nightly_scheduler()
+            return None
         detail = (
             "The nightly Outreach scheduler was not enabled when this run became due. Enable the scheduler and redeploy."
-            if not scheduler_enabled
-            else "PipeFlow did not record the scheduled 23:00 Outreach review. Restart the service and review the Render logs."
         )
         connection.execute("""
             INSERT INTO scheduled_job_runs (
@@ -16353,7 +16395,22 @@ def profile_impl():
         connection.commit()
         connection.close()
 
-        return redirect(url_for("profile", message="Profile saved."))
+        if using_postgres():
+            queue_workspace_schedule_reflow(
+                current_user_schema(),
+                signed_in_user["full_name"] if signed_in_user else "Profile working hours update",
+                {
+                    key: session.get(key)
+                    for key in ("user_id", "user_email", "user_name", "workspace_schema")
+                    if session.get(key) is not None
+                },
+                "Profile working hours update",
+            )
+
+        return redirect(url_for(
+            "profile",
+            message="Profile saved. Outreach schedule review has started for the updated working hours.",
+        ))
 
     profile_record = connection.execute("""
         SELECT *
@@ -16509,15 +16566,15 @@ def add_non_working_block():
     if not created_new_block:
         return redirect(url_for("profile", message="That non-working block already exists. No duplicate was added."))
     if using_postgres():
-        queue_non_working_schedule_reflow(
+        queue_workspace_schedule_reflow(
             current_user_schema(),
-            new_block,
             actor_label,
             {
                 key: session.get(key)
                 for key in ("user_id", "user_email", "user_name", "workspace_schema")
                 if session.get(key) is not None
             },
+            "Profile availability update",
         )
         return redirect(url_for(
             "profile",
@@ -16578,7 +16635,22 @@ def delete_non_working_block(block_id):
     connection.execute("DELETE FROM non_working_blocks WHERE id = ?", (block_id,))
     connection.commit()
     connection.close()
-    return redirect(url_for("profile", message="Non-working block deleted."))
+    user = current_user()
+    if using_postgres():
+        queue_workspace_schedule_reflow(
+            current_user_schema(),
+            user["full_name"] if user else "Profile availability update",
+            {
+                key: session.get(key)
+                for key in ("user_id", "user_email", "user_name", "workspace_schema")
+                if session.get(key) is not None
+            },
+            "Profile availability removal",
+        )
+    return redirect(url_for(
+        "profile",
+        message="Non-working block deleted. Outreach schedule review has started.",
+    ))
 
 
 @app.route("/profile/delete-data", methods=("POST",))
@@ -19156,6 +19228,8 @@ def export_outreach():
 
 
 _NIGHTLY_SCHEDULER_STOP = threading.Event()
+_NIGHTLY_SCHEDULER_WAKE = threading.Event()
+_NIGHTLY_SCHEDULER_LOCK = threading.Lock()
 _NIGHTLY_SCHEDULER_THREAD = None
 
 
@@ -19163,22 +19237,28 @@ def nightly_scheduler_loop():
     while not _NIGHTLY_SCHEDULER_STOP.is_set():
         try:
             with app.app_context():
-                run_nightly_schedule_review()
+                run_due_nightly_schedule_review()
         except Exception:
             app.logger.exception("Nightly Outreach scheduler loop failed")
-        _NIGHTLY_SCHEDULER_STOP.wait(60)
+        _NIGHTLY_SCHEDULER_WAKE.wait(60)
+        _NIGHTLY_SCHEDULER_WAKE.clear()
+
+
+def wake_nightly_scheduler():
+    _NIGHTLY_SCHEDULER_WAKE.set()
 
 
 def start_nightly_scheduler():
     global _NIGHTLY_SCHEDULER_THREAD
-    if _NIGHTLY_SCHEDULER_THREAD and _NIGHTLY_SCHEDULER_THREAD.is_alive():
-        return
-    _NIGHTLY_SCHEDULER_THREAD = threading.Thread(
-        target=nightly_scheduler_loop,
-        name="pipeflow-nightly-outreach-scheduler",
-        daemon=True,
-    )
-    _NIGHTLY_SCHEDULER_THREAD.start()
+    with _NIGHTLY_SCHEDULER_LOCK:
+        if _NIGHTLY_SCHEDULER_THREAD and _NIGHTLY_SCHEDULER_THREAD.is_alive():
+            return
+        _NIGHTLY_SCHEDULER_THREAD = threading.Thread(
+            target=nightly_scheduler_loop,
+            name="pipeflow-nightly-outreach-scheduler",
+            daemon=True,
+        )
+        _NIGHTLY_SCHEDULER_THREAD.start()
 
 
 if os.environ.get("PIPEFLOW_NIGHTLY_SCHEDULER", "0") == "1":
