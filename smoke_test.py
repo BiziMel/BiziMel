@@ -491,6 +491,23 @@ def main():
             html = response.get_data(as_text=True)
             assert_ok(response.status_code == 200 and marker in html, f"{path} failed")
 
+        insight_views = {
+            "/?view=today&period=30": ("Execution Command Centre", "Do Next"),
+            "/?view=progress&period=30": ("Progress", "Eight-Week Activity Trend"),
+            "/?view=accounts&period=30": ("Account Momentum", "Smoke Test Account"),
+            "/?view=effectiveness&period=30": ("Engagement Effectiveness", "Evidence Confidence"),
+            "/?view=risks&period=30": ("Coverage &amp; Risk", "No future action"),
+        }
+        for path, markers in insight_views.items():
+            response = client.get(path)
+            html = response.get_data(as_text=True)
+            assert_ok(
+                response.status_code == 200
+                and all(marker in html for marker in markers)
+                and "Execution Insights could not be fully loaded" not in html,
+                f"Insights view {path} did not render its command-centre content",
+            )
+
         missing_page = client.get("/this-pipeflow-page-does-not-exist", follow_redirects=True)
         missing_page_html = missing_page.get_data(as_text=True)
         assert_ok(
