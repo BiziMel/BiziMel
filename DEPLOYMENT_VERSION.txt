@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
 Version: 2.8.1
 Release date: 2026-09-02
-Build: 2026-09-02-v2.8.1-execution-command-centre-r8
+Build: 2026-09-02-v2.8.1-metrics-insights-r9
 Package purpose: Hosted enterprise deployment only.

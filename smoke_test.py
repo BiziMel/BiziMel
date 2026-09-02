@@ -492,7 +492,7 @@ def main():
             assert_ok(response.status_code == 200 and marker in html, f"{path} failed")
 
         insight_views = {
-            "/?view=today&period=30": ("Execution Command Centre", "Do Next"),
+            "/?view=today&period=30": ("Execution Command Centre", "Account Execution Measures"),
             "/?view=progress&period=30": ("Progress", "Eight-Week Activity Trend"),
             "/?view=accounts&period=30": ("Account Momentum", "Smoke Test Account"),
             "/?view=effectiveness&period=30": ("Engagement Effectiveness", "Evidence Confidence"),
@@ -507,6 +507,20 @@ def main():
                 and "Execution Insights could not be fully loaded" not in html,
                 f"Insights view {path} did not render its command-centre content",
             )
+        overview_html = client.get("/?view=today&period=30").get_data(as_text=True)
+        risk_html = client.get("/?view=risks&period=30").get_data(as_text=True)
+        assert_ok(
+            "Weekly meeting goal" in overview_html
+            and " / 8" in overview_html
+            and "Do Next" not in overview_html
+            and "Recommended Action" not in overview_html
+            and "Create Outreach" not in overview_html,
+            "Insights Overview introduced a separate action queue or did not use the weekly goal of eight",
+        )
+        assert_ok(
+            "Create Outreach" not in risk_html and "View Account" in risk_html,
+            "Coverage & Risk created new activity instead of linking to analytical source records",
+        )
 
         missing_page = client.get("/this-pipeflow-page-does-not-exist", follow_redirects=True)
         missing_page_html = missing_page.get_data(as_text=True)

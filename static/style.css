@@ -787,22 +787,6 @@ a:hover {
     font-size: 0.72rem;
 }
 
-.action-priority-col { width: 7%; }
-.action-account-col { width: 17%; }
-.action-contact-col { width: 11%; }
-.action-evidence-col { width: 19%; }
-.action-move-col { width: 26%; }
-.action-due-col { width: 7%; }
-.action-controls-col { width: 13%; }
-
-.cell-subtext {
-    display: block;
-    margin-top: 4px;
-    color: #66756c;
-    font-size: 0.72rem;
-}
-
-.priority-chip,
 .confidence-label {
     display: inline-block;
     padding: 3px 7px;
@@ -812,26 +796,12 @@ a:hover {
     white-space: nowrap;
 }
 
-.priority-critical { background: #f8dada; color: #801b1b; }
-.priority-high { background: #f9ead2; color: #77460b; }
-.priority-medium { background: #e4edf8; color: #234f7c; }
-
-.command-row-actions {
-    text-align: center;
-}
-
-.command-row-actions .btn,
-.command-row-actions .text-action-link {
-    display: block;
-    width: 100%;
-    margin: 0 0 7px;
-}
-
-.text-action-link {
-    color: #17623b;
-    font-size: 0.72rem;
-    font-weight: 750;
-}
+.overview-metrics-table { min-width: 1240px !important; }
+.overview-metrics-table th:nth-child(1) { width: 17%; }
+.overview-metrics-table th:nth-child(2) { width: 9%; }
+.overview-metrics-table th:nth-child(10) { width: 12%; }
+.overview-metrics-table th:nth-child(n+3):nth-child(-n+9) { width: 8%; }
+.overview-metrics-table td:nth-child(n+3):nth-child(-n+9) { text-align: center; }
 
 .conversion-funnel {
     display: grid;

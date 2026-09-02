@@ -33,7 +33,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.8.1"
 APP_RELEASE_DATE = "2026-09-02"
-APP_BUILD = "2026-09-02-v2.8.1-execution-command-centre-r8"
+APP_BUILD = "2026-09-02-v2.8.1-metrics-insights-r9"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -53,7 +53,9 @@ RELEASE_NOTES = [
         "title": "Execution Command Centre and scheduler resilience",
         "fixed": [
             "Replaced the former Execution Insights table with focused Today, Progress, Account Momentum, Effectiveness, Coverage & Risk and manager Team dashboard views.",
-            "Consolidated account guidance to one prioritised next move per account with named business organisation, contact, evidence, urgency and direct workflow links.",
+            "Reworked Insights as a read-only, metrics-led analytical surface; all task creation and schedule management remain in Outreach Tasks.",
+            "Added account execution measures for activity, positive responses, meetings, overdue work, future actions, contact coverage and last activity.",
+            "Set the default weekly customer meeting goal to eight across dashboard calculations and fallback states.",
             "Added clickable weekly execution metrics, a configurable meeting-goal progress measure, an engagement-to-meeting conversion path and an eight-week execution trend.",
             "Added Advancing, Stalled, Relapsing, Uncovered and Inactive account momentum classification without changing user-managed PG Progress RAG values.",
             "Added activity type, Sales Play, contact category and campaign sequence effectiveness with response rates, meeting rates, sample-size confidence and strongest response timing.",
@@ -895,12 +897,12 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
  {'slug': 'dashboard',
   'title': 'Execution Command Centre',
   'summary': 'Use focused dashboard views to choose today’s work, measure meeting progress, manage account momentum and learn what converts.',
-  'navigation': ['Insights Dashboard opens the Today view of the Execution Command Centre.',
-                 'Use Today, Progress, Account Momentum, Effectiveness and Coverage & Risk to move between execution questions.',
+  'navigation': ['Insights Dashboard opens the Overview of the Execution Command Centre.',
+                 'Use Overview, Progress, Account Momentum, Effectiveness and Coverage & Risk to move between analytical questions.',
                  'Managers also see Team, containing weekly execution measures for the users they manage.',
                  'Change Evidence Period to compare completed activity from the last 30, 60 or 90 days.'],
-  'steps': ['Start in Today and review Meetings This Week, Due Today, Overdue, Accounts Requiring Action and Completed This Week.',
-            'Work through Do Next in priority order. Each account appears once with its evidence, recommended action, due expectation and direct workflow links.',
+  'steps': ['Start in Overview and review Meetings This Week, Due Today, Overdue, Accounts at Risk and Completed This Week.',
+            'Review Account Execution Measures for activity, positive responses, meetings, overdue work, future actions and relationship coverage. This view does not create tasks.',
             'Open Progress to review the engagement-to-meeting conversion path, eight-week trend and response and meeting conversion rates.',
             'Open Account Momentum to distinguish Advancing, Stalled, Relapsing, Uncovered and Inactive accounts.',
             'Open Effectiveness to compare activity types, Sales Plays, contact categories and campaign sequences by outcomes and evidence confidence.',
@@ -909,7 +911,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
   'tips': ['Deleted Outreach records are excluded from every Command Centre calculation.',
            'Account guidance is consolidated so the same account is not repeated as several separate insights.',
            'Strong effectiveness evidence requires at least 10 completed examples; four to nine is Emerging and fewer than four is Limited data.',
-           'The weekly meeting goal defaults to five and can be configured with PIPEFLOW_WEEKLY_MEETING_TARGET.']},
+           'The weekly meeting goal is eight and can be changed for the hosted service with PIPEFLOW_WEEKLY_MEETING_TARGET.']},
  {'slug': 'sales-plays',
   'title': 'Sales Plays',
   'summary': 'Configure reusable Sales Plays, products, assets and the accounts where each Sales Play applies.',
@@ -1884,7 +1886,7 @@ PAGE_INSTRUCTIONS = {
     "home": {
         "title": "How to Use This Page",
         "items": [
-            "Start in Today and work through Do Next in priority order; every account is consolidated into one evidence-led recommendation.",
+            "Start in Overview to compare existing Outreach activity, outcomes, workload and relationship coverage without creating a separate task list.",
             "Use Progress to compare completed activity, positive responses and customer meetings over the last eight weeks.",
             "Use Account Momentum to find Advancing, Stalled, Relapsing, Uncovered and Inactive accounts.",
             "Use Effectiveness to compare activity types, Sales Plays, contact categories and campaigns by response and meeting conversion.",
@@ -6305,7 +6307,6 @@ def build_execution_command_centre(connection):
         bucket["confidence"] = "Strong" if total >= 10 else "Emerging" if total >= 4 else "Limited data"
         effectiveness_rows.append(bucket)
     effectiveness_rows.sort(key=lambda row: (row["meetings"], row["positive"], row["total"]), reverse=True)
-    strongest_activity = effectiveness_rows[0]["activity_type"] if effectiveness_rows and effectiveness_rows[0]["positive"] else "a different channel"
     sales_play_effectiveness = command_centre_performance_breakdown(
         outreach,
         period_start,
@@ -6334,7 +6335,6 @@ def build_execution_command_centre(connection):
     best_timing = max(success_timing.items(), key=lambda item: item[1]) if success_timing else None
 
     momentum_rows = []
-    action_queue = []
     risk_groups = {"No contact coverage": [], "No executive route": [], "Overdue work": [], "No future action": [], "Positive response without progression": []}
     for account in accounts:
         account_contacts = contacts_by_account.get(account["id"], [])
@@ -6343,21 +6343,17 @@ def build_execution_command_centre(connection):
         tasks = outreach_by_account.get(account["id"], [])
         recent_tasks = []
         historical_progress = False
-        recent_positive = recent_meetings = recent_no_response = 0
+        recent_positive = recent_meetings = 0
         future_tasks = []
         overdue_tasks = []
         latest_activity = None
         latest_progress = None
-        latest_subject = ""
-        latest_contact = None
         for task in tasks:
             activity_at = command_centre_datetime(task.get("activity_date"), task.get("activity_time"))
             due_at = command_centre_datetime(task.get("next_action_date"), task.get("next_action_time"))
             outcome = task.get("outcome") or ""
             if activity_at and (latest_activity is None or activity_at > latest_activity):
                 latest_activity = activity_at
-                latest_subject = task.get("subject") or task.get("activity_type") or "Outreach activity"
-                latest_contact = task
             if outcome in positive_outcomes or outcome in meeting_outcomes:
                 historical_progress = True
                 if activity_at and (latest_progress is None or activity_at > latest_progress):
@@ -6368,8 +6364,6 @@ def build_execution_command_centre(connection):
                     recent_meetings += 1
                 elif outcome in positive_outcomes:
                     recent_positive += 1
-                if outcome in {"No Response", "No Response Yet", "Unknown"}:
-                    recent_no_response += 1
             if due_at and not is_closed_task_status(task.get("task_status")):
                 if due_at >= now:
                     future_tasks.append(task)
@@ -6420,58 +6414,9 @@ def build_execution_command_centre(connection):
             risk_groups["No future action"].append(row)
         if recent_positive and not recent_meetings and not future_tasks:
             risk_groups["Positive response without progression"].append(row)
-
-        priority = action = evidence = link = due_label = ""
-        contact_id = latest_contact.get("contact_id") if latest_contact else ""
-        if overdue_tasks:
-            priority = "Critical"
-            action = "Clear or reschedule the overdue actions, then confirm the next customer-facing step."
-            evidence = f"{len(overdue_tasks)} overdue action(s); latest activity: {latest_subject}."
-            link = url_for("outreach", account_id=account["id"], task_status="All Open", overdue="1")
-            due_label = "Today"
-        elif recent_positive and not recent_meetings:
-            priority = "High"
-            action = "Convert the positive response into a meeting by offering two specific times."
-            evidence = f"{recent_positive} positive response(s), but no meeting outcome in the selected period."
-            link = url_for("add_outreach", account_id=account["id"], contact_id=contact_id)
-            due_label = "Today"
-        elif not active_contacts:
-            priority = "High"
-            action = "Add an active stakeholder before scheduling further account activity."
-            evidence = "No active contacts are available for this account."
-            link = url_for("add_contact", account_id=account["id"])
-            due_label = "This week"
-        elif not executive_contacts:
-            priority = "High"
-            action = "Map an executive buyer, sponsor, or EA/PA and create a direct outreach route."
-            evidence = f"{len(active_contacts)} active contact(s), with no executive route."
-            link = url_for("view_account", account_id=account["id"])
-            due_label = "This week"
-        elif recent_no_response >= 2:
-            priority = "Medium"
-            action = f"Stop repeating the current route; use {strongest_activity} with a different stakeholder and a meeting-led ask."
-            evidence = f"{recent_no_response} no-response result(s) in {len(recent_tasks)} recent activities."
-            link = url_for("add_outreach", account_id=account["id"], contact_id=contact_id)
-            due_label = "This week"
-        elif not future_tasks:
-            priority = "Medium"
-            action = "Create the next outreach step so the account does not lose momentum."
-            evidence = f"No open future action; last activity was {row['last_activity']}."
-            link = url_for("add_outreach", account_id=account["id"], contact_id=contact_id)
-            due_label = "This week"
-        if priority:
-            action_queue.append({
-                "priority": priority, "account_id": account["id"], "account_label": account_label,
-                "contact": (latest_contact.get("contact_name") or "No contact selected") if latest_contact else "No contact selected",
-                "subject": latest_subject or "No recent subject", "evidence": evidence,
-                "action": action, "due": due_label, "link": link,
-                "create_link": url_for("add_outreach", account_id=account["id"], contact_id=contact_id),
-            })
-
-    priority_order = {"Critical": 0, "High": 1, "Medium": 2}
-    action_queue.sort(key=lambda row: (priority_order.get(row["priority"], 9), row["account_label"].casefold()))
     momentum_order = {"Relapsing": 0, "Stalled": 1, "Uncovered": 2, "Inactive": 3, "Advancing": 4}
     momentum_rows.sort(key=lambda row: (momentum_order.get(row["state"], 9), -row["overdue"], row["account_label"].casefold()))
+    accounts_at_risk = sum(1 for row in momentum_rows if row["state"] in {"Stalled", "Relapsing", "Uncovered"})
 
     trend_rows = []
     for weeks_ago in range(7, -1, -1):
@@ -6490,7 +6435,7 @@ def build_execution_command_centre(connection):
         trend_rows.append({"label": start.strftime("%d %b"), "completed": completed, "positive": positive, "meetings": meetings})
     trend_max = max([row["completed"] for row in trend_rows] + [1])
 
-    weekly_target = max(1, int(os.environ.get("PIPEFLOW_WEEKLY_MEETING_TARGET", "5")))
+    weekly_target = max(1, int(os.environ.get("PIPEFLOW_WEEKLY_MEETING_TARGET", "8")))
     return {
         "active_insights_view": active_view,
         "period_days": period_days,
@@ -6502,12 +6447,11 @@ def build_execution_command_centre(connection):
             {"label": "Meetings This Week", "value": meetings_week, "detail": f"{meetings_week} of {weekly_target} weekly goal", "tone": "success", "link": url_for("outreach", task_status="All", nbm_success_week="1", week_start=week_start.isoformat(), week_end=week_end.isoformat())},
             {"label": "Due Today", "value": due_today, "detail": f"{due_week} due this week", "tone": "standard", "link": url_for("outreach", task_status="All Open", due_start=today.isoformat(), due_end=today.isoformat())},
             {"label": "Overdue", "value": overdue_total, "detail": "Open actions requiring recovery", "tone": "risk" if overdue_total else "standard", "link": url_for("outreach", task_status="All Open", overdue="1")},
-            {"label": "Accounts Requiring Action", "value": len(action_queue), "detail": "Consolidated account priorities", "tone": "attention" if action_queue else "success", "link": url_for("home", view="today", period=period_days) + "#action-queue"},
+            {"label": "Accounts at Risk", "value": accounts_at_risk, "detail": "Stalled, relapsing or uncovered", "tone": "attention" if accounts_at_risk else "success", "link": url_for("home", view="accounts", period=period_days)},
             {"label": "Completed This Week", "value": completed_week, "detail": "Closed execution activities", "tone": "standard", "link": url_for("outreach", task_status="All Closed", updated_start=week_start.isoformat(), updated_end=week_end.isoformat())},
         ],
         "weekly_target": weekly_target,
         "weekly_goal_percent": min(100, round((meetings_week / weekly_target) * 100)),
-        "action_queue": action_queue[:15],
         "momentum_rows": momentum_rows,
         "momentum_counts": {state: sum(1 for row in momentum_rows if row["state"] == state) for state in ("Advancing", "Stalled", "Relapsing", "Uncovered", "Inactive")},
         "effectiveness_rows": effectiveness_rows,
@@ -6554,11 +6498,11 @@ def home():
         return render_template(
             "index.html",
             active_insights_view="today", period_days=30, summary_metrics=[],
-            action_queue=[], momentum_rows=[], momentum_counts={}, effectiveness_rows=[],
+            momentum_rows=[], momentum_counts={}, effectiveness_rows=[],
             sales_play_effectiveness=[], contact_category_effectiveness=[], campaign_effectiveness=[], best_timing=None,
             risk_groups=[], trend_rows=[], trend_max=1, conversion_steps=[], team_rows=[],
             show_team_view=False, completed_period=0, positive_period=0, meetings_period=0,
-            positive_rate=0, meeting_rate=0, weekly_target=5, weekly_goal_percent=0,
+            positive_rate=0, meeting_rate=0, weekly_target=8, weekly_goal_percent=0,
             broadcast_messages=list_broadcast_messages(active_only=True, actor=current_user()),
             dashboard_error=diagnostic_user_message("Execution Insights could not be fully loaded.", code),
         )

@@ -24,7 +24,7 @@
 {% if dashboard_error %}<div class="message error-message">{{ dashboard_error }}</div>{% endif %}
 
 <nav class="insights-view-tabs" aria-label="Execution dashboard views">
-    {% set views = [('today', 'Today'), ('progress', 'Progress'), ('accounts', 'Account Momentum'), ('effectiveness', 'Effectiveness'), ('risks', 'Coverage & Risk')] %}
+    {% set views = [('today', 'Overview'), ('progress', 'Progress'), ('accounts', 'Account Momentum'), ('effectiveness', 'Effectiveness'), ('risks', 'Coverage & Risk')] %}
     {% for view_key, view_label in views %}
     <a href="{{ url_for('home', view=view_key, period=period_days) }}" class="insights-view-tab {% if active_insights_view == view_key %}active{% endif %}" {% if active_insights_view == view_key %}aria-current="page"{% endif %}>{{ view_label }}</a>
     {% endfor %}
@@ -39,23 +39,19 @@
 
 {% if active_insights_view == 'today' %}
 <div class="insights-section-heading">
-    <div><h2>Today</h2><p>One consolidated priority per account, ordered by urgency.</p></div>
+    <div><h2>Execution Overview</h2><p>Current activity, outcomes, coverage and scheduled workload from existing PipeFlow records.</p></div>
     <div class="weekly-goal-summary" aria-label="Weekly meeting goal"><span>Weekly meeting goal</span><strong>{{ summary_metrics[0].value if summary_metrics else 0 }} / {{ weekly_target }}</strong><div class="goal-progress-track"><span style="width: {{ weekly_goal_percent }}%"></span></div></div>
 </div>
-<section id="action-queue" class="insights-table-section">
-    <div class="section-header compact-section-header"><div><h3>Do Next</h3><p>Evidence-led actions designed to restore momentum or convert engagement into a meeting.</p></div><span class="record-count">{{ action_queue|length }} priorities</span></div>
-    {% if action_queue %}
-    <div class="table-container command-table-container"><table class="report-table command-action-table">
-        <colgroup><col class="action-priority-col"><col class="action-account-col"><col class="action-contact-col"><col class="action-evidence-col"><col class="action-move-col"><col class="action-due-col"><col class="action-controls-col"></colgroup>
-        <thead><tr><th>Priority</th><th>Account / Business Org</th><th>Contact</th><th>Why Now</th><th>Recommended Action</th><th>Due</th><th>Action</th></tr></thead>
-        <tbody>{% for item in action_queue %}<tr>
-            <td><span class="priority-chip priority-{{ item.priority|lower }}">{{ item.priority }}</span></td>
-            <td><a href="{{ url_for('view_account', account_id=item.account_id) }}"><strong>{{ item.account_label }}</strong></a><span class="cell-subtext">{{ item.subject }}</span></td>
-            <td>{{ item.contact }}</td><td>{{ item.evidence }}</td><td>{{ item.action }}</td><td><strong>{{ item.due }}</strong></td>
-            <td class="command-row-actions"><a class="btn btn-secondary btn-small" href="{{ item.link }}">Open</a><a class="text-action-link" href="{{ item.create_link }}">Create Outreach</a></td>
-        </tr>{% endfor %}</tbody>
+<section class="insights-table-section">
+    <div class="section-header compact-section-header"><div><h3>Account Execution Measures</h3><p>Informational measures only. Scheduled work remains managed in Outreach Tasks.</p></div><span class="record-count">{{ momentum_rows|length }} accounts</span></div>
+    <div class="table-container command-table-container"><table class="report-table overview-metrics-table">
+        <thead><tr><th>Account / Business Org</th><th>Momentum</th><th>Activity</th><th>Positive Responses</th><th>Meetings</th><th>Overdue</th><th>Future Actions</th><th>Active Contacts</th><th>Executive Contacts</th><th>Last Activity</th></tr></thead>
+        <tbody>{% for account in momentum_rows %}<tr>
+            <td><a href="{{ url_for('view_account', account_id=account.account_id) }}"><strong>{{ account.account_label }}</strong></a></td>
+            <td><span class="momentum-state state-{{ account.state_tone }}"><i></i>{{ account.state }}</span></td>
+            <td>{{ account.recent_activity }}</td><td>{{ account.recent_positive }}</td><td>{{ account.recent_meetings }}</td><td class="{% if account.overdue %}risk-text{% endif %}">{{ account.overdue }}</td><td>{{ account.future_actions }}</td><td>{{ account.active_contacts }}</td><td>{{ account.executive_contacts }}</td><td>{{ account.last_activity }}</td>
+        </tr>{% else %}<tr><td colspan="10">No account execution data is available.</td></tr>{% endfor %}</tbody>
     </table></div>
-    {% else %}<div class="empty-state"><h3>No immediate interventions</h3><p>There are no consolidated account priorities for the selected evidence period.</p></div>{% endif %}
 </section>
 
 {% elif active_insights_view == 'progress' %}
@@ -118,7 +114,7 @@
 <div class="insights-section-heading"><div><h2>Coverage & Risk</h2><p>Resolve the structural gaps most likely to prevent meetings and pipeline progress.</p></div></div>
 <div class="risk-section-list">
     {% for group in risk_groups %}<details class="risk-accordion" {% if loop.first %}open{% endif %}><summary><span>{{ group.title }}</span><strong>{{ group.rows|length }}</strong></summary><div class="risk-account-list">
-        {% for account in group.rows %}<div><a href="{{ url_for('view_account', account_id=account.account_id) }}"><strong>{{ account.account_label }}</strong></a><span>{{ account.reason }}</span><a class="btn btn-secondary btn-small" href="{{ url_for('add_outreach', account_id=account.account_id) }}">Create Outreach</a></div>{% endfor %}
+        {% for account in group.rows %}<div><a href="{{ url_for('view_account', account_id=account.account_id) }}"><strong>{{ account.account_label }}</strong></a><span>{{ account.reason }}</span><a class="btn btn-secondary btn-small" href="{{ url_for('view_account', account_id=account.account_id) }}">View Account</a></div>{% endfor %}
     </div></details>{% else %}<div class="empty-state"><h3>No coverage risks detected</h3><p>Current account coverage and future-action checks have no exceptions.</p></div>{% endfor %}
 </div>
 
