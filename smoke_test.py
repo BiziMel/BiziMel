@@ -517,6 +517,25 @@ def main():
             and "Create Outreach" not in overview_html,
             "Insights Overview introduced a separate action queue or did not use the weekly goal of eight",
         )
+        period_pages = {
+            key: client.get(f"/?view=accounts&period={key}").get_data(as_text=True)
+            for key in ("7", "30", "quarter", "year", "all")
+        }
+        assert_ok(
+            all(f'value="{key}" selected' in html for key, html in period_pages.items()),
+            "Evidence Period did not retain every supported selection",
+        )
+        assert_ok(
+            "Relapsing" in period_pages["7"] and "Advancing" in period_pages["all"],
+            "Account Momentum did not recalculate when the Evidence Period changed",
+        )
+        assert_ok(
+            "Inactive Contacts" in overview_html
+            and "Executive Contacts" not in overview_html
+            and "insights-rag-dot" in overview_html
+            and "RAG" in overview_html,
+            "Insights did not present Momentum RAG or the Inactive Contacts measure",
+        )
         assert_ok(
             "Create Outreach" not in risk_html and "View Account" in risk_html,
             "Coverage & Risk created new activity instead of linking to analytical source records",

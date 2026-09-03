@@ -7,9 +7,11 @@
         <input type="hidden" name="view" value="{{ active_insights_view }}">
         <label for="insights-period">Evidence period</label>
         <select id="insights-period" name="period" onchange="this.form.submit()">
-            <option value="30" {% if period_days == 30 %}selected{% endif %}>Last 30 days</option>
-            <option value="60" {% if period_days == 60 %}selected{% endif %}>Last 60 days</option>
-            <option value="90" {% if period_days == 90 %}selected{% endif %}>Last 90 days</option>
+            <option value="7" {% if period_key == '7' %}selected{% endif %}>Last 7 days</option>
+            <option value="30" {% if period_key == '30' %}selected{% endif %}>Last 30 days</option>
+            <option value="quarter" {% if period_key == 'quarter' %}selected{% endif %}>Current quarter</option>
+            <option value="year" {% if period_key == 'year' %}selected{% endif %}>Current year</option>
+            <option value="all" {% if period_key == 'all' %}selected{% endif %}>All</option>
         </select>
     </form>
 </div>
@@ -26,9 +28,9 @@
 <nav class="insights-view-tabs" aria-label="Execution dashboard views">
     {% set views = [('today', 'Overview'), ('progress', 'Progress'), ('accounts', 'Account Momentum'), ('effectiveness', 'Effectiveness'), ('risks', 'Coverage & Risk')] %}
     {% for view_key, view_label in views %}
-    <a href="{{ url_for('home', view=view_key, period=period_days) }}" class="insights-view-tab {% if active_insights_view == view_key %}active{% endif %}" {% if active_insights_view == view_key %}aria-current="page"{% endif %}>{{ view_label }}</a>
+    <a href="{{ url_for('home', view=view_key, period=period_key) }}" class="insights-view-tab {% if active_insights_view == view_key %}active{% endif %}" {% if active_insights_view == view_key %}aria-current="page"{% endif %}>{{ view_label }}</a>
     {% endfor %}
-    {% if show_team_view %}<a href="{{ url_for('home', view='team', period=period_days) }}" class="insights-view-tab {% if active_insights_view == 'team' %}active{% endif %}" {% if active_insights_view == 'team' %}aria-current="page"{% endif %}>Team</a>{% endif %}
+    {% if show_team_view %}<a href="{{ url_for('home', view='team', period=period_key) }}" class="insights-view-tab {% if active_insights_view == 'team' %}active{% endif %}" {% if active_insights_view == 'team' %}aria-current="page"{% endif %}>Team</a>{% endif %}
 </nav>
 
 <section class="insights-metric-band" aria-label="Current execution measures">
@@ -45,12 +47,13 @@
 <section class="insights-table-section">
     <div class="section-header compact-section-header"><div><h3>Account Execution Measures</h3><p>Informational measures only. Scheduled work remains managed in Outreach Tasks.</p></div><span class="record-count">{{ momentum_rows|length }} accounts</span></div>
     <div class="table-container command-table-container"><table class="report-table overview-metrics-table">
-        <thead><tr><th>Account / Business Org</th><th>Momentum</th><th>Activity</th><th>Positive Responses</th><th>Meetings</th><th>Overdue</th><th>Future Actions</th><th>Active Contacts</th><th>Executive Contacts</th><th>Last Activity</th></tr></thead>
+        <thead><tr><th>Account / Business Org</th><th>RAG</th><th>Momentum</th><th>Activity</th><th>Positive Responses</th><th>Meetings</th><th>Overdue</th><th>Future Actions</th><th>Active Contacts</th><th>Inactive Contacts</th><th>Last Activity</th></tr></thead>
         <tbody>{% for account in momentum_rows %}<tr>
             <td><a href="{{ url_for('view_account', account_id=account.account_id) }}"><strong>{{ account.account_label }}</strong></a></td>
+            <td class="insights-rag-cell"><span class="insights-rag-dot rag-{{ account.rag_status }}" role="img" aria-label="{{ account.rag_label }} RAG" title="{{ account.rag_label }}"></span></td>
             <td><span class="momentum-state state-{{ account.state_tone }}"><i></i>{{ account.state }}</span></td>
-            <td>{{ account.recent_activity }}</td><td>{{ account.recent_positive }}</td><td>{{ account.recent_meetings }}</td><td class="{% if account.overdue %}risk-text{% endif %}">{{ account.overdue }}</td><td>{{ account.future_actions }}</td><td>{{ account.active_contacts }}</td><td>{{ account.executive_contacts }}</td><td>{{ account.last_activity }}</td>
-        </tr>{% else %}<tr><td colspan="10">No account execution data is available.</td></tr>{% endfor %}</tbody>
+            <td>{{ account.recent_activity }}</td><td>{{ account.recent_positive }}</td><td>{{ account.recent_meetings }}</td><td class="{% if account.overdue %}risk-text{% endif %}">{{ account.overdue }}</td><td>{{ account.future_actions }}</td><td>{{ account.active_contacts }}</td><td>{{ account.inactive_contacts }}</td><td>{{ account.last_activity }}</td>
+        </tr>{% else %}<tr><td colspan="11">No account execution data is available.</td></tr>{% endfor %}</tbody>
     </table></div>
 </section>
 
@@ -83,10 +86,10 @@
     {% for state in ['Advancing', 'Stalled', 'Relapsing', 'Uncovered', 'Inactive'] %}<div class="momentum-summary-item momentum-{{ state|lower }}"><span>{{ state }}</span><strong>{{ momentum_counts.get(state, 0) }}</strong></div>{% endfor %}
 </section>
 <div class="table-container command-table-container"><table class="report-table momentum-table">
-    <thead><tr><th>Account / Business Org</th><th>Momentum</th><th>Reason</th><th>Contacts</th><th>Executives</th><th>Recent Activity</th><th>Positive</th><th>Meetings</th><th>Future Actions</th><th>Last Progress</th></tr></thead>
+    <thead><tr><th>Account / Business Org</th><th>RAG</th><th>Momentum</th><th>Reason</th><th>Active Contacts</th><th>Inactive Contacts</th><th>Recent Activity</th><th>Positive</th><th>Meetings</th><th>Future Actions</th><th>Last Progress</th></tr></thead>
     <tbody>{% for account in momentum_rows %}<tr>
-        <td><a href="{{ url_for('view_account', account_id=account.account_id) }}"><strong>{{ account.account_label }}</strong></a></td><td><span class="momentum-state state-{{ account.state_tone }}"><i></i>{{ account.state }}</span></td><td>{{ account.reason }}</td><td>{{ account.active_contacts }}</td><td>{{ account.executive_contacts }}</td><td>{{ account.recent_activity }}</td><td>{{ account.recent_positive }}</td><td>{{ account.recent_meetings }}</td><td>{{ account.future_actions }}</td><td>{{ account.last_progress }}</td>
-    </tr>{% else %}<tr><td colspan="10">No accounts are available.</td></tr>{% endfor %}</tbody>
+        <td><a href="{{ url_for('view_account', account_id=account.account_id) }}"><strong>{{ account.account_label }}</strong></a></td><td class="insights-rag-cell"><span class="insights-rag-dot rag-{{ account.rag_status }}" role="img" aria-label="{{ account.rag_label }} RAG" title="{{ account.rag_label }}"></span></td><td><span class="momentum-state state-{{ account.state_tone }}"><i></i>{{ account.state }}</span></td><td>{{ account.reason }}</td><td>{{ account.active_contacts }}</td><td>{{ account.inactive_contacts }}</td><td>{{ account.recent_activity }}</td><td>{{ account.recent_positive }}</td><td>{{ account.recent_meetings }}</td><td>{{ account.future_actions }}</td><td>{{ account.last_progress }}</td>
+    </tr>{% else %}<tr><td colspan="11">No accounts are available.</td></tr>{% endfor %}</tbody>
 </table></div>
 
 {% elif active_insights_view == 'effectiveness' %}

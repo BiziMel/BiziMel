@@ -33,7 +33,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.8.1"
 APP_RELEASE_DATE = "2026-09-02"
-APP_BUILD = "2026-09-02-v2.8.1-metrics-insights-r9"
+APP_BUILD = "2026-09-02-v2.8.1-insights-period-rag-r10"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -56,6 +56,9 @@ RELEASE_NOTES = [
             "Reworked Insights as a read-only, metrics-led analytical surface; all task creation and schedule management remain in Outreach Tasks.",
             "Added account execution measures for activity, positive responses, meetings, overdue work, future actions, contact coverage and last activity.",
             "Set the default weekly customer meeting goal to eight across dashboard calculations and fallback states.",
+            "Extended Evidence Period to Last 7 Days, Last 30 Days, Current Quarter, Current Year and All, recalculating all period-sensitive measures from the selection.",
+            "Added an explicit red, amber or green RAG dot beside every account Momentum state.",
+            "Replaced Executive Contacts with Inactive Contacts in the visible Overview and Account Momentum measures.",
             "Added clickable weekly execution metrics, a configurable meeting-goal progress measure, an engagement-to-meeting conversion path and an eight-week execution trend.",
             "Added Advancing, Stalled, Relapsing, Uncovered and Inactive account momentum classification without changing user-managed PG Progress RAG values.",
             "Added activity type, Sales Play, contact category and campaign sequence effectiveness with response rates, meeting rates, sample-size confidence and strongest response timing.",
@@ -900,7 +903,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
   'navigation': ['Insights Dashboard opens the Overview of the Execution Command Centre.',
                  'Use Overview, Progress, Account Momentum, Effectiveness and Coverage & Risk to move between analytical questions.',
                  'Managers also see Team, containing weekly execution measures for the users they manage.',
-                 'Change Evidence Period to compare completed activity from the last 30, 60 or 90 days.'],
+                 'Change Evidence Period to compare the last 7 days, last 30 days, current quarter, current year or all recorded history.'],
   'steps': ['Start in Overview and review Meetings This Week, Due Today, Overdue, Accounts at Risk and Completed This Week.',
             'Review Account Execution Measures for activity, positive responses, meetings, overdue work, future actions and relationship coverage. This view does not create tasks.',
             'Open Progress to review the engagement-to-meeting conversion path, eight-week trend and response and meeting conversion rates.',
@@ -6131,7 +6134,7 @@ def command_centre_performance_breakdown(outreach_rows, period_start, label_gett
     meeting_outcomes = set(PG_SUCCESS_OUTCOMES) | {"Meeting Booked", "NBM Meeting"}
     for task in outreach_rows:
         activity_at = command_centre_datetime(task.get("activity_date"), task.get("activity_time"))
-        if not activity_at or activity_at.date() < period_start or not is_closed_task_status(task.get("task_status")):
+        if not activity_at or (period_start and activity_at.date() < period_start) or not is_closed_task_status(task.get("task_status")):
             continue
         label = str(label_getter(task) or "").strip()
         if not label:
@@ -6229,9 +6232,25 @@ def build_execution_command_centre(connection):
     today = now.date()
     week_start = today - timedelta(days=today.weekday())
     week_end = week_start + timedelta(days=6)
-    period_days = int(request.args.get("period", "30")) if request.args.get("period", "30").isdigit() else 30
-    period_days = period_days if period_days in {30, 60, 90} else 30
-    period_start = today - timedelta(days=period_days - 1)
+    period_key = request.args.get("period", "30")
+    if period_key not in {"7", "30", "quarter", "year", "all"}:
+        period_key = "30"
+    if period_key == "7":
+        period_start = today - timedelta(days=6)
+        period_label = "the last 7 days"
+    elif period_key == "30":
+        period_start = today - timedelta(days=29)
+        period_label = "the last 30 days"
+    elif period_key == "quarter":
+        quarter_start_month = ((today.month - 1) // 3) * 3 + 1
+        period_start = date(today.year, quarter_start_month, 1)
+        period_label = "the current quarter"
+    elif period_key == "year":
+        period_start = date(today.year, 1, 1)
+        period_label = "the current year"
+    else:
+        period_start = None
+        period_label = "all recorded history"
     positive_outcomes = set(POSITIVE_OUTCOMES) | {"Referral Made", "Follow-up Required"}
     meeting_outcomes = set(PG_SUCCESS_OUTCOMES) | {"Meeting Booked", "NBM Meeting"}
 
@@ -6274,7 +6293,7 @@ def build_execution_command_centre(connection):
         )
         if closed and updated_at and week_start <= updated_at.date() <= week_end:
             completed_week += 1
-        if closed and activity_at and activity_at.date() >= period_start:
+        if closed and activity_at and (not period_start or activity_at.date() >= period_start):
             completed_period += 1
             if task.get("contact_id"):
                 reached_contact_ids.add(task["contact_id"])
@@ -6283,14 +6302,14 @@ def build_execution_command_centre(connection):
         if task.get("outcome") in meeting_outcomes and meeting_at:
             if week_start <= meeting_at.date() <= week_end:
                 meetings_week += 1
-            if meeting_at.date() >= period_start:
+            if not period_start or meeting_at.date() >= period_start:
                 meetings_month += 1
     reached_contacts = len(reached_contact_ids)
 
     activity_success = {}
     for task in outreach:
         activity_at = command_centre_datetime(task.get("activity_date"), task.get("activity_time"))
-        if not activity_at or activity_at.date() < period_start or not is_closed_task_status(task.get("task_status")):
+        if not activity_at or (period_start and activity_at.date() < period_start) or not is_closed_task_status(task.get("task_status")):
             continue
         activity_type = str(task.get("activity_type") or "Not specified").strip()
         bucket = activity_success.setdefault(activity_type, {"activity_type": activity_type, "total": 0, "positive": 0, "meetings": 0})
@@ -6327,7 +6346,7 @@ def build_execution_command_centre(connection):
         if task.get("outcome") not in positive_outcomes and task.get("outcome") not in meeting_outcomes:
             continue
         activity_at = command_centre_datetime(task.get("activity_date"), task.get("activity_time"))
-        if not activity_at or activity_at.date() < period_start:
+        if not activity_at or (period_start and activity_at.date() < period_start):
             continue
         time_band = "Morning" if activity_at.hour < 12 else "Afternoon" if activity_at.hour < 17 else "Evening"
         key = (activity_at.strftime("%A"), time_band)
@@ -6339,6 +6358,7 @@ def build_execution_command_centre(connection):
     for account in accounts:
         account_contacts = contacts_by_account.get(account["id"], [])
         active_contacts = [contact for contact in account_contacts if (contact.get("status") or "Active") == "Active"]
+        inactive_contacts = [contact for contact in account_contacts if (contact.get("status") or "Active") == "Inactive"]
         executive_contacts = [contact for contact in active_contacts if is_executive_contact(contact.get("category"), contact.get("bmc_relationship"), contact.get("job_title"))]
         tasks = outreach_by_account.get(account["id"], [])
         recent_tasks = []
@@ -6358,7 +6378,7 @@ def build_execution_command_centre(connection):
                 historical_progress = True
                 if activity_at and (latest_progress is None or activity_at > latest_progress):
                     latest_progress = activity_at
-            if activity_at and activity_at.date() >= period_start:
+            if activity_at and (not period_start or activity_at.date() >= period_start):
                 recent_tasks.append(task)
                 if outcome in meeting_outcomes:
                     recent_meetings += 1
@@ -6373,11 +6393,11 @@ def build_execution_command_centre(connection):
         if recent_meetings or recent_positive:
             state = "Advancing"
             state_tone = "green"
-            state_reason = f"{recent_meetings} meeting outcome(s) and {recent_positive} positive response(s) in the last {period_days} days."
-        elif historical_progress and (not latest_progress or latest_progress.date() < period_start):
+            state_reason = f"{recent_meetings} meeting outcome(s) and {recent_positive} positive response(s) in {period_label}."
+        elif period_start and historical_progress and (not latest_progress or latest_progress.date() < period_start):
             state = "Relapsing"
             state_tone = "amber"
-            state_reason = f"Previous progress exists, but no positive response or meeting was recorded in the last {period_days} days."
+            state_reason = f"Previous progress exists, but no positive response or meeting was recorded in {period_label}."
         elif recent_tasks:
             state = "Stalled"
             state_tone = "red"
@@ -6388,14 +6408,18 @@ def build_execution_command_centre(connection):
             state_reason = "Relationship coverage is incomplete."
         else:
             state = "Inactive"
-            state_tone = "neutral"
-            state_reason = f"No activity was recorded in the last {period_days} days."
+            state_tone = "red"
+            state_reason = f"No activity was recorded in {period_label}."
+
+        rag_status = "green" if state == "Advancing" else "amber" if state == "Relapsing" else "red"
 
         account_label = command_centre_account_label(account)
         row = {
             "account_id": account["id"], "account_label": account_label,
-            "state": state, "state_tone": state_tone, "reason": state_reason,
-            "active_contacts": len(active_contacts), "executive_contacts": len(executive_contacts),
+            "state": state, "state_tone": state_tone, "rag_status": rag_status,
+            "rag_label": rag_status.title(), "reason": state_reason,
+            "active_contacts": len(active_contacts), "inactive_contacts": len(inactive_contacts),
+            "executive_contacts": len(executive_contacts),
             "recent_activity": len(recent_tasks), "recent_positive": recent_positive,
             "recent_meetings": recent_meetings, "future_actions": len(future_tasks),
             "overdue": len(overdue_tasks),
@@ -6416,7 +6440,7 @@ def build_execution_command_centre(connection):
             risk_groups["Positive response without progression"].append(row)
     momentum_order = {"Relapsing": 0, "Stalled": 1, "Uncovered": 2, "Inactive": 3, "Advancing": 4}
     momentum_rows.sort(key=lambda row: (momentum_order.get(row["state"], 9), -row["overdue"], row["account_label"].casefold()))
-    accounts_at_risk = sum(1 for row in momentum_rows if row["state"] in {"Stalled", "Relapsing", "Uncovered"})
+    accounts_at_risk = sum(1 for row in momentum_rows if row["state"] != "Advancing")
 
     trend_rows = []
     for weeks_ago in range(7, -1, -1):
@@ -6438,8 +6462,9 @@ def build_execution_command_centre(connection):
     weekly_target = max(1, int(os.environ.get("PIPEFLOW_WEEKLY_MEETING_TARGET", "8")))
     return {
         "active_insights_view": active_view,
-        "period_days": period_days,
-        "period_start": period_start.isoformat(),
+        "period_key": period_key,
+        "period_label": period_label,
+        "period_start": period_start.isoformat() if period_start else "",
         "today": today.isoformat(),
         "week_start": week_start.isoformat(),
         "week_end": week_end.isoformat(),
@@ -6447,7 +6472,7 @@ def build_execution_command_centre(connection):
             {"label": "Meetings This Week", "value": meetings_week, "detail": f"{meetings_week} of {weekly_target} weekly goal", "tone": "success", "link": url_for("outreach", task_status="All", nbm_success_week="1", week_start=week_start.isoformat(), week_end=week_end.isoformat())},
             {"label": "Due Today", "value": due_today, "detail": f"{due_week} due this week", "tone": "standard", "link": url_for("outreach", task_status="All Open", due_start=today.isoformat(), due_end=today.isoformat())},
             {"label": "Overdue", "value": overdue_total, "detail": "Open actions requiring recovery", "tone": "risk" if overdue_total else "standard", "link": url_for("outreach", task_status="All Open", overdue="1")},
-            {"label": "Accounts at Risk", "value": accounts_at_risk, "detail": "Stalled, relapsing or uncovered", "tone": "attention" if accounts_at_risk else "success", "link": url_for("home", view="accounts", period=period_days)},
+            {"label": "Accounts at Risk", "value": accounts_at_risk, "detail": f"Not advancing in {period_label}", "tone": "attention" if accounts_at_risk else "success", "link": url_for("home", view="accounts", period=period_key)},
             {"label": "Completed This Week", "value": completed_week, "detail": "Closed execution activities", "tone": "standard", "link": url_for("outreach", task_status="All Closed", updated_start=week_start.isoformat(), updated_end=week_end.isoformat())},
         ],
         "weekly_target": weekly_target,
@@ -6497,7 +6522,7 @@ def home():
         code = log_diagnostic_exception("INSIGHTS", exc, {"stage": "execution_command_centre"})
         return render_template(
             "index.html",
-            active_insights_view="today", period_days=30, summary_metrics=[],
+            active_insights_view="today", period_key="30", period_label="the last 30 days", summary_metrics=[],
             momentum_rows=[], momentum_counts={}, effectiveness_rows=[],
             sales_play_effectiveness=[], contact_category_effectiveness=[], campaign_effectiveness=[], best_timing=None,
             risk_groups=[], trend_rows=[], trend_max=1, conversion_steps=[], team_rows=[],
