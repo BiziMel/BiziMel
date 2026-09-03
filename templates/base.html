@@ -49,6 +49,19 @@
     {% endif %}
 </nav>
 
+        {% if broadcast_messages %}
+        <section class="dashboard-broadcast-ticker global-broadcast-ticker" aria-label="Broadcast messages">
+            <div class="dashboard-broadcast-label">Broadcast</div>
+            <div class="dashboard-broadcast-window">
+                <div class="dashboard-broadcast-track" style="--broadcast-count: {{ broadcast_messages|length }};">
+                    {% for broadcast in broadcast_messages %}
+                        <span class="dashboard-broadcast-item broadcast-{{ broadcast['severity'] }}"><strong>{{ broadcast['title'] }}</strong> {{ broadcast['message'] }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </section>
+        {% endif %}
+
         {% if current_user %}
         <p class="muted-text">Signed in as {{ current_user["full_name"] }}</p>
         {% endif %}

@@ -31,9 +31,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.8.1"
-APP_RELEASE_DATE = "2026-09-02"
-APP_BUILD = "2026-09-02-v2.8.1-insights-period-rag-r10"
+APP_VERSION = "2.9.0"
+APP_RELEASE_DATE = "2026-09-03"
+APP_BUILD = "2026-09-03-v2.9.0-insights-pg-period-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -47,6 +47,21 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.9.0",
+        "release_date": "2026-09-03",
+        "title": "Distinct Insights views and period-led PG Progress",
+        "fixed": [
+            "Redesigned Insights Overview as a portfolio coverage and risk cockpit instead of duplicating the Account Momentum table.",
+            "Focused Account Momentum on each account's execution state, evidence-based reason, last progress and next-action continuity.",
+            "Moved Coverage & Risk into Overview and removed the separate Coverage & Risk tab.",
+            "Added Custom to the Insights Evidence Period, with conditional From and To dates and inclusive date filtering.",
+            "Added a clear Effectiveness legend defining response, meeting, success and evidence-confidence rates.",
+            "Moved active Broadcast messages into the shared page header directly beneath the primary navigation tabs.",
+            "Linked every PG PLAN account to its matching account grouping in the PG ACTIONS table.",
+            "Added Last 7 Days, Last 30 Days, Current Quarter, Current Year, All and Custom evidence filters to PG ACTIONS, defaulting to Last 7 Days.",
+        ],
+    },
     {
         "version": "2.8.1",
         "release_date": "2026-09-02",
@@ -899,17 +914,16 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
            'Dates and times are displayed as dd-mm-yyyy hh:mm where date/time is shown.']},
  {'slug': 'dashboard',
   'title': 'Execution Command Centre',
-  'summary': 'Use focused dashboard views to choose today’s work, measure meeting progress, manage account momentum and learn what converts.',
+  'summary': 'Use distinct dashboard views to assess portfolio risk, measure progress, understand account momentum and learn what converts.',
   'navigation': ['Insights Dashboard opens the Overview of the Execution Command Centre.',
-                 'Use Overview, Progress, Account Momentum, Effectiveness and Coverage & Risk to move between analytical questions.',
+                 'Use Overview, Progress, Account Momentum and Effectiveness to move between distinct analytical questions.',
                  'Managers also see Team, containing weekly execution measures for the users they manage.',
-                 'Change Evidence Period to compare the last 7 days, last 30 days, current quarter, current year or all recorded history.'],
+                 'Change Evidence Period to compare the last 7 days, last 30 days, current quarter, current year, all history or an inclusive Custom From and To range.'],
   'steps': ['Start in Overview and review Meetings This Week, Due Today, Overdue, Accounts at Risk and Completed This Week.',
-            'Review Account Execution Measures for activity, positive responses, meetings, overdue work, future actions and relationship coverage. This view does not create tasks.',
+            'Use Overview to compare portfolio coverage measures and expand account risk groups for missing contacts, overdue work and missing future actions.',
             'Open Progress to review the engagement-to-meeting conversion path, eight-week trend and response and meeting conversion rates.',
-            'Open Account Momentum to distinguish Advancing, Stalled, Relapsing, Uncovered and Inactive accounts.',
-            'Open Effectiveness to compare activity types, Sales Plays, contact categories and campaign sequences by outcomes and evidence confidence.',
-            'Open Coverage & Risk and expand each exception group to resolve missing contacts, executive routes, overdue work, absent future actions or unprogressed positive responses.',
+            'Open Account Momentum to distinguish Advancing, Stalled, Relapsing, Uncovered and Inactive accounts, understand why, and check action continuity.',
+            'Open Effectiveness to compare activity types, Sales Plays, contact categories and campaign sequences; use the on-page legend to interpret each rate.',
             'Open any metric, account or action link to work directly with the records behind the result.'],
   'tips': ['Deleted Outreach records are excluded from every Command Centre calculation.',
            'Account guidance is consolidated so the same account is not repeated as several separate insights.',
@@ -1036,13 +1050,14 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
             'workspace view.',
   'navigation': ['Open PG Progress from the available dashboard/report entry points when reviewing pipeline generation progress.',
                  'Managers use the user filter buttons above the PG Progress tables to focus one team member or all team members.',
-                 'Use Reports > PG Progress for a read-only reporting view with XLS and PDF export buttons.'],
+                 'Use Reports > PG Progress for a read-only reporting view with XLS and PDF export buttons.',
+                 'Choose a PG Actions Evidence Period; select Custom when an inclusive From and To date is required.'],
   'steps': ['Review PG Goals for FY target, current pipeline and gap.',
-            'Review PG Plan grouped by user for manager views, then by account, business organisation where present and Sales Play.',
+            'Review PG Plan grouped by user for manager views, then by account, business organisation where present and Sales Play. Select an account name to jump to its PG Actions detail.',
             'Read PG RAG dots: green means a booked meeting outcome has a valid scheduled meeting date, amber means previously green '
             'progress has had no scheduled or closed activity for 14 days, and red means no confirmed scheduled meeting or 30-day inactivity.',
             'Use checkboxes for Completed Discovery Meeting, Exec First and NBM Completed. Checked means Yes; unchecked means No.',
-            'Review Last 30 Days Activity for completed or updated recent activity.',
+            'Review the Activity column for completed or updated interaction inside the selected evidence period; the default is Last 7 Days.',
             'Review Future Planned Actions for active open outreach tasks due in the future.',
             'Contacts with no activity in the last 30 days and no open future task do not display in the PG Progress table.'],
   'tips': ['Automatic account RAG recalculates from current outreach activity each time PG Progress is loaded.',
@@ -1861,6 +1876,13 @@ def rate_limit_exceeded(bucket, key):
 @app.context_processor
 def inject_dropdown_values():
     signed_in_user = current_user()
+    broadcast_messages = []
+    if signed_in_user:
+        try:
+            broadcast_messages = list_broadcast_messages(active_only=True, actor=signed_in_user)
+        except Exception:
+            # A broadcast lookup must never prevent the requested application page from opening.
+            traceback.print_exc()
     return {
         "dropdown_values": DROPDOWN_VALUES,
         "current_user": signed_in_user,
@@ -1877,6 +1899,7 @@ def inject_dropdown_values():
         "page_not_found_alert": request.args.get("page_not_found") == "1",
         "csrf_token": csrf_token,
         "nightly_service_alert": nightly_service_alert_for_user(signed_in_user),
+        "broadcast_messages": broadcast_messages,
     }
 
 
@@ -1889,11 +1912,11 @@ PAGE_INSTRUCTIONS = {
     "home": {
         "title": "How to Use This Page",
         "items": [
-            "Start in Overview to compare existing Outreach activity, outcomes, workload and relationship coverage without creating a separate task list.",
+            "Start in Overview for portfolio health, contact coverage, forward-action coverage and grouped account risks.",
             "Use Progress to compare completed activity, positive responses and customer meetings over the last eight weeks.",
-            "Use Account Momentum to find Advancing, Stalled, Relapsing, Uncovered and Inactive accounts.",
-            "Use Effectiveness to compare activity types, Sales Plays, contact categories and campaigns by response and meeting conversion.",
-            "Use Coverage & Risk to resolve missing contacts, executive routes, overdue actions and accounts without future work.",
+            "Use Account Momentum to understand why each account is Advancing, Stalled, Relapsing, Uncovered or Inactive and whether a next action exists.",
+            "Use Effectiveness to compare activity types, Sales Plays, contact categories and campaigns; its legend defines every rate and confidence measure.",
+            "Choose a preset Evidence Period or Custom to filter all period-sensitive Insights measures with an inclusive From and To date.",
         ],
     },
     "outreach": {
@@ -6128,13 +6151,65 @@ def command_centre_account_label(account):
     return f"{account.get('account_name') or 'Unnamed account'} - {business_unit}" if business_unit else (account.get("account_name") or "Unnamed account")
 
 
-def command_centre_performance_breakdown(outreach_rows, period_start, label_getter):
+def selected_evidence_period(period_arg="period", from_arg="date_from", to_arg="date_to", default="30"):
+    """Return an inclusive evidence window from validated query-string values."""
+    today = current_app_datetime().date()
+    allowed = {"7", "30", "quarter", "year", "all", "custom"}
+    period_key = request.args.get(period_arg, default)
+    if period_key not in allowed:
+        period_key = default
+
+    raw_from = str(request.args.get(from_arg, "") or "").strip()
+    raw_to = str(request.args.get(to_arg, "") or "").strip()
+    period_error = ""
+    if period_key == "7":
+        period_start, period_end, period_label = today - timedelta(days=6), today, "the last 7 days"
+    elif period_key == "30":
+        period_start, period_end, period_label = today - timedelta(days=29), today, "the last 30 days"
+    elif period_key == "quarter":
+        quarter_start_month = ((today.month - 1) // 3) * 3 + 1
+        period_start, period_end, period_label = date(today.year, quarter_start_month, 1), today, "the current quarter"
+    elif period_key == "year":
+        period_start, period_end, period_label = date(today.year, 1, 1), today, "the current year"
+    elif period_key == "all":
+        period_start, period_end, period_label = None, None, "all recorded history"
+    else:
+        try:
+            period_start = date.fromisoformat(raw_from)
+            period_end = date.fromisoformat(raw_to)
+            if period_start > period_end:
+                raise ValueError("start after end")
+            period_label = f"{format_display_date(raw_from)} to {format_display_date(raw_to)}"
+        except (TypeError, ValueError):
+            period_start, period_end = today - timedelta(days=6), today
+            period_label = "the last 7 days"
+            period_error = "Choose a valid From and To date. PipeFlow is showing the last 7 days until the custom range is complete."
+
+    return {
+        "key": period_key,
+        "start": period_start,
+        "end": period_end,
+        "label": period_label,
+        "date_from": raw_from,
+        "date_to": raw_to,
+        "error": period_error,
+    }
+
+
+def date_is_in_evidence_period(value, period_start, period_end):
+    if not value:
+        return False
+    value_date = value.date() if isinstance(value, datetime) else value
+    return (not period_start or value_date >= period_start) and (not period_end or value_date <= period_end)
+
+
+def command_centre_performance_breakdown(outreach_rows, period_start, period_end, label_getter):
     buckets = {}
     positive_outcomes = set(POSITIVE_OUTCOMES) | {"Referral Made", "Follow-up Required"}
     meeting_outcomes = set(PG_SUCCESS_OUTCOMES) | {"Meeting Booked", "NBM Meeting"}
     for task in outreach_rows:
         activity_at = command_centre_datetime(task.get("activity_date"), task.get("activity_time"))
-        if not activity_at or (period_start and activity_at.date() < period_start) or not is_closed_task_status(task.get("task_status")):
+        if not date_is_in_evidence_period(activity_at, period_start, period_end) or not is_closed_task_status(task.get("task_status")):
             continue
         label = str(label_getter(task) or "").strip()
         if not label:
@@ -6225,32 +6300,18 @@ def build_execution_command_centre(connection):
     actor = current_user()
     show_team_view = bool(actor and actor["role"] == "manager")
     requested_view = request.args.get("view", "today")
-    allowed_views = {"today", "progress", "accounts", "effectiveness", "risks"}
+    allowed_views = {"today", "progress", "accounts", "effectiveness"}
     if show_team_view:
         allowed_views.add("team")
     active_view = requested_view if requested_view in allowed_views else "today"
     today = now.date()
     week_start = today - timedelta(days=today.weekday())
     week_end = week_start + timedelta(days=6)
-    period_key = request.args.get("period", "30")
-    if period_key not in {"7", "30", "quarter", "year", "all"}:
-        period_key = "30"
-    if period_key == "7":
-        period_start = today - timedelta(days=6)
-        period_label = "the last 7 days"
-    elif period_key == "30":
-        period_start = today - timedelta(days=29)
-        period_label = "the last 30 days"
-    elif period_key == "quarter":
-        quarter_start_month = ((today.month - 1) // 3) * 3 + 1
-        period_start = date(today.year, quarter_start_month, 1)
-        period_label = "the current quarter"
-    elif period_key == "year":
-        period_start = date(today.year, 1, 1)
-        period_label = "the current year"
-    else:
-        period_start = None
-        period_label = "all recorded history"
+    evidence_period = selected_evidence_period()
+    period_key = evidence_period["key"]
+    period_start = evidence_period["start"]
+    period_end = evidence_period["end"]
+    period_label = evidence_period["label"]
     positive_outcomes = set(POSITIVE_OUTCOMES) | {"Referral Made", "Follow-up Required"}
     meeting_outcomes = set(PG_SUCCESS_OUTCOMES) | {"Meeting Booked", "NBM Meeting"}
 
@@ -6293,7 +6354,7 @@ def build_execution_command_centre(connection):
         )
         if closed and updated_at and week_start <= updated_at.date() <= week_end:
             completed_week += 1
-        if closed and activity_at and (not period_start or activity_at.date() >= period_start):
+        if closed and date_is_in_evidence_period(activity_at, period_start, period_end):
             completed_period += 1
             if task.get("contact_id"):
                 reached_contact_ids.add(task["contact_id"])
@@ -6302,14 +6363,14 @@ def build_execution_command_centre(connection):
         if task.get("outcome") in meeting_outcomes and meeting_at:
             if week_start <= meeting_at.date() <= week_end:
                 meetings_week += 1
-            if not period_start or meeting_at.date() >= period_start:
+            if date_is_in_evidence_period(meeting_at, period_start, period_end):
                 meetings_month += 1
     reached_contacts = len(reached_contact_ids)
 
     activity_success = {}
     for task in outreach:
         activity_at = command_centre_datetime(task.get("activity_date"), task.get("activity_time"))
-        if not activity_at or (period_start and activity_at.date() < period_start) or not is_closed_task_status(task.get("task_status")):
+        if not date_is_in_evidence_period(activity_at, period_start, period_end) or not is_closed_task_status(task.get("task_status")):
             continue
         activity_type = str(task.get("activity_type") or "Not specified").strip()
         bucket = activity_success.setdefault(activity_type, {"activity_type": activity_type, "total": 0, "positive": 0, "meetings": 0})
@@ -6329,16 +6390,19 @@ def build_execution_command_centre(connection):
     sales_play_effectiveness = command_centre_performance_breakdown(
         outreach,
         period_start,
+        period_end,
         lambda task: task.get("sales_play"),
     )
     contact_category_effectiveness = command_centre_performance_breakdown(
         outreach,
         period_start,
+        period_end,
         lambda task: (contacts_by_id.get(task.get("contact_id")) or {}).get("category"),
     )
     campaign_effectiveness = command_centre_performance_breakdown(
         outreach,
         period_start,
+        period_end,
         lambda task: task.get("campaign"),
     )
     success_timing = {}
@@ -6346,7 +6410,7 @@ def build_execution_command_centre(connection):
         if task.get("outcome") not in positive_outcomes and task.get("outcome") not in meeting_outcomes:
             continue
         activity_at = command_centre_datetime(task.get("activity_date"), task.get("activity_time"))
-        if not activity_at or (period_start and activity_at.date() < period_start):
+        if not date_is_in_evidence_period(activity_at, period_start, period_end):
             continue
         time_band = "Morning" if activity_at.hour < 12 else "Afternoon" if activity_at.hour < 17 else "Evening"
         key = (activity_at.strftime("%A"), time_band)
@@ -6378,7 +6442,7 @@ def build_execution_command_centre(connection):
                 historical_progress = True
                 if activity_at and (latest_progress is None or activity_at > latest_progress):
                     latest_progress = activity_at
-            if activity_at and (not period_start or activity_at.date() >= period_start):
+            if date_is_in_evidence_period(activity_at, period_start, period_end):
                 recent_tasks.append(task)
                 if outcome in meeting_outcomes:
                     recent_meetings += 1
@@ -6425,6 +6489,12 @@ def build_execution_command_centre(connection):
             "overdue": len(overdue_tasks),
             "last_progress": format_display_date(latest_progress.date().isoformat()) if latest_progress else "No progress recorded",
             "last_activity": format_display_date(latest_activity.date().isoformat()) if latest_activity else "No activity recorded",
+            "next_action_status": (
+                f"{len(overdue_tasks)} overdue action{'s' if len(overdue_tasks) != 1 else ''}"
+                if overdue_tasks else
+                f"{len(future_tasks)} future action{'s' if len(future_tasks) != 1 else ''}"
+                if future_tasks else "No future action"
+            ),
         }
         momentum_rows.append(row)
 
@@ -6465,6 +6535,10 @@ def build_execution_command_centre(connection):
         "period_key": period_key,
         "period_label": period_label,
         "period_start": period_start.isoformat() if period_start else "",
+        "period_end": period_end.isoformat() if period_end else "",
+        "period_date_from": evidence_period["date_from"],
+        "period_date_to": evidence_period["date_to"],
+        "period_error": evidence_period["error"],
         "today": today.isoformat(),
         "week_start": week_start.isoformat(),
         "week_end": week_end.isoformat(),
@@ -6472,7 +6546,7 @@ def build_execution_command_centre(connection):
             {"label": "Meetings This Week", "value": meetings_week, "detail": f"{meetings_week} of {weekly_target} weekly goal", "tone": "success", "link": url_for("outreach", task_status="All", nbm_success_week="1", week_start=week_start.isoformat(), week_end=week_end.isoformat())},
             {"label": "Due Today", "value": due_today, "detail": f"{due_week} due this week", "tone": "standard", "link": url_for("outreach", task_status="All Open", due_start=today.isoformat(), due_end=today.isoformat())},
             {"label": "Overdue", "value": overdue_total, "detail": "Open actions requiring recovery", "tone": "risk" if overdue_total else "standard", "link": url_for("outreach", task_status="All Open", overdue="1")},
-            {"label": "Accounts at Risk", "value": accounts_at_risk, "detail": f"Not advancing in {period_label}", "tone": "attention" if accounts_at_risk else "success", "link": url_for("home", view="accounts", period=period_key)},
+            {"label": "Accounts at Risk", "value": accounts_at_risk, "detail": f"Not advancing in {period_label}", "tone": "attention" if accounts_at_risk else "success", "link": url_for("home", view="today", period=period_key, date_from=evidence_period["date_from"], date_to=evidence_period["date_to"])},
             {"label": "Completed This Week", "value": completed_week, "detail": "Closed execution activities", "tone": "standard", "link": url_for("outreach", task_status="All Closed", updated_start=week_start.isoformat(), updated_end=week_end.isoformat())},
         ],
         "weekly_target": weekly_target,
@@ -6488,6 +6562,12 @@ def build_execution_command_centre(connection):
             "successes": best_timing[1],
         } if best_timing else None,
         "risk_groups": [{"title": title, "rows": rows} for title, rows in risk_groups.items() if rows],
+        "coverage_metrics": [
+            {"label": "Accounts", "value": len(accounts), "detail": "Portfolio accounts in view"},
+            {"label": "With active contacts", "value": sum(1 for row in momentum_rows if row["active_contacts"]), "detail": "Accounts with active relationship coverage"},
+            {"label": "With future action", "value": sum(1 for row in momentum_rows if row["future_actions"]), "detail": "Accounts with open forward activity"},
+            {"label": "Without future action", "value": sum(1 for row in momentum_rows if not row["future_actions"]), "detail": "Accounts needing a next step"},
+        ],
         "trend_rows": trend_rows,
         "trend_max": trend_max,
         "conversion_steps": [
@@ -6522,10 +6602,11 @@ def home():
         code = log_diagnostic_exception("INSIGHTS", exc, {"stage": "execution_command_centre"})
         return render_template(
             "index.html",
-            active_insights_view="today", period_key="30", period_label="the last 30 days", summary_metrics=[],
+            active_insights_view="today", period_key="30", period_label="the last 30 days",
+            period_date_from="", period_date_to="", period_error="", summary_metrics=[],
             momentum_rows=[], momentum_counts={}, effectiveness_rows=[],
             sales_play_effectiveness=[], contact_category_effectiveness=[], campaign_effectiveness=[], best_timing=None,
-            risk_groups=[], trend_rows=[], trend_max=1, conversion_steps=[], team_rows=[],
+            risk_groups=[], coverage_metrics=[], trend_rows=[], trend_max=1, conversion_steps=[], team_rows=[],
             show_team_view=False, completed_period=0, positive_period=0, meetings_period=0,
             positive_rate=0, meeting_rate=0, weekly_target=8, weekly_goal_percent=0,
             broadcast_messages=list_broadcast_messages(active_only=True, actor=current_user()),
@@ -9679,7 +9760,18 @@ def fy_quarter_are_valid(fy, quarter):
     return bool((fy or "").strip() and (quarter or "").strip())
 
 
-def pg_dashboard_context(connection):
+def pg_dashboard_context(connection, activity_period=None):
+    activity_period = activity_period or {
+        "key": "7",
+        "start": current_app_datetime().date() - timedelta(days=6),
+        "end": current_app_datetime().date(),
+        "label": "the last 7 days",
+        "date_from": "",
+        "date_to": "",
+        "error": "",
+    }
+    activity_period_start = activity_period["start"]
+    activity_period_end = activity_period["end"]
     accounts = connection.execute("""
         SELECT *
         FROM accounts
@@ -9694,7 +9786,6 @@ def pg_dashboard_context(connection):
 
     pg_plan_rows = []
     pg_action_rows = []
-    thirty_days_ago = (datetime.now() - timedelta(days=30)).date().isoformat()
     today_key = datetime.now().date().isoformat()
     for account in accounts:
         account_id = account["id"]
@@ -9807,7 +9898,11 @@ def pg_dashboard_context(connection):
             """, (account_id, contact_id, contact_id, *report_visible_task_params())).fetchall()
             recent_activity_rows = [
                 row for row in recent_activity_rows
-                if str(row["completed_at"] or row["last_updated"] or row["activity_date"] or "")[:10] >= thirty_days_ago
+                if date_is_in_evidence_period(
+                    command_centre_datetime(row["completed_at"] or row["last_updated"] or row["activity_date"]),
+                    activity_period_start,
+                    activity_period_end,
+                )
             ]
             if not associated_outreach_rows and not scheduled_action_rows:
                 continue
@@ -9841,8 +9936,8 @@ def pg_dashboard_context(connection):
             if not last_30_days_activity_entries:
                 last_30_days_activity_entries.append({
                     "date": "",
-                    "activity": "No activity in last 30 days",
-                    "activity_update": "This contact has outreach associated to them but no reportable activity update in the last 30 days.",
+                    "activity": f"No activity in {activity_period['label']}",
+                    "activity_update": f"This contact has outreach associated to them but no reportable activity update in {activity_period['label']}.",
                 })
 
             pg_action_rows.append({
@@ -9881,6 +9976,7 @@ def pg_dashboard_context(connection):
         partner_activity_rows = connection.execute(f"""
             SELECT
                 outreach.activity_date,
+                outreach.activity_time,
                 outreach.activity_type,
                 outreach.next_action,
                 outreach.outcome,
@@ -9930,7 +10026,8 @@ def pg_dashboard_context(connection):
             if contact_label not in partner_contact_names:
                 partner_contact_names.append(contact_label)
             report_activity_date = str(row["completed_at"] or row["last_updated"] or row["activity_date"] or "")[:10]
-            if is_report_visible_task and report_activity_date and report_activity_date >= thirty_days_ago:
+            report_activity_at = command_centre_datetime(report_activity_date)
+            if is_report_visible_task and date_is_in_evidence_period(report_activity_at, activity_period_start, activity_period_end):
                 key = ("outreach", row["last_updated"], row["next_action"])
                 if key not in seen_partner_entries:
                     seen_partner_entries.add(key)
@@ -9944,7 +10041,8 @@ def pg_dashboard_context(connection):
                         "activity": row["activity_type"] or f"Partner activity - {partner_name}",
                         "activity_update": f"{partner_name}: " + " - ".join(part for part in activity_bits if part),
                     })
-            if row["partner_notes"] and row["partner_last_updated"] and str(row["partner_last_updated"])[:10] >= thirty_days_ago:
+            partner_updated_at = command_centre_datetime(row["partner_last_updated"])
+            if row["partner_notes"] and date_is_in_evidence_period(partner_updated_at, activity_period_start, activity_period_end):
                 key = ("partner_contact", row["partner_last_updated"], row["partner_notes"])
                 if key not in seen_partner_entries:
                     seen_partner_entries.add(key)
@@ -10001,10 +10099,15 @@ def pg_dashboard_context(connection):
         "pipeline_gap": pipeline_gap,
         "pg_plan_rows": pg_plan_rows,
         "pg_action_rows": pg_action_rows,
+        "pg_period_key": activity_period["key"],
+        "pg_period_label": activity_period["label"],
+        "pg_period_date_from": activity_period["date_from"],
+        "pg_period_date_to": activity_period["date_to"],
+        "pg_period_error": activity_period["error"],
     }
 
 
-def manager_pg_dashboard_context(selected_user_id=""):
+def manager_pg_dashboard_context(selected_user_id="", activity_period=None):
     user = current_user()
     members = manager_team_members(user)
     if not members:
@@ -10032,7 +10135,7 @@ def manager_pg_dashboard_context(selected_user_id=""):
                 connection = get_db_connection()
             else:
                 continue
-            context = pg_dashboard_context(connection)
+            context = pg_dashboard_context(connection, activity_period)
             team_context["fy_pipeline_target"] += context["fy_pipeline_target"] or 0
             team_context["current_pipeline"] += context["current_pipeline"] or 0
             team_context["pipeline_gap"] += context["pipeline_gap"] or 0
@@ -10051,6 +10154,14 @@ def manager_pg_dashboard_context(selected_user_id=""):
                 connection.close()
     team_context["pg_plan_rows"].sort(key=lambda row: (row.get("owner_name") or "", row.get("account_name") or "", row.get("sales_play") or ""))
     team_context["pg_action_rows"].sort(key=lambda row: (row.get("owner_name") or "", row.get("account_name") or "", row.get("business_org") or "", row.get("sales_play") or ""))
+    if activity_period:
+        team_context.update({
+            "pg_period_key": activity_period["key"],
+            "pg_period_label": activity_period["label"],
+            "pg_period_date_from": activity_period["date_from"],
+            "pg_period_date_to": activity_period["date_to"],
+            "pg_period_error": activity_period["error"],
+        })
     return team_context
 
 
@@ -10136,10 +10247,11 @@ def save_manual_pg_progress(connection, form):
 
 
 def pg_progress_report_context(selected_user_id=""):
-    context = manager_pg_dashboard_context(selected_user_id)
+    activity_period = selected_evidence_period("pg_period", "pg_date_from", "pg_date_to", "7")
+    context = manager_pg_dashboard_context(selected_user_id, activity_period)
     if not context:
         connection = get_db_connection()
-        context = pg_dashboard_context(connection)
+        context = pg_dashboard_context(connection, activity_period)
         context["is_team_pg_progress"] = False
         connection.close()
     context["pg_progress_read_only"] = True
@@ -10190,7 +10302,7 @@ def pg_progress_export_rows(context):
         "Completed Discovery Meeting",
         "Exec First",
         "NBM Completed",
-        "Last 30 Days Activity",
+        f"Activity: {context.get('pg_period_label', 'the selected period').title()}",
         "Future Planned Actions",
     ]
     action_rows = []
@@ -10611,14 +10723,22 @@ def pg_progress():
         )
         connection.commit()
         connection.close()
-        return redirect(url_for("pg_progress", user_id=request.args.get("user_id", ""), message="PG Progress saved."))
+        return redirect(url_for(
+            "pg_progress",
+            user_id=request.args.get("user_id", ""),
+            pg_period=request.args.get("pg_period", "7"),
+            pg_date_from=request.args.get("pg_date_from", ""),
+            pg_date_to=request.args.get("pg_date_to", ""),
+            message="PG Progress saved.",
+        ))
 
-    team_context = manager_pg_dashboard_context(request.args.get("user_id", ""))
+    activity_period = selected_evidence_period("pg_period", "pg_date_from", "pg_date_to", "7")
+    team_context = manager_pg_dashboard_context(request.args.get("user_id", ""), activity_period)
     if team_context:
         context = team_context
         connection.close()
     else:
-        context = pg_dashboard_context(connection)
+        context = pg_dashboard_context(connection, activity_period)
         context["can_edit_pg_rag"] = True
         connection.close()
     return render_template(

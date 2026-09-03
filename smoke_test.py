@@ -345,10 +345,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.8.1" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.9.0" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.8.1",
+            "health/version did not report Release 2.9.0",
         )
 
         response = client.post(
@@ -492,11 +492,10 @@ def main():
             assert_ok(response.status_code == 200 and marker in html, f"{path} failed")
 
         insight_views = {
-            "/?view=today&period=30": ("Execution Command Centre", "Account Execution Measures"),
+            "/?view=today&period=30": ("Execution Command Centre", "Portfolio Coverage & Risk"),
             "/?view=progress&period=30": ("Progress", "Eight-Week Activity Trend"),
             "/?view=accounts&period=30": ("Account Momentum", "Smoke Test Account"),
-            "/?view=effectiveness&period=30": ("Engagement Effectiveness", "Evidence Confidence"),
-            "/?view=risks&period=30": ("Coverage &amp; Risk", "No future action"),
+            "/?view=effectiveness&period=30": ("Engagement Effectiveness", "How to read the rates"),
         }
         for path, markers in insight_views.items():
             response = client.get(path)
@@ -508,7 +507,6 @@ def main():
                 f"Insights view {path} did not render its command-centre content",
             )
         overview_html = client.get("/?view=today&period=30").get_data(as_text=True)
-        risk_html = client.get("/?view=risks&period=30").get_data(as_text=True)
         assert_ok(
             "Weekly meeting goal" in overview_html
             and " / 8" in overview_html
@@ -521,6 +519,9 @@ def main():
             key: client.get(f"/?view=accounts&period={key}").get_data(as_text=True)
             for key in ("7", "30", "quarter", "year", "all")
         }
+        custom_period_html = client.get(
+            "/?view=accounts&period=custom&date_from=2026-05-01&date_to=2026-05-31"
+        ).get_data(as_text=True)
         assert_ok(
             all(f'value="{key}" selected' in html for key, html in period_pages.items()),
             "Evidence Period did not retain every supported selection",
@@ -530,15 +531,54 @@ def main():
             "Account Momentum did not recalculate when the Evidence Period changed",
         )
         assert_ok(
-            "Inactive Contacts" in overview_html
-            and "Executive Contacts" not in overview_html
-            and "insights-rag-dot" in overview_html
-            and "RAG" in overview_html,
-            "Insights did not present Momentum RAG or the Inactive Contacts measure",
+            'value="custom" selected' in custom_period_html
+            and 'value="2026-05-01"' in custom_period_html
+            and 'value="2026-05-31"' in custom_period_html
+            and "Advancing" in custom_period_html,
+            "Insights Custom evidence period did not retain or apply its inclusive date range",
         )
         assert_ok(
-            "Create Outreach" not in risk_html and "View Account" in risk_html,
-            "Coverage & Risk created new activity instead of linking to analytical source records",
+            "Coverage Exceptions" in overview_html
+            and "View Account" in overview_html
+            and "Account Execution Measures" not in overview_html
+            and "Inactive Contacts" not in overview_html,
+            "Overview did not become a distinct portfolio coverage and risk view",
+        )
+        momentum_html = period_pages["30"]
+        assert_ok(
+            "Why this state" in momentum_html
+            and "Action continuity" in momentum_html
+            and "Active Contacts" not in momentum_html
+            and "insights-rag-dot" in momentum_html,
+            "Account Momentum did not retain RAG while removing duplicated coverage measures",
+        )
+        effectiveness_html = client.get("/?view=effectiveness&period=30").get_data(as_text=True)
+        assert_ok(
+            "Positive responses divided by completed activities" in effectiveness_html
+            and "Meeting outcomes divided by completed activities" in effectiveness_html
+            and "Limited: 1-3 records" in effectiveness_html,
+            "Effectiveness rate legend is incomplete",
+        )
+
+        pg_default_html = client.get("/pg-progress").get_data(as_text=True)
+        pg_custom_html = client.get(
+            "/pg-progress?pg_period=custom&pg_date_from=2026-05-01&pg_date_to=2026-05-31"
+        ).get_data(as_text=True)
+        assert_ok(
+            'name="pg_period"' in pg_default_html
+            and 'value="7" selected' in pg_default_html
+            and "Activity: The Last 7 Days" in pg_default_html,
+            "PG Actions did not default to the Last 7 Days evidence period",
+        )
+        assert_ok(
+            'value="custom" selected' in pg_custom_html
+            and 'value="2026-05-01"' in pg_custom_html
+            and 'value="2026-05-31"' in pg_custom_html
+            and 'href="#pg-actions-account-self-' in pg_custom_html
+            and 'id="pg-actions-account-self-' in pg_custom_html
+            and "Smoke test outreach" in pg_custom_html
+            and "Future Planned Actions" in pg_custom_html,
+            "PG Actions custom filter, account jump link or future-action continuity failed",
         )
 
         missing_page = client.get("/this-pipeflow-page-does-not-exist", follow_redirects=True)
@@ -2060,6 +2100,12 @@ def main():
             global_broadcast is not None
             and pipeflow_auth.decode_broadcast_companies(global_broadcast["target_companies"]) == [],
             "global broadcast should have no company target filter",
+        )
+        global_broadcast_page = client.get("/accounts").get_data(as_text=True)
+        assert_ok(
+            "global-broadcast-ticker" in global_broadcast_page
+            and "Smoke global broadcast" in global_broadcast_page,
+            "active broadcasts were not rendered beneath the shared navigation on a non-Insights page",
         )
 
         manual_past_due_date = (today - timedelta(days=1)).isoformat()

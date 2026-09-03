@@ -11,8 +11,8 @@
     </div>
     {% if pg_progress_read_only %}
         <div class="button-group">
-            <a href="{{ url_for('export_pg_progress_xls', user_id=selected_team_user_id or '') }}" class="btn btn-secondary">Export XLS</a>
-            <a href="{{ url_for('export_pg_progress_pdf', user_id=selected_team_user_id or '') }}" class="btn btn-primary">Export PDF</a>
+            <a href="{{ url_for('export_pg_progress_xls', user_id=selected_team_user_id or '', pg_period=pg_period_key, pg_date_from=pg_period_date_from, pg_date_to=pg_period_date_to) }}" class="btn btn-secondary">Export XLS</a>
+            <a href="{{ url_for('export_pg_progress_pdf', user_id=selected_team_user_id or '', pg_period=pg_period_key, pg_date_from=pg_period_date_from, pg_date_to=pg_period_date_to) }}" class="btn btn-primary">Export PDF</a>
         </div>
     {% endif %}
 </div>
@@ -23,6 +23,33 @@
 {% if error %}
     <div class="alert-error">{{ error }}</div>
 {% endif %}
+
+<section class="pg-actions-period-band" aria-label="PG Actions evidence period">
+    <div>
+        <h2>PG Actions Evidence Period</h2>
+        <p>Filter recorded interaction in PG Actions. Future planned actions remain visible so forward work is never hidden.</p>
+    </div>
+    <form method="GET" action="{{ url_for('pg_progress') }}" class="insights-period-control pg-period-control" data-period-filter>
+        {% if selected_team_user_id %}<input type="hidden" name="user_id" value="{{ selected_team_user_id }}">{% endif %}
+        <label for="pg-actions-period">Evidence period</label>
+        <select id="pg-actions-period" name="pg_period" data-period-select>
+            <option value="7" {% if pg_period_key == '7' %}selected{% endif %}>Last 7 days</option>
+            <option value="30" {% if pg_period_key == '30' %}selected{% endif %}>Last 30 days</option>
+            <option value="quarter" {% if pg_period_key == 'quarter' %}selected{% endif %}>Current quarter</option>
+            <option value="year" {% if pg_period_key == 'year' %}selected{% endif %}>Current year</option>
+            <option value="all" {% if pg_period_key == 'all' %}selected{% endif %}>All</option>
+            <option value="custom" {% if pg_period_key == 'custom' %}selected{% endif %}>Custom</option>
+        </select>
+        <div class="custom-period-fields" data-custom-period-fields {% if pg_period_key != 'custom' %}hidden{% endif %}>
+            <label for="pg-date-from">From</label>
+            <input type="date" id="pg-date-from" name="pg_date_from" value="{{ pg_period_date_from }}">
+            <label for="pg-date-to">To</label>
+            <input type="date" id="pg-date-to" name="pg_date_to" value="{{ pg_period_date_to }}">
+            <button type="submit" class="btn btn-primary btn-small">Apply</button>
+        </div>
+    </form>
+</section>
+{% if pg_period_error %}<div class="alert-error">{{ pg_period_error }}</div>{% endif %}
 
 <form method="POST" class="pg-goals-dashboard-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -35,9 +62,9 @@
                 </div>
             </div>
             <div class="button-group pg-team-filter-buttons">
-                <a href="{{ url_for('pg_progress') }}" class="btn {% if not selected_team_user_id %}btn-primary{% else %}btn-secondary{% endif %}">All Team</a>
+                <a href="{{ url_for('pg_progress', pg_period=pg_period_key, pg_date_from=pg_period_date_from, pg_date_to=pg_period_date_to) }}" class="btn {% if not selected_team_user_id %}btn-primary{% else %}btn-secondary{% endif %}">All Team</a>
                 {% for member in team_members %}
-                    <a href="{{ url_for('pg_progress', user_id=member.id) }}"
+                    <a href="{{ url_for('pg_progress', user_id=member.id, pg_period=pg_period_key, pg_date_from=pg_period_date_from, pg_date_to=pg_period_date_to) }}"
                        class="btn {% if selected_team_user_id|string == member.id|string %}btn-primary{% else %}btn-secondary{% endif %}">
                         {{ member.full_name }}
                     </a>
@@ -132,7 +159,7 @@
                             </td>
                             <td class="pg-plan-sales-play-cell">{{ row.sales_play or "No sales play entered" }}</td>
                             <td class="pg-plan-account-cell">
-                                <strong>{{ row.account_name }}</strong>
+                                <a href="#pg-actions-account-{{ row.owner_user_id|default('self', true) }}-{{ row.account_id }}"><strong>{{ row.account_name }}</strong></a>
                                 {% if row.business_org %}
                                     <span class="pg-plan-account-org">{{ row.business_org }}</span>
                                 {% endif %}
@@ -173,7 +200,7 @@
                         <th>Completed Discovery Meeting</th>
                         <th>Exec First</th>
                         <th>NBM Completed</th>
-                        <th>Last 30 Days Activity</th>
+                        <th>Activity: {{ pg_period_label|title }}</th>
                         <th>Future Planned Actions</th>
                     </tr>
                 </thead>
@@ -193,7 +220,7 @@
                             {% set pg_group.account = row.account_name %}
                             {% set pg_group.business_org = "" %}
                             {% set pg_group.sales_play = "" %}
-                            <tr class="pg-group-row pg-group-account">
+                            <tr class="pg-group-row pg-group-account" id="pg-actions-account-{{ row.owner_user_id|default('self', true) }}-{{ row.account_id }}">
                                 <td colspan="7">
                                     <span>Account</span>
                                     <strong>{{ row.account_name }}</strong>
@@ -228,7 +255,7 @@
                                 <th><span class="pg-stacked-heading">Completed<br>Discovery<br>Meeting</span></th>
                                 <th><span class="pg-stacked-heading">Exec<br>First</span></th>
                                 <th><span class="pg-stacked-heading">NBM<br>Completed</span></th>
-                                <th>Last 30 Days Activity</th>
+                                <th>Activity: {{ pg_period_label|title }}</th>
                                 <th>Future Planned Actions</th>
                             </tr>
                         {% endif %}
@@ -409,5 +436,20 @@
     });
 </script>
 {% endif %}
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    document.querySelectorAll("[data-period-filter]").forEach((form) => {
+        const select = form.querySelector("[data-period-select]");
+        const customFields = form.querySelector("[data-custom-period-fields]");
+        if (!select || !customFields) return;
+        select.addEventListener("change", () => {
+            const custom = select.value === "custom";
+            customFields.hidden = !custom;
+            if (!custom) form.submit();
+        });
+    });
+});
+</script>
 
 {% endblock %}
