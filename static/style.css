@@ -821,6 +821,16 @@ a:hover {
     margin-bottom: 16px;
 }
 
+.overview-execution-section { margin-bottom: 22px; }
+.overview-metrics-table { min-width: 1240px !important; }
+.overview-metrics-table th:nth-child(1) { width: 17%; }
+.overview-metrics-table th:nth-child(2) { width: 5%; }
+.overview-metrics-table th:nth-child(3) { width: 9%; }
+.overview-metrics-table th:nth-child(n+4):nth-child(-n+10) { width: 8%; }
+.overview-metrics-table th:nth-child(11) { width: 12%; }
+.overview-metrics-table td:nth-child(n+4):nth-child(-n+10) { text-align: center; }
+.insights-subsection-heading { margin-top: 4px; }
+
 .coverage-summary-item {
     min-width: 0;
     padding: 14px 15px;

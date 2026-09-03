@@ -33,7 +33,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.9.0"
 APP_RELEASE_DATE = "2026-09-03"
-APP_BUILD = "2026-09-03-v2.9.0-insights-pg-period-r1"
+APP_BUILD = "2026-09-03-v2.9.0-insights-pg-period-r2"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -52,7 +52,7 @@ RELEASE_NOTES = [
         "release_date": "2026-09-03",
         "title": "Distinct Insights views and period-led PG Progress",
         "fixed": [
-            "Redesigned Insights Overview as a portfolio coverage and risk cockpit instead of duplicating the Account Momentum table.",
+            "Merged the complete account execution Overview with portfolio coverage measures and grouped risk exceptions on one page.",
             "Focused Account Momentum on each account's execution state, evidence-based reason, last progress and next-action continuity.",
             "Moved Coverage & Risk into Overview and removed the separate Coverage & Risk tab.",
             "Added Custom to the Insights Evidence Period, with conditional From and To dates and inclusive date filtering.",
@@ -920,7 +920,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
                  'Managers also see Team, containing weekly execution measures for the users they manage.',
                  'Change Evidence Period to compare the last 7 days, last 30 days, current quarter, current year, all history or an inclusive Custom From and To range.'],
   'steps': ['Start in Overview and review Meetings This Week, Due Today, Overdue, Accounts at Risk and Completed This Week.',
-            'Use Overview to compare portfolio coverage measures and expand account risk groups for missing contacts, overdue work and missing future actions.',
+            'Use Overview to compare account execution measures, then review portfolio coverage and expand risk groups for missing contacts, overdue work and missing future actions.',
             'Open Progress to review the engagement-to-meeting conversion path, eight-week trend and response and meeting conversion rates.',
             'Open Account Momentum to distinguish Advancing, Stalled, Relapsing, Uncovered and Inactive accounts, understand why, and check action continuity.',
             'Open Effectiveness to compare activity types, Sales Plays, contact categories and campaign sequences; use the on-page legend to interpret each rate.',
@@ -1912,7 +1912,7 @@ PAGE_INSTRUCTIONS = {
     "home": {
         "title": "How to Use This Page",
         "items": [
-            "Start in Overview for portfolio health, contact coverage, forward-action coverage and grouped account risks.",
+            "Start in Overview to compare account activity, outcomes, workload, relationship coverage and grouped portfolio risks on one page.",
             "Use Progress to compare completed activity, positive responses and customer meetings over the last eight weeks.",
             "Use Account Momentum to understand why each account is Advancing, Stalled, Relapsing, Uncovered or Inactive and whether a next action exists.",
             "Use Effectiveness to compare activity types, Sales Plays, contact categories and campaigns; its legend defines every rate and confidence measure.",

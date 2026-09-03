@@ -42,8 +42,23 @@
 
 {% if active_insights_view == 'today' %}
     <div class="insights-section-heading">
-    <div><h2>Portfolio Coverage & Risk</h2><p>See whether accounts have the relationship coverage and forward actions needed to protect meeting progress.</p></div>
+    <div><h2>Execution Overview</h2><p>Compare activity, outcomes, workload and relationship coverage across the portfolio.</p></div>
     <div class="weekly-goal-summary" aria-label="Weekly meeting goal"><span>Weekly meeting goal</span><strong>{{ summary_metrics[0].value if summary_metrics else 0 }} / {{ weekly_target }}</strong><div class="goal-progress-track"><span style="width: {{ weekly_goal_percent }}%"></span></div></div>
+</div>
+<section class="insights-table-section overview-execution-section">
+    <div class="section-header compact-section-header"><div><h3>Account Execution Measures</h3><p>Recorded execution facts for the selected evidence period. Scheduled work remains managed in Outreach Tasks.</p></div><span class="record-count">{{ momentum_rows|length }} accounts</span></div>
+    <div class="table-container command-table-container"><table class="report-table overview-metrics-table">
+        <thead><tr><th>Account / Business Org</th><th>RAG</th><th>Momentum</th><th>Activity</th><th>Positive Responses</th><th>Meetings</th><th>Overdue</th><th>Future Actions</th><th>Active Contacts</th><th>Inactive Contacts</th><th>Last Activity</th></tr></thead>
+        <tbody>{% for account in momentum_rows %}<tr>
+            <td><a href="{{ url_for('view_account', account_id=account.account_id) }}"><strong>{{ account.account_label }}</strong></a></td>
+            <td class="insights-rag-cell"><span class="insights-rag-dot rag-{{ account.rag_status }}" role="img" aria-label="{{ account.rag_label }} RAG" title="{{ account.rag_label }}"></span></td>
+            <td><span class="momentum-state state-{{ account.state_tone }}"><i></i>{{ account.state }}</span></td>
+            <td>{{ account.recent_activity }}</td><td>{{ account.recent_positive }}</td><td>{{ account.recent_meetings }}</td><td class="{% if account.overdue %}risk-text{% endif %}">{{ account.overdue }}</td><td>{{ account.future_actions }}</td><td>{{ account.active_contacts }}</td><td>{{ account.inactive_contacts }}</td><td>{{ account.last_activity }}</td>
+        </tr>{% else %}<tr><td colspan="11">No account execution data is available.</td></tr>{% endfor %}</tbody>
+    </table></div>
+</section>
+<div class="insights-section-heading insights-subsection-heading">
+    <div><h2>Coverage & Risk</h2><p>Find the structural gaps most likely to interrupt meeting and pipeline progress.</p></div>
 </div>
 <section class="coverage-summary-grid" aria-label="Portfolio coverage measures">
     {% for metric in coverage_metrics %}<div class="coverage-summary-item"><span>{{ metric.label }}</span><strong>{{ metric.value }}</strong><small>{{ metric.detail }}</small></div>{% endfor %}

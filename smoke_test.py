@@ -492,7 +492,7 @@ def main():
             assert_ok(response.status_code == 200 and marker in html, f"{path} failed")
 
         insight_views = {
-            "/?view=today&period=30": ("Execution Command Centre", "Portfolio Coverage & Risk"),
+            "/?view=today&period=30": ("Execution Command Centre", "Execution Overview"),
             "/?view=progress&period=30": ("Progress", "Eight-Week Activity Trend"),
             "/?view=accounts&period=30": ("Account Momentum", "Smoke Test Account"),
             "/?view=effectiveness&period=30": ("Engagement Effectiveness", "How to read the rates"),
@@ -540,9 +540,10 @@ def main():
         assert_ok(
             "Coverage Exceptions" in overview_html
             and "View Account" in overview_html
-            and "Account Execution Measures" not in overview_html
-            and "Inactive Contacts" not in overview_html,
-            "Overview did not become a distinct portfolio coverage and risk view",
+            and "Account Execution Measures" in overview_html
+            and "Inactive Contacts" in overview_html
+            and "Coverage & Risk" in overview_html,
+            "Overview did not merge account execution measures with portfolio coverage and risk",
         )
         momentum_html = period_pages["30"]
         assert_ok(
