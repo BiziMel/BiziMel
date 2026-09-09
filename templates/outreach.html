@@ -128,6 +128,18 @@
     </div>
 </div>
 
+{% if execution_summary_metrics %}
+<section class="insights-metric-band outreach-execution-metrics" aria-label="Current execution measures">
+    {% for metric in execution_summary_metrics %}
+    <a href="{{ metric.link }}" class="insights-metric insights-metric-{{ metric.tone }}">
+        <span class="insights-metric-label">{{ metric.label }}</span>
+        <strong>{{ metric.value }}</strong>
+        <span>{{ metric.detail }}</span>
+    </a>
+    {% endfor %}
+</section>
+{% endif %}
+
 <div class="form-card">
     {% if outreach_records %}
         <form id="bulk-outreach-form"

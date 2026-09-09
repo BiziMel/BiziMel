@@ -62,6 +62,20 @@
             <td><span class="momentum-state state-{{ account.state_tone }}"><i></i>{{ account.state }}</span></td>
             <td>{{ account.activity_this_week }}</td><td>{{ account.activity_all_time }}</td><td>{{ account.recent_positive }}</td><td>{{ account.recent_meetings }}</td><td class="{% if account.overdue %}risk-text{% endif %}">{{ account.overdue }}</td><td>{{ account.future_actions }}</td><td>{{ account.active_contacts }}</td><td>{{ account.inactive_contacts }}</td><td>{{ account.last_activity }}</td>
         </tr>{% else %}<tr><td colspan="12">No account execution data is available.</td></tr>{% endfor %}</tbody>
+        <tfoot><tr>
+            <td>Portfolio Totals</td>
+            <td aria-label="Not applicable">-</td>
+            <td aria-label="Not applicable">-</td>
+            <td>{{ momentum_rows|sum(attribute='activity_this_week') }}</td>
+            <td>{{ momentum_rows|sum(attribute='activity_all_time') }}</td>
+            <td>{{ momentum_rows|sum(attribute='recent_positive') }}</td>
+            <td>{{ momentum_rows|sum(attribute='recent_meetings') }}</td>
+            <td>{{ momentum_rows|sum(attribute='overdue') }}</td>
+            <td>{{ momentum_rows|sum(attribute='future_actions') }}</td>
+            <td>{{ momentum_rows|sum(attribute='active_contacts') }}</td>
+            <td>{{ momentum_rows|sum(attribute='inactive_contacts') }}</td>
+            <td aria-label="Not applicable">-</td>
+        </tr></tfoot>
     </table></div>
 </section>
 <div class="insights-section-heading insights-subsection-heading">

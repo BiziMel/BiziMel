@@ -25,7 +25,7 @@ except ModuleNotFoundError:
     Image = None
     ImageOps = None
     UnidentifiedImageError = Exception
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, bulk_update_broadcast_messages, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members, decode_broadcast_companies, set_user_company_memberships, user_company_names
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, bulk_update_broadcast_messages, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members, decode_broadcast_companies, set_user_company_memberships, user_company_names, tenant_for_email, create_registration_request, list_pending_registration_requests, resolve_registration_request, registration_request_status
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
@@ -33,7 +33,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.9.1"
 APP_RELEASE_DATE = "2026-09-09"
-APP_BUILD = "2026-09-09-v2.9.1-engagement-consistency-r1"
+APP_BUILD = "2026-09-09-v2.9.1-engagement-consistency-r2"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -56,6 +56,8 @@ RELEASE_NOTES = [
             "Added separate Total Activity This Week and Total Activity All Time measures to Account Execution Measures.",
             "Added a compact Momentum legend directly above the Account Execution Measures table.",
             "Added a Return to Top control to PG Progress for quicker movement through long account plans.",
+            "Added a bold portfolio totals row to Account Execution Measures and repeated the five execution measures above the Outreach table.",
+            "Added company-domain profile registration: recognised work email domains activate against their tenant, unmatched domains create an Admin approval request, and existing emails enter secret-phrase password reset.",
         ],
         "fixed": [
             "Stopped rescheduled open tasks appearing as previous activity in PG Progress; only the current schedule is shown while every change remains in Audit.",
@@ -918,14 +920,17 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
                  'Use User Guide from the header whenever you need step-by-step guidance without leaving the application.',
                  'Use global search when you know part of an account, contact, partner, outreach subject or timeline entry.',
                  'Use Sign Out when your session is finished, especially on a shared machine.'],
-  'steps': ['Sign in using the profile created for your company tenant.',
+  'steps': ['Create a profile with your unique work email, full name, password and secret phrase. A configured company email domain activates access immediately; an unmatched domain waits for Application Admin approval.',
+            'If that email already has a profile, use the displayed new-password and secret-phrase fields to recover access.',
+            'Sign in using the profile created for your company tenant.',
             'Open Profile and confirm your name, job title, active team, working hours and non-working dates.',
             'Create or review Sales Plays before creating accounts and outreach that depend on them.',
             'Create Accounts with business organisation, owner, tier, target value and Sales Play associations.',
             'Add Contacts and Partner Contacts so outreach can be targeted to real stakeholders.',
             'Use Outreach or Campaign Builder to create dated tasks against accounts, contacts and Sales Plays.',
             'Review Dashboard, PG Progress and Reports to understand what needs action and what is converting.'],
-  'tips': ['PipeFlow is account-led: most functions become more accurate after account, contact and Sales Play data are connected.',
+  'tips': ['Your email address uniquely identifies your PipeFlow profile and cannot be registered twice.',
+           'PipeFlow is account-led: most functions become more accurate after account, contact and Sales Play data are connected.',
            'If a menu item is missing, check your role or company admin permissions before troubleshooting the page.',
            'Dates and times are displayed as dd-mm-yyyy hh:mm where date/time is shown.']},
  {'slug': 'dashboard',
@@ -935,8 +940,8 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
                  'Use Overview, Progress, Account Momentum and Effectiveness to move between distinct analytical questions.',
                  'Managers also see Team, containing weekly execution measures for the users they manage.',
                  'Change Evidence Period to compare the last 7 days, last 30 days, current quarter, current year, all history or an inclusive Custom From and To range.'],
-  'steps': ['Start in Overview and review Meetings This Week, Due Today, Overdue, Accounts at Risk and Completed This Week.',
-            'Use Overview to compare account execution measures, then review portfolio coverage and expand risk groups for missing contacts, overdue work and missing future actions.',
+  'steps': ['Start in Overview and review Meetings This Week, Due Today, Overdue, Accounts at Risk and Completed This Week. The same five measures appear above Outreach for context while working tasks.',
+            'Use Overview to compare account execution measures and their shaded Portfolio Totals row, then review portfolio coverage and expand risk groups for missing contacts, overdue work and missing future actions.',
             'Open Progress to review the engagement-to-meeting conversion path, eight-week trend and response and meeting conversion rates.',
             'Open Account Momentum to distinguish Advancing, Stalled, Relapsing and Inactive accounts, understand why, and check action continuity.',
             'Open Effectiveness to compare activity types, Sales Plays, contact categories and campaign sequences; use the on-page legend to interpret each rate.',
@@ -1121,7 +1126,8 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
   'navigation': ['Open Admin from the top navigation when available.',
                  'Use Tenants for company setup, Permissions & Controls for users and teams, and Audit Trail for admin/data history.',
                  'Use broadcast controls for application-wide or tenant-visible messages where available.'],
-  'steps': ['Create or review the company tenant with company name, country and company contact.',
+  'steps': ['Create or review the company tenant with company name, country, company contact and comma-separated work email domains.',
+            'Review Profile Requests when an email domain is not recognised. Assign the correct company and approve the request, or reject it; only Application Admins can perform this review.',
             'Create teams with team name and associated company.',
             'Create user profiles with company, role and team membership.',
             'Assign User, Manager, Company Admin or Application Admin role according to responsibility.',
@@ -1131,6 +1137,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
             'Application Admins review the read-only Nightly Scheduler History for the last 30 days and confirm any failure dialog after checking the service logs.',
             'Use the Audit Trail to investigate administrative and data changes.'],
   'tips': ['Managers only see team PG Progress when they are assigned as manager/admin on the team.',
+           'New profiles with a configured company email domain are validated automatically; unmatched domains never receive login or workspace access before approval.',
            'Company Admins cannot administer users outside their tenant.',
            'Only Application Admins receive nightly scheduler failure dialogs; confirming one suppresses that specific failed run.',
            'Admin actions are recorded in the audit trail for accountability.']},
@@ -2213,9 +2220,9 @@ PAGE_INSTRUCTIONS = {
     "register": {
         "title": "Registration Guidance",
         "items": [
-            "Register with your work email, full name and password.",
+            "Register with your work email, full name and password; PipeFlow validates the email domain against configured companies.",
             "Choose a secret reset phrase you can remember because it is required for secure password reset.",
-            "Your profile creates a private workspace for your PipeFlow data.",
+            "A recognised company domain activates the private workspace immediately; otherwise an application admin reviews the request.",
         ],
     },
     "forgot_password": {
@@ -2496,40 +2503,99 @@ def reset_password():
     return redirect(url_for("forgot_password"))
 
 
+def registered_email_exists(email):
+    email = (email or "").strip().lower()
+    if not email:
+        return False
+    connection = get_auth_connection()
+    try:
+        return bool(connection.execute(
+            "SELECT id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1",
+            (email,),
+        ).fetchone())
+    finally:
+        connection.close()
+
+
 @app.route("/register", methods=("GET", "POST"))
 def register():
     error = ""
-    if user_count() > 0:
-        return redirect(url_for("login", message="Profiles are created by an administrator. Ask your company administrator for access."))
+    message = ""
+    reset_mode = request.form.get("registration_mode") == "reset"
+    email = request.form.get("email", "").strip().lower()
     if request.method == "POST":
-        user_id, error = create_user(
-            request.form.get("email", ""),
-            request.form.get("password", ""),
-            request.form.get("full_name", ""),
-            request.form.get("reset_phrase", ""),
-        )
-        if user_id:
-            session.clear()
-            session["user_id"] = user_id
-            session["user_email"] = request.form.get("email", "").strip().lower()
-            session["user_name"] = request.form.get("full_name", "").strip()
-            session["workspace_schema"] = ensure_user_workspace_schema(get_user_for_admin(user_id))
-            initialise_database()
-            connection = get_db_connection()
-            connection.execute(
-                """
-                UPDATE user_profile
-                SET full_name = ?,
-                    last_updated = CURRENT_TIMESTAMP
-                WHERE id = 1
-                """,
-                (session["user_name"],),
+        if reset_mode:
+            if rate_limit_exceeded(RESET_ATTEMPTS, rate_limit_key("register-reset", email)):
+                error = "Too many reset attempts. Please wait and try again."
+            else:
+                error = reset_password_with_phrase(
+                    email,
+                    request.form.get("reset_phrase", ""),
+                    request.form.get("password", ""),
+                )
+                if not error:
+                    return redirect(url_for("login", message="Password reset. Please sign in."))
+        elif registered_email_exists(email):
+            reset_mode = True
+            message = "A profile already exists for this email. Enter your secret phrase and a new password to reset access."
+        elif registration_request_status(email) == "pending":
+            message = (
+                "A profile request for this email is already awaiting application administrator review. "
+                "The original request remains protected and has not been changed."
             )
-            connection.commit()
-            connection.close()
-            return redirect(url_for("home"))
+        else:
+            matched_tenant = tenant_for_email(email)
+            # The first profile remains the application-admin bootstrap; subsequent
+            # profiles must either match a configured domain or await admin review.
+            if matched_tenant or user_count() == 0:
+                user_id, error = create_user(
+                    email,
+                    request.form.get("password", ""),
+                    request.form.get("full_name", ""),
+                    request.form.get("reset_phrase", ""),
+                    matched_tenant["company_name"] if matched_tenant else "",
+                )
+            else:
+                user_id = None
+                error = create_registration_request(
+                    email,
+                    request.form.get("password", ""),
+                    request.form.get("full_name", ""),
+                    request.form.get("reset_phrase", ""),
+                )
+                if not error:
+                    message = (
+                        "Your email domain is not yet associated with a PipeFlow company. "
+                        "Your profile request has been sent to an application administrator for approval."
+                    )
+            if user_id:
+                session.clear()
+                session["user_id"] = user_id
+                session["user_email"] = email
+                session["user_name"] = request.form.get("full_name", "").strip()
+                session["workspace_schema"] = ensure_user_workspace_schema(get_user_for_admin(user_id))
+                initialise_database()
+                connection = get_db_connection()
+                connection.execute(
+                    """
+                    UPDATE user_profile
+                    SET full_name = ?,
+                        last_updated = CURRENT_TIMESTAMP
+                    WHERE id = 1
+                    """,
+                    (session["user_name"],),
+                )
+                connection.commit()
+                connection.close()
+                return redirect(url_for("home"))
 
-    return render_template("register.html", error=error)
+    return render_template(
+        "register.html",
+        error=error,
+        message=message,
+        reset_mode=reset_mode,
+        email=email,
+    )
 
 
 @app.route("/logout", methods=("POST",))
@@ -2558,6 +2624,7 @@ def render_admin_permissions():
         broadcast_company_options=tenant_options if is_app_admin else [],
         broadcast_messages=broadcast_rows_for_admin(actor),
         scheduler_runs=scheduler_run_history(30) if is_app_admin else [],
+        pending_registrations=list_pending_registration_requests() if is_app_admin else [],
         audit_retention_enabled=audit_retention_enabled(),
         message=request.args.get("message", ""),
         error=request.args.get("error", "")
@@ -2647,6 +2714,25 @@ def admin_permissions():
     return render_admin_permissions()
 
 
+@app.route("/admin/registration-requests/<int:request_id>/<decision>", methods=("POST",))
+@admin_required
+def admin_resolve_registration_request(request_id, decision):
+    actor = current_user()
+    if not is_application_admin(actor):
+        return redirect(url_for("admin_permissions", error="Only Application Admins can approve or reject profile requests."))
+    error = resolve_registration_request(
+        request_id,
+        decision,
+        actor,
+        request.form.get("company", ""),
+    )
+    if error:
+        return redirect(url_for("admin_permissions", error=error))
+    action = "approved" if decision == "approve" else "rejected"
+    log_admin_audit(actor, f"Registration {action}", "Registration request", str(request_id), "")
+    return redirect(url_for("admin_permissions", message=f"Profile request {action}."))
+
+
 @app.route("/admin/scheduler-runs/confirm", methods=("POST",))
 @admin_required
 def admin_confirm_scheduler_failure():
@@ -2716,6 +2802,7 @@ def admin_tenants():
             request.form.get("company_name", ""),
             request.form.get("country", ""),
             request.form.get("company_contact", ""),
+            request.form.get("email_domains", ""),
         )
         if not error:
             log_admin_audit(
@@ -2747,6 +2834,7 @@ def admin_update_tenant(tenant_id):
         request.form.get("company_contact", ""),
         bool(request.form.get("is_active")),
         actor=actor,
+        email_domains=request.form.get("email_domains", ""),
     )
     if error:
         return redirect(url_for("admin_tenants", error=error))
@@ -14083,6 +14171,14 @@ def outreach_impl():
     """).fetchall()
     sales_play_options = sorted(row["sales_play"] for row in existing_sales_plays if row["sales_play"])
 
+    # Reuse the Insights calculation so the execution measures shown above the
+    # Outreach table cannot drift from the dashboard figures.
+    try:
+        execution_summary_metrics = build_execution_command_centre(connection)["summary_metrics"]
+    except Exception as exc:
+        log_diagnostic_exception("OUTREACH-SAVE", exc, {"stage": "outreach_execution_summary"})
+        execution_summary_metrics = []
+
     connection.close()
 
     return render_template(
@@ -14090,6 +14186,7 @@ def outreach_impl():
         outreach_records=outreach_records,
         accounts=accounts,
         sales_play_options=sales_play_options,
+        execution_summary_metrics=execution_summary_metrics,
         fy_filter=fy_filter,
         quarter_filter=quarter_filter,
         sales_play_filter=sales_play_filter,

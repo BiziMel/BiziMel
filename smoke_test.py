@@ -541,6 +541,10 @@ def main():
             and "Coverage & Risk" in overview_html,
             "Overview did not merge account execution measures with portfolio coverage and risk",
         )
+        assert_ok(
+            "Portfolio Totals" in overview_html and "<tfoot>" in overview_html,
+            "Insights Account Execution Measures did not render its totals footer",
+        )
         momentum_html = period_pages["30"]
         assert_ok(
             "Why this state" in momentum_html
@@ -1959,10 +1963,111 @@ def main():
                 "company_name": "Smoke Other Company",
                 "country": "United Kingdom",
                 "company_contact": "Smoke Tenant Owner",
+                "email_domains": "smoke-company.test",
             },
             follow_redirects=True,
         )
         assert_ok(response.status_code == 200, "tenant create failed")
+
+        domain_client = pipeflow_app.app.test_client()
+        domain_client.get("/register")
+        response = domain_client.post(
+            "/register",
+            data={
+                "csrf_token": csrf_from_session(domain_client),
+                "registration_mode": "create",
+                "full_name": "Domain Matched User",
+                "email": "matched@smoke-company.test",
+                "password": "Password123!",
+                "reset_phrase": "domain matched phrase",
+            },
+            follow_redirects=True,
+        )
+        assert_ok(
+            response.status_code == 200 and "Execution Command Centre" in response.get_data(as_text=True),
+            "matching tenant email domain did not activate a new profile",
+        )
+        domain_client.post("/logout", data={"csrf_token": csrf_from_session(domain_client)})
+        domain_client.get("/register")
+        response = domain_client.post(
+            "/register",
+            data={
+                "csrf_token": csrf_from_session(domain_client),
+                "registration_mode": "create",
+                "full_name": "Domain Matched User",
+                "email": "matched@smoke-company.test",
+                "password": "AnotherPassword123!",
+                "reset_phrase": "domain matched phrase",
+            },
+        )
+        assert_ok(
+            response.status_code == 200
+            and "Reset Existing Profile" in response.get_data(as_text=True)
+            and "profile already exists" in response.get_data(as_text=True),
+            "existing registration email did not present password and secret phrase reset fields",
+        )
+
+        pending_client = pipeflow_app.app.test_client()
+        pending_client.get("/register")
+        response = pending_client.post(
+            "/register",
+            data={
+                "csrf_token": csrf_from_session(pending_client),
+                "registration_mode": "create",
+                "full_name": "Pending Domain User",
+                "email": "pending@unmatched-domain.test",
+                "password": "Password123!",
+                "reset_phrase": "pending domain phrase",
+            },
+        )
+        assert_ok(
+            response.status_code == 200 and "sent to an application administrator" in response.get_data(as_text=True),
+            "unmatched email domain did not create a pending profile request",
+        )
+        pending_client.get("/register")
+        response = pending_client.post(
+            "/register",
+            data={
+                "csrf_token": csrf_from_session(pending_client),
+                "registration_mode": "create",
+                "full_name": "Pending Domain User Changed",
+                "email": "pending@unmatched-domain.test",
+                "password": "ReplacementPassword123!",
+                "reset_phrase": "replacement pending phrase",
+            },
+        )
+        assert_ok(
+            "original request remains protected" in response.get_data(as_text=True),
+            "a repeated pending registration was allowed to replace protected credentials",
+        )
+        auth_connection = pipeflow_app.get_auth_connection()
+        pending_row = auth_connection.execute(
+            "SELECT id FROM registration_requests WHERE email = ? AND status = 'pending'",
+            ("pending@unmatched-domain.test",),
+        ).fetchone()
+        auth_connection.close()
+        assert_ok(pending_row is not None, "pending profile request was not persisted")
+        pending_admin_html = client.get("/admin/permissions").get_data(as_text=True)
+        assert_ok(
+            "Profile Requests" in pending_admin_html and "pending@unmatched-domain.test" in pending_admin_html,
+            "pending profile request was not shown to the application admin",
+        )
+        response = client.post(
+            f"/admin/registration-requests/{pending_row['id']}/approve",
+            data={"csrf_token": csrf_from_session(client), "company": "Smoke Other Company"},
+            follow_redirects=True,
+        )
+        assert_ok(response.status_code == 200 and "Profile request approved" in response.get_data(as_text=True), "admin could not approve a pending profile")
+        response = pending_client.post(
+            "/login",
+            data={
+                "csrf_token": csrf_from_session(pending_client),
+                "email": "pending@unmatched-domain.test",
+                "password": "Password123!",
+            },
+            follow_redirects=True,
+        )
+        assert_ok(response.status_code == 200 and "Execution Command Centre" in response.get_data(as_text=True), "approved profile could not sign in")
 
         response = client.post(
             "/admin/users/create",
@@ -2691,6 +2796,11 @@ def main():
         assert_ok("outreach-auto-reschedule-form" in outreach_html, "row Outreach auto-reschedule control missing")
         assert_ok("Reschedule Selected" in outreach_html, "bulk Outreach reschedule action missing")
         assert_ok("outreach-bulk-reschedule-button" in outreach_html, "bulk reschedule action is not visually distinguished")
+        assert_ok(
+            "outreach-execution-metrics" in outreach_html
+            and all(label in outreach_html for label in ("Meetings This Week", "Due Today", "Overdue", "Accounts at Risk", "Completed This Week")),
+            "Outreach page did not repeat the five Insights execution measures",
+        )
 
         connection = sqlite3.connect(db_path)
         connection.execute("DROP TABLE timeline_entries")

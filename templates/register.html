@@ -4,34 +4,40 @@
 
 {% block content %}
 <section class="auth-panel">
-    <h2>Create Profile</h2>
-    <p class="muted-text">Create the first Application Admin profile. After setup, all new profiles are created by an administrator inside the hosted enterprise Admin area.</p>
+    <h2>{% if reset_mode %}Reset Existing Profile{% else %}Create Profile{% endif %}</h2>
+    <p class="muted-text">{% if reset_mode %}Verify your existing profile with its secret phrase and choose a new password.{% else %}Create a PipeFlow profile using your unique work email address. Its domain will identify your company when configured.{% endif %}</p>
 
     {% if error %}
         <div class="alert-error">{{ error }}</div>
     {% endif %}
+    {% if message %}
+        <div class="alert-success">{{ message }}</div>
+    {% endif %}
 
     <form method="POST" class="form-grid auth-form" autocomplete="on">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="registration_mode" value="{% if reset_mode %}reset{% else %}create{% endif %}">
 
+        {% if not reset_mode %}
         <label for="full_name">Full Name</label>
-        <input type="text" id="full_name" name="full_name" autocomplete="name" required autofocus>
+        <input type="text" id="full_name" name="full_name" autocomplete="name" value="{{ request.form.get('full_name', '') }}" required autofocus>
+        {% endif %}
 
-        <label for="email">Email</label>
-        <input type="email" id="email" name="email" autocomplete="username" required>
+        <label for="email">Work Email</label>
+        <input type="email" id="email" name="email" autocomplete="username" value="{{ email or '' }}" {% if reset_mode %}readonly{% endif %} required>
 
-        <label for="password">Password</label>
+        <label for="password">{% if reset_mode %}New Password{% else %}Password{% endif %}</label>
         <input type="password" id="password" name="password" autocomplete="new-password" minlength="8" required>
 
         <label for="reset_phrase">Secret Reset Phrase</label>
         <input type="password" id="reset_phrase" name="reset_phrase" autocomplete="off" minlength="12" required>
-        <p class="field-help">Use a private phrase only you know. It is needed if you forget your password.</p>
+        <p class="field-help">{% if reset_mode %}Enter the phrase already stored against this profile.{% else %}Use a private phrase only you know. It is needed if you forget your password.{% endif %}</p>
 
-        <button type="submit" class="btn btn-primary">Create Profile</button>
+        <button type="submit" class="btn btn-primary">{% if reset_mode %}Reset Password{% else %}Create Profile{% endif %}</button>
     </form>
 
     <p class="muted-text">
-        Already have a profile?
+        {% if reset_mode %}<a href="{{ url_for('register') }}">Use a different email</a> or {% else %}Already have a profile? {% endif %}
         <a href="{{ url_for('login') }}">Sign in</a>
     </p>
 </section>

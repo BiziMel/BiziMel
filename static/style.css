@@ -829,6 +829,36 @@ a:hover {
 .overview-metrics-table th:nth-child(n+4):nth-child(-n+11) { width: 7.5%; }
 .overview-metrics-table th:nth-child(12) { width: 11%; }
 .overview-metrics-table td:nth-child(n+4):nth-child(-n+11) { text-align: center; }
+.overview-metrics-table tfoot td {
+    padding-top: 12px;
+    padding-bottom: 12px;
+    border-top: 3px solid #2f7650;
+    background: #e7f2eb;
+    color: #183d29;
+    font-weight: 850;
+}
+.overview-metrics-table tfoot td:nth-child(n+2) { text-align: center; }
+.outreach-execution-metrics { margin-top: 0; }
+
+.pending-registration-section {
+    margin: 0 0 24px;
+    padding-bottom: 22px;
+    border-bottom: 2px solid #cbd9d0;
+}
+.pending-registration-table { min-width: 800px; }
+.pending-registration-table th:nth-child(1) { width: 18%; }
+.pending-registration-table th:nth-child(2) { width: 24%; }
+.pending-registration-table th:nth-child(3) { width: 15%; }
+.pending-registration-table th:nth-child(4) { width: 13%; }
+.pending-registration-table th:nth-child(5) { width: 30%; }
+.pending-registration-table th,
+.pending-registration-table td { padding: 12px 10px; }
+.pending-registration-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.pending-registration-actions select { min-width: 180px; }
 
 .momentum-legend {
     display: flex;

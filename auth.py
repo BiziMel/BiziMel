@@ -157,6 +157,24 @@ def initialise_auth_database() -> None:
         )
     """)
     connection.execute("""
+        CREATE TABLE IF NOT EXISTS registration_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL UNIQUE,
+            full_name TEXT NOT NULL,
+            requested_domain TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            reset_phrase_hash TEXT NOT NULL,
+            reset_phrase_encrypted TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            company TEXT,
+            reviewed_by_user_id INTEGER,
+            reviewed_by_name TEXT,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
+            reviewed_at TEXT
+        )
+    """)
+    connection.execute("""
         CREATE TABLE IF NOT EXISTS account_field_definitions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             field_key TEXT NOT NULL UNIQUE,
@@ -268,6 +286,7 @@ def initialise_auth_database() -> None:
     add_column_if_missing(connection, "users", "team", "TEXT")
     add_column_if_missing(connection, "users", "workspace_schema", "TEXT")
     add_column_if_missing(connection, "users", "active_team_id", "INTEGER")
+    add_column_if_missing(connection, "tenants", "email_domains", "TEXT")
     add_column_if_missing(connection, "teams", "company", "TEXT")
     add_column_if_missing(connection, "broadcast_messages", "target_companies", "TEXT")
     add_column_if_missing(connection, "broadcast_messages", "start_at", "TEXT")
@@ -462,20 +481,65 @@ def list_tenants(actor=None, active_only: bool = True):
     return rows
 
 
-def create_tenant(company_name: str, country: str, company_contact: str):
+def normalise_email_domains(value: str) -> str:
+    domains = []
+    for candidate in (value or "").replace(";", ",").split(","):
+        domain = candidate.strip().lower().lstrip("@")
+        if domain and "." in domain and domain not in domains:
+            domains.append(domain)
+    return ", ".join(domains)
+
+
+def tenant_for_email(email: str):
+    email = normalise_email(email)
+    if "@" not in email:
+        return None
+    email_domain = email.rsplit("@", 1)[1]
+    for tenant in list_tenants(active_only=True):
+        configured = normalise_email_domains(tenant["email_domains"] if "email_domains" in tenant.keys() else "")
+        domains = {domain.strip() for domain in configured.split(",") if domain.strip()}
+        if email_domain in domains:
+            return tenant
+    return None
+
+
+def conflicting_tenant_domain(connection, email_domains: str, excluded_tenant_id=None) -> str:
+    requested = {domain.strip() for domain in normalise_email_domains(email_domains).split(",") if domain.strip()}
+    if not requested:
+        return ""
+    rows = connection.execute("SELECT id, company_name, email_domains FROM tenants").fetchall()
+    for row in rows:
+        if excluded_tenant_id is not None and int(row["id"]) == int(excluded_tenant_id):
+            continue
+        configured = {
+            domain.strip()
+            for domain in normalise_email_domains(row["email_domains"] if "email_domains" in row.keys() else "").split(",")
+            if domain.strip()
+        }
+        overlap = requested.intersection(configured)
+        if overlap:
+            return f"Email domain {sorted(overlap)[0]} is already assigned to {row['company_name']}."
+    return ""
+
+
+def create_tenant(company_name: str, country: str, company_contact: str, email_domains: str = ""):
     company_name = normalise_company_name(company_name)
     country = (country or "").strip()
     company_contact = (company_contact or "").strip()
+    email_domains = normalise_email_domains(email_domains)
     if not company_name or not country or not company_contact:
         return "Company Name, Country and Company contact are required."
     connection = get_auth_connection()
     try:
+        domain_error = conflicting_tenant_domain(connection, email_domains)
+        if domain_error:
+            return domain_error
         connection.execute(
             """
-            INSERT INTO tenants (company_name, country, company_contact, is_active)
-            VALUES (?, ?, ?, 1)
+            INSERT INTO tenants (company_name, country, company_contact, email_domains, is_active)
+            VALUES (?, ?, ?, ?, 1)
             """,
-            (company_name, country, company_contact),
+            (company_name, country, company_contact, email_domains),
         )
         connection.commit()
         return ""
@@ -487,9 +551,10 @@ def create_tenant(company_name: str, country: str, company_contact: str):
         connection.close()
 
 
-def update_tenant(tenant_id: int, country: str, company_contact: str, is_active: bool, actor=None):
+def update_tenant(tenant_id: int, country: str, company_contact: str, is_active: bool, actor=None, email_domains: str = ""):
     country = (country or "").strip()
     company_contact = (company_contact or "").strip()
+    email_domains = normalise_email_domains(email_domains)
     if not country or not company_contact:
         return "Country and primary company contact are required."
     connection = get_auth_connection()
@@ -502,16 +567,21 @@ def update_tenant(tenant_id: int, country: str, company_contact: str, is_active:
         if normalise_company_name(actor_company).lower() != normalise_company_name(tenant["company_name"]).lower():
             connection.close()
             return "You can only update your own company tenant."
+    domain_error = conflicting_tenant_domain(connection, email_domains, excluded_tenant_id=tenant_id)
+    if domain_error:
+        connection.close()
+        return domain_error
     connection.execute(
         """
         UPDATE tenants
         SET country = ?,
             company_contact = ?,
+            email_domains = ?,
             is_active = ?,
             last_updated = CURRENT_TIMESTAMP
         WHERE id = ?
         """,
-        (country, company_contact, 1 if is_active else 0, tenant_id),
+        (country, company_contact, email_domains, 1 if is_active else 0, tenant_id),
     )
     connection.commit()
     connection.close()
@@ -577,6 +647,165 @@ def create_user(email: str, password: str, full_name: str, reset_phrase: str = "
         if "unique" not in str(exc).lower() and "duplicate" not in str(exc).lower():
             raise
         return None, "An account already exists for that email address."
+    finally:
+        connection.close()
+
+
+def create_registration_request(email: str, password: str, full_name: str, reset_phrase: str = ""):
+    email = normalise_email(email)
+    full_name = (full_name or "").strip()
+    reset_phrase = (reset_phrase or "").strip()
+    if not email or "@" not in email or not password or not full_name or not reset_phrase:
+        return "All fields are required."
+    if len(password) < 8:
+        return "Password must be at least 8 characters."
+    if len(reset_phrase) < 12:
+        return "Secret reset phrase must be at least 12 characters."
+    requested_domain = email.rsplit("@", 1)[1]
+    connection = get_auth_connection()
+    try:
+        existing = connection.execute(
+            "SELECT id FROM registration_requests WHERE LOWER(email) = LOWER(?)",
+            (email,),
+        ).fetchone()
+        values = (
+            full_name,
+            requested_domain,
+            generate_password_hash(password),
+            generate_password_hash(reset_phrase),
+            encrypt_secret_phrase(reset_phrase),
+        )
+        if existing:
+            connection.execute(
+                """
+                UPDATE registration_requests
+                SET full_name = ?, requested_domain = ?, password_hash = ?,
+                    reset_phrase_hash = ?, reset_phrase_encrypted = ?, status = 'pending',
+                    company = NULL, reviewed_by_user_id = NULL, reviewed_by_name = NULL,
+                    reviewed_at = NULL, last_updated = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (*values, existing["id"]),
+            )
+        else:
+            connection.execute(
+                """
+                INSERT INTO registration_requests
+                    (email, full_name, requested_domain, password_hash, reset_phrase_hash, reset_phrase_encrypted)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (email, *values),
+            )
+        connection.commit()
+        return ""
+    finally:
+        connection.close()
+
+
+def list_pending_registration_requests():
+    connection = get_auth_connection()
+    rows = connection.execute(
+        """
+        SELECT * FROM registration_requests
+        WHERE status = 'pending'
+        ORDER BY date_created ASC, id ASC
+        """
+    ).fetchall()
+    connection.close()
+    return rows
+
+
+def registration_request_status(email: str) -> str:
+    email = normalise_email(email)
+    if not email:
+        return ""
+    connection = get_auth_connection()
+    row = connection.execute(
+        "SELECT status FROM registration_requests WHERE LOWER(email) = LOWER(?)",
+        (email,),
+    ).fetchone()
+    connection.close()
+    return str(row["status"] or "") if row else ""
+
+
+def resolve_registration_request(request_id: int, decision: str, actor, company: str = ""):
+    if decision not in {"approve", "reject"}:
+        return "Select a valid registration decision."
+    connection = get_auth_connection()
+    try:
+        pending = connection.execute(
+            "SELECT * FROM registration_requests WHERE id = ? AND status = 'pending'",
+            (request_id,),
+        ).fetchone()
+        if not pending:
+            return "That registration request is no longer awaiting review."
+        if decision == "reject":
+            connection.execute(
+                """
+                UPDATE registration_requests
+                SET status = 'rejected', reviewed_by_user_id = ?, reviewed_by_name = ?,
+                    reviewed_at = CURRENT_TIMESTAMP, last_updated = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (actor["id"], actor["full_name"], request_id),
+            )
+            connection.commit()
+            return ""
+
+        company = normalise_company_name(company)
+        if not company or not tenant_exists(company):
+            return "Select an active company before approving this profile."
+        existing = connection.execute(
+            "SELECT id FROM users WHERE LOWER(email) = LOWER(?)",
+            (pending["email"],),
+        ).fetchone()
+        if existing:
+            return "An active or inactive user already exists for that email address."
+        if using_postgres():
+            row = connection.execute(
+                """
+                INSERT INTO users
+                    (email, password_hash, full_name, company, role, reset_phrase_hash,
+                     reset_phrase_plain, reset_phrase_encrypted, is_active)
+                VALUES (?, ?, ?, ?, 'user', ?, NULL, ?, 1)
+                RETURNING id
+                """,
+                (pending["email"], pending["password_hash"], pending["full_name"], company,
+                 pending["reset_phrase_hash"], pending["reset_phrase_encrypted"]),
+            ).fetchone()
+            user_id = row["id"]
+        else:
+            cursor = connection.execute(
+                """
+                INSERT INTO users
+                    (email, password_hash, full_name, company, role, reset_phrase_hash,
+                     reset_phrase_plain, reset_phrase_encrypted, is_active)
+                VALUES (?, ?, ?, ?, 'user', ?, NULL, ?, 1)
+                """,
+                (pending["email"], pending["password_hash"], pending["full_name"], company,
+                 pending["reset_phrase_hash"], pending["reset_phrase_encrypted"]),
+            )
+            user_id = cursor.lastrowid
+        connection.execute(
+            "INSERT INTO user_company_memberships (user_id, company_name) VALUES (?, ?)",
+            (user_id, company),
+        )
+        connection.execute(
+            """
+            UPDATE registration_requests
+            SET status = 'approved', company = ?, reviewed_by_user_id = ?, reviewed_by_name = ?,
+                reviewed_at = CURRENT_TIMESTAMP, last_updated = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (company, actor["id"], actor["full_name"], request_id),
+        )
+        connection.commit()
+        return ""
+    except Exception as exc:
+        connection.rollback()
+        if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+            return "A user already exists for that email address."
+        raise
     finally:
         connection.close()
 
