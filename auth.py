@@ -644,6 +644,12 @@ def create_user(email: str, password: str, full_name: str, reset_phrase: str = "
                 (email, generate_password_hash(password), full_name, company, role, generate_password_hash(reset_phrase), encrypt_secret_phrase(reset_phrase), 1 if must_change_password else 0),
             )
             user_id = cursor.lastrowid
+        # Every profile starts with one explicit membership matching its primary
+        # tenant. Admin-managed multi-company access can be added afterwards.
+        connection.execute(
+            "INSERT OR IGNORE INTO user_company_memberships (user_id, company_name) VALUES (?, ?)",
+            (user_id, company),
+        )
         connection.commit()
         return user_id, ""
     except Exception as exc:
@@ -1435,6 +1441,42 @@ def set_user_active(user_id: int, is_active: bool):
     )
     connection.commit()
     connection.close()
+
+
+def delete_users(user_ids):
+    """Delete authentication profiles and their access memberships, preserving audit history."""
+    cleaned_ids = sorted({int(user_id) for user_id in user_ids if str(user_id).isdigit()})
+    if not cleaned_ids:
+        return 0
+    placeholders = ", ".join("?" for _ in cleaned_ids)
+    connection = get_auth_connection()
+    try:
+        connection.execute(
+            f"UPDATE registration_requests SET reviewed_by_user_id = NULL WHERE reviewed_by_user_id IN ({placeholders})",
+            cleaned_ids,
+        )
+        connection.execute(
+            f"UPDATE scheduled_job_runs SET acknowledged_by_user_id = NULL WHERE acknowledged_by_user_id IN ({placeholders})",
+            cleaned_ids,
+        )
+        connection.execute(
+            f"UPDATE teams SET created_by_user_id = NULL WHERE created_by_user_id IN ({placeholders})",
+            cleaned_ids,
+        )
+        connection.execute(
+            f"UPDATE team_invites SET invited_by_user_id = NULL WHERE invited_by_user_id IN ({placeholders})",
+            cleaned_ids,
+        )
+        connection.execute(f"DELETE FROM team_memberships WHERE user_id IN ({placeholders})", cleaned_ids)
+        connection.execute(f"DELETE FROM user_company_memberships WHERE user_id IN ({placeholders})", cleaned_ids)
+        cursor = connection.execute(f"DELETE FROM users WHERE id IN ({placeholders})", cleaned_ids)
+        connection.commit()
+        return max(int(cursor.rowcount or 0), 0)
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
 
 
 def reset_user_password(user_id: int, password: str):

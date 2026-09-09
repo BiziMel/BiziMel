@@ -74,7 +74,7 @@
                 <span class="permission-badge">Company Admin</span>
                 <span class="permission-level">Tenant control</span>
             </div>
-            <p>Can manage users, roles, passwords and access inside their own company tenant only.</p>
+            <p>Can manage, deactivate and delete users, roles, passwords and access inside their own company tenant only.</p>
             <p class="permission-note">Company Admins cannot see another company, assign Application Admin access or manage application-level controls.</p>
         </div>
 
@@ -235,10 +235,22 @@
         </section>
     </div>
 
+    <form id="admin-user-delete-form"
+          method="POST"
+          action="{{ url_for('admin_delete_users') }}"
+          onsubmit="return confirm('Permanently delete the selected user profiles? Sign-in access and memberships will be removed. Business records and audit history will be retained.');"></form>
+    <div class="bulk-action-bar" data-bulk-action-bar="admin-user-delete-form" hidden>
+        <span><strong data-bulk-selected-count>0</strong> user profile(s) selected.</span>
+        <button type="submit" form="admin-user-delete-form" class="btn btn-danger btn-small">Delete Selected</button>
+    </div>
+
     <div class="table-container admin-user-table-container">
         <table class="report-table admin-user-table">
             <thead>
                 <tr>
+                    <th class="bulk-select-col">
+                        <input type="checkbox" data-select-all="admin-user-delete-form" aria-label="Select all deletable user profiles">
+                    </th>
                     <th>User</th>
                     <th>Email</th>
                     <th>Company</th>
@@ -251,6 +263,11 @@
             <tbody>
                 {% for user in users %}
                     <tr>
+                        <td class="bulk-select-col">
+                            {% if user['id'] != actor_user_id and (is_app_admin or user['role'] != 'admin') %}
+                                <input type="checkbox" name="selected_user_ids" value="{{ user['id'] }}" form="admin-user-delete-form" aria-label="Select {{ user['full_name'] }} for deletion">
+                            {% endif %}
+                        </td>
                         <td>
                             <button type="button"
                                     class="link-button admin-user-toggle"
@@ -271,7 +288,7 @@
                         <td>{{ user["date_created"]|display_date(false) }}</td>
                     </tr>
                     <tr class="admin-user-panel-row" id="admin-user-panel-{{ user['id'] }}" hidden>
-                        <td colspan="7">
+                        <td colspan="8">
                             <div class="admin-user-panel">
                                 <section>
                                     <h4>Profile Information</h4>
@@ -366,7 +383,7 @@
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="7">No users found.</td>
+                        <td colspan="8">No users found.</td>
                     </tr>
                 {% endfor %}
             </tbody>

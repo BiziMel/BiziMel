@@ -2001,6 +2001,19 @@ def main():
             "matching tenant email domain did not activate a new profile",
         )
         auth_connection = pipeflow_app.get_auth_connection()
+        matched_user = auth_connection.execute(
+            "SELECT id, company FROM users WHERE email = ?",
+            ("matched@smoke-company.test",),
+        ).fetchone()
+        matched_memberships = auth_connection.execute(
+            "SELECT company_name FROM user_company_memberships WHERE user_id = ? ORDER BY company_name",
+            (matched_user["id"],),
+        ).fetchall()
+        assert_ok(
+            matched_user["company"] == "Smoke Other Company"
+            and [row["company_name"] for row in matched_memberships] == ["Smoke Other Company"],
+            "domain-validated registration was not constrained to exactly one matching company tenancy",
+        )
         smoke_tenant = auth_connection.execute(
             "SELECT id FROM tenants WHERE company_name = ?",
             ("Smoke Other Company",),
@@ -2050,6 +2063,87 @@ def main():
             and "Smoke Other Company" in company_tenant_html
             and "PipeFlow Administration" not in company_tenant_html,
             "Company Admin could not reach its domain configuration or could see another tenant",
+        )
+        assert_ok(
+            "admin-user-delete-form" in company_permissions_html
+            and 'data-select-all="admin-user-delete-form"' in company_permissions_html
+            and "Delete Selected" in company_permissions_html,
+            "single and bulk user deletion controls are missing from Company Admin",
+        )
+
+        single_delete_id, error = pipeflow_app.create_user(
+            "single-delete@smoke-company.test", "Password123!", "Single Delete User",
+            "single delete phrase", "Smoke Other Company",
+        )
+        assert_ok(single_delete_id and not error, "single-delete test profile could not be created")
+        response = company_admin_client.post(
+            "/admin/users/delete",
+            data={
+                "csrf_token": csrf_from_session(company_admin_client),
+                "selected_user_ids": [str(single_delete_id)],
+            },
+            follow_redirects=True,
+        )
+        assert_ok(response.status_code == 200 and "Deleted 1 user profile" in response.get_data(as_text=True), "single user deletion failed")
+
+        bulk_delete_ids = []
+        for suffix in ("one", "two"):
+            user_id, error = pipeflow_app.create_user(
+                f"bulk-delete-{suffix}@smoke-company.test", "Password123!", f"Bulk Delete {suffix.title()}",
+                f"bulk delete {suffix} phrase", "Smoke Other Company",
+            )
+            assert_ok(user_id and not error, f"bulk-delete {suffix} profile could not be created")
+            bulk_delete_ids.append(user_id)
+        response = company_admin_client.post(
+            "/admin/users/delete",
+            data={
+                "csrf_token": csrf_from_session(company_admin_client),
+                "selected_user_ids": [str(user_id) for user_id in bulk_delete_ids],
+            },
+            follow_redirects=True,
+        )
+        assert_ok(response.status_code == 200 and "Deleted 2 user profiles" in response.get_data(as_text=True), "bulk user deletion failed")
+        auth_connection = pipeflow_app.get_auth_connection()
+        remaining_deleted_users = auth_connection.execute(
+            "SELECT COUNT(*) AS total FROM users WHERE id IN (?, ?, ?)",
+            (single_delete_id, *bulk_delete_ids),
+        ).fetchone()["total"]
+        remaining_deleted_memberships = auth_connection.execute(
+            "SELECT COUNT(*) AS total FROM user_company_memberships WHERE user_id IN (?, ?, ?)",
+            (single_delete_id, *bulk_delete_ids),
+        ).fetchone()["total"]
+        primary_admin = auth_connection.execute(
+            "SELECT id FROM users WHERE email = ?",
+            ("smoke-test@example.com",),
+        ).fetchone()
+        auth_connection.close()
+        assert_ok(
+            remaining_deleted_users == 0 and remaining_deleted_memberships == 0,
+            "deleted user authentication or tenancy membership records remain",
+        )
+        response = company_admin_client.post(
+            "/admin/users/delete",
+            data={
+                "csrf_token": csrf_from_session(company_admin_client),
+                "selected_user_ids": [str(primary_admin["id"])],
+            },
+            follow_redirects=True,
+        )
+        assert_ok(
+            response.status_code == 200 and "permitted company tenancy" in response.get_data(as_text=True),
+            "Company Admin was not blocked from deleting an Application Admin outside its tenancy",
+        )
+        response = company_admin_client.post(
+            "/admin/users/delete",
+            data={
+                "csrf_token": csrf_from_session(company_admin_client),
+                "selected_user_ids": [str(company_admin_id)],
+            },
+            follow_redirects=True,
+        )
+        assert_ok(
+            response.status_code == 200 and "cannot delete your own" in response.get_data(as_text=True),
+            "administrator self-deletion was not blocked",
         )
         response = company_admin_client.post(
             f"/admin/tenants/{smoke_tenant['id']}/update",

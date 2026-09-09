@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
 Version: 2.9.1
 Release date: 2026-09-09
-Build: 2026-09-09-v2.9.1-engagement-consistency-r4
+Build: 2026-09-09-v2.9.1-engagement-consistency-r5
 Package purpose: Hosted enterprise deployment only.

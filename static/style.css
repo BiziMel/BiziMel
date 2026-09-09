@@ -3455,7 +3455,7 @@ a:hover {
 }
 
 .admin-user-table {
-    min-width: 980px;
+    min-width: 1020px;
     table-layout: fixed;
 }
 
@@ -3480,30 +3480,35 @@ a:hover {
 
 .admin-user-table th:nth-child(1),
 .admin-user-table td:nth-child(1) {
-    width: 19%;
+    width: 6%;
 }
 
 .admin-user-table th:nth-child(2),
 .admin-user-table td:nth-child(2) {
-    width: 24%;
+    width: 17%;
 }
 
 .admin-user-table th:nth-child(3),
 .admin-user-table td:nth-child(3) {
-    width: 17%;
+    width: 22%;
 }
 
 .admin-user-table th:nth-child(4),
 .admin-user-table td:nth-child(4) {
-    width: 12%;
+    width: 16%;
 }
 
 .admin-user-table th:nth-child(5),
 .admin-user-table td:nth-child(5),
 .admin-user-table th:nth-child(6),
-.admin-user-table td:nth-child(6),
+.admin-user-table td:nth-child(6) {
+    width: 11%;
+}
+
 .admin-user-table th:nth-child(7),
-.admin-user-table td:nth-child(7) {
+.admin-user-table td:nth-child(7),
+.admin-user-table th:nth-child(8),
+.admin-user-table td:nth-child(8) {
     width: 9%;
 }
 

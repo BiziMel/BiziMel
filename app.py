@@ -26,7 +26,7 @@ except ModuleNotFoundError:
     Image = None
     ImageOps = None
     UnidentifiedImageError = Exception
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, bulk_update_broadcast_messages, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members, decode_broadcast_companies, set_user_company_memberships, user_company_names, tenant_for_email, create_registration_request, list_pending_registration_requests, resolve_registration_request, registration_request_status, complete_first_login_setup
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, delete_users, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, bulk_update_broadcast_messages, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members, decode_broadcast_companies, set_user_company_memberships, user_company_names, tenant_for_email, create_registration_request, list_pending_registration_requests, resolve_registration_request, registration_request_status, complete_first_login_setup
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
@@ -34,7 +34,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.9.1"
 APP_RELEASE_DATE = "2026-09-09"
-APP_BUILD = "2026-09-09-v2.9.1-engagement-consistency-r4"
+APP_BUILD = "2026-09-09-v2.9.1-engagement-consistency-r5"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -61,6 +61,8 @@ RELEASE_NOTES = [
             "Added company-domain profile registration: recognised work email domains activate against their tenant, unmatched domains create an Admin approval request, and existing emails enter secret-phrase password reset.",
             "Changed Admin user creation to generate a strong temporary password and require the user to replace it and set their own secret phrase before first access.",
             "Added repeatable company email-domain controls so Application Admins and Company Admins can add or remove each validated registration domain independently.",
+            "Added checkbox-led single and bulk user deletion for Application Admins and tenant-scoped Company Admins.",
+            "Ensured domain-validated self-registration creates exactly one explicit membership for the matching company tenancy.",
         ],
         "fixed": [
             "Stopped rescheduled open tasks appearing as previous activity in PG Progress; only the current schedule is shown while every change remains in Audit.",
@@ -1138,12 +1140,13 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
             'Assign User, Manager, Company Admin or Application Admin role according to responsibility.',
             'Associate managers to one or more teams when they need team PG Progress visibility.',
             'Edit a user profile to change role, company, team memberships or active status.',
-            'Deactivate users who should no longer access PipeFlow.',
+            'Select one or more user rows and choose Delete Selected when profiles must be permanently removed; self-deletion and cross-tenant deletion are blocked.',
+            'Deactivate users when access should be paused without deleting their profile.',
             'Application Admins review the read-only Nightly Scheduler History for the last 30 days and confirm any failure dialog after checking the service logs.',
             'Use the Audit Trail to investigate administrative and data changes.'],
   'tips': ['Managers only see team PG Progress when they are assigned as manager/admin on the team.',
            'Application Admins can maintain domains for any company; Company Admins can maintain only the domains for their own company.',
-           'New profiles with a configured company email domain are validated automatically; unmatched domains never receive login or workspace access before approval.',
+           'New profiles with a configured company email domain are assigned only to the matching company tenancy; unmatched domains never receive login or workspace access before approval.',
            'Admin-created users cannot access application pages until first-login password and secret-phrase setup is complete.',
            'Company Admins cannot administer users outside their tenant.',
            'Only Application Admins receive nightly scheduler failure dialogs; confirming one suppresses that specific failed run.',
@@ -2143,7 +2146,7 @@ PAGE_INSTRUCTIONS = {
     "admin_tenants": {
         "title": "Tenant Guidance",
         "items": [
-            "Tenant administration is only available to Application Admin users.",
+            "Application Admins can maintain every tenant; Company Admins can maintain only their own company tenant.",
             "Create the company tenant before assigning user profiles to that company.",
             "Company Name is the tenancy boundary used by company-scoped administration, sharing and assignment controls.",
             "Select the primary company contact from the available user list.",
@@ -2154,7 +2157,8 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "This admin form is only available to users with administration permission.",
             "Use this page to manage user identity, tenant, role and active status.",
-            "Deactivate users who should no longer access PipeFlow.",
+            "Use the row checkboxes and Delete Selected for either one profile or a bulk selection; you cannot delete yourself or users outside your permitted tenancy.",
+            "Deactivate users when access should be paused without permanently deleting the profile.",
             "Password resets should only be used after confirming the user request.",
         ],
     },
@@ -2681,6 +2685,7 @@ def render_admin_permissions(temporary_credentials=None, message_override=""):
         pending_registrations=list_pending_registration_requests() if is_app_admin else [],
         audit_retention_enabled=audit_retention_enabled(),
         temporary_credentials=temporary_credentials,
+        actor_user_id=actor["id"] if actor else None,
         message=message_override or request.args.get("message", ""),
         error=request.args.get("error", "")
     )
@@ -2692,6 +2697,8 @@ def current_admin_can_manage_user(target_user):
         return False
     if is_application_admin(actor):
         return True
+    if target_user["role"] == "admin":
+        return False
     return is_company_admin(actor) and same_company(actor, target_user)
 
 
@@ -3283,6 +3290,41 @@ def admin_deactivate_user(user_id):
         "User sign-in access was paused."
     )
     return redirect(url_for("admin_users", message="Profile deactivated."))
+
+
+@app.route("/admin/users/delete", methods=("POST",))
+@admin_required
+def admin_delete_users():
+    actor = current_user()
+    selected_ids = sorted({
+        int(value) for value in request.form.getlist("selected_user_ids")
+        if str(value).isdigit()
+    })
+    if not selected_ids:
+        return redirect(url_for("admin_users", error="Select at least one user profile to delete."))
+    if actor and actor["id"] in selected_ids:
+        return redirect(url_for("admin_users", error="You cannot delete your own administrator profile."))
+
+    selected_users = []
+    for user_id in selected_ids:
+        user = get_user_for_admin(user_id)
+        if not user:
+            return redirect(url_for("admin_users", error="One selected profile no longer exists. Refresh Admin and try again."))
+        if not current_admin_can_manage_user(user):
+            return redirect(url_for("admin_users", error="You can only delete users within your permitted company tenancy."))
+        selected_users.append(user)
+
+    deleted_count = delete_users(selected_ids)
+    for user in selected_users:
+        log_admin_audit(
+            actor,
+            "Profile deleted",
+            "User",
+            user["email"],
+            f"Deleted authentication profile for {user['full_name']} from {user['company']}. Business records and audit history were retained.",
+        )
+    noun = "profile" if deleted_count == 1 else "profiles"
+    return redirect(url_for("admin_users", message=f"Deleted {deleted_count} user {noun}."))
 
 
 @app.route("/admin/users/<int:user_id>/reactivate", methods=("POST",))
