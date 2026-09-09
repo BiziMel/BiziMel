@@ -47,14 +47,21 @@
 </div>
 <section class="insights-table-section overview-execution-section">
     <div class="section-header compact-section-header"><div><h3>Account Execution Measures</h3><p>Recorded execution facts for the selected evidence period. Scheduled work remains managed in Outreach Tasks.</p></div><span class="record-count">{{ momentum_rows|length }} accounts</span></div>
+    <div class="momentum-legend" aria-label="Momentum legend">
+        <strong>Momentum</strong>
+        <span><i class="rag-green"></i><b>Advancing</b> positive response or meeting in 30 days</span>
+        <span><i class="rag-amber"></i><b>Relapsing</b> earlier progress, none in 30 days</span>
+        <span><i class="rag-red"></i><b>Stalled</b> recent activity without progress</span>
+        <span><i class="rag-blue"></i><b>Inactive</b> no engagement in 30 days</span>
+    </div>
     <div class="table-container command-table-container"><table class="report-table overview-metrics-table">
-        <thead><tr><th>Account / Business Org</th><th>RAG</th><th>Momentum</th><th>Activity</th><th>Positive Responses</th><th>Meetings</th><th>Overdue</th><th>Future Actions</th><th>Active Contacts</th><th>Inactive Contacts</th><th>Last Activity</th></tr></thead>
+        <thead><tr><th>Account / Business Org</th><th>RAG</th><th>Momentum</th><th>Total Activity This Week</th><th>Total Activity All Time</th><th>Positive Responses</th><th>Meetings</th><th>Overdue</th><th>Future Actions</th><th>Active Contacts</th><th>Inactive Contacts</th><th>Last Activity</th></tr></thead>
         <tbody>{% for account in momentum_rows %}<tr>
             <td><a href="{{ url_for('view_account', account_id=account.account_id) }}"><strong>{{ account.account_label }}</strong></a></td>
             <td class="insights-rag-cell"><span class="insights-rag-dot rag-{{ account.rag_status }}" role="img" aria-label="{{ account.rag_label }} RAG" title="{{ account.rag_label }}"></span></td>
             <td><span class="momentum-state state-{{ account.state_tone }}"><i></i>{{ account.state }}</span></td>
-            <td>{{ account.recent_activity }}</td><td>{{ account.recent_positive }}</td><td>{{ account.recent_meetings }}</td><td class="{% if account.overdue %}risk-text{% endif %}">{{ account.overdue }}</td><td>{{ account.future_actions }}</td><td>{{ account.active_contacts }}</td><td>{{ account.inactive_contacts }}</td><td>{{ account.last_activity }}</td>
-        </tr>{% else %}<tr><td colspan="11">No account execution data is available.</td></tr>{% endfor %}</tbody>
+            <td>{{ account.activity_this_week }}</td><td>{{ account.activity_all_time }}</td><td>{{ account.recent_positive }}</td><td>{{ account.recent_meetings }}</td><td class="{% if account.overdue %}risk-text{% endif %}">{{ account.overdue }}</td><td>{{ account.future_actions }}</td><td>{{ account.active_contacts }}</td><td>{{ account.inactive_contacts }}</td><td>{{ account.last_activity }}</td>
+        </tr>{% else %}<tr><td colspan="12">No account execution data is available.</td></tr>{% endfor %}</tbody>
     </table></div>
 </section>
 <div class="insights-section-heading insights-subsection-heading">
@@ -98,7 +105,7 @@
 {% elif active_insights_view == 'accounts' %}
 <div class="insights-section-heading"><div><h2>Account Momentum</h2><p>Understand each account's direction, the evidence behind it and whether engagement has a clear continuation.</p></div></div>
 <section class="momentum-summary" aria-label="Account momentum totals">
-    {% for state in ['Advancing', 'Stalled', 'Relapsing', 'Uncovered', 'Inactive'] %}<div class="momentum-summary-item momentum-{{ state|lower }}"><span>{{ state }}</span><strong>{{ momentum_counts.get(state, 0) }}</strong></div>{% endfor %}
+    {% for state in ['Advancing', 'Stalled', 'Relapsing', 'Inactive'] %}<div class="momentum-summary-item momentum-{{ state|lower }}"><span>{{ state }}</span><strong>{{ momentum_counts.get(state, 0) }}</strong></div>{% endfor %}
 </section>
 <div class="table-container command-table-container"><table class="report-table momentum-table">
     <thead><tr><th>Account / Business Org</th><th>RAG</th><th>Momentum</th><th>Why this state</th><th>Last progress</th><th>Action continuity</th></tr></thead>

@@ -296,32 +296,28 @@ def main():
         stale_amber = today - timedelta(days=15)
         stale_red = today - timedelta(days=31)
         assert_ok(
-            calc([{"outcome": "Positive Response", "scheduled_meeting_date": "", "task_status": "Completed", "completed_at": today.isoformat()}], today=today)["automatedRagStatus"] == "red",
-            "PG RAG should stay red for a positive response without a scheduled booked meeting",
+            calc([{"outcome": "Positive Response", "scheduled_meeting_date": "", "task_status": "Completed", "completed_at": today.isoformat()}], today=today)["automatedRagStatus"] == "green",
+            "Engagement status should be green for a recent positive response",
         )
         assert_ok(
-            calc([{"outcome": "NBM Booked", "scheduled_meeting_date": "", "task_status": "Not Started", "next_action_date": meeting_future.isoformat()}], today=today)["automatedRagStatus"] == "red",
-            "PG RAG should stay red when a meeting outcome has no scheduled meeting date",
+            calc([{"outcome": "NBM Booked", "scheduled_meeting_date": "", "task_status": "Not Started", "next_action_date": meeting_future.isoformat()}], today=today)["automatedRagStatus"] == "blue",
+            "A schedule-only task without recorded engagement should remain inactive",
         )
         assert_ok(
-            calc([{"outcome": "No Response", "scheduled_meeting_date": meeting_future.isoformat(), "task_status": "Not Started", "next_action_date": meeting_future.isoformat()}], today=today)["automatedRagStatus"] == "red",
-            "PG RAG should stay red when a scheduled date exists without a booked meeting outcome",
+            calc([{"outcome": "No Response", "activity_date": today.isoformat(), "scheduled_meeting_date": meeting_future.isoformat(), "task_status": "Completed", "next_action_date": meeting_future.isoformat()}], today=today)["automatedRagStatus"] == "red",
+            "Recent activity without progress should be stalled",
         )
         assert_ok(
             calc([{"outcome": "NBM Booked", "scheduled_meeting_date": meeting_future.isoformat(), "task_status": "Not Started", "next_action_date": meeting_future.isoformat()}], today=today)["automatedRagStatus"] == "green",
             "PG RAG should be green for a booked meeting with a valid future scheduled meeting date",
         )
         assert_ok(
-            calc([{"outcome": "NBM Booked", "scheduled_meeting_date": stale_amber.isoformat(), "task_status": "Completed", "completed_at": stale_amber.isoformat()}], today=today)["automatedRagStatus"] == "amber",
-            "PG RAG should degrade to amber after 14 days without scheduled or closed activity",
+            calc([{"outcome": "NBM Booked", "scheduled_meeting_date": stale_amber.isoformat(), "task_status": "Completed", "completed_at": stale_amber.isoformat()}], today=today)["automatedRagStatus"] == "green",
+            "Meeting progress inside 30 days should remain advancing",
         )
         assert_ok(
-            calc([{"outcome": "NBM Booked", "scheduled_meeting_date": stale_red.isoformat(), "task_status": "Completed", "completed_at": stale_red.isoformat()}], today=today)["automatedRagStatus"] == "red",
-            "PG RAG should degrade to red after 30 days without scheduled or closed activity",
-        )
-        assert_ok(
-            pipeflow_app.effective_pg_rag_payload({"automatedRagStatus": "red", "reason": "auto"}, "green")["effectiveRagStatus"] == "green",
-            "PG RAG manual override should take precedence over automatic status",
+            calc([{"outcome": "NBM Booked", "scheduled_meeting_date": stale_red.isoformat(), "task_status": "Completed", "completed_at": stale_red.isoformat()}], today=today)["automatedRagStatus"] == "amber",
+            "Earlier progress without progress in 30 days should be relapsing",
         )
 
         client = pipeflow_app.app.test_client()
@@ -345,10 +341,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.9.0" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.9.1" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.9.0",
+            "health/version did not report Release 2.9.1",
         )
 
         response = client.post(
@@ -1060,6 +1056,9 @@ def main():
         connection = sqlite3.connect(db_path)
         connection.row_factory = sqlite3.Row
         pg_context = pipeflow_app.pg_dashboard_context(connection)
+        expected_account_rag = pipeflow_app.calculate_automated_pg_rag_status(
+            pipeflow_app.account_pg_rag_activities(connection, account_id)
+        )["automatedRagStatus"]
         connection.close()
         plan_row = next(row for row in pg_context["pg_plan_rows"] if row["account_id"] == account_id)
         action_rows = [row for row in pg_context["pg_action_rows"] if row["account_id"] == account_id]
@@ -1084,53 +1083,39 @@ def main():
             all(row.get("account_rag_status") == plan_row["rag_status"] for row in action_rows),
             "PG Progress lower account RAG does not match top account RAG",
         )
-        assert_ok(plan_row["rag_status"] == "green", "PG Progress account RAG should reflect booked scheduled meeting evidence")
+        assert_ok(plan_row["rag_status"] == expected_account_rag, "PG Progress account RAG did not use the shared engagement calculation")
         pg_progress_html = client.get("/pg-progress").get_data(as_text=True)
-        assert_ok("data-rag-trigger" in pg_progress_html, "PG Progress manual RAG picker trigger missing")
+        assert_ok("data-rag-trigger" not in pg_progress_html, "Obsolete PG Progress manual RAG picker is still present")
+        assert_ok("Return to Top" in pg_progress_html, "PG Progress return-to-top control missing")
+        assert_ok(f"pg-rag-{expected_account_rag}" in pg_progress_html, "PG Progress did not render the shared account engagement colour")
+        insights_html = client.get("/").get_data(as_text=True)
+        assert_ok("Total Activity This Week" in insights_html, "Insights weekly activity measure missing")
+        assert_ok("Total Activity All Time" in insights_html, "Insights all-time activity measure missing")
+        assert_ok("momentum-legend" in insights_html and "Inactive" in insights_html, "Insights Momentum legend missing")
+        assert_ok(f"rag-{expected_account_rag}" in insights_html, "Insights did not render the shared account engagement colour")
         response = client.post(
             "/pg-progress",
             data={
                 "csrf_token": csrf_from_session(client),
                 "current_pipeline": "1000",
-                "pg_plan_account_id": [str(account_id)],
-                f"rag_account_{account_id}": "green",
                 "pg_action_contact_id": [str(contact_id)],
                 f"pg_action_account_id_{contact_id}": str(account_id),
-                f"rag_contact_{contact_id}": "amber",
                 f"completed_discovery_contact_{contact_id}": "Yes",
                 f"exec_first_contact_{contact_id}": "Yes",
                 f"nbm_completed_contact_{contact_id}": "No",
             },
             follow_redirects=False,
         )
-        assert_ok(response.status_code in (302, 303), "PG Progress manual RAG save failed")
+        assert_ok(response.status_code in (302, 303), "PG Progress metric save failed")
         connection = sqlite3.connect(db_path)
         connection.row_factory = sqlite3.Row
         pg_context = pipeflow_app.pg_dashboard_context(connection)
         connection.close()
         plan_row = next(row for row in pg_context["pg_plan_rows"] if row["account_id"] == account_id)
         contact_row = next(row for row in pg_context["pg_action_rows"] if row["contact_id"] == contact_id)
-        assert_ok(plan_row["rag_status"] == "green", "PG Progress account RAG did not persist manual selection")
-        assert_ok(contact_row["rag_status"] == "amber", "PG Progress contact RAG did not persist manual selection")
-        assert_ok(contact_row["account_rag_status"] == "green", "PG Progress action account RAG did not mirror manual account selection")
-        response = client.post(
-            "/pg-progress",
-            data={
-                "csrf_token": csrf_from_session(client),
-                "current_pipeline": "1000",
-                "pg_plan_account_id": [str(account_id)],
-                f"rag_account_{account_id}": "",
-            },
-            follow_redirects=False,
-        )
-        assert_ok(response.status_code in (302, 303), "PG Progress automatic RAG reset save failed")
-        connection = sqlite3.connect(db_path)
-        connection.row_factory = sqlite3.Row
-        pg_context = pipeflow_app.pg_dashboard_context(connection)
-        connection.close()
-        plan_row = next(row for row in pg_context["pg_plan_rows"] if row["account_id"] == account_id)
-        assert_ok(plan_row["rag_status"] == "green", "PG Progress automatic RAG did not recalculate booked scheduled meeting evidence after manual override removal")
-        assert_ok(plan_row["manual_rag_override"] == "", "PG Progress manual RAG override was not cleared")
+        assert_ok(plan_row["rag_status"] == expected_account_rag, "PG Progress account status changed while saving metrics")
+        assert_ok(contact_row["rag_status"] in {"green", "amber", "red", "blue"}, "PG Progress contact engagement status is invalid")
+        assert_ok(contact_row["account_rag_status"] == expected_account_rag, "PG Progress action account status did not mirror the plan table")
 
         campaign_builder_html = client.get("/outreach/campaign-builder").get_data(as_text=True)
         assert_ok(
@@ -2741,8 +2726,9 @@ def main():
                 blocked_contact_dates.append(candidate_day.isoformat())
             candidate_day += timedelta(days=1)
         connection = sqlite3.connect(db_path)
+        reschedule_target_id = None
         for index, blocked_date in enumerate(blocked_contact_dates, start=1):
-            connection.execute(
+            inserted = connection.execute(
                 """
                 INSERT INTO outreach (
                     fy, quarter, account_id, contact_id, campaign, sales_play,
@@ -2769,11 +2755,15 @@ def main():
                     "Smoke Test Admin",
                 ),
             )
+            reschedule_target_id = inserted.lastrowid
         connection.commit()
         connection.close()
 
+        previous_due_display = pipeflow_app.format_display_datetime(
+            blocked_contact_dates[-1], "09:00"
+        )
         response = client.post(
-            f"/outreach/{multi_outreach['id']}/auto-reschedule",
+            f"/outreach/{reschedule_target_id}/auto-reschedule",
             data={
                 "csrf_token": csrf_from_session(client),
                 "return_to": "/outreach",
@@ -2785,12 +2775,24 @@ def main():
         connection.row_factory = sqlite3.Row
         auto_due = connection.execute(
             "SELECT next_action_date, next_action_time FROM outreach WHERE id = ?",
-            (multi_outreach["id"],),
+            (reschedule_target_id,),
         ).fetchone()
+        rescheduled_pg_context = pipeflow_app.pg_dashboard_context(connection)
+        rescheduled_contact_row = next(
+            row for row in rescheduled_pg_context["pg_action_rows"]
+            if row.get("contact_id") == second_contact_id
+        )
         connection.close()
         assert_ok(auto_due["next_action_date"] and auto_due["next_action_time"], "single auto-reschedule did not set a due slot")
         assert_ok(date.fromisoformat(auto_due["next_action_date"]).weekday() < 5, "single auto-reschedule selected a weekend")
         assert_ok(auto_due["next_action_date"] not in blocked_contact_dates, "single auto-reschedule selected a date already used by the same contact")
+        current_due_display = pipeflow_app.format_display_datetime(auto_due["next_action_date"], auto_due["next_action_time"])
+        planned_action_text = " ".join(str(item) for item in rescheduled_contact_row["next_7_days_actions"])
+        activity_history_text = " ".join(str(item) for item in rescheduled_contact_row["last_7_days_activity_entries"])
+        assert_ok(current_due_display in planned_action_text, "PG Progress did not show the rescheduled task's current date and time")
+        if previous_due_display and previous_due_display != current_due_display:
+            assert_ok(previous_due_display not in planned_action_text, "PG Progress retained the task's previous schedule")
+        assert_ok("Task Rescheduled" not in activity_history_text, "PG Progress treated a schedule-only amendment as customer activity")
 
         first_original_due = (today + timedelta(days=31)).isoformat()
         second_original_due = (today + timedelta(days=30)).isoformat()

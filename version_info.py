@@ -1,2 +1,2 @@
 APP_NAME = "PipeFlow"
-APP_VERSION = "2.9.0"
+APP_VERSION = "2.9.1"

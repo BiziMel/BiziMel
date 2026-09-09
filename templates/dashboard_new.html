@@ -4,7 +4,7 @@
 
 {% block content %}
 
-<div class="page-header">
+<div class="page-header" id="pg-progress-top">
     <div>
         <h1>PG Progress</h1>
         <p>Track PG Goals, PG Plan and PG Actions using your account and outreach data.</p>
@@ -140,22 +140,7 @@
                     {% for row in pg_plan_rows %}
                         <tr>
                             <td class="pg-plan-rag-cell">
-                                {% if can_edit_pg_rag and not pg_progress_read_only %}
-                                    <input type="hidden" name="pg_plan_account_id" value="{{ row.account_id }}">
-                                    <input type="hidden"
-                                           name="rag_account_{{ row.account_id }}"
-                                           value="{{ row.manual_rag_override or '' }}"
-                                           data-rag-input="account-{{ row.account_id }}"
-                                           data-rag-auto="{{ row.automated_rag_status or 'red' }}">
-                                    <button type="button"
-                                            class="pg-rag-dot pg-rag-{{ row.rag_status }} pg-rag-picker-trigger"
-                                            title="{{ row.rag_reason }}"
-                                            aria-label="Set account RAG status for {{ row.account_name }}"
-                                            data-rag-trigger
-                                            data-rag-target="account-{{ row.account_id }}"></button>
-                                {% else %}
-                                    <span class="pg-rag-dot pg-rag-{{ row.rag_status }}" title="{{ row.rag_reason }}"></span>
-                                {% endif %}
+                                <span class="pg-rag-dot pg-rag-{{ row.rag_status }}" role="img" aria-label="{{ row.rag_label }} engagement" title="{{ row.rag_reason }}"></span>
                             </td>
                             <td class="pg-plan-sales-play-cell">{{ row.sales_play or "No sales play entered" }}</td>
                             <td class="pg-plan-account-cell">
@@ -224,16 +209,7 @@
                                 <td colspan="7">
                                     <span>Account</span>
                                     <strong>{{ row.account_name }}</strong>
-                                    {% if can_edit_pg_rag and not pg_progress_read_only %}
-                                        <button type="button"
-                                                class="pg-rag-dot pg-rag-{{ row.account_rag_status or row.rag_status }} pg-rag-picker-trigger"
-                                                title="Set account RAG status"
-                                                aria-label="Set account RAG status for {{ row.account_name }}"
-                                                data-rag-trigger
-                                                data-rag-target="account-{{ row.account_id }}"></button>
-                                    {% else %}
-                                        <span class="pg-rag-dot pg-rag-{{ row.account_rag_status or row.rag_status }}" title="{{ row.account_rag_reason or row.rag_reason }}"></span>
-                                    {% endif %}
+                                    <span class="pg-rag-dot pg-rag-{{ row.account_rag_status or row.rag_status }}" role="img" aria-label="{{ row.account_rag_label or row.rag_label }} engagement" title="{{ row.account_rag_reason or row.rag_reason }}"></span>
                                 </td>
                             </tr>
                         {% endif %}
@@ -261,21 +237,7 @@
                         {% endif %}
                         <tr>
                             <td class="pg-rag-cell">
-                                {% if not row.is_partner_row and can_edit_pg_rag and not pg_progress_read_only %}
-                                    <input type="hidden"
-                                           name="rag_contact_{{ row.contact_id }}"
-                                           value="{{ row.manual_rag_override or row.rag_status }}"
-                                           data-rag-input="contact-{{ row.contact_id }}"
-                                           data-rag-auto="red">
-                                    <button type="button"
-                                            class="pg-rag-dot pg-rag-{{ row.rag_status }} pg-rag-picker-trigger"
-                                            title="Set contact RAG status"
-                                            aria-label="Set contact RAG status for {{ row.targeted_discovery or 'contact' }}"
-                                            data-rag-trigger
-                                            data-rag-target="contact-{{ row.contact_id }}"></button>
-                                {% else %}
-                                    <span class="pg-rag-dot pg-rag-{{ row.rag_status }}" title="{{ row.rag_reason }}"></span>
-                                {% endif %}
+                                <span class="pg-rag-dot pg-rag-{{ row.rag_status }}" role="img" aria-label="{{ row.rag_label }} engagement" title="{{ row.rag_reason }}"></span>
                             </td>
                             <td class="pg-contact-cell">
                                 {% if not row.is_partner_row %}
@@ -363,82 +325,17 @@
     {% endif %}
 </form>
 
-{% if can_edit_pg_rag and not pg_progress_read_only %}
-<div class="modal-backdrop" id="pgRagPickerModal" hidden>
-    <div class="modal-card pg-rag-picker-card" role="dialog" aria-modal="true" aria-labelledby="pgRagPickerTitle">
-        <h2 id="pgRagPickerTitle">Set RAG Status</h2>
-        <div class="pg-rag-picker-options" role="group" aria-label="RAG status options">
-            <button type="button" class="pg-rag-dot pg-rag-red pg-rag-picker-option" data-rag-choice="red" aria-label="Red"></button>
-            <button type="button" class="pg-rag-dot pg-rag-amber pg-rag-picker-option" data-rag-choice="amber" aria-label="Amber"></button>
-            <button type="button" class="pg-rag-dot pg-rag-green pg-rag-picker-option" data-rag-choice="green" aria-label="Green"></button>
-        </div>
-        <button type="button" class="btn btn-secondary pg-rag-auto-option" data-rag-choice="">Use Automatic</button>
-    </div>
-</div>
-
-<script>
-    const pgRagPickerModal = document.getElementById("pgRagPickerModal");
-    let activeRagTarget = "";
-
-    function closePgRagPicker() {
-        if (pgRagPickerModal) {
-            pgRagPickerModal.hidden = true;
-        }
-        activeRagTarget = "";
-    }
-
-    function setRagDotStatus(element, status) {
-        if (!element) {
-            return;
-        }
-        element.classList.remove("pg-rag-red", "pg-rag-amber", "pg-rag-green");
-        element.classList.add(`pg-rag-${status}`);
-    }
-
-    document.querySelectorAll("[data-rag-trigger]").forEach((trigger) => {
-        trigger.addEventListener("click", () => {
-            activeRagTarget = trigger.dataset.ragTarget || "";
-            if (pgRagPickerModal) {
-                pgRagPickerModal.hidden = false;
-                const firstChoice = pgRagPickerModal.querySelector("[data-rag-choice]");
-                if (firstChoice) {
-                    firstChoice.focus();
-                }
-            }
-        });
-    });
-
-    document.querySelectorAll("[data-rag-choice]").forEach((choice) => {
-        choice.addEventListener("click", () => {
-            const input = document.querySelector(`[data-rag-input="${activeRagTarget}"]`);
-            if (input) {
-                const status = choice.dataset.ragChoice || "";
-                const displayStatus = status || input.dataset.ragAuto || "red";
-                input.value = status;
-                document.querySelectorAll(`[data-rag-target="${activeRagTarget}"]`).forEach((dot) => setRagDotStatus(dot, displayStatus));
-            }
-            closePgRagPicker();
-        });
-    });
-
-    if (pgRagPickerModal) {
-        pgRagPickerModal.addEventListener("click", (event) => {
-            if (event.target === pgRagPickerModal) {
-                closePgRagPicker();
-            }
-        });
-    }
-
-    document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") {
-            closePgRagPicker();
-        }
-    });
-</script>
-{% endif %}
+<a class="btn btn-secondary pg-return-to-top" href="#pg-progress-top" aria-label="Return to the top of PG Progress" data-return-to-top hidden>&uarr; Return to Top</a>
 
 <script>
 document.addEventListener("DOMContentLoaded", () => {
+    const returnToTop = document.querySelector("[data-return-to-top]");
+    const updateReturnToTop = () => {
+        if (returnToTop) returnToTop.hidden = window.scrollY < 360;
+    };
+    window.addEventListener("scroll", updateReturnToTop, {passive: true});
+    updateReturnToTop();
+
     document.querySelectorAll("[data-period-filter]").forEach((form) => {
         const select = form.querySelector("[data-period-select]");
         const customFields = form.querySelector("[data-custom-period-fields]");

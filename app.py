@@ -31,9 +31,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.9.0"
-APP_RELEASE_DATE = "2026-09-03"
-APP_BUILD = "2026-09-03-v2.9.0-insights-pg-period-r2"
+APP_VERSION = "2.9.1"
+APP_RELEASE_DATE = "2026-09-09"
+APP_BUILD = "2026-09-09-v2.9.1-engagement-consistency-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -47,6 +47,22 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.9.1",
+        "release_date": "2026-09-09",
+        "title": "Consistent engagement status and clearer execution evidence",
+        "enhanced": [
+            "Aligned account and contact engagement colours across Insights and every PG Progress table using one shared 30-day calculation.",
+            "Added separate Total Activity This Week and Total Activity All Time measures to Account Execution Measures.",
+            "Added a compact Momentum legend directly above the Account Execution Measures table.",
+            "Added a Return to Top control to PG Progress for quicker movement through long account plans.",
+        ],
+        "fixed": [
+            "Stopped rescheduled open tasks appearing as previous activity in PG Progress; only the current schedule is shown while every change remains in Audit.",
+            "Removed broadcast start and stop timestamps from user-facing messages while retaining them in Admin.",
+            "Changed inactive engagement status to blue and removed obsolete manual RAG overrides from PG Progress presentation.",
+        ],
+    },
     {
         "version": "2.9.0",
         "release_date": "2026-09-03",
@@ -922,7 +938,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
   'steps': ['Start in Overview and review Meetings This Week, Due Today, Overdue, Accounts at Risk and Completed This Week.',
             'Use Overview to compare account execution measures, then review portfolio coverage and expand risk groups for missing contacts, overdue work and missing future actions.',
             'Open Progress to review the engagement-to-meeting conversion path, eight-week trend and response and meeting conversion rates.',
-            'Open Account Momentum to distinguish Advancing, Stalled, Relapsing, Uncovered and Inactive accounts, understand why, and check action continuity.',
+            'Open Account Momentum to distinguish Advancing, Stalled, Relapsing and Inactive accounts, understand why, and check action continuity.',
             'Open Effectiveness to compare activity types, Sales Plays, contact categories and campaign sequences; use the on-page legend to interpret each rate.',
             'Open any metric, account or action link to work directly with the records behind the result.'],
   'tips': ['Deleted Outreach records are excluded from every Command Centre calculation.',
@@ -1010,7 +1026,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
            'For bulk rescheduling, select the required rows and choose Reschedule Selected. PipeFlow preserves their current order and finds collision-free working slots without using the original campaign end date as a limit.',
            'At 23:00 Europe/London each day, PipeFlow reviews open scheduled tasks in their current order and only moves work forward when a slot is unavailable or clashes.',
            'Sales Play assets appear under contact information when the selected Sales Play has configured assets.',
-           'No Response outcomes are used as negative signals in insights and PG Progress RAG.']},
+           'Rescheduling changes the live due date shown in PG Progress; previous dates remain available in the outreach Audit Trail rather than appearing as separate activity.']},
  {'slug': 'campaign-builder',
   'title': 'Campaign Builder',
   'summary': 'Generate varied multi-touch outreach campaigns for selected contacts on an account.',
@@ -1054,14 +1070,13 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
                  'Choose a PG Actions Evidence Period; select Custom when an inclusive From and To date is required.'],
   'steps': ['Review PG Goals for FY target, current pipeline and gap.',
             'Review PG Plan grouped by user for manager views, then by account, business organisation where present and Sales Play. Select an account name to jump to its PG Actions detail.',
-            'Read PG RAG dots: green means a booked meeting outcome has a valid scheduled meeting date, amber means previously green '
-            'progress has had no scheduled or closed activity for 14 days, and red means no confirmed scheduled meeting or 30-day inactivity.',
+            'Read the shared engagement dots used here and in Insights: green is recent positive or meeting progress, amber is relapsing earlier progress, red is recent activity without progress, and blue is no engagement in 30 days.',
             'Use checkboxes for Completed Discovery Meeting, Exec First and NBM Completed. Checked means Yes; unchecked means No.',
             'Review the Activity column for completed or updated interaction inside the selected evidence period; the default is Last 7 Days.',
             'Review Future Planned Actions for active open outreach tasks due in the future.',
-            'Contacts with no activity in the last 30 days and no open future task do not display in the PG Progress table.'],
-  'tips': ['Automatic account RAG recalculates from current outreach activity each time PG Progress is loaded.',
-           'Manual RAG overrides set by authorised users or managers take precedence until Use Automatic is selected.',
+            'Use Return to Top after reviewing a long PG Actions table to jump back to the page controls.'],
+  'tips': ['Account and contact engagement status recalculates from the same 30-day evidence rules used by Insights.',
+           'A rescheduled open task appears only at its current date and time in Future Planned Actions; its earlier schedule remains in Audit.',
            'Deleted and cancelled tasks are excluded from PG Progress and PG Bible task views.']},
  {'slug': 'reports',
   'title': 'Reports, Sales Play Reports and PG Bible',
@@ -1914,7 +1929,7 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "Start in Overview to compare account activity, outcomes, workload, relationship coverage and grouped portfolio risks on one page.",
             "Use Progress to compare completed activity, positive responses and customer meetings over the last eight weeks.",
-            "Use Account Momentum to understand why each account is Advancing, Stalled, Relapsing, Uncovered or Inactive and whether a next action exists.",
+            "Use Account Momentum to understand why each account is Advancing, Stalled, Relapsing or Inactive and whether a next action exists.",
             "Use Effectiveness to compare activity types, Sales Plays, contact categories and campaigns; its legend defines every rate and confidence measure.",
             "Choose a preset Evidence Period or Custom to filter all period-sensitive Insights measures with an inclusive From and To date.",
         ],
@@ -4511,6 +4526,23 @@ def report_visible_task_params(now=None):
     return (*REPORT_EXCLUDED_TASK_STATUSES, *overdue_task_params(now))
 
 
+def pg_recorded_activity_sql(alias="outreach"):
+    """Return completed or outcome-bearing work, not schedule-only amendments.
+
+    Rescheduling updates the live task and its audit trail. It is not a new customer
+    interaction, so PG Progress must show that task only in Future Planned Actions.
+    """
+    excluded = ",".join("?" for _ in REPORT_EXCLUDED_TASK_STATUSES)
+    return (
+        f"COALESCE({alias}.task_status, '') NOT IN ({excluded}) "
+        f"AND COALESCE({alias}.task_status, '') IN ('Completed', 'Closed')"
+    )
+
+
+def pg_recorded_activity_params():
+    return REPORT_EXCLUDED_TASK_STATUSES
+
+
 def report_scheduled_task_sql(alias="outreach"):
     # Future planned actions should include ordinary active tasks, while deleted,
     # cancelled and completed work stays out of the PG Progress pending column.
@@ -6426,8 +6458,9 @@ def build_execution_command_centre(connection):
         executive_contacts = [contact for contact in active_contacts if is_executive_contact(contact.get("category"), contact.get("bmc_relationship"), contact.get("job_title"))]
         tasks = outreach_by_account.get(account["id"], [])
         recent_tasks = []
-        historical_progress = False
         recent_positive = recent_meetings = 0
+        activity_this_week = 0
+        activity_all_time = 0
         future_tasks = []
         overdue_tasks = []
         latest_activity = None
@@ -6438,8 +6471,11 @@ def build_execution_command_centre(connection):
             outcome = task.get("outcome") or ""
             if activity_at and (latest_activity is None or activity_at > latest_activity):
                 latest_activity = activity_at
+            if activity_at:
+                activity_all_time += 1
+                if week_start <= activity_at.date() <= week_end:
+                    activity_this_week += 1
             if outcome in positive_outcomes or outcome in meeting_outcomes:
-                historical_progress = True
                 if activity_at and (latest_progress is None or activity_at > latest_progress):
                     latest_progress = activity_at
             if date_is_in_evidence_period(activity_at, period_start, period_end):
@@ -6454,28 +6490,11 @@ def build_execution_command_centre(connection):
                 else:
                     overdue_tasks.append(task)
 
-        if recent_meetings or recent_positive:
-            state = "Advancing"
-            state_tone = "green"
-            state_reason = f"{recent_meetings} meeting outcome(s) and {recent_positive} positive response(s) in {period_label}."
-        elif period_start and historical_progress and (not latest_progress or latest_progress.date() < period_start):
-            state = "Relapsing"
-            state_tone = "amber"
-            state_reason = f"Previous progress exists, but no positive response or meeting was recorded in {period_label}."
-        elif recent_tasks:
-            state = "Stalled"
-            state_tone = "red"
-            state_reason = f"{len(recent_tasks)} recent activit{'y' if len(recent_tasks) == 1 else 'ies'} produced no forward progress."
-        elif not active_contacts or not executive_contacts:
-            state = "Uncovered"
-            state_tone = "red"
-            state_reason = "Relationship coverage is incomplete."
-        else:
-            state = "Inactive"
-            state_tone = "red"
-            state_reason = f"No activity was recorded in {period_label}."
-
-        rag_status = "green" if state == "Advancing" else "amber" if state == "Relapsing" else "red"
+        engagement = calculate_automated_pg_rag_status(account_pg_rag_activities(connection, account["id"]), today=today)
+        state = engagement["state"]
+        state_tone = engagement["automatedRagStatus"]
+        state_reason = engagement["reason"]
+        rag_status = engagement["automatedRagStatus"]
 
         account_label = command_centre_account_label(account)
         row = {
@@ -6485,6 +6504,7 @@ def build_execution_command_centre(connection):
             "active_contacts": len(active_contacts), "inactive_contacts": len(inactive_contacts),
             "executive_contacts": len(executive_contacts),
             "recent_activity": len(recent_tasks), "recent_positive": recent_positive,
+            "activity_this_week": activity_this_week, "activity_all_time": activity_all_time,
             "recent_meetings": recent_meetings, "future_actions": len(future_tasks),
             "overdue": len(overdue_tasks),
             "last_progress": format_display_date(latest_progress.date().isoformat()) if latest_progress else "No progress recorded",
@@ -6508,7 +6528,7 @@ def build_execution_command_centre(connection):
             risk_groups["No future action"].append(row)
         if recent_positive and not recent_meetings and not future_tasks:
             risk_groups["Positive response without progression"].append(row)
-    momentum_order = {"Relapsing": 0, "Stalled": 1, "Uncovered": 2, "Inactive": 3, "Advancing": 4}
+    momentum_order = {"Relapsing": 0, "Stalled": 1, "Inactive": 2, "Advancing": 3}
     momentum_rows.sort(key=lambda row: (momentum_order.get(row["state"], 9), -row["overdue"], row["account_label"].casefold()))
     accounts_at_risk = sum(1 for row in momentum_rows if row["state"] != "Advancing")
 
@@ -6552,7 +6572,7 @@ def build_execution_command_centre(connection):
         "weekly_target": weekly_target,
         "weekly_goal_percent": min(100, round((meetings_week / weekly_target) * 100)),
         "momentum_rows": momentum_rows,
-        "momentum_counts": {state: sum(1 for row in momentum_rows if row["state"] == state) for state in ("Advancing", "Stalled", "Relapsing", "Uncovered", "Inactive")},
+        "momentum_counts": {state: sum(1 for row in momentum_rows if row["state"] == state) for state in ("Advancing", "Stalled", "Relapsing", "Inactive")},
         "effectiveness_rows": effectiveness_rows,
         "sales_play_effectiveness": sales_play_effectiveness,
         "contact_category_effectiveness": contact_category_effectiveness,
@@ -7367,20 +7387,15 @@ def parse_progress_date(value):
         return value
     return None
 
-def normalise_manual_rag_status(value, default="red"):
+def normalise_rag_status(value, default="red"):
     status = str(value or "").strip().lower()
-    if status in {"red", "amber", "green"}:
+    if status in {"red", "amber", "green", "blue"}:
         return status
     return default
 
 
-def normalise_manual_rag_override(value):
-    status = str(value or "").strip().lower()
-    return status if status in {"red", "amber", "green"} else ""
-
-
 def pg_rag_label(status):
-    return normalise_manual_rag_status(status, "red").title()
+    return normalise_rag_status(status, "red").title()
 
 
 def outreach_row_value(row, key, default=""):
@@ -7396,118 +7411,106 @@ def valid_pg_rag_date(value):
     return parsed if parsed else None
 
 
-def pg_activity_reference_date(activity):
+def engagement_activity_reference_date(activity):
+    """Return when customer engagement happened, excluding future schedule fields."""
     status = (outreach_row_value(activity, "task_status") or "").strip()
-    scheduled_candidates = (
-        outreach_row_value(activity, "scheduled_meeting_date"),
-        outreach_row_value(activity, "next_action_date"),
-        outreach_row_value(activity, "activity_date"),
-    )
-    closed_candidates = (
+    candidates = (
         outreach_row_value(activity, "completed_at"),
-        outreach_row_value(activity, "last_updated"),
         outreach_row_value(activity, "activity_date"),
+        outreach_row_value(activity, "last_updated") if is_closed_task_status(status) else "",
     )
-    candidates = closed_candidates if is_closed_task_status(status) else scheduled_candidates
-    parsed_dates = [valid_pg_rag_date(value) for value in candidates]
-    parsed_dates = [value for value in parsed_dates if value]
-    return max(parsed_dates) if parsed_dates else None
+    for value in candidates:
+        parsed = valid_pg_rag_date(value)
+        if parsed:
+            return parsed
+    return None
 
 
-def activity_has_future_pg_schedule(activity, today):
-    status = (outreach_row_value(activity, "task_status") or "").strip()
-    if status in {"Deleted", "Cancelled"} or is_closed_task_status(status):
-        return False
-    for field_name in ("scheduled_meeting_date", "next_action_date", "activity_date"):
-        parsed = valid_pg_rag_date(outreach_row_value(activity, field_name))
-        if parsed and parsed >= today:
-            return True
-    return False
-
-
-def activity_has_booked_meeting_with_date(activity):
-    outcome = normalise_outreach_outcome(outreach_row_value(activity, "outcome"))
-    if not outcome_requires_scheduled_meeting(outcome):
-        return False
-    return bool(valid_pg_rag_date(outreach_row_value(activity, "scheduled_meeting_date")))
-
-
-def calculate_automated_pg_rag_status(activities, today=None):
-    """Central PG Progress RAG engine.
-
-    Green requires a booked-meeting outcome with a valid scheduled meeting date.
-    Amber is only used when a previously Green account has no scheduled or
-    closed activity for at least 14 days. Without the booked meeting + date
-    qualification, every account remains Red.
-    """
+def calculate_automated_pg_rag_status(activities, today=None, force_inactive=False):
+    """Classify 30-day engagement for both Insights and PG Progress."""
     today = today or current_app_datetime().date()
+    cutoff = today - timedelta(days=30)
     rows = [
         activity for activity in activities
         if (outreach_row_value(activity, "task_status") or "").strip() not in {"Deleted", "Cancelled"}
     ]
-    if not any(activity_has_booked_meeting_with_date(activity) for activity in rows):
+    if force_inactive:
         return {
-            "automatedRagStatus": "red",
-            "reason": "Automatic RAG: no booked meeting outcome with a valid scheduled meeting date.",
+            "automatedRagStatus": "blue",
+            "state": "Inactive",
+            "reason": "The contact is inactive, so their engagement status is blue.",
             "lastActivityDate": None,
         }
-    if any(activity_has_future_pg_schedule(activity, today) for activity in rows):
+
+    activity_dates = []
+    progress_dates = []
+    progress_outcomes = set(POSITIVE_OUTCOMES) | set(PG_SUCCESS_OUTCOMES)
+    for activity in rows:
+        status = (outreach_row_value(activity, "task_status") or "").strip()
+        outcome = normalise_outreach_outcome(outreach_row_value(activity, "outcome"))
+        scheduled_meeting = valid_pg_rag_date(outreach_row_value(activity, "scheduled_meeting_date"))
+        if outcome_requires_scheduled_meeting(outcome) and scheduled_meeting and scheduled_meeting >= today:
+            activity_dates.append(today)
+            progress_dates.append(today)
+            continue
+        # A future schedule or a reschedule is planned work, not customer engagement.
+        if not is_closed_task_status(status) and not outcome:
+            continue
+        reference_date = engagement_activity_reference_date(activity)
+        if not reference_date:
+            continue
+        activity_dates.append(reference_date)
+        if outcome in progress_outcomes or (outreach_row_value(activity, "activity_type") or "").strip() == "Meeting":
+            progress_dates.append(reference_date)
+
+    latest_activity = max(activity_dates) if activity_dates else None
+    latest_progress = max(progress_dates) if progress_dates else None
+    if latest_progress and latest_progress >= cutoff:
         return {
             "automatedRagStatus": "green",
-            "reason": "Automatic RAG: booked meeting is confirmed and future activity is scheduled.",
-            "lastActivityDate": None,
+            "state": "Advancing",
+            "reason": "Positive response or meeting progress was recorded in the last 30 days.",
+            "lastActivityDate": latest_activity,
         }
-    activity_dates = [pg_activity_reference_date(activity) for activity in rows]
-    activity_dates = [value for value in activity_dates if value]
-    most_recent = max(activity_dates) if activity_dates else None
-    if not most_recent:
-        return {
-            "automatedRagStatus": "green",
-            "reason": "Automatic RAG: booked meeting is confirmed with a scheduled meeting date.",
-            "lastActivityDate": None,
-        }
-    days_since_activity = (today - most_recent).days
-    if days_since_activity >= 30:
-        return {
-            "automatedRagStatus": "red",
-            "reason": f"Automatic RAG: no scheduled or closed activity for {days_since_activity} days after meeting progress.",
-            "lastActivityDate": most_recent,
-        }
-    if days_since_activity >= 14:
+    if latest_progress:
         return {
             "automatedRagStatus": "amber",
-            "reason": f"Automatic RAG: no scheduled or closed activity for {days_since_activity} days after meeting progress.",
-            "lastActivityDate": most_recent,
+            "state": "Relapsing",
+            "reason": "Earlier progress exists, but no positive response or meeting was recorded in the last 30 days.",
+            "lastActivityDate": latest_activity,
+        }
+    if latest_activity and latest_activity >= cutoff:
+        return {
+            "automatedRagStatus": "red",
+            "state": "Stalled",
+            "reason": "Activity was recorded in the last 30 days without a positive response or meeting.",
+            "lastActivityDate": latest_activity,
         }
     return {
-        "automatedRagStatus": "green",
-        "reason": "Automatic RAG: booked meeting is confirmed and recent activity remains within 14 days.",
-        "lastActivityDate": most_recent,
+        "automatedRagStatus": "blue",
+        "state": "Inactive",
+        "reason": "No customer engagement was recorded in the last 30 days.",
+        "lastActivityDate": latest_activity,
     }
 
 
-def effective_pg_rag_payload(automated_payload, manual_override=""):
-    automated_status = normalise_manual_rag_status(
+def effective_pg_rag_payload(automated_payload):
+    automated_status = normalise_rag_status(
         automated_payload.get("automatedRagStatus") if automated_payload else "",
         "red",
     )
-    manual_status = normalise_manual_rag_override(manual_override)
-    effective_status = manual_status or automated_status
     return {
         "automatedRagStatus": automated_status,
-        "manualRagOverride": manual_status,
-        "effectiveRagStatus": effective_status,
-        "status": effective_status,
-        "label": pg_rag_label(effective_status),
+        "manualRagOverride": "",
+        "effectiveRagStatus": automated_status,
+        "status": automated_status,
+        "label": pg_rag_label(automated_status),
         "automated_status": automated_status,
         "automated_label": pg_rag_label(automated_status),
-        "manual_override": manual_status,
-        "manual_label": pg_rag_label(manual_status) if manual_status else "",
-        "reason": (
-            f"Manual override: {pg_rag_label(manual_status)}. Automatic status is {pg_rag_label(automated_status)}."
-            if manual_status
-            else (automated_payload.get("reason") if automated_payload else "Automatic RAG status")
-        ),
+        "manual_override": "",
+        "manual_label": "",
+        "state": (automated_payload or {}).get("state", pg_rag_label(automated_status)),
+        "reason": automated_payload.get("reason") if automated_payload else "Automatic engagement status",
     }
 
 
@@ -7534,50 +7537,26 @@ def account_pg_rag_payload(connection, account_id, action_update=None, today=Non
         account_pg_rag_activities(connection, account_id),
         today=today,
     )
-    manual_override = ""
-    if action_update:
-        if "manual_rag_override" in action_update.keys():
-            manual_override = normalise_manual_rag_override(action_update["manual_rag_override"])
-        if not manual_override and "rag_status" in action_update.keys():
-            manual_override = normalise_manual_rag_override(action_update["rag_status"])
-    payload = effective_pg_rag_payload(automated, manual_override)
-    persist_pg_account_automated_rag(connection, account_id, payload)
+    # Engagement status is shared with Insights; historic manual overrides are
+    # intentionally ignored so the two pages cannot report different colours.
+    payload = effective_pg_rag_payload(automated)
     return payload
 
 
-def persist_pg_account_automated_rag(connection, account_id, payload):
-    existing = connection.execute(
-        "SELECT id FROM pg_action_updates WHERE account_id = ?",
-        (account_id,),
-    ).fetchone()
-    automated_status = payload["automatedRagStatus"]
-    manual_override = payload["manualRagOverride"]
-    if existing:
-        connection.execute("""
-            UPDATE pg_action_updates
-            SET automated_rag_status = ?,
-                manual_rag_override = COALESCE(NULLIF(manual_rag_override, ''), NULLIF(rag_status, '')),
-                last_updated = CURRENT_TIMESTAMP
-            WHERE account_id = ?
-        """, (automated_status, account_id))
-    else:
-        connection.execute("""
-            INSERT INTO pg_action_updates (
-                account_id,
-                automated_rag_status,
-                manual_rag_override
-            )
-            VALUES (?, ?, ?)
-        """, (account_id, automated_status, manual_override))
-
-
-def manual_pg_rag_payload(value, default="red"):
-    status = normalise_manual_rag_status(value, default)
-    return {
-        "status": status,
-        "label": status.title(),
-        "reason": "Manual PG Progress RAG status",
-    }
+def contact_pg_rag_activities(connection, contact_id):
+    return connection.execute("""
+        SELECT outreach.*
+        FROM outreach
+        WHERE COALESCE(outreach.task_status, '') NOT IN ('Deleted', 'Cancelled')
+          AND (
+                outreach.contact_id = ?
+             OR outreach.id IN (
+                    SELECT outreach_id
+                    FROM outreach_recipients
+                    WHERE contact_id = ?
+                )
+          )
+    """, (contact_id, contact_id)).fetchall()
 
 
 def pg_progress_contact_update(connection, contact_id, legacy_action_update=None):
@@ -7593,20 +7572,13 @@ def pg_progress_contact_update(connection, contact_id, legacy_action_update=None
     )
     completed_discovery = manual_completed_discovery or ""
     nbm_completed = action_update["nbm_completed"] if action_update and "nbm_completed" in action_update.keys() else ""
-    manual_override = ""
-    if action_update:
-        if "manual_rag_override" in action_update.keys():
-            manual_override = action_update["manual_rag_override"]
-        if not manual_override and "rag_status" in action_update.keys():
-            manual_override = action_update["rag_status"]
+    automated = calculate_automated_pg_rag_status(contact_pg_rag_activities(connection, contact_id))
+    rag = effective_pg_rag_payload(automated)
     return {
         "action_update": action_update,
         "completed_discovery": completed_discovery,
         "nbm_completed": nbm_completed,
-        "rag": manual_pg_rag_payload(
-            manual_override,
-            "red",
-        ),
+        "rag": rag,
     }
 
 
@@ -9834,7 +9806,6 @@ def pg_dashboard_context(connection, activity_period=None):
             "rag_reason": account_rag["reason"],
             "automated_rag_status": account_rag["automatedRagStatus"],
             "automated_rag_label": account_rag["automated_label"],
-            "manual_rag_override": account_rag["manualRagOverride"],
             "effective_rag_status": account_rag["effectiveRagStatus"],
             "sales_play": pg_sales_play,
             "account_name": account["account_name"],
@@ -9888,14 +9859,14 @@ def pg_dashboard_context(connection, activity_period=None):
                             WHERE contact_id = ?
                         )
                   )
-                  AND {report_visible_task_sql("outreach")}
+                  AND {pg_recorded_activity_sql("outreach")}
                 ORDER BY completed_at DESC,
                          last_updated DESC,
                          activity_date DESC,
                          activity_time DESC,
                          last_updated DESC,
                          id DESC
-            """, (account_id, contact_id, contact_id, *report_visible_task_params())).fetchall()
+            """, (account_id, contact_id, contact_id, *pg_recorded_activity_params())).fetchall()
             recent_activity_rows = [
                 row for row in recent_activity_rows
                 if date_is_in_evidence_period(
@@ -9950,15 +9921,9 @@ def pg_dashboard_context(connection, activity_period=None):
                 "account_rag_label": account_rag["label"],
                 "account_rag_reason": account_rag["reason"],
                 "account_automated_rag_status": account_rag["automatedRagStatus"],
-                "account_manual_rag_override": account_rag["manualRagOverride"],
                 "rag_status": contact_rag["status"],
                 "rag_label": contact_rag["label"],
                 "rag_reason": contact_rag["reason"],
-                "manual_rag_override": (
-                    action_update["manual_rag_override"]
-                    if action_update and "manual_rag_override" in action_update.keys() and action_update["manual_rag_override"]
-                    else (action_update["rag_status"] if action_update and "rag_status" in action_update.keys() else "")
-                ),
                 "account_name": account["account_name"],
                 "sales_play": pg_sales_play or "No sales play entered",
                 "targeted_discovery": contact["name"] or "No contact name",
@@ -9988,7 +9953,7 @@ def pg_dashboard_context(connection, activity_period=None):
                 outreach.scheduled_meeting_time,
                 outreach.task_status,
                 outreach.completed_at,
-                CASE WHEN {report_visible_task_sql("outreach")} THEN 1 ELSE 0 END AS is_report_visible_task,
+                CASE WHEN {pg_recorded_activity_sql("outreach")} THEN 1 ELSE 0 END AS is_report_visible_task,
                 CASE WHEN {report_scheduled_task_sql("outreach")} THEN 1 ELSE 0 END AS is_report_scheduled_task,
                 partners.partner_name,
                 partner_contacts.name AS partner_contact_name,
@@ -10007,7 +9972,7 @@ def pg_dashboard_context(connection, activity_period=None):
              AND COALESCE(outreach.task_status, '') NOT IN ({",".join("?" for _ in REPORT_EXCLUDED_TASK_STATUSES)})
             WHERE partner_contact_accounts.account_id = ?
             ORDER BY partners.partner_name, partner_contacts.name, outreach.last_updated DESC
-        """, (*report_visible_task_params(), *report_scheduled_task_params(), *REPORT_EXCLUDED_TASK_STATUSES, account_id)).fetchall()
+        """, (*pg_recorded_activity_params(), *report_scheduled_task_params(), *REPORT_EXCLUDED_TASK_STATUSES, account_id)).fetchall()
         partner_activity_entries = []
         partner_scheduled_actions = []
         seen_partner_entries = set()
@@ -10062,7 +10027,8 @@ def pg_dashboard_context(connection, activity_period=None):
                         "is_overdue": bool(row["next_action_date"] and row["next_action_date"] < today_key),
                     })
         if partner_activity_entries or partner_scheduled_actions:
-            partner_rag = manual_pg_rag_payload("", "red")
+            partner_activities = [row for row in partner_activity_rows if row["activity_type"] or row["outcome"]]
+            partner_rag = effective_pg_rag_payload(calculate_automated_pg_rag_status(partner_activities))
             partner_group_label = "Partner Account: " + compact_join(partner_group_names, 3) if partner_group_names else "Partner activity"
             pg_action_rows.append({
                 "is_partner_row": True,
@@ -10074,11 +10040,9 @@ def pg_dashboard_context(connection, activity_period=None):
                 "account_rag_label": account_rag["label"],
                 "account_rag_reason": account_rag["reason"],
                 "account_automated_rag_status": account_rag["automatedRagStatus"],
-                "account_manual_rag_override": account_rag["manualRagOverride"],
                 "rag_status": partner_rag["status"],
                 "rag_label": partner_rag["label"],
                 "rag_reason": partner_rag["reason"],
-                "manual_rag_override": "",
                 "account_name": account["account_name"],
                 "sales_play": pg_sales_play or "No sales play entered",
                 "targeted_discovery": compact_join(partner_contact_names, 3) if partner_contact_names else "Partner activity",
@@ -10184,27 +10148,6 @@ def pg_progress_edit_connection(selected_user_id=""):
 def save_manual_pg_progress(connection, form):
     if "current_pipeline" in form:
         save_dashboard_setting(connection, "current_pipeline", form.get("current_pipeline", "0"))
-    for account_id in form.getlist("pg_plan_account_id"):
-        if not str(account_id).isdigit():
-            continue
-        manual_override = normalise_manual_rag_override(form.get(f"rag_account_{account_id}"))
-        existing = connection.execute(
-            "SELECT id FROM pg_action_updates WHERE account_id = ?",
-            (account_id,),
-        ).fetchone()
-        if existing:
-            connection.execute("""
-                UPDATE pg_action_updates
-                SET rag_status = ?,
-                    manual_rag_override = ?,
-                    last_updated = CURRENT_TIMESTAMP
-                WHERE account_id = ?
-            """, (manual_override, manual_override, account_id))
-        else:
-            connection.execute("""
-                INSERT INTO pg_action_updates (account_id, rag_status, manual_rag_override)
-                VALUES (?, ?, ?)
-            """, (account_id, manual_override, manual_override))
     for contact_id in form.getlist("pg_action_contact_id"):
         if not str(contact_id).isdigit():
             continue
@@ -10212,7 +10155,6 @@ def save_manual_pg_progress(connection, form):
         completed = "Yes" if form.get(f"completed_discovery_contact_{contact_id}") == "Yes" else "No"
         exec_first = "Yes" if form.get(f"exec_first_contact_{contact_id}") == "Yes" else "No"
         nbm_completed = "Yes" if form.get(f"nbm_completed_contact_{contact_id}") == "Yes" else "No"
-        rag_status = normalise_manual_rag_override(form.get(f"rag_contact_{contact_id}"))
         next_action = form.get(f"next_action_contact_{contact_id}", "")
         existing = connection.execute(
             "SELECT id FROM pg_action_contact_updates WHERE contact_id = ?",
@@ -10224,12 +10166,10 @@ def save_manual_pg_progress(connection, form):
                 SET completed_discovery_meeting = ?,
                     exec_first = ?,
                     nbm_completed = ?,
-                    rag_status = ?,
-                    manual_rag_override = ?,
                     next_action_override = ?,
                     last_updated = CURRENT_TIMESTAMP
                 WHERE contact_id = ?
-            """, (completed, exec_first, nbm_completed, rag_status, rag_status, next_action, contact_id))
+            """, (completed, exec_first, nbm_completed, next_action, contact_id))
         else:
             connection.execute("""
                 INSERT INTO pg_action_contact_updates (
@@ -10238,12 +10178,10 @@ def save_manual_pg_progress(connection, form):
                     completed_discovery_meeting,
                     exec_first,
                     nbm_completed,
-                    rag_status,
-                    manual_rag_override,
                     next_action_override
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (account_id, contact_id, completed, exec_first, nbm_completed, rag_status, rag_status, next_action))
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (account_id, contact_id, completed, exec_first, nbm_completed, next_action))
 
 
 def pg_progress_report_context(selected_user_id=""):
@@ -10709,7 +10647,7 @@ def pg_progress():
         if not connection or not can_edit_pg_rag:
             if connection:
                 connection.close()
-            return redirect(url_for("pg_progress", error="You do not have permission to update PG Progress RAG for this user."))
+            return redirect(url_for("pg_progress", error="You do not have permission to update PG Progress for this user."))
         save_manual_pg_progress(connection, request.form)
         audit_entry(
             connection,
