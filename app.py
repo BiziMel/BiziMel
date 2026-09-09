@@ -34,7 +34,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.9.1"
 APP_RELEASE_DATE = "2026-09-09"
-APP_BUILD = "2026-09-09-v2.9.1-engagement-consistency-r5"
+APP_BUILD = "2026-09-09-v2.9.1-engagement-consistency-r6"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -63,6 +63,7 @@ RELEASE_NOTES = [
             "Added repeatable company email-domain controls so Application Admins and Company Admins can add or remove each validated registration domain independently.",
             "Added checkbox-led single and bulk user deletion for Application Admins and tenant-scoped Company Admins.",
             "Ensured domain-validated self-registration creates exactly one explicit membership for the matching company tenancy.",
+            "Changed validated company domains to complete @-prefixed email suffixes and made exact suffix matches activate new users in the associated tenant.",
         ],
         "fixed": [
             "Stopped rescheduled open tasks appearing as previous activity in PG Progress; only the current schedule is shown while every change remains in Audit.",
@@ -1132,7 +1133,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
                  'Use Tenants for company setup, Permissions & Controls for users and teams, and Audit Trail for admin/data history.',
                  'Use broadcast controls for application-wide or tenant-visible messages where available.'],
   'steps': ['Create or review the company tenant with company name, country and company contact.',
-            'Under Validated Email Domains, use Add Domain for every trusted work domain and Remove beside an obsolete entry, then save the company.',
+            'Under Validated Email Domains, enter each complete suffix including @, such as @example.com. Use Add Domain for further suffixes and Remove beside an obsolete entry, then save the company.',
             'Review Profile Requests when an email domain is not recognised. Assign the correct company and approve the request, or reject it; only Application Admins can perform this review.',
             'Create teams with team name and associated company.',
             'Create user profiles with company, role and team membership. PipeFlow displays a generated temporary password once for secure delivery to the user.',
@@ -1146,7 +1147,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
             'Use the Audit Trail to investigate administrative and data changes.'],
   'tips': ['Managers only see team PG Progress when they are assigned as manager/admin on the team.',
            'Application Admins can maintain domains for any company; Company Admins can maintain only the domains for their own company.',
-           'New profiles with a configured company email domain are assigned only to the matching company tenancy; unmatched domains never receive login or workspace access before approval.',
+           'New profiles whose complete email suffix from @ onwards exactly matches a configured domain are activated and assigned only to that company tenancy; unmatched domains never receive login or workspace access before approval.',
            'Admin-created users cannot access application pages until first-login password and secret-phrase setup is complete.',
            'Company Admins cannot administer users outside their tenant.',
            'Only Application Admins receive nightly scheduler failure dialogs; confirming one suppresses that specific failed run.',
@@ -2148,6 +2149,7 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "Application Admins can maintain every tenant; Company Admins can maintain only their own company tenant.",
             "Create the company tenant before assigning user profiles to that company.",
+            "Enter every validated domain as the complete email suffix including @, for example @example.com.",
             "Company Name is the tenancy boundary used by company-scoped administration, sharing and assignment controls.",
             "Select the primary company contact from the available user list.",
         ],

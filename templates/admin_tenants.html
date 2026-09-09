@@ -54,12 +54,12 @@
             <label>Validated Email Domains</label>
             <div class="tenant-domain-list" data-domain-list>
                 <div class="tenant-domain-entry">
-                    <input type="text" name="email_domains" placeholder="example.com" aria-label="Validated email domain">
+                    <input type="text" name="email_domains" placeholder="@example.com" aria-label="Validated email domain">
                     <button type="button" class="btn btn-secondary btn-small" data-remove-domain>Remove</button>
                 </div>
             </div>
             <button type="button" class="btn btn-secondary btn-small tenant-add-domain" data-add-domain>Add Domain</button>
-            <p class="field-help">Add each work email domain separately. Do not include the @ symbol.</p>
+            <p class="field-help">Enter the complete email suffix including @, for example @example.com. Every character from @ onwards must match.</p>
         </div>
         <div class="form-group">
             <label for="company_contact">Company contact</label>
@@ -115,12 +115,12 @@
                                         <div class="tenant-domain-list" data-domain-list>
                                             {% for domain in (tenant['email_domains'] or '').split(',') if domain.strip() %}
                                             <div class="tenant-domain-entry">
-                                                <input type="text" name="email_domains" value="{{ domain.strip() }}" placeholder="example.com" aria-label="Validated email domain for {{ tenant['company_name'] }}">
+                                                <input type="text" name="email_domains" value="{{ domain.strip() }}" placeholder="@example.com" aria-label="Validated email domain for {{ tenant['company_name'] }}">
                                                 <button type="button" class="btn btn-secondary btn-small" data-remove-domain>Remove</button>
                                             </div>
                                             {% else %}
                                             <div class="tenant-domain-entry">
-                                                <input type="text" name="email_domains" placeholder="example.com" aria-label="Validated email domain for {{ tenant['company_name'] }}">
+                                                <input type="text" name="email_domains" placeholder="@example.com" aria-label="Validated email domain for {{ tenant['company_name'] }}">
                                                 <button type="button" class="btn btn-secondary btn-small" data-remove-domain>Remove</button>
                                             </div>
                                             {% endfor %}
@@ -181,7 +181,7 @@
         const addDomainRow = () => {
             const row = document.createElement("div");
             row.className = "tenant-domain-entry";
-            row.innerHTML = '<input type="text" name="email_domains" placeholder="example.com" aria-label="Validated email domain"><button type="button" class="btn btn-secondary btn-small" data-remove-domain>Remove</button>';
+            row.innerHTML = '<input type="text" name="email_domains" placeholder="@example.com" aria-label="Validated email domain"><button type="button" class="btn btn-secondary btn-small" data-remove-domain>Remove</button>';
             list.appendChild(row);
             row.querySelector("input").focus();
         };

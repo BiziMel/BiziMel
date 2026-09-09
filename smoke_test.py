@@ -1963,7 +1963,7 @@ def main():
                 "company_name": "Smoke Other Company",
                 "country": "United Kingdom",
                 "company_contact": "Smoke Tenant Owner",
-                "email_domains": ["smoke-company.test", "smoke-alt.test"],
+                "email_domains": ["@smoke-company.test", "@smoke-alt.test"],
             },
             follow_redirects=True,
         )
@@ -1973,13 +1973,23 @@ def main():
             "data-domain-manager" in tenant_html
             and "data-add-domain" in tenant_html
             and "data-remove-domain" in tenant_html
-            and "smoke-company.test" in tenant_html
-            and "smoke-alt.test" in tenant_html,
+            and "@smoke-company.test" in tenant_html
+            and "@smoke-alt.test" in tenant_html,
             "tenant configuration did not render repeatable validated domain controls",
         )
         assert_ok(
             pipeflow_app.tenant_for_email("someone@smoke-alt.test")["company_name"] == "Smoke Other Company",
             "secondary validated company domain did not resolve to its tenant",
+        )
+        assert_ok(
+            pipeflow_app.tenant_for_email("someone@sub.smoke-company.test") is None,
+            "an unconfigured subdomain incorrectly matched a parent company email suffix",
+        )
+        assert_ok(
+            "must include the complete suffix beginning with @" in pipeflow_app.create_tenant(
+                "Invalid Domain Tenant", "United Kingdom", "Invalid Owner", "missing-at.test"
+            ),
+            "tenant domain validation accepted a suffix without @",
         )
 
         domain_client = pipeflow_app.app.test_client()
@@ -2002,7 +2012,7 @@ def main():
         )
         auth_connection = pipeflow_app.get_auth_connection()
         matched_user = auth_connection.execute(
-            "SELECT id, company FROM users WHERE email = ?",
+            "SELECT id, company, is_active FROM users WHERE email = ?",
             ("matched@smoke-company.test",),
         ).fetchone()
         matched_memberships = auth_connection.execute(
@@ -2011,8 +2021,9 @@ def main():
         ).fetchall()
         assert_ok(
             matched_user["company"] == "Smoke Other Company"
+            and matched_user["is_active"] == 1
             and [row["company_name"] for row in matched_memberships] == ["Smoke Other Company"],
-            "domain-validated registration was not constrained to exactly one matching company tenancy",
+            "domain-validated registration was not activated in exactly one matching company tenancy",
         )
         smoke_tenant = auth_connection.execute(
             "SELECT id FROM tenants WHERE company_name = ?",
@@ -2026,7 +2037,7 @@ def main():
                 "company_name": "Smoke Other Company",
                 "country": "United Kingdom",
                 "company_contact": "Smoke Tenant Owner",
-                "email_domains": ["smoke-company.test"],
+                "email_domains": ["@smoke-company.test"],
                 "is_active": "1",
             },
             follow_redirects=True,
@@ -2152,7 +2163,7 @@ def main():
                 "company_name": "Smoke Other Company",
                 "country": "United Kingdom",
                 "company_contact": "Smoke Tenant Owner",
-                "email_domains": ["smoke-company.test", "company-secondary.test"],
+                "email_domains": ["@smoke-company.test", "@company-secondary.test"],
                 "is_active": "1",
             },
             follow_redirects=True,

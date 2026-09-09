@@ -303,6 +303,16 @@ def initialise_auth_database() -> None:
     add_column_if_missing(connection, "scheduled_job_runs", "acknowledged_at", "TEXT")
     add_column_if_missing(connection, "scheduled_job_runs", "acknowledged_by_user_id", "INTEGER")
     add_column_if_missing(connection, "scheduled_job_runs", "acknowledged_by_name", "TEXT")
+    # Earlier releases stored bare domains. Keep existing tenants usable while
+    # moving the source of truth to the complete suffix beginning with "@".
+    tenant_domain_rows = connection.execute("SELECT id, email_domains FROM tenants").fetchall()
+    for tenant_row in tenant_domain_rows:
+        normalised_domains = normalise_email_domains(tenant_row["email_domains"] or "")
+        if normalised_domains != (tenant_row["email_domains"] or ""):
+            connection.execute(
+                "UPDATE tenants SET email_domains = ? WHERE id = ?",
+                (normalised_domains, tenant_row["id"]),
+            )
     connection.execute(
         """
         INSERT INTO tenants (company_name, country, company_contact, is_active)
@@ -487,21 +497,38 @@ def list_tenants(actor=None, active_only: bool = True):
 def normalise_email_domains(value: str) -> str:
     domains = []
     for candidate in (value or "").replace(";", ",").split(","):
-        domain = candidate.strip().lower().lstrip("@")
+        domain = candidate.strip().lower()
+        if domain and not domain.startswith("@"):
+            domain = f"@{domain}"
         if domain and "." in domain and domain not in domains:
             domains.append(domain)
     return ", ".join(domains)
+
+
+def validate_email_domains_input(value: str) -> str:
+    for candidate in (value or "").replace(";", ",").split(","):
+        domain = candidate.strip().lower()
+        if not domain:
+            continue
+        if (
+            not domain.startswith("@")
+            or domain.count("@") != 1
+            or "." not in domain[1:]
+            or domain.endswith(".")
+            or any(character.isspace() for character in domain)
+        ):
+            return "Each validated email domain must include the complete suffix beginning with @, for example @example.com."
+    return ""
 
 
 def tenant_for_email(email: str):
     email = normalise_email(email)
     if "@" not in email:
         return None
-    email_domain = email.rsplit("@", 1)[1]
     for tenant in list_tenants(active_only=True):
         configured = normalise_email_domains(tenant["email_domains"] if "email_domains" in tenant.keys() else "")
         domains = {domain.strip() for domain in configured.split(",") if domain.strip()}
-        if email_domain in domains:
+        if any(email.endswith(domain) for domain in domains):
             return tenant
     return None
 
@@ -529,6 +556,9 @@ def create_tenant(company_name: str, country: str, company_contact: str, email_d
     company_name = normalise_company_name(company_name)
     country = (country or "").strip()
     company_contact = (company_contact or "").strip()
+    domain_format_error = validate_email_domains_input(email_domains)
+    if domain_format_error:
+        return domain_format_error
     email_domains = normalise_email_domains(email_domains)
     if not company_name or not country or not company_contact:
         return "Company Name, Country and Company contact are required."
@@ -557,6 +587,9 @@ def create_tenant(company_name: str, country: str, company_contact: str, email_d
 def update_tenant(tenant_id: int, country: str, company_contact: str, is_active: bool, actor=None, email_domains: str = ""):
     country = (country or "").strip()
     company_contact = (company_contact or "").strip()
+    domain_format_error = validate_email_domains_input(email_domains)
+    if domain_format_error:
+        return domain_format_error
     email_domains = normalise_email_domains(email_domains)
     if not country or not company_contact:
         return "Country and primary company contact are required."
