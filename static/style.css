@@ -3305,6 +3305,27 @@ a:hover {
     align-self: end;
 }
 
+.tenant-domain-manager {
+    display: grid;
+    gap: 7px;
+    min-width: 0;
+}
+
+.tenant-domain-list {
+    display: grid;
+    gap: 6px;
+}
+
+.tenant-domain-entry {
+    display: grid;
+    grid-template-columns: minmax(130px, 1fr) auto;
+    gap: 6px;
+    align-items: center;
+}
+
+.tenant-domain-entry input { min-width: 0; }
+.tenant-add-domain { justify-self: start; }
+
 @media (max-width: 1100px) {
     .admin-create-capabilities {
         grid-template-columns: 1fr;
@@ -3313,9 +3334,33 @@ a:hover {
 
 .tenant-inline-edit-form {
     display: grid;
-    grid-template-columns: minmax(120px, 1fr) minmax(180px, 1.4fr) auto auto;
+    grid-template-columns: minmax(120px, 0.8fr) minmax(180px, 1.3fr) auto auto;
     gap: 10px;
     align-items: end;
+}
+
+.tenant-inline-edit-form > .tenant-domain-manager {
+    grid-column: 1 / -1;
+}
+
+.tenant-config-table {
+    table-layout: fixed;
+    min-width: 800px;
+}
+
+.tenant-config-table .tenant-company-column { width: 20%; }
+.tenant-config-table .tenant-settings-column { width: 63%; }
+.tenant-config-table .tenant-created-column { width: 17%; }
+
+.tenant-config-table th,
+.tenant-config-table td {
+    vertical-align: top;
+    word-break: normal;
+    overflow-wrap: break-word;
+}
+
+.tenant-created-value {
+    white-space: normal;
 }
 
 .tenant-inline-edit-form label {
@@ -5257,9 +5302,31 @@ body {
 
 .pipeflow-dialog > p,
 .pipeflow-dialog > .secret-phrase-value,
+.pipeflow-dialog > .temporary-password-value,
 .pipeflow-dialog > .form-actions {
     margin: 16px 18px;
 }
+
+.temporary-password-value {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid #a9c8b4;
+    border-radius: 6px;
+    background: #edf7f0;
+}
+
+.temporary-password-value code {
+    color: #173e28;
+    font-size: 1rem;
+    font-weight: 800;
+    overflow-wrap: anywhere;
+}
+
+.first-login-panel { max-width: 620px; }
+.first-login-signout { margin-top: 12px; }
 
 .scheduler-status {
     display: inline-flex;

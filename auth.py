@@ -123,6 +123,7 @@ def initialise_auth_database() -> None:
                 reset_phrase_hash TEXT,
                 reset_phrase_plain TEXT,
                 reset_phrase_encrypted TEXT,
+                must_change_password INTEGER DEFAULT 0,
                 is_active INTEGER DEFAULT 1,
                 date_created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -140,6 +141,7 @@ def initialise_auth_database() -> None:
                 reset_phrase_hash TEXT,
                 reset_phrase_plain TEXT,
                 reset_phrase_encrypted TEXT,
+                must_change_password INTEGER DEFAULT 0,
                 is_active INTEGER DEFAULT 1,
                 date_created TEXT DEFAULT CURRENT_TIMESTAMP,
                 last_updated TEXT DEFAULT CURRENT_TIMESTAMP
@@ -286,6 +288,7 @@ def initialise_auth_database() -> None:
     add_column_if_missing(connection, "users", "team", "TEXT")
     add_column_if_missing(connection, "users", "workspace_schema", "TEXT")
     add_column_if_missing(connection, "users", "active_team_id", "INTEGER")
+    add_column_if_missing(connection, "users", "must_change_password", "INTEGER DEFAULT 0")
     add_column_if_missing(connection, "tenants", "email_domains", "TEXT")
     add_column_if_missing(connection, "teams", "company", "TEXT")
     add_column_if_missing(connection, "broadcast_messages", "target_companies", "TEXT")
@@ -603,7 +606,7 @@ def get_tenant_by_name(company_name: str):
     return row
 
 
-def create_user(email: str, password: str, full_name: str, reset_phrase: str = "", company: str = ""):
+def create_user(email: str, password: str, full_name: str, reset_phrase: str = "", company: str = "", must_change_password: bool = False):
     email = normalise_email(email)
     full_name = (full_name or "").strip()
     reset_phrase = (reset_phrase or "").strip()
@@ -624,21 +627,21 @@ def create_user(email: str, password: str, full_name: str, reset_phrase: str = "
         if using_postgres():
             cursor = connection.execute(
                 """
-                INSERT INTO users (email, password_hash, full_name, company, role, reset_phrase_hash, reset_phrase_plain, reset_phrase_encrypted)
-                VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
+                INSERT INTO users (email, password_hash, full_name, company, role, reset_phrase_hash, reset_phrase_plain, reset_phrase_encrypted, must_change_password)
+                VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)
                 RETURNING id
                 """,
-                (email, generate_password_hash(password), full_name, company, role, generate_password_hash(reset_phrase), encrypt_secret_phrase(reset_phrase)),
+                (email, generate_password_hash(password), full_name, company, role, generate_password_hash(reset_phrase), encrypt_secret_phrase(reset_phrase), 1 if must_change_password else 0),
             )
             row = cursor.fetchone()
             user_id = row["id"]
         else:
             cursor = connection.execute(
                 """
-                INSERT INTO users (email, password_hash, full_name, company, role, reset_phrase_hash, reset_phrase_plain, reset_phrase_encrypted)
-                VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
+                INSERT INTO users (email, password_hash, full_name, company, role, reset_phrase_hash, reset_phrase_plain, reset_phrase_encrypted, must_change_password)
+                VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)
                 """,
-                (email, generate_password_hash(password), full_name, company, role, generate_password_hash(reset_phrase), encrypt_secret_phrase(reset_phrase)),
+                (email, generate_password_hash(password), full_name, company, role, generate_password_hash(reset_phrase), encrypt_secret_phrase(reset_phrase), 1 if must_change_password else 0),
             )
             user_id = cursor.lastrowid
         connection.commit()
@@ -891,6 +894,48 @@ def update_current_user_secret_phrase(user_id: int, new_phrase: str, confirm_phr
         connection.close()
 
 
+def complete_first_login_setup(user_id: int, password: str, confirm_password: str, reset_phrase: str, confirm_phrase: str):
+    password = (password or "").strip()
+    confirm_password = (confirm_password or "").strip()
+    reset_phrase = (reset_phrase or "").strip()
+    confirm_phrase = (confirm_phrase or "").strip()
+    if len(password) < 8:
+        return "New password must be at least 8 characters."
+    if password != confirm_password:
+        return "Password confirmation does not match."
+    if len(reset_phrase) < 12:
+        return "Secret phrase must be at least 12 characters."
+    if reset_phrase != confirm_phrase:
+        return "Secret phrase confirmation does not match."
+
+    connection = get_auth_connection()
+    try:
+        user = connection.execute(
+            "SELECT password_hash, must_change_password FROM users WHERE id = ? AND is_active = 1",
+            (user_id,),
+        ).fetchone()
+        if not user:
+            return "Your profile could not be found."
+        if not user["must_change_password"]:
+            return "First-login setup has already been completed."
+        if check_password_hash(user["password_hash"], password):
+            return "Choose a new password that is different from the temporary password."
+        connection.execute(
+            """
+            UPDATE users
+            SET password_hash = ?, reset_phrase_hash = ?, reset_phrase_plain = NULL,
+                reset_phrase_encrypted = ?, must_change_password = 0,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (generate_password_hash(password), generate_password_hash(reset_phrase), encrypt_secret_phrase(reset_phrase), user_id),
+        )
+        connection.commit()
+        return ""
+    finally:
+        connection.close()
+
+
 def reveal_user_secret_phrase(user_id: int):
     connection = get_auth_connection()
     try:
@@ -951,7 +996,7 @@ def current_user():
     connection = get_auth_connection()
     user = connection.execute(
         """
-        SELECT id, email, full_name, company, team, role, workspace_schema, active_team_id
+        SELECT id, email, full_name, company, team, role, workspace_schema, active_team_id, must_change_password
         FROM users
         WHERE id = ?
           AND is_active = 1
@@ -1922,7 +1967,7 @@ def get_user_for_admin(user_id: int):
     connection = get_auth_connection()
     user = connection.execute(
         """
-        SELECT id, email, full_name, company, team, role, is_active, workspace_schema
+        SELECT id, email, full_name, company, team, role, is_active, workspace_schema, must_change_password
         FROM users
         WHERE id = ?
         """,

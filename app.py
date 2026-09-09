@@ -7,6 +7,7 @@ import re
 import traceback
 import json
 import secrets
+import string
 import hashlib
 import html
 import base64
@@ -16,7 +17,7 @@ from datetime import date, datetime, time, timedelta
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from flask import Flask, render_template, request, redirect, url_for, Response, send_file, send_from_directory, session, abort, jsonify
+from flask import Flask, render_template, request, redirect, url_for, Response, send_file, send_from_directory, session, abort, jsonify, make_response
 from werkzeug.exceptions import HTTPException
 from werkzeug.utils import secure_filename
 try:
@@ -25,7 +26,7 @@ except ModuleNotFoundError:
     Image = None
     ImageOps = None
     UnidentifiedImageError = Exception
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, bulk_update_broadcast_messages, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members, decode_broadcast_companies, set_user_company_memberships, user_company_names, tenant_for_email, create_registration_request, list_pending_registration_requests, resolve_registration_request, registration_request_status
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, bulk_update_broadcast_messages, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members, decode_broadcast_companies, set_user_company_memberships, user_company_names, tenant_for_email, create_registration_request, list_pending_registration_requests, resolve_registration_request, registration_request_status, complete_first_login_setup
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
@@ -33,7 +34,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.9.1"
 APP_RELEASE_DATE = "2026-09-09"
-APP_BUILD = "2026-09-09-v2.9.1-engagement-consistency-r2"
+APP_BUILD = "2026-09-09-v2.9.1-engagement-consistency-r4"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -58,6 +59,8 @@ RELEASE_NOTES = [
             "Added a Return to Top control to PG Progress for quicker movement through long account plans.",
             "Added a bold portfolio totals row to Account Execution Measures and repeated the five execution measures above the Outreach table.",
             "Added company-domain profile registration: recognised work email domains activate against their tenant, unmatched domains create an Admin approval request, and existing emails enter secret-phrase password reset.",
+            "Changed Admin user creation to generate a strong temporary password and require the user to replace it and set their own secret phrase before first access.",
+            "Added repeatable company email-domain controls so Application Admins and Company Admins can add or remove each validated registration domain independently.",
         ],
         "fixed": [
             "Stopped rescheduled open tasks appearing as previous activity in PG Progress; only the current schedule is shown while every change remains in Audit.",
@@ -1126,10 +1129,12 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
   'navigation': ['Open Admin from the top navigation when available.',
                  'Use Tenants for company setup, Permissions & Controls for users and teams, and Audit Trail for admin/data history.',
                  'Use broadcast controls for application-wide or tenant-visible messages where available.'],
-  'steps': ['Create or review the company tenant with company name, country, company contact and comma-separated work email domains.',
+  'steps': ['Create or review the company tenant with company name, country and company contact.',
+            'Under Validated Email Domains, use Add Domain for every trusted work domain and Remove beside an obsolete entry, then save the company.',
             'Review Profile Requests when an email domain is not recognised. Assign the correct company and approve the request, or reject it; only Application Admins can perform this review.',
             'Create teams with team name and associated company.',
-            'Create user profiles with company, role and team membership.',
+            'Create user profiles with company, role and team membership. PipeFlow displays a generated temporary password once for secure delivery to the user.',
+            'At first login, the user must replace the temporary password and create their own secret reset phrase before entering the application.',
             'Assign User, Manager, Company Admin or Application Admin role according to responsibility.',
             'Associate managers to one or more teams when they need team PG Progress visibility.',
             'Edit a user profile to change role, company, team memberships or active status.',
@@ -1137,7 +1142,9 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
             'Application Admins review the read-only Nightly Scheduler History for the last 30 days and confirm any failure dialog after checking the service logs.',
             'Use the Audit Trail to investigate administrative and data changes.'],
   'tips': ['Managers only see team PG Progress when they are assigned as manager/admin on the team.',
+           'Application Admins can maintain domains for any company; Company Admins can maintain only the domains for their own company.',
            'New profiles with a configured company email domain are validated automatically; unmatched domains never receive login or workspace access before approval.',
+           'Admin-created users cannot access application pages until first-login password and secret-phrase setup is complete.',
            'Company Admins cannot administer users outside their tenant.',
            'Only Application Admins receive nightly scheduler failure dialogs; confirming one suppresses that specific failed run.',
            'Admin actions are recorded in the audit trail for accountability.']},
@@ -2241,6 +2248,14 @@ PAGE_INSTRUCTIONS = {
             "After reset, sign in with the new password.",
         ],
     },
+    "first_login_setup": {
+        "title": "First Login Guidance",
+        "items": [
+            "Replace the temporary password supplied by your administrator before using PipeFlow.",
+            "Choose and confirm a private secret phrase for future password recovery.",
+            "Your new password must differ from the temporary password.",
+        ],
+    },
 }
 
 
@@ -2288,6 +2303,8 @@ def require_login_and_prepare_database():
     if not user["company"]:
         session.clear()
         return redirect(url_for("login", message="Your profile must be assigned to a tenant before you can sign in."))
+    if user["must_change_password"] and request.endpoint not in {"first_login_setup", "logout"}:
+        return redirect(url_for("first_login_setup"))
 
     initialise_database()
     return None
@@ -2476,10 +2493,33 @@ def login():
             )
             commit_with_retry(connection)
             connection.close()
+            if user["must_change_password"]:
+                return redirect(url_for("first_login_setup"))
             return redirect(url_for("home"))
         error = "Email or password was not recognised."
 
     return render_template("login.html", error=error, message=message, broadcast_messages=list_broadcast_messages(active_only=True))
+
+
+@app.route("/first-login", methods=("GET", "POST"))
+def first_login_setup():
+    user = current_user()
+    if not user:
+        return redirect(url_for("login"))
+    if not user["must_change_password"]:
+        return redirect(url_for("home"))
+    error = ""
+    if request.method == "POST":
+        error = complete_first_login_setup(
+            user["id"],
+            request.form.get("password", ""),
+            request.form.get("confirm_password", ""),
+            request.form.get("reset_phrase", ""),
+            request.form.get("confirm_reset_phrase", ""),
+        )
+        if not error:
+            return redirect(url_for("home"))
+    return render_template("first_login.html", error=error, email=user["email"])
 
 
 @app.route("/forgot-password", methods=("GET", "POST"))
@@ -2604,7 +2644,21 @@ def logout():
     return redirect(url_for("login"))
 
 
-def render_admin_permissions():
+def generate_temporary_password(length=16):
+    """Create a readable strong password containing every required character class."""
+    alphabet = string.ascii_letters + string.digits + "!@#$%"
+    characters = [
+        secrets.choice(string.ascii_uppercase),
+        secrets.choice(string.ascii_lowercase),
+        secrets.choice(string.digits),
+        secrets.choice("!@#$%"),
+    ]
+    characters.extend(secrets.choice(alphabet) for _ in range(max(12, length) - len(characters)))
+    secrets.SystemRandom().shuffle(characters)
+    return "".join(characters)
+
+
+def render_admin_permissions(temporary_credentials=None, message_override=""):
     actor = current_user()
     tenant_options = list_tenants(actor, active_only=True)
     users = list_users(actor)
@@ -2626,7 +2680,8 @@ def render_admin_permissions():
         scheduler_runs=scheduler_run_history(30) if is_app_admin else [],
         pending_registrations=list_pending_registration_requests() if is_app_admin else [],
         audit_retention_enabled=audit_retention_enabled(),
-        message=request.args.get("message", ""),
+        temporary_credentials=temporary_credentials,
+        message=message_override or request.args.get("message", ""),
         error=request.args.get("error", "")
     )
 
@@ -2802,7 +2857,7 @@ def admin_tenants():
             request.form.get("company_name", ""),
             request.form.get("country", ""),
             request.form.get("company_contact", ""),
-            request.form.get("email_domains", ""),
+            ",".join(request.form.getlist("email_domains")),
         )
         if not error:
             log_admin_audit(
@@ -2834,7 +2889,7 @@ def admin_update_tenant(tenant_id):
         request.form.get("company_contact", ""),
         bool(request.form.get("is_active")),
         actor=actor,
-        email_domains=request.form.get("email_domains", ""),
+        email_domains=",".join(request.form.getlist("email_domains")),
     )
     if error:
         return redirect(url_for("admin_tenants", error=error))
@@ -2854,12 +2909,15 @@ def admin_create_user():
     actor = current_user()
     requested_company = request.form.get("company", "")
     company = requested_company if is_application_admin(actor) else actor["company"]
+    temporary_password = generate_temporary_password()
+    temporary_reset_phrase = secrets.token_urlsafe(24)
     user_id, error = create_user(
         request.form.get("email", ""),
-        request.form.get("password", ""),
+        temporary_password,
         request.form.get("full_name", ""),
-        request.form.get("reset_phrase", ""),
+        temporary_reset_phrase,
         company,
+        must_change_password=True,
     )
     if error:
         return redirect(url_for("admin_users", error=error))
@@ -2884,7 +2942,15 @@ def admin_create_user():
         request.form.get("email", "").strip().lower(),
         f"Company: {company}; Companies: {', '.join(user_company_names(user_id))}; Role: {role}."
     )
-    return redirect(url_for("admin_users", message="User profile created."))
+    response = make_response(render_admin_permissions(
+        temporary_credentials={
+            "email": request.form.get("email", "").strip().lower(),
+            "password": temporary_password,
+        },
+        message_override="User profile created. Share the temporary password securely; the user must replace it at first login.",
+    ))
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.route("/admin/broadcasts/add", methods=("POST",))

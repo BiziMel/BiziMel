@@ -1963,11 +1963,24 @@ def main():
                 "company_name": "Smoke Other Company",
                 "country": "United Kingdom",
                 "company_contact": "Smoke Tenant Owner",
-                "email_domains": "smoke-company.test",
+                "email_domains": ["smoke-company.test", "smoke-alt.test"],
             },
             follow_redirects=True,
         )
         assert_ok(response.status_code == 200, "tenant create failed")
+        tenant_html = client.get("/admin/tenants").get_data(as_text=True)
+        assert_ok(
+            "data-domain-manager" in tenant_html
+            and "data-add-domain" in tenant_html
+            and "data-remove-domain" in tenant_html
+            and "smoke-company.test" in tenant_html
+            and "smoke-alt.test" in tenant_html,
+            "tenant configuration did not render repeatable validated domain controls",
+        )
+        assert_ok(
+            pipeflow_app.tenant_for_email("someone@smoke-alt.test")["company_name"] == "Smoke Other Company",
+            "secondary validated company domain did not resolve to its tenant",
+        )
 
         domain_client = pipeflow_app.app.test_client()
         domain_client.get("/register")
@@ -1986,6 +1999,74 @@ def main():
         assert_ok(
             response.status_code == 200 and "Execution Command Centre" in response.get_data(as_text=True),
             "matching tenant email domain did not activate a new profile",
+        )
+        auth_connection = pipeflow_app.get_auth_connection()
+        smoke_tenant = auth_connection.execute(
+            "SELECT id FROM tenants WHERE company_name = ?",
+            ("Smoke Other Company",),
+        ).fetchone()
+        auth_connection.close()
+        response = client.post(
+            f"/admin/tenants/{smoke_tenant['id']}/update",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "company_name": "Smoke Other Company",
+                "country": "United Kingdom",
+                "company_contact": "Smoke Tenant Owner",
+                "email_domains": ["smoke-company.test"],
+                "is_active": "1",
+            },
+            follow_redirects=True,
+        )
+        assert_ok(
+            response.status_code == 200 and pipeflow_app.tenant_for_email("someone@smoke-alt.test") is None,
+            "removing a validated company domain did not stop domain-based profile validation",
+        )
+        company_admin_id, company_admin_error = pipeflow_app.create_user(
+            "company-admin@smoke-company.test",
+            "Password123!",
+            "Smoke Company Admin",
+            "company admin phrase",
+            "Smoke Other Company",
+        )
+        assert_ok(company_admin_id and not company_admin_error, "company admin test profile could not be created")
+        assert_ok(not pipeflow_app.set_user_role(company_admin_id, "company_admin"), "company admin role could not be assigned")
+        company_admin_client = pipeflow_app.app.test_client()
+        company_admin_client.get("/login")
+        response = company_admin_client.post(
+            "/login",
+            data={
+                "csrf_token": csrf_from_session(company_admin_client),
+                "email": "company-admin@smoke-company.test",
+                "password": "Password123!",
+            },
+            follow_redirects=True,
+        )
+        assert_ok(response.status_code == 200, "company admin test profile could not sign in")
+        company_permissions_html = company_admin_client.get("/admin/permissions").get_data(as_text=True)
+        company_tenant_html = company_admin_client.get("/admin/tenants").get_data(as_text=True)
+        assert_ok(
+            'href="/admin/tenants"' in company_permissions_html
+            and "Smoke Other Company" in company_tenant_html
+            and "PipeFlow Administration" not in company_tenant_html,
+            "Company Admin could not reach its domain configuration or could see another tenant",
+        )
+        response = company_admin_client.post(
+            f"/admin/tenants/{smoke_tenant['id']}/update",
+            data={
+                "csrf_token": csrf_from_session(company_admin_client),
+                "company_name": "Smoke Other Company",
+                "country": "United Kingdom",
+                "company_contact": "Smoke Tenant Owner",
+                "email_domains": ["smoke-company.test", "company-secondary.test"],
+                "is_active": "1",
+            },
+            follow_redirects=True,
+        )
+        assert_ok(
+            response.status_code == 200
+            and pipeflow_app.tenant_for_email("person@company-secondary.test")["company_name"] == "Smoke Other Company",
+            "Company Admin could not add a validated domain to its own company",
         )
         domain_client.post("/logout", data={"csrf_token": csrf_from_session(domain_client)})
         domain_client.get("/register")
@@ -2075,8 +2156,6 @@ def main():
                 "csrf_token": csrf_from_session(client),
                 "full_name": "Smoke Multi Company Admin",
                 "email": "smoke-multi-admin@example.com",
-                "password": "Password123!",
-                "reset_phrase": "multi company phrase",
                 "company": "PipeFlow Administration",
                 "company_memberships": ["PipeFlow Administration", "Smoke Other Company"],
                 "role": "admin",
@@ -2084,7 +2163,64 @@ def main():
             },
             follow_redirects=True,
         )
-        assert_ok(response.status_code == 200, "multi-company admin create failed")
+        admin_create_html = response.get_data(as_text=True)
+        temporary_password_match = re.search(r'id="temporary-password-value">([^<]+)</code>', admin_create_html)
+        assert_ok(
+            response.status_code == 200
+            and temporary_password_match is not None
+            and "Temporary Password Created" in admin_create_html
+            and response.headers.get("Cache-Control") == "no-store",
+            "admin-created user did not receive a generated temporary password",
+        )
+        temporary_password = temporary_password_match.group(1)
+        temporary_auth_connection = pipeflow_app.get_auth_connection()
+        temporary_user_row = temporary_auth_connection.execute(
+            "SELECT password_hash, must_change_password FROM users WHERE email = ?",
+            ("smoke-multi-admin@example.com",),
+        ).fetchone()
+        temporary_auth_connection.close()
+        assert_ok(
+            temporary_user_row
+            and temporary_user_row["password_hash"] != temporary_password
+            and temporary_user_row["must_change_password"] == 1,
+            "temporary password was not hashed or the first-login restriction was not stored",
+        )
+        first_login_client = pipeflow_app.app.test_client()
+        first_login_client.get("/login")
+        response = first_login_client.post(
+            "/login",
+            data={
+                "csrf_token": csrf_from_session(first_login_client),
+                "email": "smoke-multi-admin@example.com",
+                "password": temporary_password,
+            },
+            follow_redirects=True,
+        )
+        assert_ok(response.status_code == 200 and "Complete First Login" in response.get_data(as_text=True), "temporary password did not require first-login setup")
+        response = first_login_client.get("/accounts", follow_redirects=False)
+        assert_ok(
+            response.status_code in (302, 303) and response.headers.get("Location", "").endswith("/first-login"),
+            "first-login user could access PipeFlow before replacing the temporary password",
+        )
+        response = first_login_client.post(
+            "/first-login",
+            data={
+                "csrf_token": csrf_from_session(first_login_client),
+                "password": "NewFirstLogin123!",
+                "confirm_password": "NewFirstLogin123!",
+                "reset_phrase": "user owned reset phrase",
+                "confirm_reset_phrase": "user owned reset phrase",
+            },
+            follow_redirects=True,
+        )
+        assert_ok(response.status_code == 200 and "Execution Command Centre" in response.get_data(as_text=True), "first-login password replacement did not unlock PipeFlow")
+        temporary_auth_connection = pipeflow_app.get_auth_connection()
+        first_login_flag = temporary_auth_connection.execute(
+            "SELECT must_change_password FROM users WHERE email = ?",
+            ("smoke-multi-admin@example.com",),
+        ).fetchone()["must_change_password"]
+        temporary_auth_connection.close()
+        assert_ok(first_login_flag == 0, "first-login restriction was not cleared after successful credential replacement")
 
         response = client.post(
             "/admin/broadcasts/add",

@@ -18,7 +18,7 @@
     </div>
     <div class="admin-subnav-actions">
         <a href="{{ url_for('admin_permissions') }}" class="btn btn-primary btn-small">Permissions & Controls</a>
-        {% if is_app_admin %}
+        {% if is_app_admin or is_company_admin %}
             <a href="{{ url_for('admin_tenants') }}" class="btn btn-secondary btn-small">Tenant</a>
         {% endif %}
         {% if can_manage_broadcasts %}
@@ -34,6 +34,21 @@
 
 {% if error %}
     <div class="alert-error">{{ error }}</div>
+{% endif %}
+
+{% if temporary_credentials %}
+<dialog class="pipeflow-dialog temporary-password-dialog" open aria-labelledby="temporary-password-title">
+    <div class="dialog-header">
+        <h3 id="temporary-password-title">Temporary Password Created</h3>
+        <button type="button" class="dialog-close-button" aria-label="Close" onclick="this.closest('dialog').close()">&times;</button>
+    </div>
+    <p>Give this temporary password securely to <strong>{{ temporary_credentials.email }}</strong>. It is displayed only in this response and must be replaced at first login.</p>
+    <div class="temporary-password-value">
+        <code id="temporary-password-value">{{ temporary_credentials.password }}</code>
+        <button type="button" class="btn btn-secondary btn-small" data-copy-temporary-password>Copy</button>
+    </div>
+    <div class="form-actions"><button type="button" class="btn btn-primary" onclick="this.closest('dialog').close()">Confirm</button></div>
+</dialog>
 {% endif %}
 
 <div class="permissions-overview-card">
@@ -171,7 +186,7 @@
         <section class="admin-create-capability admin-create-user">
             <div class="admin-create-heading">
                 <h4>Create User Profile</h4>
-                <p>Create login access, then assign company, role and team memberships.</p>
+                <p>Assign company, role and team memberships. PipeFlow generates a temporary first-login password.</p>
             </div>
             <form method="POST" action="{{ url_for('admin_create_user') }}" class="admin-user-create-form">
             <input type="text" name="full_name" placeholder="Full name" required>
@@ -215,8 +230,6 @@
                     {% endfor %}
                 </div>
             </details>
-            <input type="password" name="password" minlength="8" placeholder="Temporary password" required>
-            <input type="password" name="reset_phrase" minlength="12" placeholder="Secret reset phrase" required>
                 <button type="submit" class="btn btn-primary">Create User</button>
             </form>
         </section>
@@ -646,6 +659,21 @@
             if (!window.confirm("Delete this broadcast message?")) {
                 event.preventDefault();
             }
+        });
+    });
+
+    const temporaryPasswordDialog = document.querySelector(".temporary-password-dialog");
+    if (temporaryPasswordDialog && typeof temporaryPasswordDialog.showModal === "function") {
+        window.history.replaceState({}, "", "{{ url_for('admin_permissions') }}");
+        temporaryPasswordDialog.removeAttribute("open");
+        temporaryPasswordDialog.showModal();
+    }
+    document.querySelectorAll("[data-copy-temporary-password]").forEach((button) => {
+        button.addEventListener("click", async () => {
+            const value = document.getElementById("temporary-password-value")?.textContent || "";
+            if (!value) return;
+            await navigator.clipboard.writeText(value);
+            button.textContent = "Copied";
         });
     });
 </script>
