@@ -264,6 +264,7 @@ def main():
 
         import app as pipeflow_app
         import db_compat
+        pipeflow_app.app.config["TESTING"] = True
 
         assert_ok(
             {"outreach_recipients", "audit_entries"}.issubset(db_compat.USER_TABLES),
@@ -300,9 +301,11 @@ def main():
             "Engagement status should be green for a recent positive response",
         )
         assert_ok(
-            calc([{"outcome": "NBM Booked", "scheduled_meeting_date": "", "task_status": "Not Started", "next_action_date": meeting_future.isoformat()}], today=today)["automatedRagStatus"] == "blue",
-            "A schedule-only task without recorded engagement should remain inactive",
+            calc([{"outcome": "NBM Booked", "scheduled_meeting_date": "", "task_status": "Not Started", "next_action_date": meeting_future.isoformat()}], today=today)["automatedRagStatus"] == "red",
+            "A schedule-only active task must not be labelled inactive",
         )
+        assert_ok(calc([], today=today)["automatedRagStatus"] == "red", "Missing activity incorrectly produced Inactive status")
+        assert_ok(calc([], today=today, force_inactive=True)["automatedRagStatus"] == "blue", "An explicitly inactive contact was not blue")
         assert_ok(
             calc([{"outcome": "No Response", "activity_date": today.isoformat(), "scheduled_meeting_date": meeting_future.isoformat(), "task_status": "Completed", "next_action_date": meeting_future.isoformat()}], today=today)["automatedRagStatus"] == "red",
             "Recent activity without progress should be stalled",
@@ -325,27 +328,41 @@ def main():
             response = client.get(path)
             assert_ok(response.status_code == 200, f"{path} returned {response.status_code}")
 
+        for path in ("/release-notes", "/user-guide"):
+            response = client.get(path, follow_redirects=False)
+            assert_ok(response.status_code in (302, 303) and "/login" in response.headers.get("Location", ""), f"{path} was readable without authentication")
+
         future_meeting_date = (today + timedelta(days=14)).isoformat()
+        admin_id, admin_error = pipeflow_app.create_user(
+            "smoke-test@example.com",
+            "Password123!",
+            "Smoke Test Admin",
+            "smoke test secret phrase",
+            "PipeFlow Administration",
+        )
+        assert_ok(admin_id and not admin_error, "bootstrap admin profile could not be created")
         response = client.post(
-            "/register",
+            "/login",
             data={
                 "csrf_token": csrf_from_session(client),
-                "full_name": "Smoke Test Admin",
                 "email": "smoke-test@example.com",
                 "password": "Password123!",
-                "reset_phrase": "smoke test secret phrase",
             },
             follow_redirects=True,
         )
-        assert_ok(response.status_code == 200, f"register returned {response.status_code}")
+        assert_ok(response.status_code == 200 and "Execution Command Centre" in response.get_data(as_text=True), "bootstrap admin login failed")
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.9.1" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.9.2" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.9.1",
+            "health/version did not report Release 2.9.2",
         )
+
+        with client.session_transaction() as signed_in_session:
+            issued_session_token = signed_in_session["auth_session_token"]
+        assert_ok(pipeflow_app.validate_login_session(admin_id, issued_session_token), "server-side login session was not created")
 
         response = client.post(
             "/logout",
@@ -353,6 +370,7 @@ def main():
             follow_redirects=True,
         )
         assert_ok(response.status_code == 200 and "Sign In" in response.get_data(as_text=True), "logout failed")
+        assert_ok(not pipeflow_app.validate_login_session(admin_id, issued_session_token), "logout did not revoke the server-side login session")
         response = client.post(
             "/login",
             data={
@@ -360,9 +378,21 @@ def main():
                 "email": "smoke-test@example.com",
                 "password": "Password123!",
             },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code == 400, "login accepted a stale CSRF token")
+        client.get("/login")
+        response = client.post(
+            "/login",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "email": "smoke-test@example.com",
+                "password": "Password123!",
+            },
             follow_redirects=True,
         )
-        assert_ok(response.status_code == 200 and "Dashboard" in response.get_data(as_text=True), "stale-token login recovery failed")
+        assert_ok(response.status_code == 200 and "Execution Command Centre" in response.get_data(as_text=True), "admin could not sign back in")
+        assert_ok(client.get("/release-notes").status_code == 200 and client.get("/user-guide").status_code == 200, "authenticated release notes or user guide failed")
 
         db_path = Path(tmp) / "users" / "1" / "pipeflow.db"
         account_id, contact_id, second_contact_id, partner_id, partner_contact_id, outreach_id = seed_validation_data(db_path)
@@ -2007,9 +2037,47 @@ def main():
             follow_redirects=True,
         )
         assert_ok(
-            response.status_code == 200 and "Execution Command Centre" in response.get_data(as_text=True),
-            "matching tenant email domain did not activate a new profile",
+            response.status_code == 200 and "Check your email" in response.get_data(as_text=True),
+            "matching tenant email domain did not require mailbox verification",
         )
+        assert_ok(pipeflow_app.TEST_EMAIL_OUTBOX, "registration verification email was not generated")
+        matched_verification_token = pipeflow_app.TEST_EMAIL_OUTBOX[-1]["token"]
+        auth_connection = pipeflow_app.get_auth_connection()
+        matched_user = auth_connection.execute(
+            "SELECT id, company, is_active FROM users WHERE email = ?",
+            ("matched@smoke-company.test",),
+        ).fetchone()
+        matched_request = auth_connection.execute(
+            "SELECT id, status, suggested_company, email_verified_at FROM registration_requests WHERE email = ?",
+            ("matched@smoke-company.test",),
+        ).fetchone()
+        smoke_tenant = auth_connection.execute(
+            "SELECT id FROM tenants WHERE company_name = ?",
+            ("Smoke Other Company",),
+        ).fetchone()
+        auth_connection.close()
+        assert_ok(
+            matched_user is None
+            and matched_request["status"] == "awaiting_email"
+            and matched_request["suggested_company"] == "Smoke Other Company",
+            "recognised domain created tenant access before email verification and approval",
+        )
+        response = domain_client.get(f"/register/verify/{matched_verification_token}")
+        assert_ok(response.status_code == 200 and "has been verified" in response.get_data(as_text=True), "registration email verification failed")
+        assert_ok("matched@smoke-company.test" in client.get("/admin/permissions").get_data(as_text=True), "verified request was not shown to admin")
+        auth_connection = pipeflow_app.get_auth_connection()
+        matched_request = auth_connection.execute(
+            "SELECT id, status, email_verified_at FROM registration_requests WHERE email = ?",
+            ("matched@smoke-company.test",),
+        ).fetchone()
+        auth_connection.close()
+        assert_ok(matched_request["status"] == "pending_approval" and matched_request["email_verified_at"], "verified request did not enter approval state")
+        response = client.post(
+            f"/admin/registration-requests/{matched_request['id']}/approve",
+            data={"csrf_token": csrf_from_session(client), "company": "Smoke Other Company"},
+            follow_redirects=True,
+        )
+        assert_ok(response.status_code == 200 and "Profile request approved" in response.get_data(as_text=True), "admin could not approve verified domain request")
         auth_connection = pipeflow_app.get_auth_connection()
         matched_user = auth_connection.execute(
             "SELECT id, company, is_active FROM users WHERE email = ?",
@@ -2019,17 +2087,24 @@ def main():
             "SELECT company_name FROM user_company_memberships WHERE user_id = ? ORDER BY company_name",
             (matched_user["id"],),
         ).fetchall()
+        auth_connection.close()
         assert_ok(
             matched_user["company"] == "Smoke Other Company"
             and matched_user["is_active"] == 1
             and [row["company_name"] for row in matched_memberships] == ["Smoke Other Company"],
-            "domain-validated registration was not activated in exactly one matching company tenancy",
+            "approved registration did not create exactly one matching company membership",
         )
-        smoke_tenant = auth_connection.execute(
-            "SELECT id FROM tenants WHERE company_name = ?",
-            ("Smoke Other Company",),
-        ).fetchone()
-        auth_connection.close()
+        domain_client.get("/login")
+        response = domain_client.post(
+            "/login",
+            data={
+                "csrf_token": csrf_from_session(domain_client),
+                "email": "matched@smoke-company.test",
+                "password": "Password123!",
+            },
+            follow_redirects=True,
+        )
+        assert_ok(response.status_code == 200 and "Execution Command Centre" in response.get_data(as_text=True), "approved domain user could not sign in")
         response = client.post(
             f"/admin/tenants/{smoke_tenant['id']}/update",
             data={
@@ -2075,12 +2150,87 @@ def main():
             and "PipeFlow Administration" not in company_tenant_html,
             "Company Admin could not reach its domain configuration or could see another tenant",
         )
+        application_export = client.get("/admin/users/export.csv")
+        application_export_text = application_export.get_data(as_text=True)
+        assert_ok(
+            application_export.status_code == 200
+            and application_export.headers.get("Cache-Control") == "no-store"
+            and "Full Name,Email,Primary Company" in application_export_text
+            and "smoke-test@example.com" in application_export_text
+            and "matched@smoke-company.test" in application_export_text,
+            "Application Admin user export did not include permitted companies",
+        )
+        auth_connection = pipeflow_app.get_auth_connection()
+        default_tenant = auth_connection.execute(
+            "SELECT id, email_domains FROM tenants WHERE company_name = ?",
+            ("PipeFlow Administration",),
+        ).fetchone()
+        auth_connection.close()
+        response = company_admin_client.post(
+            f"/admin/tenants/{default_tenant['id']}/update",
+            data={
+                "csrf_token": csrf_from_session(company_admin_client),
+                "company_name": "PipeFlow Administration",
+                "country": "United Kingdom",
+                "company_contact": "Attacker",
+                "email_domains": ["@attacker.test"],
+                "is_active": "1",
+            },
+            follow_redirects=True,
+        )
+        auth_connection = pipeflow_app.get_auth_connection()
+        protected_tenant_domains = auth_connection.execute(
+            "SELECT email_domains FROM tenants WHERE id = ?", (default_tenant["id"],)
+        ).fetchone()["email_domains"]
+        auth_connection.close()
+        assert_ok(
+            "own company" in response.get_data(as_text=True).lower()
+            and "@attacker.test" not in (protected_tenant_domains or ""),
+            "Company Admin crossed tenant boundaries through a tenant identifier",
+        )
         assert_ok(
             "admin-user-delete-form" in company_permissions_html
             and 'data-select-all="admin-user-delete-form"' in company_permissions_html
-            and "Delete Selected" in company_permissions_html,
+            and "Delete Selected" in company_permissions_html
+            and "Export Users CSV" in company_permissions_html,
             "single and bulk user deletion controls are missing from Company Admin",
         )
+        company_export = company_admin_client.get("/admin/users/export.csv")
+        company_export_text = company_export.get_data(as_text=True)
+        assert_ok(
+            company_export.status_code == 200
+            and "matched@smoke-company.test" in company_export_text
+            and "company-admin@smoke-company.test" in company_export_text
+            and "smoke-test@example.com" not in company_export_text
+            and "password_hash" not in company_export_text
+            and "reset_phrase" not in company_export_text,
+            "Company Admin user export leaked another tenant or authentication secrets",
+        )
+        response = company_admin_client.post(
+            f"/admin/users/{matched_user['id']}/role",
+            data={"csrf_token": csrf_from_session(company_admin_client), "role": "admin"},
+            follow_redirects=True,
+        )
+        assert_ok("Only application administrators" in response.get_data(as_text=True), "Company Admin role escalation was not rejected")
+        auth_connection = pipeflow_app.get_auth_connection()
+        protected_role = auth_connection.execute("SELECT role FROM users WHERE id = ?", (matched_user["id"],)).fetchone()["role"]
+        auth_connection.close()
+        assert_ok(protected_role == "user", "Company Admin parameter tampering assigned Application Admin access")
+        response = company_admin_client.post(
+            "/admin/users/create",
+            data={
+                "csrf_token": csrf_from_session(company_admin_client),
+                "full_name": "Escalation Attempt",
+                "email": "escalation-attempt@smoke-company.test",
+                "company": "PipeFlow Administration",
+                "role": "admin",
+            },
+            follow_redirects=True,
+        )
+        auth_connection = pipeflow_app.get_auth_connection()
+        escalation_user = auth_connection.execute("SELECT id FROM users WHERE email = ?", ("escalation-attempt@smoke-company.test",)).fetchone()
+        auth_connection.close()
+        assert_ok("Only application administrators" in response.get_data(as_text=True) and escalation_user is None, "Company Admin created an Application Admin through request parameters")
 
         single_delete_id, error = pipeflow_app.create_user(
             "single-delete@smoke-company.test", "Password123!", "Single Delete User",
@@ -2207,9 +2357,12 @@ def main():
             },
         )
         assert_ok(
-            response.status_code == 200 and "sent to an application administrator" in response.get_data(as_text=True),
-            "unmatched email domain did not create a pending profile request",
+            response.status_code == 200 and "Check your email" in response.get_data(as_text=True),
+            "unmatched email domain did not require mailbox verification",
         )
+        unmatched_verification_token = pipeflow_app.TEST_EMAIL_OUTBOX[-1]["token"]
+        response = pending_client.get(f"/register/verify/{unmatched_verification_token}")
+        assert_ok(response.status_code == 200 and "has been verified" in response.get_data(as_text=True), "unmatched registration email verification failed")
         pending_client.get("/register")
         response = pending_client.post(
             "/register",
@@ -2228,7 +2381,7 @@ def main():
         )
         auth_connection = pipeflow_app.get_auth_connection()
         pending_row = auth_connection.execute(
-            "SELECT id FROM registration_requests WHERE email = ? AND status = 'pending'",
+            "SELECT id FROM registration_requests WHERE email = ? AND status = 'pending_approval' AND email_verified_at IS NOT NULL",
             ("pending@unmatched-domain.test",),
         ).fetchone()
         auth_connection.close()

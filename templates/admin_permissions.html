@@ -123,31 +123,31 @@
 </div>
 
 <div class="card admin-users-card">
-    {% if is_app_admin and pending_registrations %}
+    {% if pending_registrations %}
     <section class="pending-registration-section" aria-labelledby="pending-registration-heading">
         <div class="section-header">
             <div>
                 <h3 id="pending-registration-heading">Profile Requests</h3>
-                <p class="muted-text">These email domains do not match a configured company. Assign a company to approve access, or reject the request.</p>
+                <p class="muted-text">These users proved control of their email address. Review the suggested company before approving tenant access.</p>
             </div>
             <span class="record-count">{{ pending_registrations|length }} awaiting review</span>
         </div>
         <div class="table-container">
             <table class="report-table pending-registration-table">
-                <thead><tr><th>Name</th><th>Email</th><th>Email Domain</th><th>Requested</th><th>Decision</th></tr></thead>
+                <thead><tr><th>Name</th><th>Email</th><th>Suggested Company</th><th>Verified</th><th>Decision</th></tr></thead>
                 <tbody>
                     {% for registration in pending_registrations %}
                     <tr>
                         <td>{{ registration['full_name'] }}</td>
                         <td>{{ registration['email'] }}</td>
-                        <td>{{ registration['requested_domain'] }}</td>
-                        <td>{{ registration['date_created']|display_date(false) }}</td>
+                        <td>{{ registration['suggested_company'] or "Not matched" }}</td>
+                        <td>{{ registration['email_verified_at']|display_datetime }}</td>
                         <td>
                             <form method="POST" action="{{ url_for('admin_resolve_registration_request', request_id=registration['id'], decision='approve') }}" class="pending-registration-actions">
-                                <select name="company" required aria-label="Company for {{ registration['email'] }}">
+                                {% if is_app_admin %}<select name="company" required aria-label="Company for {{ registration['email'] }}">
                                     <option value="">Assign company</option>
-                                    {% for tenant in tenant_options %}<option value="{{ tenant['company_name'] }}">{{ tenant['company_name'] }}</option>{% endfor %}
-                                </select>
+                                    {% for tenant in tenant_options %}<option value="{{ tenant['company_name'] }}" {% if tenant['company_name'] == registration['suggested_company'] %}selected{% endif %}>{{ tenant['company_name'] }}</option>{% endfor %}
+                                </select>{% else %}<input type="hidden" name="company" value="{{ current_user.company }}"><span>{{ current_user.company }}</span>{% endif %}
                                 <button type="submit" class="btn btn-primary btn-small">Approve</button>
                                 <button type="submit" formaction="{{ url_for('admin_resolve_registration_request', request_id=registration['id'], decision='reject') }}" formnovalidate class="btn btn-danger btn-small">Reject</button>
                             </form>
@@ -164,6 +164,7 @@
             <h3>User Permissions</h3>
             <p class="muted-text">Create users and update profile, tenant, team, role and access. Company administrators only see users inside their own company.</p>
         </div>
+        <a href="{{ url_for('admin_export_users_csv') }}" class="btn btn-secondary">Export Users CSV</a>
     </div>
 
     <div class="admin-create-capabilities">

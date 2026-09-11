@@ -3,7 +3,8 @@ import os
 import base64
 import hashlib
 import json
-from datetime import datetime
+import secrets
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from functools import wraps
 from pathlib import Path
@@ -177,6 +178,17 @@ def initialise_auth_database() -> None:
         )
     """)
     connection.execute("""
+        CREATE TABLE IF NOT EXISTS login_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token_hash TEXT NOT NULL UNIQUE,
+            expires_at TEXT NOT NULL,
+            last_seen_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            revoked_at TEXT,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    connection.execute("""
         CREATE TABLE IF NOT EXISTS account_field_definitions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             field_key TEXT NOT NULL UNIQUE,
@@ -289,6 +301,11 @@ def initialise_auth_database() -> None:
     add_column_if_missing(connection, "users", "workspace_schema", "TEXT")
     add_column_if_missing(connection, "users", "active_team_id", "INTEGER")
     add_column_if_missing(connection, "users", "must_change_password", "INTEGER DEFAULT 0")
+    add_column_if_missing(connection, "registration_requests", "suggested_company", "TEXT")
+    add_column_if_missing(connection, "registration_requests", "email_verification_token_hash", "TEXT")
+    add_column_if_missing(connection, "registration_requests", "email_verification_expires_at", "TEXT")
+    add_column_if_missing(connection, "registration_requests", "email_verified_at", "TEXT")
+    add_column_if_missing(connection, "registration_requests", "last_verification_sent_at", "TEXT")
     add_column_if_missing(connection, "tenants", "email_domains", "TEXT")
     add_column_if_missing(connection, "teams", "company", "TEXT")
     add_column_if_missing(connection, "broadcast_messages", "target_companies", "TEXT")
@@ -303,6 +320,12 @@ def initialise_auth_database() -> None:
     add_column_if_missing(connection, "scheduled_job_runs", "acknowledged_at", "TEXT")
     add_column_if_missing(connection, "scheduled_job_runs", "acknowledged_by_user_id", "INTEGER")
     add_column_if_missing(connection, "scheduled_job_runs", "acknowledged_by_name", "TEXT")
+    connection.execute("""
+        UPDATE registration_requests
+        SET status = 'verification_required'
+        WHERE status = 'pending'
+          AND COALESCE(email_verified_at, '') = ''
+    """)
     # Earlier releases stored bare domains. Keep existing tenants usable while
     # moving the source of truth to the complete suffix beginning with "@".
     tenant_domain_rows = connection.execute("SELECT id, email_domains FROM tenants").fetchall()
@@ -693,36 +716,55 @@ def create_user(email: str, password: str, full_name: str, reset_phrase: str = "
         connection.close()
 
 
-def create_registration_request(email: str, password: str, full_name: str, reset_phrase: str = ""):
+def registration_token_hash(token: str) -> str:
+    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
+
+
+def create_registration_request(email: str, password: str, full_name: str, reset_phrase: str = "", suggested_company: str = ""):
     email = normalise_email(email)
     full_name = (full_name or "").strip()
     reset_phrase = (reset_phrase or "").strip()
     if not email or "@" not in email or not password or not full_name or not reset_phrase:
-        return "All fields are required."
+        return None, "All fields are required."
     if len(password) < 8:
-        return "Password must be at least 8 characters."
+        return None, "Password must be at least 8 characters."
     if len(reset_phrase) < 12:
-        return "Secret reset phrase must be at least 12 characters."
-    requested_domain = email.rsplit("@", 1)[1]
+        return None, "Secret reset phrase must be at least 12 characters."
+    requested_domain = "@" + email.rsplit("@", 1)[1]
+    suggested_company = normalise_company_name(suggested_company)
+    verification_token = secrets.token_urlsafe(32)
+    verification_hash = registration_token_hash(verification_token)
+    expires_at = (datetime.utcnow() + timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
     connection = get_auth_connection()
     try:
         existing = connection.execute(
             "SELECT id FROM registration_requests WHERE LOWER(email) = LOWER(?)",
             (email,),
         ).fetchone()
+        if existing:
+            existing_status = connection.execute(
+                "SELECT status FROM registration_requests WHERE id = ?", (existing["id"],)
+            ).fetchone()["status"]
+            if existing_status == "pending_approval":
+                return None, "This verified profile request is already awaiting administrator approval."
         values = (
             full_name,
             requested_domain,
+            suggested_company,
             generate_password_hash(password),
             generate_password_hash(reset_phrase),
             encrypt_secret_phrase(reset_phrase),
+            verification_hash,
+            expires_at,
         )
         if existing:
             connection.execute(
                 """
                 UPDATE registration_requests
-                SET full_name = ?, requested_domain = ?, password_hash = ?,
-                    reset_phrase_hash = ?, reset_phrase_encrypted = ?, status = 'pending',
+                SET full_name = ?, requested_domain = ?, suggested_company = ?, password_hash = ?,
+                    reset_phrase_hash = ?, reset_phrase_encrypted = ?, status = 'awaiting_email',
+                    email_verification_token_hash = ?, email_verification_expires_at = ?,
+                    email_verified_at = NULL, last_verification_sent_at = CURRENT_TIMESTAMP,
                     company = NULL, reviewed_by_user_id = NULL, reviewed_by_name = NULL,
                     reviewed_at = NULL, last_updated = CURRENT_TIMESTAMP
                 WHERE id = ?
@@ -733,25 +775,75 @@ def create_registration_request(email: str, password: str, full_name: str, reset
             connection.execute(
                 """
                 INSERT INTO registration_requests
-                    (email, full_name, requested_domain, password_hash, reset_phrase_hash, reset_phrase_encrypted)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (email, full_name, requested_domain, suggested_company, password_hash,
+                     reset_phrase_hash, reset_phrase_encrypted, status,
+                     email_verification_token_hash, email_verification_expires_at,
+                     last_verification_sent_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'awaiting_email', ?, ?, CURRENT_TIMESTAMP)
                 """,
                 (email, *values),
             )
         connection.commit()
-        return ""
+        return verification_token, ""
     finally:
         connection.close()
 
 
-def list_pending_registration_requests():
+def verify_registration_email(token: str):
+    token_hash = registration_token_hash(token)
+    if not token:
+        return None, "The email verification link is invalid."
     connection = get_auth_connection()
+    try:
+        row = connection.execute(
+            """
+            SELECT * FROM registration_requests
+            WHERE email_verification_token_hash = ?
+              AND status = 'awaiting_email'
+            """,
+            (token_hash,),
+        ).fetchone()
+        if not row:
+            return None, "The email verification link is invalid or has already been used."
+        expires_at = datetime.strptime(str(row["email_verification_expires_at"])[:19], "%Y-%m-%d %H:%M:%S")
+        if expires_at < datetime.utcnow():
+            connection.execute(
+                "UPDATE registration_requests SET status = 'verification_expired', email_verification_token_hash = NULL WHERE id = ?",
+                (row["id"],),
+            )
+            connection.commit()
+            return None, "The email verification link has expired. Submit registration again for a new link."
+        connection.execute(
+            """
+            UPDATE registration_requests
+            SET status = 'pending_approval', email_verified_at = CURRENT_TIMESTAMP,
+                email_verification_token_hash = NULL, last_updated = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (row["id"],),
+        )
+        connection.commit()
+        return dict(row), ""
+    finally:
+        connection.close()
+
+
+def list_pending_registration_requests(actor=None):
+    connection = get_auth_connection()
+    params = []
+    company_clause = ""
+    if actor and is_company_admin(actor):
+        company_clause = "AND LOWER(COALESCE(suggested_company, '')) = LOWER(?)"
+        params.append(actor["company"])
     rows = connection.execute(
-        """
+        f"""
         SELECT * FROM registration_requests
-        WHERE status = 'pending'
+        WHERE status = 'pending_approval'
+          AND COALESCE(email_verified_at, '') != ''
+          {company_clause}
         ORDER BY date_created ASC, id ASC
-        """
+        """,
+        params,
     ).fetchall()
     connection.close()
     return rows
@@ -776,7 +868,7 @@ def resolve_registration_request(request_id: int, decision: str, actor, company:
     connection = get_auth_connection()
     try:
         pending = connection.execute(
-            "SELECT * FROM registration_requests WHERE id = ? AND status = 'pending'",
+            "SELECT * FROM registration_requests WHERE id = ? AND status = 'pending_approval' AND COALESCE(email_verified_at, '') != ''",
             (request_id,),
         ).fetchone()
         if not pending:
@@ -794,7 +886,13 @@ def resolve_registration_request(request_id: int, decision: str, actor, company:
             connection.commit()
             return ""
 
-        company = normalise_company_name(company)
+        if is_company_admin(actor):
+            suggested_company = normalise_company_name(pending["suggested_company"] or "")
+            if not suggested_company or suggested_company.lower() != normalise_company_name(actor["company"]).lower():
+                return "You can only approve verified requests matched to your own company."
+            company = suggested_company
+        else:
+            company = normalise_company_name(company or pending["suggested_company"] or "")
         if not company or not tenant_exists(company):
             return "Select an active company before approving this profile."
         existing = connection.execute(
@@ -874,14 +972,20 @@ def verify_reset_phrase(email: str, reset_phrase: str):
     return None
 
 
-def reset_password_with_phrase(email: str, reset_phrase: str, password: str):
+def reset_password_with_phrase(email: str, reset_phrase: str, current_password: str, new_password: str):
     user = verify_reset_phrase(email, reset_phrase)
     if not user:
-        return "Email or secret phrase was not recognised."
+        return "Email, current password or secret phrase was not recognised."
 
-    password = (password or "").strip()
-    if len(password) < 8:
+    authenticated = authenticate_user(email, current_password)
+    if not authenticated or authenticated["id"] != user["id"]:
+        return "Email, current password or secret phrase was not recognised."
+
+    new_password = (new_password or "").strip()
+    if len(new_password) < 8:
         return "Password must be at least 8 characters."
+    if check_password_hash(authenticated["password_hash"], new_password):
+        return "Choose a new password that differs from the current password."
 
     connection = get_auth_connection()
     connection.execute(
@@ -891,11 +995,68 @@ def reset_password_with_phrase(email: str, reset_phrase: str, password: str):
             last_updated = CURRENT_TIMESTAMP
         WHERE id = ?
         """,
-        (generate_password_hash(password), user["id"]),
+        (generate_password_hash(new_password), user["id"]),
+    )
+    connection.execute(
+        "UPDATE login_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = ? AND revoked_at IS NULL",
+        (user["id"],),
     )
     connection.commit()
     connection.close()
     return ""
+
+
+def create_login_session(user_id: int, lifetime_hours: int = 12) -> str:
+    token = secrets.token_urlsafe(32)
+    expires_at = (datetime.utcnow() + timedelta(hours=lifetime_hours)).strftime("%Y-%m-%d %H:%M:%S")
+    connection = get_auth_connection()
+    connection.execute(
+        "INSERT INTO login_sessions (user_id, token_hash, expires_at) VALUES (?, ?, ?)",
+        (user_id, registration_token_hash(token), expires_at),
+    )
+    connection.commit()
+    connection.close()
+    return token
+
+
+def validate_login_session(user_id: int, token: str) -> bool:
+    if not user_id or not token:
+        return False
+    connection = get_auth_connection()
+    row = connection.execute(
+        """
+        SELECT id FROM login_sessions
+        WHERE user_id = ? AND token_hash = ? AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+        """,
+        (user_id, registration_token_hash(token)),
+    ).fetchone()
+    if row:
+        connection.execute("UPDATE login_sessions SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?", (row["id"],))
+        connection.commit()
+    connection.close()
+    return bool(row)
+
+
+def revoke_login_session(token: str):
+    if not token:
+        return
+    connection = get_auth_connection()
+    connection.execute(
+        "UPDATE login_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE token_hash = ? AND revoked_at IS NULL",
+        (registration_token_hash(token),),
+    )
+    connection.commit()
+    connection.close()
+
+
+def revoke_user_sessions(user_id: int):
+    connection = get_auth_connection()
+    connection.execute(
+        "UPDATE login_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = ? AND revoked_at IS NULL",
+        (user_id,),
+    )
+    connection.commit()
+    connection.close()
 
 
 def update_current_user_secret_phrase(user_id: int, new_phrase: str, confirm_phrase: str):
@@ -1484,6 +1645,7 @@ def delete_users(user_ids):
     placeholders = ", ".join("?" for _ in cleaned_ids)
     connection = get_auth_connection()
     try:
+        connection.execute(f"DELETE FROM login_sessions WHERE user_id IN ({placeholders})", cleaned_ids)
         connection.execute(
             f"UPDATE registration_requests SET reviewed_by_user_id = NULL WHERE reviewed_by_user_id IN ({placeholders})",
             cleaned_ids,
@@ -1526,6 +1688,10 @@ def reset_user_password(user_id: int, password: str):
         WHERE id = ?
         """,
         (generate_password_hash(password), user_id),
+    )
+    connection.execute(
+        "UPDATE login_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = ? AND revoked_at IS NULL",
+        (user_id,),
     )
     connection.commit()
     connection.close()

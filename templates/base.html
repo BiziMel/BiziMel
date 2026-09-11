@@ -17,19 +17,16 @@
             <img src="{{ url_for('static', filename='pipeflow.png') }}" alt="PipeFlow" class="app-logo">
             <div>
                 <h1>{{ app_name or "PipeFlow PG Manager" }}</h1>
-                <a href="{{ url_for('release_notes') }}" class="version-pill">
-                    Version {{ app_version or "1.0" }}
-                </a>
             </div>
         </div>
 
-        <div class="header-action-stack">
+        {% if current_user %}<div class="header-action-stack">
             <a href="{{ url_for('user_guide') }}" class="btn btn-secondary user-guide-link">User Guide</a>
             <a href="{{ url_for('release_notes') }}" class="btn btn-secondary user-guide-link {% if request.endpoint == 'release_notes' %}active-tab{% endif %}">Release Notes</a>
-        </div>
+        </div>{% endif %}
         </div>
 
-    <nav class="button-group nav-stack">
+    {% if current_user %}<nav class="button-group nav-stack">
     <a href="/" class="btn btn-primary {% if request.endpoint == 'home' %}active-tab{% endif %}">Insights Dashboard</a>
     <a href="{{ url_for('pg_progress') }}" class="btn btn-primary {% if request.endpoint == 'pg_progress' %}active-tab{% endif %}">PG Progress</a>
     <a href="/outreach" class="btn btn-primary {% if request.endpoint in ['outreach', 'add_outreach', 'edit_outreach', 'view_outreach', 'campaign_builder'] %}active-tab{% endif %}">Outreach Tasks</a>
@@ -47,9 +44,9 @@
         <button type="submit" class="btn btn-secondary">Sign Out</button>
     </form>
     {% endif %}
-</nav>
+</nav>{% endif %}
 
-        {% if broadcast_messages %}
+        {% if current_user and broadcast_messages %}
         <section class="dashboard-broadcast-ticker global-broadcast-ticker" aria-label="Broadcast messages">
             <div class="dashboard-broadcast-label">Broadcast</div>
             <div class="dashboard-broadcast-window">
@@ -66,14 +63,14 @@
         <p class="muted-text">Signed in as {{ current_user["full_name"] }}</p>
         {% endif %}
 
-        <div class="header-search">
+        {% if current_user %}<div class="header-search">
             <form method="GET" action="{{ url_for('global_search') }}">
                 <input type="text"
                        name="q"
                        placeholder="Search PipeFlow..."
                        class="header-search-input">
             </form>
-        </div>
+        </div>{% endif %}
     </header>
 
     <main class="container">

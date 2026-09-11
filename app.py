@@ -13,6 +13,8 @@ import html
 import base64
 import sqlite3
 import threading
+import smtplib
+from email.message import EmailMessage
 from datetime import date, datetime, time, timedelta
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -26,21 +28,23 @@ except ModuleNotFoundError:
     Image = None
     ImageOps = None
     UnidentifiedImageError = Exception
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, delete_users, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, bulk_update_broadcast_messages, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members, decode_broadcast_companies, set_user_company_memberships, user_company_names, tenant_for_email, create_registration_request, list_pending_registration_requests, resolve_registration_request, registration_request_status, complete_first_login_setup
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, delete_users, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, bulk_update_broadcast_messages, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members, decode_broadcast_companies, set_user_company_memberships, user_company_names, tenant_for_email, create_registration_request, verify_registration_email, list_pending_registration_requests, resolve_registration_request, registration_request_status, complete_first_login_setup, create_login_session, validate_login_session, revoke_login_session, revoke_user_sessions
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.9.1"
-APP_RELEASE_DATE = "2026-09-09"
-APP_BUILD = "2026-09-09-v2.9.1-engagement-consistency-r6"
+APP_VERSION = "2.9.2"
+APP_RELEASE_DATE = "2026-09-10"
+APP_BUILD = "2026-09-10-v2.9.2-registration-security-r2"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
 RESET_ATTEMPTS = {}
+REGISTRATION_ATTEMPTS = {}
 RATE_LIMIT_WINDOW_SECONDS = 15 * 60
-MAX_AUTH_ATTEMPTS = 8
+MAX_AUTH_ATTEMPTS = 5
+TEST_EMAIL_OUTBOX = []
 
 try:
     APP_TIMEZONE = ZoneInfo(os.environ.get("PIPEFLOW_TIMEZONE", "Europe/London"))
@@ -48,6 +52,25 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.9.2",
+        "release_date": "2026-09-10",
+        "title": "Verified registration and tenant security",
+        "new": [
+            "Added a tenant-scoped CSV export of user and workspace profile information for Application Admins and Company Admins.",
+            "Added email ownership verification before any registration request can be approved.",
+            "Added server-side login-session records so logout revokes the active session.",
+        ],
+        "enhanced": [
+            "Changed registration to email verification followed by Application Admin or matching Company Admin approval before tenant membership and access are created.",
+            "Strengthened authentication throttling and audit events for failed sign-ins, registration, verification, password changes and approvals.",
+            "Restricted the User Guide, Release Notes and displayed version to authenticated users.",
+        ],
+        "fixed": [
+            "Restricted blue Inactive RAG status to explicitly inactive contacts; missing or stale engagement is no longer labelled inactive.",
+            "Prevented Company Admin request manipulation from assigning Application Admin access or crossing company boundaries.",
+        ],
+    },
     {
         "version": "2.9.1",
         "release_date": "2026-09-09",
@@ -1215,7 +1238,7 @@ def configured_secret_key():
 
 app.config["SECRET_KEY"] = configured_secret_key()
 app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SAMESITE"] = "Strict"
 app.config["SESSION_COOKIE_SECURE"] = os.environ.get(
     "PIPEFLOW_COOKIE_SECURE",
     "1" if using_postgres() or os.environ.get("RENDER") else "0",
@@ -1852,8 +1875,46 @@ def report_csv_response(filename_prefix, headers, rows):
     return Response(
         output.getvalue(),
         mimetype="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename_prefix}_{timestamp}.csv"},
+        headers={
+            "Content-Disposition": f"attachment; filename={filename_prefix}_{timestamp}.csv",
+            "Cache-Control": "no-store",
+        },
     )
+
+
+def user_workspace_profile(user):
+    """Read non-secret profile fields from a user's isolated workspace."""
+    connection = None
+    try:
+        if using_postgres():
+            workspace_schema = user.get("workspace_schema") if isinstance(user, dict) else user["workspace_schema"]
+            if not workspace_schema:
+                return {}
+            connection = get_schema_connection(schema=workspace_schema)
+        else:
+            data_root = Path(os.environ.get("PIPEFLOW_DATA_DIR", Path(__file__).resolve().parent / "server_data"))
+            database_path = data_root / "users" / str(user["id"]) / "pipeflow.db"
+            if not database_path.exists():
+                return {}
+            connection = sqlite3.connect(database_path)
+            connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            """
+            SELECT full_name, team, job_title, work_day_start, work_day_end,
+                   non_working_start_date, non_working_end_date, date_created, last_updated
+            FROM user_profile
+            WHERE id = 1
+            """
+        ).fetchone()
+        return dict(row) if row else {}
+    except Exception:
+        # A missing or pre-migration workspace must not prevent the remaining
+        # permitted users from being exported.
+        app.logger.warning("User workspace profile could not be read for export", exc_info=True)
+        return {}
+    finally:
+        if connection is not None:
+            connection.close()
 
 
 def report_account_display(row):
@@ -1894,16 +1955,69 @@ def contact_report_engagement_score(row):
     return score
 
 
-def rate_limit_key(prefix, identifier):
-    return f"{prefix}:{request.remote_addr or 'unknown'}:{(identifier or '').strip().lower()}"
+def rate_limit_keys(prefix, identifier):
+    identity = (identifier or "").strip().lower() or "unknown"
+    return (
+        f"{prefix}:account:{identity}",
+        f"{prefix}:ip:{request.remote_addr or 'unknown'}",
+    )
 
 
-def rate_limit_exceeded(bucket, key):
+def rate_limit_exceeded(bucket, keys):
     now = datetime.utcnow()
-    attempts = [stamp for stamp in bucket.get(key, []) if (now - stamp).total_seconds() < RATE_LIMIT_WINDOW_SECONDS]
-    attempts.append(now)
-    bucket[key] = attempts
-    return len(attempts) > MAX_AUTH_ATTEMPTS
+    for key in keys:
+        attempts = [stamp for stamp in bucket.get(key, []) if (now - stamp).total_seconds() < RATE_LIMIT_WINDOW_SECONDS]
+        bucket[key] = attempts
+        if len(attempts) >= MAX_AUTH_ATTEMPTS:
+            return True
+    return False
+
+
+def record_auth_failure(bucket, keys):
+    now = datetime.utcnow()
+    for key in keys:
+        attempts = [stamp for stamp in bucket.get(key, []) if (now - stamp).total_seconds() < RATE_LIMIT_WINDOW_SECONDS]
+        attempts.append(now)
+        bucket[key] = attempts
+
+
+def clear_auth_failures(bucket, keys):
+    for key in keys:
+        bucket.pop(key, None)
+
+
+def send_registration_verification(email, token):
+    verification_url = url_for("verify_registration", token=token, _external=True)
+    if app.testing:
+        TEST_EMAIL_OUTBOX.append({"to": email, "verification_url": verification_url, "token": token})
+        return ""
+    smtp_host = (os.environ.get("PIPEFLOW_SMTP_HOST") or "").strip()
+    from_email = (os.environ.get("PIPEFLOW_SMTP_FROM") or "").strip()
+    if not smtp_host or not from_email:
+        return "PipeFlow could not send the verification email because SMTP delivery is not configured. Ask an Application Admin to configure the email service."
+    message = EmailMessage()
+    message["Subject"] = "Verify your PipeFlow email address"
+    message["From"] = from_email
+    message["To"] = email
+    message.set_content(
+        "Verify that you control this email address by opening the link below. "
+        "The link expires in 24 hours. After verification, an administrator must approve access.\n\n"
+        + verification_url
+    )
+    port = int(os.environ.get("PIPEFLOW_SMTP_PORT", "587"))
+    username = os.environ.get("PIPEFLOW_SMTP_USERNAME", "")
+    password = os.environ.get("PIPEFLOW_SMTP_PASSWORD", "")
+    try:
+        with smtplib.SMTP(smtp_host, port, timeout=15) as smtp:
+            if os.environ.get("PIPEFLOW_SMTP_STARTTLS", "1") == "1":
+                smtp.starttls()
+            if username:
+                smtp.login(username, password)
+            smtp.send_message(message)
+        return ""
+    except Exception:
+        app.logger.exception("Registration verification email delivery failed for %s", email)
+        return "PipeFlow could not send the verification email. Please try again later or contact an Application Admin."
 
 
 @app.context_processor
@@ -2284,16 +2398,10 @@ def page_instructions_for_endpoint(endpoint):
 def require_login_and_prepare_database():
     if os.environ.get("PIPEFLOW_NIGHTLY_SCHEDULER", "0") == "1":
         start_nightly_scheduler()
-    public_endpoints = {"login", "register", "forgot_password", "reset_password", "release_notes", "user_guide", "user_guide_section", "version_health", "storage_health", "static"}
+    public_endpoints = {"login", "register", "verify_registration", "forgot_password", "reset_password", "version_health", "storage_health", "static"}
     if request.endpoint in public_endpoints:
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-            if request.endpoint == "login" and not csrf_token_is_valid():
-                # A stale login page after a deploy/session refresh should not
-                # lock the user out. The credential check and rate limit still
-                # run, and the session is replaced on successful sign-in.
-                session.pop(CSRF_SESSION_KEY, None)
-            else:
-                validate_csrf_token()
+            validate_csrf_token()
         return None
 
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
@@ -2301,6 +2409,10 @@ def require_login_and_prepare_database():
 
     if not session.get("user_id"):
         return redirect(url_for("login"))
+
+    if not validate_login_session(session.get("user_id"), session.get("auth_session_token", "")):
+        session.clear()
+        return redirect(url_for("login", message="Your session expired or was signed out. Please sign in again."))
 
     user = current_user()
     if not user:
@@ -2476,13 +2588,16 @@ def login():
     message = request.args.get("message", "")
     if request.method == "POST":
         email = request.form.get("email", "")
-        if rate_limit_exceeded(LOGIN_ATTEMPTS, rate_limit_key("login", email)):
+        limit_keys = rate_limit_keys("login", email)
+        if rate_limit_exceeded(LOGIN_ATTEMPTS, limit_keys):
             return render_template("login.html", error="Too many sign-in attempts. Please wait and try again.", message=message, broadcast_messages=list_broadcast_messages(active_only=True)), 429
         user = authenticate_user(email, request.form.get("password", ""))
         if user:
+            clear_auth_failures(LOGIN_ATTEMPTS, limit_keys)
             session.clear()
             csrf_token()
             session["user_id"] = user["id"]
+            session["auth_session_token"] = create_login_session(user["id"])
             session["user_email"] = user["email"]
             session["user_name"] = user["full_name"]
             session["workspace_schema"] = ensure_user_workspace_schema(user)
@@ -2502,6 +2617,8 @@ def login():
             if user["must_change_password"]:
                 return redirect(url_for("first_login_setup"))
             return redirect(url_for("home"))
+        record_auth_failure(LOGIN_ATTEMPTS, limit_keys)
+        log_admin_audit(None, "Failed login", "Authentication", email.strip().lower(), f"Repeated-attempt controls applied; source IP: {request.remote_addr or 'unknown'}.")
         error = "Email or password was not recognised."
 
     return render_template("login.html", error=error, message=message, broadcast_messages=list_broadcast_messages(active_only=True))
@@ -2533,13 +2650,22 @@ def forgot_password():
     error = ""
     if request.method == "POST":
         email = request.form.get("email", "")
-        if rate_limit_exceeded(RESET_ATTEMPTS, rate_limit_key("reset", email)):
+        limit_keys = rate_limit_keys("reset", email)
+        if rate_limit_exceeded(RESET_ATTEMPTS, limit_keys):
             return render_template("forgot_password.html", error="Too many reset attempts. Please wait and try again."), 429
         reset_phrase = request.form.get("reset_phrase", "")
-        password = request.form.get("password", "")
-        error = reset_password_with_phrase(email, reset_phrase, password)
+        error = reset_password_with_phrase(
+            email,
+            reset_phrase,
+            request.form.get("current_password", ""),
+            request.form.get("password", ""),
+        )
         if not error:
+            clear_auth_failures(RESET_ATTEMPTS, limit_keys)
+            log_admin_audit(None, "Password reset", "Authentication", email.strip().lower(), "Password changed after email, current password and secret phrase validation.")
             return redirect(url_for("login", message="Password reset. Please sign in."))
+        record_auth_failure(RESET_ATTEMPTS, limit_keys)
+        log_admin_audit(None, "Failed password reset", "Authentication", email.strip().lower(), f"Credential validation failed; source IP: {request.remote_addr or 'unknown'}.")
 
     return render_template("forgot_password.html", error=error)
 
@@ -2571,69 +2697,51 @@ def register():
     email = request.form.get("email", "").strip().lower()
     if request.method == "POST":
         if reset_mode:
-            if rate_limit_exceeded(RESET_ATTEMPTS, rate_limit_key("register-reset", email)):
+            limit_keys = rate_limit_keys("register-reset", email)
+            if rate_limit_exceeded(RESET_ATTEMPTS, limit_keys):
                 error = "Too many reset attempts. Please wait and try again."
             else:
                 error = reset_password_with_phrase(
                     email,
                     request.form.get("reset_phrase", ""),
+                    request.form.get("current_password", ""),
                     request.form.get("password", ""),
                 )
                 if not error:
+                    clear_auth_failures(RESET_ATTEMPTS, limit_keys)
+                    log_admin_audit(None, "Password reset", "Authentication", email, "Password changed from registration recovery after full credential validation.")
                     return redirect(url_for("login", message="Password reset. Please sign in."))
+                record_auth_failure(RESET_ATTEMPTS, limit_keys)
+                log_admin_audit(None, "Failed password reset", "Authentication", email, f"Registration recovery validation failed; source IP: {request.remote_addr or 'unknown'}.")
         elif registered_email_exists(email):
             reset_mode = True
-            message = "A profile already exists for this email. Enter your secret phrase and a new password to reset access."
-        elif registration_request_status(email) == "pending":
+            message = "A profile already exists for this email. Enter its current password and secret phrase before choosing a new password."
+        elif registration_request_status(email) == "pending_approval":
             message = (
-                "A profile request for this email is already awaiting application administrator review. "
+                "This email has been verified and the profile request is awaiting administrator review. "
                 "The original request remains protected and has not been changed."
             )
         else:
+            limit_keys = rate_limit_keys("register", email)
+            if rate_limit_exceeded(REGISTRATION_ATTEMPTS, limit_keys):
+                return render_template("register.html", error="Too many registration attempts. Please wait and try again.", message="", reset_mode=False, email=email), 429
             matched_tenant = tenant_for_email(email)
-            # The first profile remains the application-admin bootstrap; subsequent
-            # profiles must either match a configured domain or await admin review.
-            if matched_tenant or user_count() == 0:
-                user_id, error = create_user(
-                    email,
-                    request.form.get("password", ""),
-                    request.form.get("full_name", ""),
-                    request.form.get("reset_phrase", ""),
-                    matched_tenant["company_name"] if matched_tenant else "",
-                )
-            else:
-                user_id = None
-                error = create_registration_request(
-                    email,
-                    request.form.get("password", ""),
-                    request.form.get("full_name", ""),
-                    request.form.get("reset_phrase", ""),
-                )
-                if not error:
-                    message = (
-                        "Your email domain is not yet associated with a PipeFlow company. "
-                        "Your profile request has been sent to an application administrator for approval."
-                    )
-            if user_id:
-                session.clear()
-                session["user_id"] = user_id
-                session["user_email"] = email
-                session["user_name"] = request.form.get("full_name", "").strip()
-                session["workspace_schema"] = ensure_user_workspace_schema(get_user_for_admin(user_id))
-                initialise_database()
-                connection = get_db_connection()
-                connection.execute(
-                    """
-                    UPDATE user_profile
-                    SET full_name = ?,
-                        last_updated = CURRENT_TIMESTAMP
-                    WHERE id = 1
-                    """,
-                    (session["user_name"],),
-                )
-                connection.commit()
-                connection.close()
-                return redirect(url_for("home"))
+            token, error = create_registration_request(
+                email,
+                request.form.get("password", ""),
+                request.form.get("full_name", ""),
+                request.form.get("reset_phrase", ""),
+                matched_tenant["company_name"] if matched_tenant else "",
+            )
+            if not error:
+                delivery_error = send_registration_verification(email, token)
+                if delivery_error:
+                    error = delivery_error
+                    record_auth_failure(REGISTRATION_ATTEMPTS, limit_keys)
+                else:
+                    clear_auth_failures(REGISTRATION_ATTEMPTS, limit_keys)
+                    log_admin_audit(None, "Account registration requested", "Registration", email, f"Verification email sent; suggested company: {matched_tenant['company_name'] if matched_tenant else 'Not matched'}.")
+                    message = "Check your email and open the verification link. After verification, an administrator must approve your company access before you can sign in."
 
     return render_template(
         "register.html",
@@ -2644,8 +2752,18 @@ def register():
     )
 
 
+@app.route("/register/verify/<token>")
+def verify_registration(token):
+    registration, error = verify_registration_email(token)
+    if error:
+        return render_template("registration_verified.html", error=error, email="")
+    log_admin_audit(None, "Registration email verified", "Registration", registration["email"], f"Mailbox ownership verified; suggested company: {registration.get('suggested_company') or 'Not matched'}.")
+    return render_template("registration_verified.html", error="", email=registration["email"])
+
+
 @app.route("/logout", methods=("POST",))
 def logout():
+    revoke_login_session(session.get("auth_session_token", ""))
     session.clear()
     return redirect(url_for("login"))
 
@@ -2684,7 +2802,7 @@ def render_admin_permissions(temporary_credentials=None, message_override=""):
         broadcast_company_options=tenant_options if is_app_admin else [],
         broadcast_messages=broadcast_rows_for_admin(actor),
         scheduler_runs=scheduler_run_history(30) if is_app_admin else [],
-        pending_registrations=list_pending_registration_requests() if is_app_admin else [],
+        pending_registrations=list_pending_registration_requests(actor),
         audit_retention_enabled=audit_retention_enabled(),
         temporary_credentials=temporary_credentials,
         actor_user_id=actor["id"] if actor else None,
@@ -2778,17 +2896,75 @@ def admin_permissions():
     return render_admin_permissions()
 
 
+@app.route("/admin/users/export.csv")
+@admin_required
+def admin_export_users_csv():
+    actor = current_user()
+    permitted_users = list_users(actor)
+    team_names = {str(team["id"]): team["team_name"] for team in list_teams(actor)}
+    headers = [
+        "Full Name",
+        "Email",
+        "Primary Company",
+        "Company Memberships",
+        "Team Memberships",
+        "Role",
+        "Status",
+        "Job Title",
+        "Working Day Start",
+        "Working Day End",
+        "Profile Unavailable From",
+        "Profile Unavailable To",
+        "User Created",
+        "User Last Updated",
+        "Workspace Profile Created",
+        "Workspace Profile Last Updated",
+    ]
+    rows = []
+    for user in permitted_users:
+        profile = user_workspace_profile(user)
+        rows.append([
+            profile.get("full_name") or user["full_name"],
+            user["email"],
+            user["company"],
+            "; ".join(user.get("company_memberships", [])),
+            "; ".join(team_names.get(str(team_id), str(team_id)) for team_id in user_team_ids(user["id"])),
+            user["role"],
+            "Active" if user["is_active"] else "Inactive",
+            profile.get("job_title", ""),
+            profile.get("work_day_start", ""),
+            profile.get("work_day_end", ""),
+            profile.get("non_working_start_date", ""),
+            profile.get("non_working_end_date", ""),
+            user["date_created"],
+            user["last_updated"],
+            profile.get("date_created", ""),
+            profile.get("last_updated", ""),
+        ])
+    log_admin_audit(
+        actor,
+        "Users exported",
+        "User profiles",
+        actor["company"] if not is_application_admin(actor) else "All permitted companies",
+        f"Exported {len(rows)} tenant-scoped user profile record(s) to CSV. Authentication secrets were excluded.",
+    )
+    return report_csv_response("PipeFlow_User_Profiles", headers, rows)
+
+
 @app.route("/admin/registration-requests/<int:request_id>/<decision>", methods=("POST",))
 @admin_required
 def admin_resolve_registration_request(request_id, decision):
     actor = current_user()
-    if not is_application_admin(actor):
-        return redirect(url_for("admin_permissions", error="Only Application Admins can approve or reject profile requests."))
+    if not (is_application_admin(actor) or is_company_admin(actor)):
+        return redirect(url_for("admin_permissions", error="Only administrators can approve or reject verified profile requests."))
+    requested_company = request.form.get("company", "")
+    if is_company_admin(actor):
+        requested_company = actor["company"]
     error = resolve_registration_request(
         request_id,
         decision,
         actor,
-        request.form.get("company", ""),
+        requested_company,
     )
     if error:
         return redirect(url_for("admin_permissions", error=error))
@@ -2918,6 +3094,11 @@ def admin_create_user():
     actor = current_user()
     requested_company = request.form.get("company", "")
     company = requested_company if is_application_admin(actor) else actor["company"]
+    role = request.form.get("role", "user").strip().lower()
+    if role not in {"user", "manager", "company_admin", "admin"}:
+        return redirect(url_for("admin_users", error="Choose a valid user role."))
+    if role == "admin" and not is_application_admin(actor):
+        return redirect(url_for("admin_users", error="Only application administrators can assign Application Admin access."))
     temporary_password = generate_temporary_password()
     temporary_reset_phrase = secrets.token_urlsafe(24)
     user_id, error = create_user(
@@ -2930,9 +3111,6 @@ def admin_create_user():
     )
     if error:
         return redirect(url_for("admin_users", error=error))
-    role = request.form.get("role", "user")
-    if role == "admin" and not is_application_admin(actor):
-        role = "user"
     role_error = set_user_role(user_id, role)
     if role_error:
         return redirect(url_for("admin_users", error=role_error))
@@ -3284,6 +3462,7 @@ def admin_deactivate_user(user_id):
     if not current_admin_can_manage_user(user):
         return redirect(url_for("admin_users", error="You can only manage users in your company."))
     set_user_active(user_id, False)
+    revoke_user_sessions(user_id)
     log_admin_audit(
         current_user(),
         "Profile deactivated",
@@ -7685,9 +7864,9 @@ def calculate_automated_pg_rag_status(activities, today=None, force_inactive=Fal
             "lastActivityDate": latest_activity,
         }
     return {
-        "automatedRagStatus": "blue",
-        "state": "Inactive",
-        "reason": "No customer engagement was recorded in the last 30 days.",
+        "automatedRagStatus": "red",
+        "state": "Uncovered",
+        "reason": "No customer engagement was recorded in the last 30 days; the record remains active and needs attention.",
         "lastActivityDate": latest_activity,
     }
 
@@ -7770,7 +7949,12 @@ def pg_progress_contact_update(connection, contact_id, legacy_action_update=None
     )
     completed_discovery = manual_completed_discovery or ""
     nbm_completed = action_update["nbm_completed"] if action_update and "nbm_completed" in action_update.keys() else ""
-    automated = calculate_automated_pg_rag_status(contact_pg_rag_activities(connection, contact_id))
+    contact = connection.execute("SELECT status FROM contacts WHERE id = ?", (contact_id,)).fetchone()
+    force_inactive = bool(contact and (contact["status"] or "").strip().lower() == "inactive")
+    automated = calculate_automated_pg_rag_status(
+        contact_pg_rag_activities(connection, contact_id),
+        force_inactive=force_inactive,
+    )
     rag = effective_pg_rag_payload(automated)
     return {
         "action_update": action_update,

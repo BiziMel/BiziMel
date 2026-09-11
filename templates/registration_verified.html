@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}Email Verification - PipeFlow PG Manager{% endblock %}
+
+{% block content %}
+<section class="auth-panel">
+    <h2>Email Verification</h2>
+    {% if error %}
+        <div class="alert-error">{{ error }}</div>
+    {% else %}
+        <div class="alert-success">Your email address {{ email }} has been verified.</div>
+        <p class="muted-text">Your profile is awaiting administrator approval. You cannot sign in until access to the company tenancy has been approved.</p>
+    {% endif %}
+    <p><a href="{{ url_for('login') }}" class="btn btn-secondary">Return to Sign In</a></p>
+</section>
+{% endblock %}
