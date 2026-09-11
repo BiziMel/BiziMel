@@ -7021,13 +7021,23 @@ def render_execution_command_centre(connection):
 
 @app.route("/")
 def home():
-    connection = get_db_connection()
-    if close_expired_completed_outreach(connection):
-        connection.commit()
+    connection = None
     try:
+        connection = get_db_connection()
+        if close_expired_completed_outreach(connection):
+            connection.commit()
         return render_execution_command_centre(connection)
     except Exception as exc:
         code = log_diagnostic_exception("INSIGHTS", exc, {"stage": "execution_command_centre"})
+        # The dashboard fallback must not repeat a failing optional lookup.
+        # In particular, a broadcast/schema problem used to make both the
+        # primary dashboard and this recovery render fail, leaving users on a
+        # generic error page immediately after login.
+        fallback_broadcasts = []
+        try:
+            fallback_broadcasts = list_broadcast_messages(active_only=True, actor=current_user())
+        except Exception as broadcast_exc:
+            log_diagnostic_exception("INSIGHTS", broadcast_exc, {"stage": "execution_command_centre_fallback_broadcasts"})
         return render_template(
             "index.html",
             active_insights_view="today", period_key="30", period_label="the last 30 days",
@@ -7037,11 +7047,12 @@ def home():
             risk_groups=[], coverage_metrics=[], trend_rows=[], trend_max=1, conversion_steps=[], team_rows=[],
             show_team_view=False, completed_period=0, positive_period=0, meetings_period=0,
             positive_rate=0, meeting_rate=0, weekly_target=8, weekly_goal_percent=0,
-            broadcast_messages=list_broadcast_messages(active_only=True, actor=current_user()),
+            broadcast_messages=fallback_broadcasts,
             dashboard_error=diagnostic_user_message("Execution Insights could not be fully loaded.", code),
         )
     finally:
-        connection.close()
+        if connection is not None:
+            connection.close()
 
 
 @app.route("/insights/next-24-hours/refresh", methods=("POST",))

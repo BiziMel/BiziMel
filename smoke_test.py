@@ -415,6 +415,32 @@ def main():
         assert_ok(response.status_code == 200 and "Execution Command Centre" in response.get_data(as_text=True), "admin could not sign back in")
         assert_ok(client.get("/release-notes").status_code == 200 and client.get("/user-guide").status_code == 200, "authenticated release notes or user guide failed")
 
+        # If the primary dashboard build and its optional broadcast lookup both
+        # fail, the recovery view must still load after login instead of
+        # escalating into the generic PF-AP error page.
+        original_dashboard_renderer = pipeflow_app.render_execution_command_centre
+        original_dashboard_broadcast_loader = pipeflow_app.list_broadcast_messages
+
+        def broken_dashboard_renderer(_connection):
+            raise RuntimeError("forced dashboard build failure")
+
+        def broken_dashboard_broadcast_loader(*args, **kwargs):
+            raise RuntimeError("forced dashboard broadcast lookup failure")
+
+        pipeflow_app.render_execution_command_centre = broken_dashboard_renderer
+        pipeflow_app.list_broadcast_messages = broken_dashboard_broadcast_loader
+        try:
+            response = client.get("/")
+        finally:
+            pipeflow_app.render_execution_command_centre = original_dashboard_renderer
+            pipeflow_app.list_broadcast_messages = original_dashboard_broadcast_loader
+        assert_ok(
+            response.status_code == 200
+            and "Execution Insights could not be fully loaded." in response.get_data(as_text=True)
+            and "PipeFlow could not load this page" not in response.get_data(as_text=True),
+            "dashboard fallback still escalated to the generic application error page",
+        )
+
         db_path = Path(tmp) / "users" / "1" / "pipeflow.db"
         account_id, contact_id, second_contact_id, partner_id, partner_contact_id, outreach_id = seed_validation_data(db_path)
         today = date.today()
