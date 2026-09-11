@@ -371,6 +371,27 @@ def main():
         )
         assert_ok(response.status_code == 200 and "Sign In" in response.get_data(as_text=True), "logout failed")
         assert_ok(not pipeflow_app.validate_login_session(admin_id, issued_session_token), "logout did not revoke the server-side login session")
+
+        # A failure while rendering the public login page must keep the user
+        # on a usable sign-in screen.  It must not show an authenticated-only
+        # dashboard link that redirects back into the same recovery loop.
+        original_broadcast_loader = pipeflow_app.list_broadcast_messages
+
+        def broken_login_broadcast_loader(*args, **kwargs):
+            raise RuntimeError("forced login broadcast lookup failure")
+
+        pipeflow_app.list_broadcast_messages = broken_login_broadcast_loader
+        try:
+            response = client.get("/login")
+        finally:
+            pipeflow_app.list_broadcast_messages = original_broadcast_loader
+        assert_ok(
+            response.status_code == 200
+            and "Sign In" in response.get_data(as_text=True)
+            and "could not complete sign in" in response.get_data(as_text=True).lower(),
+            "login recovery did not return a usable sign-in page",
+        )
+
         response = client.post(
             "/login",
             data={

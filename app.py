@@ -2451,6 +2451,33 @@ def handle_unexpected_exception(exc):
         return exc
     area = "CAMPAIGN" if request.endpoint == "campaign_builder" else "APP"
     code = log_diagnostic_exception(area, exc, {"stage": "global_exception_handler"})
+    # Login is a public endpoint.  If a database, session, or broadcast lookup
+    # fails while it is rendering, sending the user to the generic recovery
+    # page creates a dead-end: the dashboard link immediately requires a
+    # session that was never established.  Keep the sign-in form available and
+    # give the user a useful diagnostic code instead.
+    if request.endpoint == "login":
+        try:
+            return render_template(
+                "login.html",
+                error=diagnostic_user_message(
+                    "PipeFlow could not complete sign in. Please try again or contact an administrator if the problem continues.",
+                    code,
+                ),
+                message=request.args.get("message", ""),
+                broadcast_messages=[],
+            ), 200
+        except Exception as render_exc:
+            log_diagnostic_exception("APP", render_exc, {"stage": "login_error_recovery_render"})
+            return (
+                "<!doctype html><title>PipeFlow Sign In</title>"
+                "<main style=\"font-family: system-ui, -apple-system, Segoe UI, sans-serif; max-width: 760px; margin: 48px auto; padding: 0 24px;\">"
+                "<h1>PipeFlow could not complete sign in</h1>"
+                f"<p>{html.escape(diagnostic_user_message('Please try again from the sign-in page.', code))}</p>"
+                "<p><a href=\"/login\">Return to Sign In</a></p>"
+                "</main>",
+                200,
+            )
     if request.endpoint in {"campaign_builder", "outreach"} and request.method == "GET":
         return safe_outreach_error_response(
             diagnostic_user_message(
@@ -2472,10 +2499,14 @@ def handle_unexpected_exception(exc):
                 code,
             ),
         )
+    recovery_href = url_for("home") if session.get("user_id") else url_for("login")
+    recovery_label = "Return to Insights Dashboard" if session.get("user_id") else "Return to Sign In"
     return safe_pipeflow_recovery_page(
         "PipeFlow could not load this page",
         "Please go back, refresh, and try again. The error has been logged for review.",
         code,
+        primary_href=recovery_href,
+        primary_label=recovery_label,
     )
 
 
