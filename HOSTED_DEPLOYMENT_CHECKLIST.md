@@ -6,7 +6,7 @@
 4. Start with `gunicorn app:app`.
 5. Confirm `PIPEFLOW_NIGHTLY_SCHEDULER=1` and `PIPEFLOW_TIMEZONE=Europe/London` are present. They are included in `render.yaml`.
 6. Keep at least one live web-service instance available so the in-service scheduler can run at 23:00.
-7. Open `/health/version` after deployment and confirm version `2.9.2`, build `2026-09-10-v2.9.2-registration-security-r2`, and that both scheduler values are `True`.
+7. Open `/health/version` after deployment and confirm version `2.9.2`, build `2026-09-11-v2.9.2-postgres-session-fix-r3`, and that both scheduler values are `True`.
 8. Bootstrap the first Application Admin profile.
 9. Create tenants from Admin > Tenant and configure each accepted work email suffix including `@` (for example `@example.com`) before inviting company users.
 10. Check Admin > Permissions & Controls for Profile Requests. Unmatched email domains remain pending until an Application Admin assigns a company and approves or rejects the request.

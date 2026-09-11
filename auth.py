@@ -188,6 +188,28 @@ def initialise_auth_database() -> None:
             date_created TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    if using_postgres():
+        # Older hosted deployments created this column as TEXT. PostgreSQL
+        # cannot compare that value directly with CURRENT_TIMESTAMP, so bring
+        # the existing auth table to a real timestamp type during startup.
+        expires_column = connection.execute(
+            """
+            SELECT data_type
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'login_sessions'
+              AND column_name = 'expires_at'
+            """
+        ).fetchone()
+        if expires_column and str(expires_column["data_type"]).lower() in {"text", "character varying"}:
+            connection.execute(
+                """
+                ALTER TABLE login_sessions
+                ALTER COLUMN expires_at TYPE TIMESTAMPTZ
+                USING NULLIF(expires_at, '')::timestamptz
+                """
+            )
+            connection.commit()
     connection.execute("""
         CREATE TABLE IF NOT EXISTS account_field_definitions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -486,7 +508,7 @@ def tenant_exists(company_name: str) -> bool:
         return False
     connection = get_auth_connection()
     row = connection.execute(
-        """
+        f"""
         SELECT id
         FROM tenants
         WHERE LOWER(company_name) = LOWER(?)
@@ -1023,10 +1045,11 @@ def validate_login_session(user_id: int, token: str) -> bool:
     if not user_id or not token:
         return False
     connection = get_auth_connection()
+    expires_clause = "expires_at::timestamptz > CURRENT_TIMESTAMP" if using_postgres() else "expires_at > CURRENT_TIMESTAMP"
     row = connection.execute(
-        """
+        f"""
         SELECT id FROM login_sessions
-        WHERE user_id = ? AND token_hash = ? AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+        WHERE user_id = ? AND token_hash = ? AND revoked_at IS NULL AND {expires_clause}
         """,
         (user_id, registration_token_hash(token)),
     ).fetchone()
