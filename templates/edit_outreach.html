@@ -26,7 +26,7 @@
         <div class="alert-success">This task is Completed and can still be reopened or updated during the 10-day reopen window.</div>
     {% endif %}
 
-    <form method="POST" class="pipeflow-form">
+    <form method="POST" enctype="multipart/form-data" class="pipeflow-form">
         <input type="hidden" name="notes" value="{{ outreach_item.notes or '' }}">
         <fieldset {% if task_locked %}disabled{% endif %}>
 
@@ -191,6 +191,29 @@
             <div class="form-group full-width">
                 <label for="subject">Subject</label>
                 <input type="text" id="subject" name="subject" value="{{ outreach_item.subject or '' }}" required>
+            </div>
+
+            <div class="form-group full-width">
+                <label for="outreach_notes">Notes</label>
+                <textarea id="outreach_notes" name="outreach_notes" rows="6" placeholder="Add notes, links or context for this outreach">{{ outreach_item.outreach_notes or '' }}</textarea>
+                <p class="field-help">Optional. Add as much multiline text or as many links as needed.</p>
+            </div>
+
+            <div class="form-group full-width">
+                <label for="attachments">Attachments and screenshots</label>
+                {% if outreach_item.task_status == "Closed" %}
+                    <p class="field-help">Attachments cannot be added to a closed outreach.</p>
+                {% else %}
+                    <input type="file" id="attachments" name="attachments" multiple {% if task_locked %}disabled{% endif %}>
+                    <p class="field-help">Optional. Add files at any point while this outreach remains open.</p>
+                {% endif %}
+                {% if outreach_attachments %}
+                    <ul class="compact-list outreach-attachments-list">
+                        {% for attachment in outreach_attachments %}
+                            <li><a href="{{ url_for('download_outreach_attachment', outreach_id=outreach_item.id, attachment_id=attachment.id) }}">{{ attachment.original_filename }}</a> ({{ (attachment.file_size / 1024)|round(1) }} KB)</li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
             </div>
 
             <div class="form-group full-width">

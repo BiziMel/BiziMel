@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
-Version: 2.9.2
-Release date: 2026-09-10
-Build: 2026-09-11-v2.9.2-postgres-session-fix-r3
+Version: 2.9.3
+Release date: 2026-09-14
+Build: 2026-09-14-v2.9.3-pg-progress-evidence-filter-r1
 Package purpose: Hosted enterprise deployment only.

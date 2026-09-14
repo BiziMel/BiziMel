@@ -20,7 +20,7 @@
         <div class="alert-error">{{ error }}</div>
     {% endif %}
 
-    <form method="POST" class="pipeflow-form">
+    <form method="POST" enctype="multipart/form-data" class="pipeflow-form">
         <input type="hidden" name="notes" value="{{ prefill.notes or '' }}">
 
         <div class="form-grid">
@@ -188,6 +188,18 @@
             <div class="form-group full-width">
                 <label for="subject">Subject</label>
                 <input type="text" id="subject" name="subject" value="{{ prefill.subject or '' }}" required>
+            </div>
+
+            <div class="form-group full-width">
+                <label for="outreach_notes">Notes</label>
+                <textarea id="outreach_notes" name="outreach_notes" rows="6" placeholder="Add notes, links or context for this outreach">{{ prefill.outreach_notes or '' }}</textarea>
+                <p class="field-help">Optional. Add as much multiline text or as many links as needed.</p>
+            </div>
+
+            <div class="form-group full-width">
+                <label for="attachments">Attachments and screenshots</label>
+                <input type="file" id="attachments" name="attachments" multiple>
+                <p class="field-help">Optional. You can add files now or later while the outreach remains open.</p>
             </div>
 
             <div class="form-group full-width">

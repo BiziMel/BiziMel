@@ -34,9 +34,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.9.2"
+APP_VERSION = "2.9.3"
 APP_RELEASE_DATE = "2026-09-10"
-APP_BUILD = "2026-09-11-v2.9.2-postgres-session-fix-r3"
+APP_BUILD = "2026-09-14-v2.9.3-pg-progress-evidence-filter-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -53,6 +53,16 @@ except ZoneInfoNotFoundError:
 
 RELEASE_NOTES = [
     {
+        "version": "2.9.3",
+        "release_date": "2026-09-14",
+        "title": "Evidence-led PG Progress visibility",
+        "fixed": [
+            "Changed the Discovery and Next Action Tracker so contacts require reportable outreach in the selected evidence period before appearing.",
+            "Removed contacts from PG Progress when they have no reportable outreach in the rolling last 30 days; future planned actions alone no longer keep stale contacts visible.",
+            "Applied the same recent-outreach eligibility rule to partner activity rows.",
+        ],
+    },
+    {
         "version": "2.9.2",
         "release_date": "2026-09-10",
         "title": "Verified registration and tenant security",
@@ -60,6 +70,8 @@ RELEASE_NOTES = [
             "Added a tenant-scoped CSV export of user and workspace profile information for Application Admins and Company Admins.",
             "Added email ownership verification before any registration request can be approved.",
             "Added server-side login-session records so logout revokes the active session.",
+            "Added optional multiline Notes beneath the Outreach Subject for context and links.",
+            "Added persistent attachments and screenshots to new and amend Outreach records, with secure downloads and closed-record protection.",
         ],
         "enhanced": [
             "Changed registration to email verification followed by Application Admin or matching Company Admin approval before tenant membership and access are created.",
@@ -1052,6 +1064,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
             'Select one or more contacts. The first selected contact is the primary report contact and additional contacts are retained as '
             'recipients.',
             'Set task status, assignee, activity type including SMS/WhatsApp where appropriate, activity start date/time, activity due date/time and subject.',
+            'Use the optional Notes box directly beneath Subject for multiline context and links. Add one or more attachments or screenshots on this form or later from Edit Outreach.',
             'Choose an outcome when known. Scheduled Meeting Date / Time only appears for Meeting Booked, NBM Booked, Discovery Booked or '
             'Exec Meeting Booked.',
             'Add an Activity Update before completing, closing or cancelling the task.',
@@ -1062,6 +1075,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
            'For bulk rescheduling, select the required rows and choose Reschedule Selected. PipeFlow preserves their current order and finds collision-free working slots without using the original campaign end date as a limit.',
            'At 23:00 Europe/London each day, PipeFlow reviews open scheduled tasks in their current order and only moves work forward when a slot is unavailable or clashes.',
            'Sales Play assets appear under contact information when the selected Sales Play has configured assets.',
+           'Attachments are available through the Outreach record throughout its open lifecycle; closed records are read-only.',
            'Rescheduling changes the live due date shown in PG Progress; previous dates remain available in the outreach Audit Trail rather than appearing as separate activity.']},
  {'slug': 'campaign-builder',
   'title': 'Campaign Builder',
@@ -1555,6 +1569,82 @@ def contact_photo_storage_dir():
     photo_dir = Path(os.environ.get("PIPEFLOW_DATA_DIR", Path(__file__).resolve().parent / "server_data")) / "contact_photos"
     photo_dir.mkdir(parents=True, exist_ok=True)
     return photo_dir
+
+
+def outreach_attachment_storage_dir():
+    """Keep outreach files in persistent application data, never in static assets."""
+    attachment_dir = Path(os.environ.get("PIPEFLOW_DATA_DIR", Path(__file__).resolve().parent / "server_data")) / "outreach_attachments"
+    attachment_dir.mkdir(parents=True, exist_ok=True)
+    return attachment_dir
+
+
+def list_outreach_attachments(connection, outreach_id):
+    try:
+        return connection.execute(
+            "SELECT * FROM outreach_attachments WHERE outreach_id = ? ORDER BY date_created, id",
+            (outreach_id,),
+        ).fetchall()
+    except Exception as exc:
+        # Older workspaces may need one request to run the normal schema migration.
+        if database_error_looks_like_schema_drift(exc):
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            initialise_database(force=True)
+            return connection.execute(
+                "SELECT * FROM outreach_attachments WHERE outreach_id = ? ORDER BY date_created, id",
+                (outreach_id,),
+            ).fetchall()
+        raise
+
+
+def save_outreach_attachments(connection, outreach_id, uploads):
+    """Persist uploaded files for an open outreach; a bad file never rolls back the task."""
+    saved = 0
+    warnings = []
+    max_bytes = int(os.environ.get("PIPEFLOW_MAX_ATTACHMENT_BYTES", str(8 * 1024 * 1024)))
+    for upload in uploads or []:
+        original_name = (upload.filename or "").strip()
+        if not original_name:
+            continue
+        safe_name = secure_filename(original_name)
+        if not safe_name:
+            warnings.append(f"{original_name}: filename is not valid.")
+            continue
+        try:
+            upload.stream.seek(0)
+            payload = upload.stream.read(max_bytes + 1)
+            upload.stream.seek(0)
+        except Exception:
+            payload = b""
+        if not payload:
+            warnings.append(f"{original_name}: file was empty or could not be read.")
+            continue
+        if len(payload) > max_bytes:
+            warnings.append(f"{original_name}: file is larger than the {max_bytes // (1024 * 1024)} MB limit.")
+            continue
+        stored_name = f"{secrets.token_hex(16)}_{safe_name}"
+        try:
+            (outreach_attachment_storage_dir() / stored_name).write_bytes(payload)
+            connection.execute(
+                """
+                INSERT INTO outreach_attachments
+                    (outreach_id, original_filename, stored_filename, content_type, file_size)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (outreach_id, original_name[:255], stored_name, upload.mimetype or "application/octet-stream", len(payload)),
+            )
+            saved += 1
+        except Exception:
+            try:
+                (outreach_attachment_storage_dir() / stored_name).unlink(missing_ok=True)
+            except Exception:
+                pass
+            warnings.append(f"{original_name}: attachment could not be saved.")
+    if saved:
+        connection.commit()
+    return saved, warnings
 
 
 def contact_photo_static_dir():
@@ -3766,6 +3856,7 @@ def delete_account_records(connection, account_ids):
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'account' AND related_id = ?", (account_id,))
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'contact' AND related_id IN (SELECT id FROM contacts WHERE account_id = ?)", (account_id,))
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'outreach' AND related_id IN (SELECT id FROM outreach WHERE account_id = ?)", (account_id,))
+        connection.execute("DELETE FROM outreach_attachments WHERE outreach_id IN (SELECT id FROM outreach WHERE account_id = ?)", (account_id,))
         connection.execute("DELETE FROM account_partners WHERE account_id = ?", (account_id,))
         connection.execute("DELETE FROM partner_contact_accounts WHERE account_id = ?", (account_id,))
         connection.execute("DELETE FROM account_custom_values WHERE account_id = ?", (account_id,))
@@ -3782,6 +3873,7 @@ def delete_contact_records(connection, contact_ids):
         audit_record_delete(connection, "contact", contact_id, contact["name"] if contact else "")
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'contact' AND related_id = ?", (contact_id,))
         connection.execute("DELETE FROM outreach_recipients WHERE contact_id = ?", (contact_id,))
+        connection.execute("DELETE FROM outreach_attachments WHERE outreach_id IN (SELECT id FROM outreach WHERE contact_id = ?)", (contact_id,))
         connection.execute("DELETE FROM outreach WHERE contact_id = ?", (contact_id,))
         connection.execute("DELETE FROM contacts WHERE id = ?", (contact_id,))
 
@@ -3793,6 +3885,16 @@ def delete_outreach_records(connection, outreach_ids):
         if not outreach:
             continue
         audit_record_delete(connection, "outreach", outreach_id, outreach["subject"] if outreach else "")
+        attachment_rows = connection.execute(
+            "SELECT stored_filename FROM outreach_attachments WHERE outreach_id = ?",
+            (outreach_id,),
+        ).fetchall()
+        for attachment in attachment_rows:
+            try:
+                (outreach_attachment_storage_dir() / attachment["stored_filename"]).unlink(missing_ok=True)
+            except Exception:
+                pass
+        connection.execute("DELETE FROM outreach_attachments WHERE outreach_id = ?", (outreach_id,))
         connection.execute(
             "DELETE FROM timeline_entries WHERE related_type = 'outreach' AND related_id = ?",
             (outreach_id,),
@@ -8880,12 +8982,12 @@ def persist_new_outreach(connection, form, requested_status, sales_play_value, r
     cursor = connection.execute("""
         INSERT INTO outreach (
             fy, quarter, campaign, sales_play, account_id, contact_id, partner_contact_id, activity_type,
-            activity_date, activity_time, subject, notes, outcome,
+            activity_date, activity_time, subject, notes, outreach_notes, outcome,
             scheduled_meeting_date, scheduled_meeting_time,
             next_action, next_action_date, next_action_time,
             task_status, completed_at, assigned_to
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         form.get("fy"),
         form.get("quarter"),
@@ -8899,6 +9001,7 @@ def persist_new_outreach(connection, form, requested_status, sales_play_value, r
         form.get("activity_time"),
         form.get("subject"),
         form.get("notes", ""),
+        form.get("outreach_notes", ""),
         outcome_value,
         scheduled_meeting_date,
         scheduled_meeting_time,
@@ -8923,6 +9026,7 @@ def persist_new_outreach(connection, form, requested_status, sales_play_value, r
         "activity_date": form.get("activity_date"),
         "activity_time": form.get("activity_time"),
         "subject": form.get("subject"),
+        "outreach_notes": form.get("outreach_notes", ""),
         "outcome": outcome_value,
         "scheduled_meeting_date": scheduled_meeting_date,
         "scheduled_meeting_time": scheduled_meeting_time,
@@ -9202,6 +9306,7 @@ def persist_outreach_update(connection, outreach_id, outreach_item, new_values, 
             activity_time = ?,
             subject = ?,
             notes = ?,
+            outreach_notes = ?,
             outcome = ?,
             scheduled_meeting_date = ?,
             scheduled_meeting_time = ?,
@@ -9226,6 +9331,7 @@ def persist_outreach_update(connection, outreach_id, outreach_item, new_values, 
         new_values["activity_time"],
         new_values["subject"],
         new_values["notes"],
+        new_values["outreach_notes"],
         new_values["outcome"],
         new_values["scheduled_meeting_date"],
         new_values["scheduled_meeting_time"],
@@ -10302,7 +10408,20 @@ def pg_dashboard_context(connection, activity_period=None):
                     activity_period_end,
                 )
             ]
-            if not associated_outreach_rows and not scheduled_action_rows:
+            # A future action is not evidence that a contact has been reached.
+            # Contacts must have reportable outreach in the selected evidence
+            # period, and must also have reportable outreach in the rolling
+            # last 30 days, before they appear in Discovery and Next Action.
+            last_30_day_start = current_app_datetime().date() - timedelta(days=29)
+            last_30_day_rows = [
+                row for row in recent_activity_rows
+                if date_is_in_evidence_period(
+                    command_centre_datetime(row["completed_at"] or row["last_updated"] or row["activity_date"]),
+                    last_30_day_start,
+                    current_app_datetime().date(),
+                )
+            ]
+            if not recent_activity_rows or not last_30_day_rows:
                 continue
             contact_rag_payload = pg_progress_contact_update(connection, contact_id, legacy_action_update)
             action_update = contact_rag_payload["action_update"]
@@ -10402,6 +10521,7 @@ def pg_dashboard_context(connection, activity_period=None):
         """, (*pg_recorded_activity_params(), *report_scheduled_task_params(), *REPORT_EXCLUDED_TASK_STATUSES, account_id)).fetchall()
         partner_activity_entries = []
         partner_scheduled_actions = []
+        partner_recent_outreach = False
         seen_partner_entries = set()
         partner_group_names = []
         partner_contact_names = []
@@ -10420,6 +10540,12 @@ def pg_dashboard_context(connection, activity_period=None):
             report_activity_date = str(row["completed_at"] or row["last_updated"] or row["activity_date"] or "")[:10]
             report_activity_at = command_centre_datetime(report_activity_date)
             if is_report_visible_task and date_is_in_evidence_period(report_activity_at, activity_period_start, activity_period_end):
+                if date_is_in_evidence_period(
+                    report_activity_at,
+                    current_app_datetime().date() - timedelta(days=29),
+                    current_app_datetime().date(),
+                ):
+                    partner_recent_outreach = True
                 key = ("outreach", row["last_updated"], row["next_action"])
                 if key not in seen_partner_entries:
                     seen_partner_entries.add(key)
@@ -10453,7 +10579,7 @@ def pg_dashboard_context(connection, activity_period=None):
                         "due": format_display_datetime(row["next_action_date"], row["next_action_time"]),
                         "is_overdue": bool(row["next_action_date"] and row["next_action_date"] < today_key),
                     })
-        if partner_activity_entries or partner_scheduled_actions:
+        if partner_recent_outreach and partner_activity_entries:
             partner_activities = [row for row in partner_activity_rows if row["activity_type"] or row["outcome"]]
             partner_rag = effective_pg_rag_payload(calculate_automated_pg_rag_status(partner_activities))
             partner_group_label = "Partner Account: " + compact_join(partner_group_names, 3) if partner_group_names else "Partner activity"
@@ -14595,7 +14721,7 @@ def add_outreach():
             prefill = {
                 "account_id": source["account_id"],
                 "contact_ids": source_contact_values,
-                "notes": f"Follow-on task from completed outreach #{source['id']}.",
+                "outreach_notes": f"Follow-on task from completed outreach #{source['id']}.",
             }
     elif prefill_contact_id:
         contact = connection.execute(
@@ -14634,10 +14760,14 @@ def add_outreach():
                     recipients,
                 )
                 if not error:
+                    _, attachment_warnings = save_outreach_attachments(
+                        connection, outreach_id, request.files.getlist("attachments")
+                    )
+                    attachment_message = "Some attachments were not added: " + " ".join(attachment_warnings) if attachment_warnings else ""
                     connection.close()
                     if close_and_new_requested:
-                        return redirect(url_for("add_outreach", prefill_from=outreach_id))
-                    return redirect(url_for("outreach"))
+                        return redirect_with_notice(url_for("add_outreach", prefill_from=outreach_id), message=attachment_message)
+                    return redirect_with_notice(url_for("outreach"), message=attachment_message)
         except Exception as exc:
             if not database_error_looks_like_schema_drift(exc):
                 log_diagnostic_exception("OUTREACH-ADD", exc, {"stage": "initial_validate_or_save"})
@@ -14666,10 +14796,14 @@ def add_outreach():
                         recipients,
                     )
                     if not error:
+                        _, attachment_warnings = save_outreach_attachments(
+                            connection, outreach_id, request.files.getlist("attachments")
+                        )
+                        attachment_message = "Some attachments were not added: " + " ".join(attachment_warnings) if attachment_warnings else ""
                         connection.close()
                         if close_and_new_requested:
-                            return redirect(url_for("add_outreach", prefill_from=outreach_id))
-                        return redirect(url_for("outreach"))
+                            return redirect_with_notice(url_for("add_outreach", prefill_from=outreach_id), message=attachment_message)
+                        return redirect_with_notice(url_for("outreach"), message=attachment_message)
             except Exception as exc:
                 code = log_diagnostic_exception("OUTREACH-ADD", exc, {"stage": "outer_retry_after_schema_refresh"})
                 try:
@@ -15135,14 +15269,60 @@ def view_outreach(outreach_id):
         ORDER BY outreach_recipients.id
     """, (outreach_id,)).fetchall()
 
+    outreach_attachments = list_outreach_attachments(connection, outreach_id)
+
     connection.close()
 
     return render_template(
         "view_outreach.html",
         outreach_item=outreach_item,
         outreach_recipients=outreach_recipients,
-        timeline_entries=timeline_entries
+        timeline_entries=timeline_entries,
+        outreach_attachments=outreach_attachments,
     )
+
+
+@app.route("/outreach/<int:outreach_id>/attachments/<int:attachment_id>/download")
+def download_outreach_attachment(outreach_id, attachment_id):
+    connection = get_db_connection()
+    attachment = connection.execute(
+        "SELECT * FROM outreach_attachments WHERE id = ? AND outreach_id = ?",
+        (attachment_id, outreach_id),
+    ).fetchone()
+    connection.close()
+    if not attachment:
+        abort(404)
+    stored_name = secure_filename(attachment["stored_filename"] or "")
+    if not stored_name:
+        abort(404)
+    return send_from_directory(
+        outreach_attachment_storage_dir(),
+        stored_name,
+        as_attachment=True,
+        download_name=attachment["original_filename"] or stored_name,
+    )
+
+
+@app.route("/outreach/<int:outreach_id>/attachments/<int:attachment_id>/delete", methods=("POST",))
+def delete_outreach_attachment(outreach_id, attachment_id):
+    connection = get_db_connection()
+    outreach_item = connection.execute("SELECT * FROM outreach WHERE id = ?", (outreach_id,)).fetchone()
+    if not outreach_item or not task_can_be_modified(outreach_item):
+        connection.close()
+        return redirect(url_for("view_outreach", outreach_id=outreach_id, error="Attachments cannot be changed on a closed or locked outreach."))
+    attachment = connection.execute(
+        "SELECT * FROM outreach_attachments WHERE id = ? AND outreach_id = ?",
+        (attachment_id, outreach_id),
+    ).fetchone()
+    if attachment:
+        connection.execute("DELETE FROM outreach_attachments WHERE id = ?", (attachment_id,))
+        connection.commit()
+        try:
+            (outreach_attachment_storage_dir() / secure_filename(attachment["stored_filename"] or "")).unlink(missing_ok=True)
+        except Exception:
+            pass
+    connection.close()
+    return redirect(url_for("view_outreach", outreach_id=outreach_id))
 
 
 @app.route("/outreach/<int:outreach_id>/timeline/add", methods=("POST",))
@@ -16303,6 +16483,7 @@ def edit_outreach(outreach_id):
             "activity_time": request.form.get("activity_time"),
             "subject": request.form.get("subject"),
             "notes": outreach_item["notes"] or "",
+            "outreach_notes": request.form.get("outreach_notes", ""),
             "outcome": outcome_value,
             "scheduled_meeting_date": scheduled_meeting_date,
             "scheduled_meeting_time": scheduled_meeting_time,
@@ -16361,6 +16542,7 @@ def edit_outreach(outreach_id):
             "activity_time": "Activity start time",
             "subject": "Subject",
             "notes": "System metadata",
+            "outreach_notes": "Notes",
             "outcome": "Outcome",
             "scheduled_meeting_date": "Scheduled meeting date",
             "scheduled_meeting_time": "Scheduled meeting time",
@@ -16400,6 +16582,11 @@ def edit_outreach(outreach_id):
                 task_locked=task_locked_value,
                 task_lock_message=task_lock_message_value
             )
+        _, attachment_warnings = save_outreach_attachments(
+            connection,
+            outreach_id,
+            request.files.getlist("attachments") if not is_closed_task_status(new_values["task_status"]) else [],
+        )
         connection.close()
 
         if follow_on_requested:
@@ -16407,6 +16594,7 @@ def edit_outreach(outreach_id):
 
         return redirect(url_for("outreach"))
 
+    outreach_attachments = list_outreach_attachments(connection, outreach_id)
     selected_contact_values = selected_outreach_contact_values(connection, outreach_item)
     selected_account_id = selected_account_for_contacts
     scheduled_meeting_at = scheduled_meeting_datetime_value(
@@ -16431,7 +16619,8 @@ def edit_outreach(outreach_id):
         scheduled_meeting_at=scheduled_meeting_at,
         error=error,
         task_locked=task_locked_value,
-        task_lock_message=task_lock_message_value
+        task_lock_message=task_lock_message_value,
+        outreach_attachments=outreach_attachments,
     )
 
 

@@ -354,10 +354,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.9.2" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.9.3" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.9.2",
+            "health/version did not report Release 2.9.3",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -652,11 +652,9 @@ def main():
             'value="custom" selected' in pg_custom_html
             and 'value="2026-05-01"' in pg_custom_html
             and 'value="2026-05-31"' in pg_custom_html
-            and 'href="#pg-actions-account-self-' in pg_custom_html
-            and 'id="pg-actions-account-self-' in pg_custom_html
-            and "Smoke test outreach" in pg_custom_html
+            and "Smoke test outreach" not in pg_custom_html
             and "Future Planned Actions" in pg_custom_html,
-            "PG Actions custom filter, account jump link or future-action continuity failed",
+            "PG Actions custom filter, account jump link or stale-contact suppression failed",
         )
 
         missing_page = client.get("/this-pipeflow-page-does-not-exist", follow_redirects=True)
@@ -1193,10 +1191,11 @@ def main():
         pg_context = pipeflow_app.pg_dashboard_context(connection)
         connection.close()
         plan_row = next(row for row in pg_context["pg_plan_rows"] if row["account_id"] == account_id)
-        contact_row = next(row for row in pg_context["pg_action_rows"] if row["contact_id"] == contact_id)
         assert_ok(plan_row["rag_status"] == expected_account_rag, "PG Progress account status changed while saving metrics")
-        assert_ok(contact_row["rag_status"] in {"green", "amber", "red", "blue"}, "PG Progress contact engagement status is invalid")
-        assert_ok(contact_row["account_rag_status"] == expected_account_rag, "PG Progress action account status did not mirror the plan table")
+        assert_ok(
+            not any(row["contact_id"] == contact_id for row in pg_context["pg_action_rows"]),
+            "PG Progress displayed a contact with no reportable outreach in the rolling 30-day window",
+        )
 
         campaign_builder_html = client.get("/outreach/campaign-builder").get_data(as_text=True)
         assert_ok(

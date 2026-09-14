@@ -577,6 +577,24 @@ a:hover {
     }
 }
 
+.outreach-notes-content {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+    padding: 10px 12px;
+    border-left: 3px solid #197a56;
+    background: #f4f8f6;
+}
+
+.outreach-attachments-list {
+    margin-top: 8px;
+}
+
+.inline-form {
+    display: inline;
+    margin-left: 8px;
+}
+
 /* Execution Command Centre */
 .container:has(.insights-command-header) {
     width: 96%;

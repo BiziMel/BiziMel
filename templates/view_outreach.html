@@ -49,6 +49,13 @@
 <div class="detail-card">
     <h2>Notes and Next Action</h2>
 
+    {% if outreach_item.outreach_notes %}
+        <p><strong>Notes:</strong></p>
+        <div class="outreach-notes-content">{{ outreach_item.outreach_notes|urlize(target='_blank', rel='noopener') }}</div>
+    {% else %}
+        <p><strong>Notes:</strong> No notes added.</p>
+    {% endif %}
+
     <details class="system-metadata-panel">
         <summary>System Metadata</summary>
         <p>{{ outreach_item.notes or "No system scheduling metadata recorded." }}</p>
@@ -56,6 +63,32 @@
     <p><strong>Next Action:</strong><br>{{ outreach_item.next_action }}</p>
     <p><strong>Activity Due Date:</strong> {{ outreach_item.next_action_date|display_datetime(outreach_item.next_action_time) }}</p>
     <p><strong>Activity Due Time:</strong> {{ outreach_item.next_action_time }}</p>
+</div>
+
+<div class="detail-card">
+    <h2>Attachments and Screenshots</h2>
+    {% if outreach_attachments %}
+        <ul class="compact-list outreach-attachments-list">
+            {% for attachment in outreach_attachments %}
+                <li>
+                    <a href="{{ url_for('download_outreach_attachment', outreach_id=outreach_item.id, attachment_id=attachment.id) }}">{{ attachment.original_filename }}</a>
+                    <span class="field-help">({{ (attachment.file_size / 1024)|round(1) }} KB)</span>
+                    {% if outreach_item.task_status != "Closed" %}
+                        <form method="POST" action="{{ url_for('delete_outreach_attachment', outreach_id=outreach_item.id, attachment_id=attachment.id) }}" class="inline-form">
+                            <button type="submit" class="btn btn-secondary btn-small">Remove</button>
+                        </form>
+                    {% endif %}
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>No attachments have been added.</p>
+    {% endif %}
+    {% if outreach_item.task_status == "Closed" %}
+        <p class="field-help">This outreach is closed, so attachments are read-only.</p>
+    {% else %}
+        <p class="field-help">Add or remove files from Edit Outreach while this record remains open.</p>
+    {% endif %}
 </div>
 
 <div class="detail-row">

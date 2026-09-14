@@ -260,6 +260,7 @@ def initialise_database(force=False):
             activity_type TEXT,
             subject TEXT,
             notes TEXT,
+            outreach_notes TEXT,
             outcome TEXT,
             scheduled_meeting_date TEXT,
             scheduled_meeting_time TEXT,
@@ -285,6 +286,19 @@ def initialise_database(force=False):
             sort_order INTEGER DEFAULT 0,
             date_created TEXT DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(outreach_id, contact_id, partner_contact_id)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS outreach_attachments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            outreach_id INTEGER NOT NULL,
+            original_filename TEXT NOT NULL,
+            stored_filename TEXT NOT NULL UNIQUE,
+            content_type TEXT,
+            file_size INTEGER DEFAULT 0,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(outreach_id) REFERENCES outreach(id)
         )
     """)
 
@@ -663,6 +677,7 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "outreach", "activity_type", "TEXT")
     add_column_if_missing(cursor, "outreach", "subject", "TEXT")
     add_column_if_missing(cursor, "outreach", "notes", "TEXT")
+    add_column_if_missing(cursor, "outreach", "outreach_notes", "TEXT")
     add_column_if_missing(cursor, "outreach", "outcome", "TEXT")
     add_column_if_missing(cursor, "outreach", "scheduled_meeting_date", "TEXT")
     add_column_if_missing(cursor, "outreach", "scheduled_meeting_time", "TEXT")
@@ -679,6 +694,12 @@ def initialise_database(force=False):
     add_column_if_missing(cursor, "outreach_recipients", "partner_contact_id", "INTEGER")
     add_column_if_missing(cursor, "outreach_recipients", "sort_order", "INTEGER DEFAULT 0")
     add_column_if_missing(cursor, "outreach_recipients", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "outreach_attachments", "outreach_id", "INTEGER")
+    add_column_if_missing(cursor, "outreach_attachments", "original_filename", "TEXT")
+    add_column_if_missing(cursor, "outreach_attachments", "stored_filename", "TEXT")
+    add_column_if_missing(cursor, "outreach_attachments", "content_type", "TEXT")
+    add_column_if_missing(cursor, "outreach_attachments", "file_size", "INTEGER DEFAULT 0")
+    add_column_if_missing(cursor, "outreach_attachments", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
 
     # Safe migrations for account partners
     add_column_if_missing(cursor, "account_partners", "team_id", "INTEGER DEFAULT 1")
