@@ -17,3 +17,17 @@ services:
         value: Europe/London
       - key: DATABASE_URL
         sync: false
+  - type: worker
+    name: pipeflow-nightly-scheduler
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scheduler_worker.py
+    envVars:
+      - key: PIPEFLOW_NIGHTLY_SCHEDULER
+        value: "1"
+      - key: PIPEFLOW_DISABLE_INPROCESS_SCHEDULER
+        value: "1"
+      - key: PIPEFLOW_TIMEZONE
+        value: Europe/London
+      - key: DATABASE_URL
+        sync: false

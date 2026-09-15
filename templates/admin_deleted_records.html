@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Deleted Records | PipeFlow{% endblock %}
+
+{% block content %}
+<section class="page-header">
+    <div>
+        <p class="eyebrow">Admin Console</p>
+        <h1>Deleted Records</h1>
+        <p class="muted-text">Read-only deletion history from the workspaces available to your administrator role.</p>
+    </div>
+    <div class="button-row">
+        <a href="{{ url_for('admin_permissions') }}" class="btn btn-secondary">Back to Admin</a>
+        <a href="{{ url_for('audit_trail') }}" class="btn btn-secondary">Audit Trail</a>
+    </div>
+</section>
+
+<div class="form-card">
+    <div class="table-container">
+        <table class="report-table deleted-records-table">
+            <thead>
+                <tr>
+                    <th>Log ID</th>
+                    <th>Record Type</th>
+                    <th>Record ID</th>
+                    <th>Primary Fields</th>
+                    <th>Reason</th>
+                    <th>Deleted By</th>
+                    <th>Deleted At</th>
+                    <th>Workspace</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for record in deleted_records %}
+                    <tr>
+                        <td>{{ record.id }}</td>
+                        <td>{{ record.entity_type|replace('_', ' ')|title }}</td>
+                        <td>{{ record.entity_id or "-" }}</td>
+                        <td><code class="deleted-record-fields">{{ record.primary_fields or "-" }}</code></td>
+                        <td>{{ record.deletion_reason or "-" }}</td>
+                        <td>{{ record.deleted_by_name or "System" }}</td>
+                        <td>{{ record.date_deleted|display_datetime }}</td>
+                        <td>{{ record.workspace_owner or "Current workspace" }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="8">No deleted-record logs are available.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

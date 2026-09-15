@@ -34,9 +34,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.9.3"
+APP_VERSION = "2.10.0"
 APP_RELEASE_DATE = "2026-09-10"
-APP_BUILD = "2026-09-14-v2.9.3-pg-progress-evidence-filter-r1"
+APP_BUILD = "2026-09-15-v2.10.0-scheduler-deleted-records-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -52,6 +52,23 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.10.0",
+        "release_date": "2026-09-15",
+        "title": "Reliable scheduling and deleted-record audit history",
+        "new": [
+            "Added a dedicated Render worker definition for the nightly 23:00 Europe/London Outreach schedule review.",
+            "Added an Admin-only Deleted Records view showing record type, record ID, primary fields, deletion reason, actor, workspace and timestamp.",
+        ],
+        "enhanced": [
+            "Nightly scheduling now runs audit-retention cleanup and records the cleanup result alongside the schedule review result.",
+            "Deletion summaries are retained separately from normal audit entries so automatic retention cleanup remains traceable.",
+            "Company Admins see deleted records only for their tenant; Application Admins can review all permitted workspaces.",
+        ],
+        "fixed": [
+            "Made the hosted scheduler independent of web-request traffic by adding a long-running worker process with the existing in-process watchdog as fallback.",
+        ],
+    },
     {
         "version": "2.9.3",
         "release_date": "2026-09-14",
@@ -3849,9 +3866,33 @@ def selected_record_ids(field_name="selected_ids"):
     return ids
 
 
+def record_deleted_log(connection, entity_type, entity_id, primary_fields, reason=""):
+    """Keep a durable, non-editable deletion summary before removing a record."""
+    actor = current_user()
+    safe_fields = {str(key): value for key, value in (primary_fields or {}).items() if key not in {
+        "password", "password_hash", "reset_phrase_plain", "reset_phrase_hash", "reset_phrase_encrypted"
+    }}
+    connection.execute(
+        """
+        INSERT INTO deleted_record_logs
+            (entity_type, entity_id, primary_fields, deletion_reason, deleted_by_user_id, deleted_by_name)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            entity_type,
+            entity_id,
+            json.dumps(safe_fields, default=str)[:12000],
+            reason or "User or administrator deletion",
+            actor["id"] if actor else None,
+            actor["full_name"] if actor and "full_name" in actor.keys() else (actor["email"] if actor else "System"),
+        ),
+    )
+
+
 def delete_account_records(connection, account_ids):
     for account_id in account_ids:
         account = connection.execute("SELECT account_name FROM accounts WHERE id = ?", (account_id,)).fetchone()
+        record_deleted_log(connection, "account", account_id, dict(account) if account else {"account_name": ""})
         audit_record_delete(connection, "account", account_id, account["account_name"] if account else "")
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'account' AND related_id = ?", (account_id,))
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'contact' AND related_id IN (SELECT id FROM contacts WHERE account_id = ?)", (account_id,))
@@ -3870,6 +3911,7 @@ def delete_account_records(connection, account_ids):
 def delete_contact_records(connection, contact_ids):
     for contact_id in contact_ids:
         contact = connection.execute("SELECT name FROM contacts WHERE id = ?", (contact_id,)).fetchone()
+        record_deleted_log(connection, "contact", contact_id, dict(contact) if contact else {"name": ""})
         audit_record_delete(connection, "contact", contact_id, contact["name"] if contact else "")
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'contact' AND related_id = ?", (contact_id,))
         connection.execute("DELETE FROM outreach_recipients WHERE contact_id = ?", (contact_id,))
@@ -3884,6 +3926,7 @@ def delete_outreach_records(connection, outreach_ids):
         outreach = connection.execute("SELECT subject FROM outreach WHERE id = ?", (outreach_id,)).fetchone()
         if not outreach:
             continue
+        record_deleted_log(connection, "outreach", outreach_id, dict(outreach))
         audit_record_delete(connection, "outreach", outreach_id, outreach["subject"] if outreach else "")
         attachment_rows = connection.execute(
             "SELECT stored_filename FROM outreach_attachments WHERE outreach_id = ?",
@@ -3913,6 +3956,7 @@ def delete_partner_records(connection, partner_ids):
         partner = connection.execute("SELECT * FROM partners WHERE id = ?", (partner_id,)).fetchone()
         if not current_user_can_delete_partner(partner):
             continue
+        record_deleted_log(connection, "partner", partner_id, dict(partner))
         audit_record_delete(connection, "partner", partner_id, partner["partner_name"] if partner else "")
         connection.execute("DELETE FROM account_partners WHERE partner_id = ?", (partner_id,))
         connection.execute("DELETE FROM partner_contact_accounts WHERE partner_id = ?", (partner_id,))
@@ -15970,7 +16014,13 @@ def run_nightly_schedule_review(now=None, force=False, run_date=None):
     updated_total = 0
     workspace_total = 0
     failures = []
+    retention_deleted = 0
     try:
+        try:
+            retention_deleted = cleanup_audit_retention()
+        except Exception as exc:
+            failures.append(f"audit retention cleanup: {type(exc).__name__}")
+            app.logger.exception("Nightly audit retention cleanup failed")
         for workspace_key, workspace_label, connection, connection_error in scheduled_workspace_connections():
             workspace_total += 1
             if connection_error:
@@ -16002,7 +16052,7 @@ def run_nightly_schedule_review(now=None, force=False, run_date=None):
             )
             finish_scheduled_job(job_name, run_date, run_token, "failed", detail, now)
             return {"status": "failed", "updated": updated_total, "workspaces": workspace_total, "detail": detail}
-        detail = f"Reviewed {workspace_total} workspace(s) and moved {updated_total} open Outreach task(s)."
+        detail = f"Reviewed {workspace_total} workspace(s), moved {updated_total} open Outreach task(s), and removed {retention_deleted} expired audit entr{'y' if retention_deleted == 1 else 'ies'}."
         finish_scheduled_job(job_name, run_date, run_token, "completed", detail, now)
         return {"status": "completed", "updated": updated_total, "workspaces": workspace_total, "detail": detail}
     except Exception as exc:
@@ -16139,6 +16189,47 @@ def scheduler_run_history(days=30):
     """, (cutoff,)).fetchall()
     connection.close()
     return rows
+
+
+def deleted_record_logs_for_admin(limit=1000):
+    """Read deletion summaries across the admin's permitted workspaces."""
+    actor = current_user()
+    users = list_users(actor)
+    user_by_schema = {}
+    for user in users:
+        schema = user["workspace_schema"] if "workspace_schema" in user.keys() else ""
+        if schema:
+            user_by_schema[schema] = user
+    rows = []
+    for workspace_key, workspace_label, connection, connection_error in scheduled_workspace_connections():
+        if connection_error or not connection:
+            continue
+        try:
+            schema = workspace_key if using_postgres() else ""
+            owner = user_by_schema.get(schema)
+            if owner and is_company_admin(actor) and not is_application_admin(actor) and not same_company(actor, owner):
+                continue
+            for row in connection.execute(
+                "SELECT * FROM deleted_record_logs ORDER BY date_deleted DESC, id DESC LIMIT ?",
+                (limit,),
+            ).fetchall():
+                item = dict(row)
+                item["workspace_owner"] = workspace_label
+                rows.append(item)
+        except Exception as exc:
+            app.logger.exception("Deleted-record log could not be loaded for %s", workspace_key)
+        finally:
+            connection.close()
+    return sorted(rows, key=lambda row: row.get("date_deleted") or "", reverse=True)[:limit]
+
+
+@app.route("/admin/deleted-records")
+@admin_required
+def admin_deleted_records():
+    return render_template(
+        "admin_deleted_records.html",
+        deleted_records=deleted_record_logs_for_admin(),
+    )
 
 
 def auto_reschedule_outreach_with_recovery(connection, outreach_ids, actor_label):
@@ -17966,9 +18057,10 @@ def audit_retention_cutoff():
 
 def cleanup_audit_retention():
     if not audit_retention_enabled():
-        return
+        return 0
     cutoff = audit_retention_cutoff()
     cleanup_admin_audit_entries_older_than(cutoff)
+    deleted_count = 0
     if using_postgres():
         for user in list_users(current_user()):
             schema = user["workspace_schema"] if "workspace_schema" in user.keys() else ""
@@ -17976,16 +18068,37 @@ def cleanup_audit_retention():
                 continue
             try:
                 connection = get_schema_connection(schema=schema)
+                old_rows = connection.execute("SELECT * FROM audit_entries WHERE date_created < ?", (cutoff,)).fetchall()
+                for row in old_rows:
+                    record_deleted_log(
+                        connection,
+                        "audit_entry",
+                        row["id"],
+                        {"entity_type": row["entity_type"], "entity_id": row["entity_id"], "field_label": row["field_label"], "value_to": row["value_to"]},
+                        "Automatic audit retention cleanup",
+                    )
                 connection.execute("DELETE FROM audit_entries WHERE date_created < ?", (cutoff,))
                 connection.commit()
+                deleted_count += len(old_rows)
                 connection.close()
             except Exception:
                 continue
     else:
         connection = get_db_connection()
+        old_rows = connection.execute("SELECT * FROM audit_entries WHERE date_created < ?", (cutoff,)).fetchall()
+        for row in old_rows:
+            record_deleted_log(
+                connection,
+                "audit_entry",
+                row["id"],
+                {"entity_type": row["entity_type"], "entity_id": row["entity_id"], "field_label": row["field_label"], "value_to": row["value_to"]},
+                "Automatic audit retention cleanup",
+            )
         connection.execute("DELETE FROM audit_entries WHERE date_created < ?", (cutoff,))
         connection.commit()
+        deleted_count = len(old_rows)
         connection.close()
+    return deleted_count
 
 
 def parse_audit_date(value):
@@ -20365,7 +20478,10 @@ def start_nightly_scheduler():
         _NIGHTLY_SCHEDULER_THREAD.start()
 
 
-if os.environ.get("PIPEFLOW_NIGHTLY_SCHEDULER", "0") == "1":
+if (
+    os.environ.get("PIPEFLOW_NIGHTLY_SCHEDULER", "0") == "1"
+    and os.environ.get("PIPEFLOW_DISABLE_INPROCESS_SCHEDULER", "0") != "1"
+):
     start_nightly_scheduler()
 
 

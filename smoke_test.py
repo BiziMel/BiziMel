@@ -354,10 +354,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.9.3" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.10.0" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.9.3",
+            "health/version did not report Release 2.10.0",
         )
 
         with client.session_transaction() as signed_in_session:

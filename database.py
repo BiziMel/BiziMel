@@ -511,6 +511,19 @@ def initialise_database(force=False):
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS deleted_record_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entity_type TEXT NOT NULL,
+            entity_id INTEGER,
+            primary_fields TEXT,
+            deletion_reason TEXT,
+            deleted_by_user_id INTEGER,
+            deleted_by_name TEXT,
+            date_deleted TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     # Safe migrations for account custom values
     add_column_if_missing(cursor, "account_custom_values", "team_id", "INTEGER DEFAULT 1")
     add_column_if_missing(cursor, "account_custom_values", "account_id", "INTEGER")
@@ -932,6 +945,7 @@ def initialise_database(force=False):
         ("idx_account_org_chart_people_account", "account_org_chart_people", ["account_id"]),
         ("idx_account_org_chart_connectors_chart", "account_org_chart_connectors", ["chart_id"]),
         ("idx_audit_entity", "audit_entries", ["entity_type", "entity_id"]),
+        ("idx_deleted_record_logs_date", "deleted_record_logs", ["date_deleted"]),
         ("idx_non_working_blocks_dates", "non_working_blocks", ["start_date", "end_date"]),
     ]
     for index_name, table_name, columns in index_definitions:

@@ -595,6 +595,14 @@ a:hover {
     margin-left: 8px;
 }
 
+.deleted-record-fields {
+    display: block;
+    max-width: 360px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 11px;
+}
+
 /* Execution Command Centre */
 .container:has(.insights-command-header) {
     width: 96%;
