@@ -2662,13 +2662,36 @@ def safe_outreach_error_response(error):
 
 @app.route("/health/version")
 def version_health():
+    scheduler_enabled = os.environ.get("PIPEFLOW_NIGHTLY_SCHEDULER", "0") == "1"
+    dedicated_worker_expected = os.environ.get("PIPEFLOW_DISABLE_INPROCESS_SCHEDULER", "0") == "1"
+    last_run = None
+    scheduler_history_error = ""
+    try:
+        connection = get_auth_connection()
+        last_run = connection.execute("""
+            SELECT run_date, status, completed_at, detail
+            FROM scheduled_job_runs
+            WHERE job_name = 'nightly_outreach_schedule'
+            ORDER BY run_date DESC, started_at DESC
+            LIMIT 1
+        """).fetchone()
+        connection.close()
+    except Exception as exc:
+        scheduler_history_error = type(exc).__name__
+        app.logger.exception("Scheduler health history could not be loaded")
     lines = [
         "status=ok",
         f"pipeflow_version={APP_VERSION}",
         f"pipeflow_build={APP_BUILD}",
-        f"nightly_scheduler_enabled={os.environ.get('PIPEFLOW_NIGHTLY_SCHEDULER', '0') == '1'}",
+        f"nightly_scheduler_enabled={scheduler_enabled}",
+        f"nightly_scheduler_mode={'dedicated_worker_expected' if dedicated_worker_expected else 'in_process_fallback'}",
         f"nightly_scheduler_thread_alive={bool(_NIGHTLY_SCHEDULER_THREAD and _NIGHTLY_SCHEDULER_THREAD.is_alive())}",
+        f"nightly_scheduler_last_run_date={(last_run['run_date'] if last_run else '')}",
+        f"nightly_scheduler_last_run_status={(last_run['status'] if last_run else '')}",
+        f"nightly_scheduler_last_run_completed_at={(last_run['completed_at'] if last_run else '')}",
     ]
+    if scheduler_history_error:
+        lines.append(f"nightly_scheduler_history_error={scheduler_history_error}")
     return Response("\n".join(lines), mimetype="text/plain")
 
 
@@ -16009,7 +16032,7 @@ def run_nightly_schedule_review(now=None, force=False, run_date=None):
     job_name = "nightly_outreach_schedule"
     run_token = claim_scheduled_job(job_name, run_date, now)
     if not run_token:
-        return {"status": "already_claimed", "updated": 0, "workspaces": 0}
+        return {"status": "already_claimed", "run_date": run_date.isoformat(), "updated": 0, "workspaces": 0}
 
     updated_total = 0
     workspace_total = 0
@@ -16051,15 +16074,15 @@ def run_nightly_schedule_review(now=None, force=False, run_date=None):
                 + " ".join(failures)
             )
             finish_scheduled_job(job_name, run_date, run_token, "failed", detail, now)
-            return {"status": "failed", "updated": updated_total, "workspaces": workspace_total, "detail": detail}
+            return {"status": "failed", "run_date": run_date.isoformat(), "updated": updated_total, "workspaces": workspace_total, "detail": detail}
         detail = f"Reviewed {workspace_total} workspace(s), moved {updated_total} open Outreach task(s), and removed {retention_deleted} expired audit entr{'y' if retention_deleted == 1 else 'ies'}."
         finish_scheduled_job(job_name, run_date, run_token, "completed", detail, now)
-        return {"status": "completed", "updated": updated_total, "workspaces": workspace_total, "detail": detail}
+        return {"status": "completed", "run_date": run_date.isoformat(), "updated": updated_total, "workspaces": workspace_total, "detail": detail}
     except Exception as exc:
         detail = "PipeFlow could not start or complete the 23:00 Outreach schedule review. The service will retry automatically."
         finish_scheduled_job(job_name, run_date, run_token, "failed", detail, now)
         app.logger.exception("Nightly Outreach schedule coordinator failed")
-        return {"status": "failed", "updated": updated_total, "workspaces": workspace_total, "detail": detail}
+        return {"status": "failed", "run_date": run_date.isoformat(), "updated": updated_total, "workspaces": workspace_total, "detail": detail}
 
 
 def nightly_run_date_due(now=None):
