@@ -36,7 +36,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.10.0"
 APP_RELEASE_DATE = "2026-09-10"
-APP_BUILD = "2026-09-18-v2.10.0-scheduler-manual-run-r3"
+APP_BUILD = "2026-09-18-v2.10.0-scheduler-schema-repair-r4"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -68,6 +68,7 @@ RELEASE_NOTES = [
         ],
         "fixed": [
             "Made the hosted scheduler independent of web-request traffic by adding a long-running worker process with the existing in-process watchdog as fallback.",
+            "Applied the normal workspace schema migrations before each nightly scheduling review so older tenant schemas cannot fail with UndefinedColumn errors.",
         ],
     },
     {
@@ -16094,6 +16095,10 @@ def run_nightly_schedule_review(now=None, force=False, run_date=None, force_retr
                 )
                 continue
             try:
+                # The web request path normally migrates a workspace before use.
+                # The dedicated worker opens tenant schemas directly, so it must
+                # apply the same migrations before the scheduling query runs.
+                initialise_database(force=True, connection=connection)
                 updated_total += nightly_reflow_outreach_schedule(connection, now)
                 connection.commit()
             except Exception as exc:

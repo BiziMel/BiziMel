@@ -87,12 +87,13 @@ def normalise_account_pg_bible_orders(cursor):
         used.add(value)
 
 
-def initialise_database(force=False):
+def initialise_database(force=False, connection=None):
     cache_key = database_initialisation_key()
     if not force and cache_key in _INITIALISED_DATABASES:
         return
 
-    connection = get_db_connection()
+    owns_connection = connection is None
+    connection = connection or get_db_connection()
     cursor = connection.cursor()
 
     cursor.execute("""
@@ -962,5 +963,6 @@ def initialise_database(force=False):
     """)
 
     connection.commit()
-    connection.close()
+    if owns_connection:
+        connection.close()
     _INITIALISED_DATABASES.add(cache_key)
