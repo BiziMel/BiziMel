@@ -36,7 +36,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.10.0"
 APP_RELEASE_DATE = "2026-09-10"
-APP_BUILD = "2026-09-18-v2.10.0-scheduler-diagnostics-r2"
+APP_BUILD = "2026-09-18-v2.10.0-scheduler-manual-run-r3"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -59,6 +59,7 @@ RELEASE_NOTES = [
         "new": [
             "Added a dedicated Render worker definition for the nightly 23:00 Europe/London Outreach schedule review.",
             "Added an Admin-only Deleted Records view showing record type, record ID, primary fields, deletion reason, actor, workspace and timestamp.",
+            "Added an Application Admin-only Run Scheduler Now action using the same scheduling engine and run history as the automatic worker.",
         ],
         "enhanced": [
             "Nightly scheduling now runs audit-retention cleanup and records the cleanup result alongside the schedule review result.",
@@ -3177,6 +3178,43 @@ def admin_confirm_scheduler_failure():
         "The administrator acknowledged the failed nightly Outreach schedule review.",
     )
     return redirect(url_for("admin_permissions", message="Scheduler failure confirmed. The warning will not be shown again for that run."))
+
+
+@app.route("/admin/scheduler-runs/run-now", methods=("POST",))
+@admin_required
+def admin_run_scheduler_now():
+    actor = current_user()
+    if not is_application_admin(actor):
+        return redirect(url_for("admin_permissions", error="Only Application Admins can run the scheduler manually."))
+    try:
+        result = run_due_nightly_schedule_review(force_retry=True)
+        status = result.get("status", "unknown")
+        detail = result.get("detail", "")
+        run_date = result.get("run_date", "")
+        if status == "completed":
+            message = f"Scheduler run completed for {run_date}: {detail}"
+        elif status == "already_claimed":
+            message = f"Scheduler run for {run_date} was already claimed or completed. No duplicate run was started."
+        else:
+            message = f"Scheduler run for {run_date or 'the due date'} returned {status}. {detail}".strip()
+        log_admin_audit(
+            actor,
+            "Scheduler run started manually",
+            "Nightly Scheduler",
+            run_date or "Due run",
+            f"Manual scheduler action returned status={status}. {detail}".strip(),
+        )
+        return redirect(url_for("admin_permissions", message=message))
+    except Exception as exc:
+        app.logger.exception("Manual nightly scheduler run failed")
+        log_admin_audit(
+            actor,
+            "Scheduler manual run failed",
+            "Nightly Scheduler",
+            "Manual run",
+            f"{type(exc).__name__}: {exc}",
+        )
+        return redirect(url_for("admin_permissions", error="The scheduler could not be run manually. Check the application logs and database connection."))
 
 
 @app.route("/admin/teams/add", methods=("POST",))
@@ -15920,7 +15958,7 @@ def nightly_reflow_outreach_schedule(connection, now=None):
     return updated_count
 
 
-def claim_scheduled_job(job_name, run_date, now=None):
+def claim_scheduled_job(job_name, run_date, now=None, force_retry=False):
     """Atomically claim one named daily job across all live app workers."""
     now = now or current_app_datetime()
     job_key = f"{job_name}:{run_date.isoformat()}"
@@ -15947,7 +15985,8 @@ def claim_scheduled_job(job_name, run_date, now=None):
         and row["status"] in {"failed", "running"}
         and retry_after
         and (
-            row["run_token"] == "watchdog"
+            (force_retry and row["status"] == "failed")
+            or row["run_token"] == "watchdog"
             or now - retry_after >= timedelta(minutes=15 if row["status"] == "failed" else 30)
         )
     )
@@ -16024,13 +16063,13 @@ def scheduled_workspace_connections():
         yield f"user:{user['id']}", user["full_name"] or user["email"], connection, None
 
 
-def run_nightly_schedule_review(now=None, force=False, run_date=None):
+def run_nightly_schedule_review(now=None, force=False, run_date=None, force_retry=False):
     now = (now or current_app_datetime()).replace(second=0, microsecond=0)
     if run_date is None and not force and now.hour < 23:
         return {"status": "not_due", "updated": 0, "workspaces": 0}
     run_date = run_date or now.date()
     job_name = "nightly_outreach_schedule"
-    run_token = claim_scheduled_job(job_name, run_date, now)
+    run_token = claim_scheduled_job(job_name, run_date, now, force_retry=force_retry)
     if not run_token:
         return {"status": "already_claimed", "run_date": run_date.isoformat(), "updated": 0, "workspaces": 0}
 
@@ -16090,14 +16129,17 @@ def nightly_run_date_due(now=None):
     return now.date() if now.hour >= 23 else now.date() - timedelta(days=1)
 
 
-def run_due_nightly_schedule_review(now=None):
+def run_due_nightly_schedule_review(now=None, force_retry=False):
     """Run tonight's review or catch up the previous night after a restart."""
     now = (now or current_app_datetime()).replace(second=0, microsecond=0)
-    return run_nightly_schedule_review(
-        now=now,
-        force=True,
-        run_date=nightly_run_date_due(now),
-    )
+    review_args = {
+        "now": now,
+        "force": True,
+        "run_date": nightly_run_date_due(now),
+    }
+    if force_retry:
+        review_args["force_retry"] = True
+    return run_nightly_schedule_review(**review_args)
 
 
 def nightly_expected_run_date(now, has_prior_history):

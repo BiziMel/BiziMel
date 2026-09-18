@@ -607,6 +607,10 @@
             <h3>Nightly Scheduler History</h3>
             <p class="muted-text">Read-only history of the 23:00 Outreach schedule review for the last 30 days.</p>
         </div>
+        <form method="POST" action="{{ url_for('admin_run_scheduler_now') }}" class="scheduler-manual-run-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-secondary btn-small" onclick="return confirm('Run the overdue Outreach scheduler now? Existing completed runs will not be duplicated.');">Run Scheduler Now</button>
+        </form>
     </div>
     <div class="table-container">
         <table class="report-table">
