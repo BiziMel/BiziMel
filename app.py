@@ -36,7 +36,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.10.0"
 APP_RELEASE_DATE = "2026-09-10"
-APP_BUILD = "2026-09-18-v2.10.0-scheduler-hosted-fallback-r6"
+APP_BUILD = "2026-09-18-v2.10.0-scheduler-retention-isolated-r7"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -16087,12 +16087,15 @@ def run_nightly_schedule_review(now=None, force=False, run_date=None, force_retr
     updated_total = 0
     workspace_total = 0
     failures = []
+    warnings = []
     retention_deleted = 0
     try:
         try:
             retention_deleted = cleanup_audit_retention()
         except Exception as exc:
-            failures.append(f"audit retention cleanup: {type(exc).__name__}")
+            # Retention cleanup is maintenance work and must never prevent the
+            # primary Outreach schedule review from completing.
+            warnings.append(f"audit retention cleanup: {type(exc).__name__}")
             app.logger.exception("Nightly audit retention cleanup failed")
         for workspace_key, workspace_label, connection, connection_error in scheduled_workspace_connections():
             workspace_total += 1
@@ -16130,6 +16133,8 @@ def run_nightly_schedule_review(now=None, force=False, run_date=None, force_retr
             finish_scheduled_job(job_name, run_date, run_token, "failed", detail, now)
             return {"status": "failed", "run_date": run_date.isoformat(), "updated": updated_total, "workspaces": workspace_total, "detail": detail}
         detail = f"Reviewed {workspace_total} workspace(s), moved {updated_total} open Outreach task(s), and removed {retention_deleted} expired audit entr{'y' if retention_deleted == 1 else 'ies'}."
+        if warnings:
+            detail += " Warnings: " + "; ".join(warnings)
         finish_scheduled_job(job_name, run_date, run_token, "completed", detail, now)
         return {"status": "completed", "run_date": run_date.isoformat(), "updated": updated_total, "workspaces": workspace_total, "detail": detail}
     except Exception as exc:
