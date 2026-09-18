@@ -36,7 +36,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.10.0"
 APP_RELEASE_DATE = "2026-09-10"
-APP_BUILD = "2026-09-18-v2.10.0-scheduler-schema-repair-r4"
+APP_BUILD = "2026-09-18-v2.10.0-scheduler-watchdog-15m-r5"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -15988,7 +15988,7 @@ def claim_scheduled_job(job_name, run_date, now=None, force_retry=False):
         and (
             (force_retry and row["status"] == "failed")
             or row["run_token"] == "watchdog"
-            or now - retry_after >= timedelta(minutes=15 if row["status"] == "failed" else 30)
+            or now - retry_after >= timedelta(minutes=15)
         )
     )
     if retryable:
@@ -16206,7 +16206,7 @@ def due_nightly_schedule_run(now=None):
         ).fetchone()
     elif row["status"] == "running":
         started_at = parse_app_datetime(row["started_at"])
-        if started_at and now - started_at >= timedelta(minutes=30):
+        if started_at and now - started_at >= timedelta(minutes=15):
             connection.execute("""
                 UPDATE scheduled_job_runs
                 SET status = 'failed',
@@ -16216,7 +16216,7 @@ def due_nightly_schedule_run(now=None):
                   AND status = 'running'
             """, (
                 app_datetime_key(now),
-                "The scheduled Outreach review did not complete within 30 minutes. PipeFlow will retry automatically.",
+                "The scheduled Outreach review did not complete within 15 minutes. PipeFlow will retry automatically.",
                 job_key,
             ))
             connection.commit()
