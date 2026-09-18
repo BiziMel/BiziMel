@@ -36,7 +36,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.10.0"
 APP_RELEASE_DATE = "2026-09-10"
-APP_BUILD = "2026-09-18-v2.10.0-scheduler-watchdog-15m-r5"
+APP_BUILD = "2026-09-18-v2.10.0-scheduler-hosted-fallback-r6"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -2506,9 +2506,19 @@ def page_instructions_for_endpoint(endpoint):
     }
 
 
+def nightly_scheduler_enabled():
+    """Enable the hosted fallback by default when PostgreSQL is configured.
+
+    Render deployments that have not yet synced the environment variable must
+    still keep the schedule alive; an explicit value of 0 remains an opt-out.
+    """
+    default_value = "1" if using_postgres() else "0"
+    return os.environ.get("PIPEFLOW_NIGHTLY_SCHEDULER", default_value) == "1"
+
+
 @app.before_request
 def require_login_and_prepare_database():
-    if os.environ.get("PIPEFLOW_NIGHTLY_SCHEDULER", "0") == "1":
+    if nightly_scheduler_enabled():
         start_nightly_scheduler()
     public_endpoints = {"login", "register", "verify_registration", "forgot_password", "reset_password", "version_health", "storage_health", "static"}
     if request.endpoint in public_endpoints:
@@ -2664,7 +2674,7 @@ def safe_outreach_error_response(error):
 
 @app.route("/health/version")
 def version_health():
-    scheduler_enabled = os.environ.get("PIPEFLOW_NIGHTLY_SCHEDULER", "0") == "1"
+    scheduler_enabled = nightly_scheduler_enabled()
     dedicated_worker_expected = os.environ.get("PIPEFLOW_DISABLE_INPROCESS_SCHEDULER", "0") == "1"
     last_run = None
     scheduler_history_error = ""
@@ -16177,7 +16187,7 @@ def due_nightly_schedule_run(now=None):
         (job_key,),
     ).fetchone()
     if not row:
-        scheduler_enabled = os.environ.get("PIPEFLOW_NIGHTLY_SCHEDULER", "0") == "1"
+        scheduler_enabled = nightly_scheduler_enabled()
         if scheduler_enabled:
             connection.close()
             start_nightly_scheduler()
@@ -20549,7 +20559,7 @@ def start_nightly_scheduler():
 
 
 if (
-    os.environ.get("PIPEFLOW_NIGHTLY_SCHEDULER", "0") == "1"
+    nightly_scheduler_enabled()
     and os.environ.get("PIPEFLOW_DISABLE_INPROCESS_SCHEDULER", "0") != "1"
 ):
     start_nightly_scheduler()
