@@ -36,7 +36,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.10.0"
 APP_RELEASE_DATE = "2026-09-10"
-APP_BUILD = "2026-09-15-v2.10.0-scheduler-deleted-records-r1"
+APP_BUILD = "2026-09-18-v2.10.0-scheduler-diagnostics-r2"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}

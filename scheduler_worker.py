@@ -9,9 +9,17 @@ from app import app, run_due_nightly_schedule_review
 
 
 def main():
+    database_url = os.environ.get("DATABASE_URL", "").strip()
+    if os.environ.get("PIPEFLOW_REQUIRE_SHARED_DATABASE", "0") == "1" and not database_url:
+        app.logger.critical(
+            "Dedicated nightly scheduler stopped: DATABASE_URL is missing. "
+            "Configure the same shared DATABASE_URL on the web service and this worker."
+        )
+        raise RuntimeError("PIPEFLOW_REQUIRE_SHARED_DATABASE=1 but DATABASE_URL is not configured")
     app.logger.info(
-        "Dedicated nightly Outreach scheduler worker started: timezone=%s interval=60s",
+        "Dedicated nightly Outreach scheduler worker started: timezone=%s interval=60s database_backend=%s",
         os.environ.get("PIPEFLOW_TIMEZONE", "UTC"),
+        "postgres" if database_url else "sqlite",
     )
     while True:
         try:

@@ -27,6 +27,8 @@ services:
         value: "1"
       - key: PIPEFLOW_DISABLE_INPROCESS_SCHEDULER
         value: "1"
+      - key: PIPEFLOW_REQUIRE_SHARED_DATABASE
+        value: "1"
       - key: PIPEFLOW_TIMEZONE
         value: Europe/London
       - key: DATABASE_URL
