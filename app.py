@@ -36,7 +36,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.10.0"
 APP_RELEASE_DATE = "2026-09-10"
-APP_BUILD = "2026-09-18-v2.10.0-scheduler-retention-isolated-r7"
+APP_BUILD = "2026-09-18-v2.10.0-scheduler-readable-errors-r8"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -16074,6 +16074,31 @@ def scheduled_workspace_connections():
         yield f"user:{user['id']}", user["full_name"] or user["email"], connection, None
 
 
+def scheduler_failure_explanation(stage, exc):
+    """Turn a scheduler exception into an Admin-readable cause and next step."""
+    technical = " ".join(str(exc or "").split())[:500]
+    lowered = technical.lower()
+    if "undefinedcolumn" in lowered or ("column" in lowered and "does not exist" in lowered):
+        reason = "the workspace is missing a database column required by the current PipeFlow scheduler"
+        action = "Deploy the latest release and run the scheduler again so the workspace migration can repair the schema"
+    elif "undefinedtable" in lowered or ("relation" in lowered and "does not exist" in lowered):
+        reason = "the workspace is missing a database table required by the current PipeFlow scheduler"
+        action = "Deploy the latest release and run the scheduler again so the workspace migration can create the table"
+    elif "permission denied" in lowered or "not authorized" in lowered:
+        reason = "the database user does not have permission to complete this operation"
+        action = "Check the hosted database user's schema and table permissions"
+    elif "timeout" in lowered or "connection" in lowered or "could not connect" in lowered:
+        reason = "the database connection was unavailable while the operation was running"
+        action = "Check the shared DATABASE_URL and the Render worker/database health, then retry"
+    else:
+        reason = f"the operation raised {type(exc).__name__}"
+        action = "Review the technical detail in the Render logs and retry after correcting the reported condition"
+    detail = f"Stage: {stage}. Failure reason: {reason}. Next step: {action}."
+    if technical:
+        detail += f" Technical detail: {technical}"
+    return detail[:3900]
+
+
 def run_nightly_schedule_review(now=None, force=False, run_date=None, force_retry=False):
     now = (now or current_app_datetime()).replace(second=0, microsecond=0)
     if run_date is None and not force and now.hour < 23:
@@ -16095,12 +16120,15 @@ def run_nightly_schedule_review(now=None, force=False, run_date=None, force_retr
         except Exception as exc:
             # Retention cleanup is maintenance work and must never prevent the
             # primary Outreach schedule review from completing.
-            warnings.append(f"audit retention cleanup: {type(exc).__name__}")
+            warnings.append(scheduler_failure_explanation("audit-retention maintenance", exc))
             app.logger.exception("Nightly audit retention cleanup failed")
         for workspace_key, workspace_label, connection, connection_error in scheduled_workspace_connections():
             workspace_total += 1
             if connection_error:
-                failures.append(f"{workspace_label} ({workspace_key}): connection could not be opened")
+                failures.append(
+                    f"Workspace {workspace_label} ({workspace_key}) could not be opened. "
+                    + scheduler_failure_explanation("opening the workspace database", connection_error)
+                )
                 app.logger.error(
                     "Nightly Outreach schedule could not open workspace %s: %r",
                     workspace_key,
@@ -16119,7 +16147,10 @@ def run_nightly_schedule_review(now=None, force=False, run_date=None, force_retr
                     connection.rollback()
                 except Exception:
                     pass
-                failures.append(f"{workspace_label} ({workspace_key}): {type(exc).__name__}")
+                failures.append(
+                    f"Workspace {workspace_label} ({workspace_key}) failed. "
+                    + scheduler_failure_explanation("workspace migration or Outreach rescheduling", exc)
+                )
                 app.logger.exception("Nightly Outreach schedule review failed for %s", workspace_key)
             finally:
                 connection.close()
