@@ -19,7 +19,7 @@ from datetime import date, datetime, time, timedelta
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from flask import Flask, render_template, request, redirect, url_for, Response, send_file, send_from_directory, session, abort, jsonify, make_response
+from flask import Flask, render_template, request, redirect, url_for, Response, send_file, send_from_directory, session, abort, jsonify, make_response, has_request_context
 from werkzeug.exceptions import HTTPException
 from werkzeug.utils import secure_filename
 try:
@@ -36,7 +36,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.10.0"
 APP_RELEASE_DATE = "2026-09-10"
-APP_BUILD = "2026-09-18-v2.10.0-scheduler-readable-errors-r8"
+APP_BUILD = "2026-09-21-v2.10.0-scheduler-context-fix-r9"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -18178,7 +18178,10 @@ def cleanup_audit_retention():
     cleanup_admin_audit_entries_older_than(cutoff)
     deleted_count = 0
     if using_postgres():
-        for user in list_users(current_user()):
+        # The nightly worker has no HTTP session. In that context it must use
+        # the full authenticated user list rather than calling current_user().
+        cleanup_actor = current_user() if has_request_context() else None
+        for user in list_users(cleanup_actor):
             schema = user["workspace_schema"] if "workspace_schema" in user.keys() else ""
             if not schema:
                 continue
