@@ -437,13 +437,13 @@
             {% if is_app_admin %}
                 <div class="form-group">
                     <label>Companies</label>
-                    <label class="checkbox-row broadcast-all-row">
-                        <input type="checkbox" name="target_all_companies" value="1">
-                        <span>Share to all companies</span>
-                    </label>
                     <details class="checkbox-dropdown broadcast-company-dropdown">
-                        <summary>Select companies</summary>
+                        <summary>Select companies, including All Companies</summary>
                         <div class="checkbox-dropdown-panel">
+                            <label class="checkbox-row broadcast-all-row">
+                                <input type="checkbox" name="target_all_companies" value="1">
+                                <span>All Companies</span>
+                            </label>
                             {% for tenant in broadcast_company_options %}
                                 <label class="checkbox-row">
                                     <input type="checkbox" name="target_companies" value="{{ tenant.company_name }}">
@@ -531,13 +531,13 @@
                                     </td>
                                     <td>
                                         {% if is_app_admin %}
-                                            <label class="checkbox-row broadcast-all-row">
-                                                <input type="checkbox" name="target_all_companies_{{ broadcast['id'] }}" value="1" {% if not broadcast.target_company_names %}checked{% endif %}>
-                                                <span>All companies</span>
-                                            </label>
                                             <details class="checkbox-dropdown broadcast-company-dropdown">
-                                                <summary>{{ broadcast.target_company_label or "Select companies" }}</summary>
+                                                <summary>{{ broadcast.target_company_label or "Select companies, including All Companies" }}</summary>
                                                 <div class="checkbox-dropdown-panel">
+                                                    <label class="checkbox-row broadcast-all-row">
+                                                        <input type="checkbox" name="target_all_companies_{{ broadcast['id'] }}" value="1" {% if not broadcast.target_company_names %}checked{% endif %}>
+                                                        <span>All Companies</span>
+                                                    </label>
                                                     {% for tenant in broadcast_company_options %}
                                                         <label class="checkbox-row">
                                                             <input type="checkbox" name="target_companies_{{ broadcast['id'] }}" value="{{ tenant.company_name }}" {% if tenant.company_name in broadcast.target_company_names %}checked{% endif %}>
@@ -578,27 +578,37 @@
 </div>
 
 
+{% if is_app_admin %}
 <div class="card admin-retention-card">
     <div class="section-header">
         <div>
             <h3>Audit Auto-delete</h3>
-            <p class="muted-text">Choose whether audit entries older than 6 months should be automatically deleted. When Auto-delete is off, audit entries are retained until an admin turns this setting on.</p>
+            <p class="muted-text">Configure when audit entries are automatically deleted. The schedule starts when you save it; blank configuration means auto-delete is disabled.</p>
         </div>
-        <span class="status-pill">{{ "Auto-delete On" if audit_retention_enabled else "Auto-delete Off" }}</span>
+        <span class="status-pill">{{ "Configured" if audit_retention_config.enabled else "Not configured" }}</span>
         <a href="{{ url_for('audit_trail') }}" class="btn btn-secondary">Open Audit Trail</a>
     </div>
 
     <form method="POST" action="{{ url_for('admin_update_audit_retention') }}" class="retention-toggle-form">
-        <div class="form-group retention-select-group">
-            <label for="audit_retention_enabled">Audit auto-delete setting</label>
-            <select id="audit_retention_enabled" name="audit_retention_enabled">
-                <option value="0" {% if not audit_retention_enabled %}selected{% endif %}>Auto-delete Off</option>
-                <option value="1" {% if audit_retention_enabled %}selected{% endif %}>Auto-delete On</option>
+        <div class="form-group">
+            <label for="audit_retention_interval_value">Delete audit records every</label>
+            <input id="audit_retention_interval_value" name="audit_retention_interval_value" type="number" min="1" step="1" value="{{ audit_retention_config.interval_value or '' }}" placeholder="Number">
+        </div>
+        <div class="form-group">
+            <label for="audit_retention_interval_unit">Period</label>
+            <select id="audit_retention_interval_unit" name="audit_retention_interval_unit">
+                <option value="">Select period</option>
+                {% for unit in ["days", "weeks", "months", "years"] %}
+                    <option value="{{ unit }}" {% if audit_retention_config.interval_unit == unit %}selected{% endif %}>{{ unit|title }}</option>
+                {% endfor %}
             </select>
         </div>
-        <button type="submit" class="btn btn-primary">Save Auto-delete Setting</button>
+        <button type="submit" name="audit_retention_action" value="save" class="btn btn-primary">Save Auto-delete Schedule</button>
+        {% if audit_retention_config.enabled %}<button type="submit" name="audit_retention_action" value="disable" class="btn btn-secondary">Disable Auto-delete</button>{% endif %}
     </form>
+    {% if audit_retention_config.enabled %}<p class="muted-text">Started {{ audit_retention_config.started_at|display_datetime }}. Next review {{ audit_retention_config.next_run_at|display_datetime }}.</p>{% endif %}
 </div>
+{% endif %}
 
 {% if is_app_admin %}
 <div class="card admin-scheduler-history">

@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
-Version: 2.10.0
-Release date: 2026-09-14
-Build: 2026-09-21-v2.10.0-scheduler-context-fix-r9
+Version: 2.11.0
+Release date: 2026-09-22
+Build: 2026-09-22-v2.11.0-retention-broadcast-r1
 Package purpose: Hosted enterprise deployment only.

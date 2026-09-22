@@ -32,7 +32,7 @@
             <h2>Filter Audit Trail</h2>
             <p>Filter by date range and user, then export the same result set to CSV.</p>
         </div>
-        <span class="status-pill">{{ "Auto-delete On" if audit_retention_enabled else "Auto-delete Off" }}</span>
+        {% if audit_retention_config %}<span class="status-pill">{{ "Auto-delete Configured" if audit_retention_config.enabled else "Auto-delete Not Configured" }}</span>{% endif %}
     </div>
 
     <form method="GET" action="{{ url_for('audit_trail') }}" class="pipeflow-form compact-filter-form">

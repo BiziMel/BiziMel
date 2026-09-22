@@ -28,15 +28,15 @@ except ModuleNotFoundError:
     Image = None
     ImageOps = None
     UnidentifiedImageError = Exception
-from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, delete_users, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, bulk_update_broadcast_messages, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, audit_retention_enabled, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members, decode_broadcast_companies, set_user_company_memberships, user_company_names, tenant_for_email, create_registration_request, verify_registration_email, list_pending_registration_requests, resolve_registration_request, registration_request_status, complete_first_login_setup, create_login_session, validate_login_session, revoke_login_session, revoke_user_sessions
+from auth import authenticate_user, create_user, current_user, initialise_auth_database, login_required, admin_required, list_users, reset_user_password, set_user_active, delete_users, set_user_role, reset_password_with_phrase, update_current_user_secret_phrase, reveal_user_secret_phrase, list_account_field_definitions, create_account_field_definition, update_account_field_definition, set_account_field_active, list_admin_audit_entries, log_admin_audit, get_user_for_admin, get_account_field_definition, ensure_user_workspace_schema, update_user_identity, list_broadcast_messages, create_broadcast_message, update_broadcast_message, bulk_update_broadcast_messages, set_broadcast_message_active, get_broadcast_message, delete_broadcast_message, active_team_for_user, list_active_team_members, list_active_team_invites, create_team_invite, list_assignable_users, get_admin_setting, set_admin_setting, cleanup_admin_audit_entries_older_than, get_auth_connection, is_application_admin, is_company_admin, same_company, list_tenants, create_tenant, update_tenant, user_count, create_team, list_teams, user_team_ids, set_user_team_memberships, manager_team_members, decode_broadcast_companies, set_user_company_memberships, user_company_names, tenant_for_email, create_registration_request, verify_registration_email, list_pending_registration_requests, resolve_registration_request, registration_request_status, complete_first_login_setup, create_login_session, validate_login_session, revoke_login_session, revoke_user_sessions
 from database import get_db_connection, initialise_database
 from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.10.0"
-APP_RELEASE_DATE = "2026-09-10"
-APP_BUILD = "2026-09-21-v2.10.0-scheduler-context-fix-r9"
+APP_VERSION = "2.11.0"
+APP_RELEASE_DATE = "2026-09-22"
+APP_BUILD = "2026-09-22-v2.11.0-retention-broadcast-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -52,6 +52,22 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.11.0",
+        "release_date": "2026-09-22",
+        "title": "Configurable audit retention and broadcast targeting",
+        "new": [
+            "Added Application Admin-only audit auto-delete scheduling with a numeric interval and days, weeks, months or years selection.",
+            "Retention schedules now start when saved, store the next review time, and can be disabled without restoring a previous fixed period.",
+        ],
+        "enhanced": [
+            "Moved All Companies into the same broadcast company-selection dropdown as individual companies.",
+            "Kept audit-retention maintenance isolated from Outreach scheduling so legacy retention data cannot stop automatic rescheduling.",
+        ],
+        "fixed": [
+            "Removed the old fixed six-month/boolean retention control from the user-facing Admin configuration.",
+        ],
+    },
     {
         "version": "2.10.0",
         "release_date": "2026-09-15",
@@ -2979,7 +2995,7 @@ def render_admin_permissions(temporary_credentials=None, message_override=""):
         broadcast_messages=broadcast_rows_for_admin(actor),
         scheduler_runs=scheduler_run_history(30) if is_app_admin else [],
         pending_registrations=list_pending_registration_requests(actor),
-        audit_retention_enabled=audit_retention_enabled(),
+        audit_retention_config=audit_retention_configuration(),
         temporary_credentials=temporary_credentials,
         actor_user_id=actor["id"] if actor else None,
         message=message_override or request.args.get("message", ""),
@@ -3513,18 +3529,35 @@ def admin_update_audit_retention():
     guard = require_application_admin_redirect()
     if guard:
         return guard
-    enabled = request.form.get("audit_retention_enabled") == "1"
-    set_admin_setting("audit_retention_enabled", "1" if enabled else "0")
+    action = request.form.get("audit_retention_action", "save")
+    if action == "disable":
+        for key in ("audit_retention_interval_value", "audit_retention_interval_unit", "audit_retention_started_at", "audit_retention_next_run_at"):
+            set_admin_setting(key, "")
+        set_admin_setting("audit_retention_enabled", "0")
+        log_admin_audit(current_user(), "Audit retention schedule disabled", "Admin setting", "Audit auto-delete", "Cleared the configured retention interval and stopped automatic deletion.")
+        return redirect(url_for("admin_users", message="Audit auto-delete has been disabled."))
+    try:
+        interval_value = int(request.form.get("audit_retention_interval_value", ""))
+    except (TypeError, ValueError):
+        interval_value = 0
+    interval_unit = (request.form.get("audit_retention_interval_unit", "") or "").strip().lower()
+    if interval_value < 1 or interval_unit not in RETENTION_INTERVAL_UNITS:
+        return redirect(url_for("admin_users", error="Enter a whole-number auto-delete period of at least 1 and select days, weeks, months or years."))
+    started_at = current_app_datetime()
+    next_run_at = started_at + retention_interval_delta(interval_value, interval_unit)
+    set_admin_setting("audit_retention_interval_value", str(interval_value))
+    set_admin_setting("audit_retention_interval_unit", interval_unit)
+    set_admin_setting("audit_retention_started_at", app_datetime_key(started_at))
+    set_admin_setting("audit_retention_next_run_at", app_datetime_key(next_run_at))
+    set_admin_setting("audit_retention_enabled", "1")
     log_admin_audit(
         current_user(),
-        "Audit retention setting updated",
+        "Audit retention schedule updated",
         "Admin setting",
         "Audit auto-delete",
-        f"Audit auto-delete older than 6 months set to {'Auto-delete On' if enabled else 'Auto-delete Off'}."
+        f"Audit auto-delete configured for every {interval_value} {interval_unit}; first run scheduled for {app_datetime_key(next_run_at)}.",
     )
-    if enabled:
-        cleanup_audit_retention()
-    return redirect(url_for("admin_users", message=f"Audit auto-delete is now {'Auto-delete On' if enabled else 'Auto-delete Off'}."))
+    return redirect(url_for("admin_users", message=f"Audit auto-delete configured for every {interval_value} {interval_unit}. The schedule starts from now."))
 
 
 @app.route("/admin/account-fields/add", methods=("POST",))
@@ -18167,14 +18200,49 @@ def export_partner_reports():
     return report_csv_response("partner_reports", headers, export_rows)
 
 
-def audit_retention_cutoff():
-    return (datetime.now() - timedelta(days=183)).strftime("%Y-%m-%d %H:%M:%S")
+RETENTION_INTERVAL_UNITS = {
+    "days": 1,
+    "weeks": 7,
+    "months": 30,
+    "years": 365,
+}
+
+
+def retention_interval_delta(value, unit):
+    return timedelta(days=int(value) * RETENTION_INTERVAL_UNITS[unit])
+
+
+def audit_retention_configuration():
+    try:
+        interval_value = int(get_admin_setting("audit_retention_interval_value", ""))
+    except (TypeError, ValueError):
+        interval_value = 0
+    interval_unit = (get_admin_setting("audit_retention_interval_unit", "") or "").strip().lower()
+    started_at = parse_app_datetime(get_admin_setting("audit_retention_started_at", ""))
+    next_run_at = parse_app_datetime(get_admin_setting("audit_retention_next_run_at", ""))
+    enabled = interval_value > 0 and interval_unit in RETENTION_INTERVAL_UNITS and bool(started_at and next_run_at)
+    return {
+        "enabled": enabled,
+        "interval_value": interval_value,
+        "interval_unit": interval_unit,
+        "started_at": started_at,
+        "next_run_at": next_run_at,
+    }
+
+
+def audit_retention_cutoff(configuration, now=None):
+    now = now or current_app_datetime()
+    return (now - retention_interval_delta(configuration["interval_value"], configuration["interval_unit"])).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def cleanup_audit_retention():
-    if not audit_retention_enabled():
+    configuration = audit_retention_configuration()
+    if not configuration["enabled"]:
         return 0
-    cutoff = audit_retention_cutoff()
+    now = current_app_datetime()
+    if configuration["next_run_at"] and now < configuration["next_run_at"]:
+        return 0
+    cutoff = audit_retention_cutoff(configuration, now)
     cleanup_admin_audit_entries_older_than(cutoff)
     deleted_count = 0
     if using_postgres():
@@ -18217,6 +18285,8 @@ def cleanup_audit_retention():
         connection.commit()
         deleted_count = len(old_rows)
         connection.close()
+    next_run_at = now + retention_interval_delta(configuration["interval_value"], configuration["interval_unit"])
+    set_admin_setting("audit_retention_next_run_at", app_datetime_key(next_run_at))
     return deleted_count
 
 
@@ -18399,7 +18469,7 @@ def audit_trail():
         selected_start_date=start_date_raw,
         selected_end_date=end_date_raw,
         selected_user=user_filter,
-        audit_retention_enabled=audit_retention_enabled(),
+        audit_retention_config=audit_retention_configuration() if is_application_admin(current_user()) else None,
     )
 
 
