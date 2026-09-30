@@ -19708,6 +19708,27 @@ def sales_play_reports():
     )
 
 
+OUTREACH_REPORT_PERIODS = {
+    "quarter": "Current Quarter",
+    "six_months": "Last 6 Months",
+    "year": "Current Year",
+    "custom": "Custom Range",
+}
+
+
+def outreach_report_period_range(period, today=None):
+    today = today or current_app_datetime().date()
+    period = period if period in OUTREACH_REPORT_PERIODS else "quarter"
+    if period == "custom":
+        return None, None
+    if period == "six_months":
+        return today - timedelta(days=182), today
+    if period == "year":
+        return date(today.year, 1, 1), today
+    quarter_month = ((today.month - 1) // 3) * 3 + 1
+    return date(today.year, quarter_month, 1), today
+
+
 @app.route("/reports/outreach")
 def outreach_reports():
     initialise_database(force=True)
@@ -19725,6 +19746,11 @@ def outreach_reports():
     selected_due_end_date = request.args.get("due_end_date", "")
     selected_last_updated_start = request.args.get("last_updated_start", "")
     selected_last_updated_end = request.args.get("last_updated_end", "")
+    selected_period = request.args.get("period", "quarter")
+    period_start, period_end = outreach_report_period_range(selected_period, report_today)
+    if selected_period != "custom":
+        selected_start_date = period_start.isoformat()
+        selected_end_date = period_end.isoformat()
 
     accounts = safe_report_fetchall(connection, """
         SELECT id, account_name, business_unit
@@ -19811,7 +19837,7 @@ def outreach_reports():
     """, stage="outreach_reports_rows")
 
     recipient_rows = safe_report_fetchall(connection, """
-        SELECT outreach_id, contact_id
+        SELECT outreach_id, contact_id, partner_contact_id
         FROM outreach_recipients
         WHERE contact_id IS NOT NULL
     """, stage="outreach_reports_recipients")
@@ -19828,8 +19854,13 @@ def outreach_reports():
     last_updated_start = parse_report_date(selected_last_updated_start)
     last_updated_end = parse_report_date(selected_last_updated_end)
     recipient_contact_map = {}
+    recipient_people_map = {}
     for row in recipient_rows:
-        recipient_contact_map.setdefault(row["outreach_id"], set()).add(str(row["contact_id"]))
+        if row["contact_id"]:
+            recipient_contact_map.setdefault(row["outreach_id"], set()).add(str(row["contact_id"]))
+            recipient_people_map.setdefault(row["outreach_id"], set()).add(f"contact:{row['contact_id']}")
+        if row["partner_contact_id"]:
+            recipient_people_map.setdefault(row["outreach_id"], set()).add(f"partner:{row['partner_contact_id']}")
 
     def include_item(item):
         activity_date = parse_report_date(item["activity_date"])
@@ -19891,6 +19922,31 @@ def outreach_reports():
     accounts_engaged = len({item["account_id"] for item in filtered_outreach if item["account_id"]})
     contacts_targeted = len({item["display_contact_name"] or item["contact_name"] for item in filtered_outreach if item["display_contact_name"] or item["contact_name"]})
 
+    completed_summary = {}
+    completed_people = set()
+    completed_activity_count = 0
+    for item in filtered_outreach:
+        if not is_closed_task_status(item["task_status"]):
+            continue
+        completed_activity_count += 1
+        people = set(recipient_people_map.get(item["id"], set()))
+        if item["contact_id"]:
+            people.add(f"contact:{item['contact_id']}")
+        completed_people.update(people)
+        summary_key = (item["account_id"], item["account_label"], item["activity_type"] or "Unknown")
+        summary = completed_summary.setdefault(summary_key, {"account_name": item["account_label"] or "Unassigned Account", "activity_type": item["activity_type"] or "Unknown", "activity_count": 0, "people": set()})
+        summary["activity_count"] += 1
+        summary["people"].update(people)
+    completed_activity_summary = [
+        {
+            "account_name": summary["account_name"],
+            "activity_type": summary["activity_type"],
+            "activity_count": summary["activity_count"],
+            "people_count": len(summary["people"]),
+        }
+        for summary in sorted(completed_summary.values(), key=lambda value: (value["account_name"], value["activity_type"]))
+    ]
+
     outcome_totals = {}
     type_totals = {}
     account_totals = {}
@@ -19950,6 +20006,7 @@ def outreach_reports():
             "due_end_date": selected_due_end_date,
             "last_updated_start": selected_last_updated_start,
             "last_updated_end": selected_last_updated_end,
+            "period": selected_period,
         }.items()
         if value not in (None, "")
     }
@@ -20007,12 +20064,18 @@ def outreach_reports():
         working_week_start=working_week_start.isoformat(),
         working_week_end=working_week_end.isoformat(),
         report_range_label=report_range_label,
+        selected_period=selected_period,
+        period_options=OUTREACH_REPORT_PERIODS,
+        completed_activity_summary=completed_activity_summary,
+        completed_activity_count=completed_activity_count,
+        completed_people_count=len(completed_people),
     )
 
 
 @app.route("/reports/outreach/export")
 def export_outreach_reports():
     connection = get_db_connection()
+    selected_period = request.args.get("period", "quarter")
     selected_start_date = request.args.get("start_date", "")
     selected_end_date = request.args.get("end_date", "")
     selected_account = request.args.get("company_id") or request.args.get("account_id", "")
@@ -20024,6 +20087,10 @@ def export_outreach_reports():
     selected_due_end_date = request.args.get("due_end_date", "")
     selected_last_updated_start = request.args.get("last_updated_start", "")
     selected_last_updated_end = request.args.get("last_updated_end", "")
+    period_start, period_end = outreach_report_period_range(selected_period, current_app_datetime().date())
+    if selected_period != "custom":
+        selected_start_date = period_start.isoformat()
+        selected_end_date = period_end.isoformat()
 
     all_outreach = safe_report_fetchall(connection, """
         SELECT

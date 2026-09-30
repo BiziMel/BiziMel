@@ -70,6 +70,15 @@
             </select>
         </div>
 
+        <div class="filter-field">
+            <label for="outreach-report-period">Completed Activity Period</label>
+            <select id="outreach-report-period" name="period">
+                {% for period_key, period_label in period_options.items() %}
+                    <option value="{{ period_key }}" {% if selected_period == period_key %}selected{% endif %}>{{ period_label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
         <div class="filter-field filter-field-wide">
             <label>Contact</label>
             <select name="contact_id">
@@ -118,12 +127,12 @@
             </select>
         </div>
 
-        <div class="filter-field">
+        <div class="filter-field outreach-custom-date-field">
             <label>Activity Start</label>
             <input type="date" name="start_date" value="{{ selected_start_date }}">
         </div>
 
-        <div class="filter-field">
+        <div class="filter-field outreach-custom-date-field">
             <label>Activity End</label>
             <input type="date" name="end_date" value="{{ selected_end_date }}">
         </div>
@@ -153,6 +162,38 @@
             <a href="/reports/outreach" class="btn btn-secondary">Clear Filters</a>
         </div>
     </form>
+</div>
+
+<div class="report-card completed-activity-summary-card">
+    <div class="section-header">
+        <div>
+            <h2>Completed Activity by Company and Activity Type</h2>
+            <p>Completed or closed activity in {{ report_range_label }}. People counts are distinct contacts or partner contacts reached in the selected period.</p>
+        </div>
+        <div class="summary-total-pills">
+            <span class="status-pill">{{ completed_activity_count }} activities</span>
+            <span class="status-pill">{{ completed_people_count }} people</span>
+        </div>
+    </div>
+    <div class="table-container">
+        <table class="report-table completed-activity-summary-table">
+            <thead>
+                <tr><th>Company / Account</th><th>Activity Type</th><th>Completed Activities</th><th>People</th></tr>
+            </thead>
+            <tbody>
+                {% for item in completed_activity_summary %}
+                    <tr>
+                        <td>{{ item.account_name }}</td>
+                        <td>{{ item.activity_type }}</td>
+                        <td>{{ item.activity_count }}</td>
+                        <td>{{ item.people_count }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="4">No completed activity was found for the selected period.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
 <div class="report-grid">
@@ -221,6 +262,21 @@
         </div>
     </div>
 </div>
+
+<script>
+    (() => {
+        const period = document.getElementById("outreach-report-period");
+        const customFields = document.querySelectorAll(".outreach-custom-date-field");
+        const syncCustomDates = () => {
+            const custom = period && period.value === "custom";
+            customFields.forEach((field) => { field.hidden = !custom; });
+        };
+        if (period) {
+            period.addEventListener("change", syncCustomDates);
+            syncCustomDates();
+        }
+    })();
+</script>
 
 <div class="report-table-section">
     <div class="section-header">
