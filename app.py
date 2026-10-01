@@ -36,7 +36,7 @@ from db_compat import using_postgres, current_user_schema, get_connection as get
 
 APP_VERSION = "2.12.1"
 APP_RELEASE_DATE = "2026-10-01"
-APP_BUILD = "2026-10-01-v2.12.1-session-direct-mail-r1"
+APP_BUILD = "2026-10-01-v2.12.1-session-direct-mail-reports-r2"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -62,6 +62,7 @@ RELEASE_NOTES = [
         "enhanced": [
             "Moved the Flask session to a PipeFlow-specific cookie name so stale cookies from older releases cannot be interpreted as current sessions.",
             "Made the server-side login session explicit and retried transient database failures during token validation.",
+            "Changed Outreach Reports to default to the last 30 days and report all matching outreach activity by account and activity type.",
         ],
         "fixed": [
             "Reduced intermittent post-login token failures caused by stale cookies or short-lived database connectivity issues between the login redirect and the first protected request.",
@@ -19753,6 +19754,7 @@ def sales_play_reports():
 
 
 OUTREACH_REPORT_PERIODS = {
+    "last_30_days": "Last 30 Days",
     "quarter": "Current Quarter",
     "six_months": "Last 6 Months",
     "year": "Current Year",
@@ -19762,11 +19764,13 @@ OUTREACH_REPORT_PERIODS = {
 
 def outreach_report_period_range(period, today=None):
     today = today or current_app_datetime().date()
-    period = period if period in OUTREACH_REPORT_PERIODS else "quarter"
+    period = period if period in OUTREACH_REPORT_PERIODS else "last_30_days"
     if period == "custom":
         return None, None
     if period == "six_months":
         return today - timedelta(days=182), today
+    if period == "last_30_days":
+        return today - timedelta(days=29), today
     if period == "year":
         return date(today.year, 1, 1), today
     quarter_month = ((today.month - 1) // 3) * 3 + 1
@@ -19790,11 +19794,13 @@ def outreach_reports():
     selected_due_end_date = request.args.get("due_end_date", "")
     selected_last_updated_start = request.args.get("last_updated_start", "")
     selected_last_updated_end = request.args.get("last_updated_end", "")
-    selected_period = request.args.get("period", "quarter")
+    selected_period = request.args.get("period", "last_30_days")
     period_start, period_end = outreach_report_period_range(selected_period, report_today)
     if selected_period != "custom":
         selected_start_date = period_start.isoformat()
         selected_end_date = period_end.isoformat()
+    custom_start_date = selected_start_date if selected_period == "custom" else ""
+    custom_end_date = selected_end_date if selected_period == "custom" else ""
 
     accounts = safe_report_fetchall(connection, """
         SELECT id, account_name, business_unit
@@ -19959,6 +19965,7 @@ def outreach_reports():
     email_count = sum(1 for item in filtered_outreach if (item["activity_type"] or "").lower() == "email")
     phone_count = sum(1 for item in filtered_outreach if (item["activity_type"] or "").lower() == "phone")
     sms_whatsapp_count = sum(1 for item in filtered_outreach if (item["activity_type"] or "").lower() == "sms/whatsapp")
+    direct_mail_count = sum(1 for item in filtered_outreach if (item["activity_type"] or "").lower() == "direct mail")
     linkedin_count = sum(1 for item in filtered_outreach if "linkedin" in (item["activity_type"] or "").lower())
     meeting_count = sum(1 for item in filtered_outreach if (item["activity_type"] or "").lower() == "meeting" or (item["outcome"] or "") in ("Meeting Booked", "NBM Booked", "Discovery Booked", "Exec Meeting Booked"))
     response_count = sum(1 for item in filtered_outreach if (item["outcome"] or "") not in ("", "Unknown", "No Response", "No Response Yet"))
@@ -19970,8 +19977,6 @@ def outreach_reports():
     completed_people = set()
     completed_activity_count = 0
     for item in filtered_outreach:
-        if not is_closed_task_status(item["task_status"]):
-            continue
         completed_activity_count += 1
         people = set(recipient_people_map.get(item["id"], set()))
         if item["contact_id"]:
@@ -20072,6 +20077,7 @@ def outreach_reports():
         email_count=email_count,
         phone_count=phone_count,
         sms_whatsapp_count=sms_whatsapp_count,
+        direct_mail_count=direct_mail_count,
         linkedin_count=linkedin_count,
         meeting_count=meeting_count,
         response_count=response_count,
@@ -20094,6 +20100,8 @@ def outreach_reports():
         outcomes=outcomes,
         selected_start_date=selected_start_date,
         selected_end_date=selected_end_date,
+        custom_start_date=custom_start_date,
+        custom_end_date=custom_end_date,
         selected_account=selected_account,
         selected_contact=selected_contact,
         selected_activity_type=selected_activity_type,
@@ -20119,7 +20127,7 @@ def outreach_reports():
 @app.route("/reports/outreach/export")
 def export_outreach_reports():
     connection = get_db_connection()
-    selected_period = request.args.get("period", "quarter")
+    selected_period = request.args.get("period", "last_30_days")
     selected_start_date = request.args.get("start_date", "")
     selected_end_date = request.args.get("end_date", "")
     selected_account = request.args.get("company_id") or request.args.get("account_id", "")
