@@ -5,7 +5,7 @@
 {% block content %}
 <section class="auth-panel">
     <h2>{% if reset_mode %}Reset Existing Profile{% else %}Create Profile{% endif %}</h2>
-    <p class="muted-text">{% if reset_mode %}Confirm your email, current password and secret phrase before choosing a new password.{% else %}Register with an email address you control. PipeFlow emails a verification link, then an administrator reviews the company access request.{% endif %}</p>
+    <p class="muted-text">{% if reset_mode %}Confirm your email, current password and secret phrase before choosing a new password.{% else %}Submit a profile request using an email address you control. PipeFlow verifies the mailbox, then an Application Admin reviews the request and assigns the company and permissions.{% endif %}</p>
 
     {% if error %}
         <div class="alert-error">{{ error }}</div>
@@ -25,6 +25,12 @@
 
         <label for="email">Work Email</label>
         <input type="email" id="email" name="email" autocomplete="username" value="{{ email or '' }}" {% if reset_mode %}readonly{% endif %} required>
+
+        {% if not reset_mode %}
+        <label for="company">Company You Work For</label>
+        <input type="text" id="company" name="company" autocomplete="organization" value="{{ request.form.get('company', '') }}" maxlength="200" required>
+        <p class="field-help">Enter your employer in free text. This is a request for admin review only and does not grant company access.</p>
+        {% endif %}
 
         {% if reset_mode %}
         <label for="current_password">Current Password</label>

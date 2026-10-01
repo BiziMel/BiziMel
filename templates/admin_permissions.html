@@ -129,26 +129,26 @@
         <div class="section-header">
             <div>
                 <h3 id="pending-registration-heading">Profile Requests</h3>
-                <p class="muted-text">These users proved control of their email address. Review the suggested company before approving tenant access.</p>
+            <p class="muted-text">These users proved control of their email address. Review the requested employer, select the correct configured company, then approve or reject. Every approved profile starts with standard User permissions.</p>
             </div>
             <span class="record-count">{{ pending_registrations|length }} awaiting review</span>
         </div>
         <div class="table-container">
             <table class="report-table pending-registration-table">
-                <thead><tr><th>Name</th><th>Email</th><th>Suggested Company</th><th>Verified</th><th>Decision</th></tr></thead>
+                <thead><tr><th>Name</th><th>Email</th><th>Requested Employer</th><th>Verified</th><th>Decision</th></tr></thead>
                 <tbody>
                     {% for registration in pending_registrations %}
                     <tr>
                         <td>{{ registration['full_name'] }}</td>
                         <td>{{ registration['email'] }}</td>
-                        <td>{{ registration['suggested_company'] or "Not matched" }}</td>
+                        <td>{{ registration['suggested_company'] or "Not provided" }}</td>
                         <td>{{ registration['email_verified_at']|display_datetime }}</td>
                         <td>
                             <form method="POST" action="{{ url_for('admin_resolve_registration_request', request_id=registration['id'], decision='approve') }}" class="pending-registration-actions">
-                                {% if is_app_admin %}<select name="company" required aria-label="Company for {{ registration['email'] }}">
+                                <select name="company" required aria-label="Company for {{ registration['email'] }}">
                                     <option value="">Assign company</option>
                                     {% for tenant in tenant_options %}<option value="{{ tenant['company_name'] }}" {% if tenant['company_name'] == registration['suggested_company'] %}selected{% endif %}>{{ tenant['company_name'] }}</option>{% endfor %}
-                                </select>{% else %}<input type="hidden" name="company" value="{{ current_user.company }}"><span>{{ current_user.company }}</span>{% endif %}
+                                </select>
                                 <button type="submit" class="btn btn-primary btn-small">Approve</button>
                                 <button type="submit" formaction="{{ url_for('admin_resolve_registration_request', request_id=registration['id'], decision='reject') }}" formnovalidate class="btn btn-danger btn-small">Reject</button>
                             </form>

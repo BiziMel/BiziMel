@@ -851,18 +851,18 @@ def verify_registration_email(token: str):
 
 
 def list_pending_registration_requests(actor=None):
+    # Public registration never assigns tenancy from an email domain. Only a
+    # full Application Admin may review these verified requests and choose the
+    # configured company that will receive the new user.
+    if actor is not None and not is_application_admin(actor):
+        return []
     connection = get_auth_connection()
     params = []
-    company_clause = ""
-    if actor and is_company_admin(actor):
-        company_clause = "AND LOWER(COALESCE(suggested_company, '')) = LOWER(?)"
-        params.append(actor["company"])
     rows = connection.execute(
         f"""
         SELECT * FROM registration_requests
         WHERE status = 'pending_approval'
           AND COALESCE(email_verified_at, '') != ''
-          {company_clause}
         ORDER BY date_created ASC, id ASC
         """,
         params,
@@ -887,6 +887,8 @@ def registration_request_status(email: str) -> str:
 def resolve_registration_request(request_id: int, decision: str, actor, company: str = ""):
     if decision not in {"approve", "reject"}:
         return "Select a valid registration decision."
+    if not actor or not is_application_admin(actor):
+        return "Only an Application Admin can approve or reject profile requests."
     connection = get_auth_connection()
     try:
         pending = connection.execute(
@@ -908,13 +910,10 @@ def resolve_registration_request(request_id: int, decision: str, actor, company:
             connection.commit()
             return ""
 
-        if is_company_admin(actor):
-            suggested_company = normalise_company_name(pending["suggested_company"] or "")
-            if not suggested_company or suggested_company.lower() != normalise_company_name(actor["company"]).lower():
-                return "You can only approve verified requests matched to your own company."
-            company = suggested_company
-        else:
-            company = normalise_company_name(company or pending["suggested_company"] or "")
+        # The applicant's free-text employer is context for review only. It
+        # must never become tenancy or permissions without an explicit admin
+        # selection from the configured tenant list.
+        company = normalise_company_name(company or "")
         if not company or not tenant_exists(company):
             return "Select an active company before approving this profile."
         existing = connection.execute(

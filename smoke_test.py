@@ -354,10 +354,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.11.0" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.12.0" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.11.0",
+            "health/version did not report Release 2.12.0",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -2077,6 +2077,7 @@ def main():
                 "registration_mode": "create",
                 "full_name": "Domain Matched User",
                 "email": "matched@smoke-company.test",
+                "company": "Smoke Other Company",
                 "password": "Password123!",
                 "reset_phrase": "domain matched phrase",
             },
@@ -2378,6 +2379,7 @@ def main():
                 "registration_mode": "create",
                 "full_name": "Domain Matched User",
                 "email": "matched@smoke-company.test",
+                "company": "Smoke Other Company",
                 "password": "AnotherPassword123!",
                 "reset_phrase": "domain matched phrase",
             },
@@ -2398,6 +2400,7 @@ def main():
                 "registration_mode": "create",
                 "full_name": "Pending Domain User",
                 "email": "pending@unmatched-domain.test",
+                "company": "Smoke Other Company",
                 "password": "Password123!",
                 "reset_phrase": "pending domain phrase",
             },
@@ -2417,6 +2420,7 @@ def main():
                 "registration_mode": "create",
                 "full_name": "Pending Domain User Changed",
                 "email": "pending@unmatched-domain.test",
+                "company": "Different Requested Employer",
                 "password": "ReplacementPassword123!",
                 "reset_phrase": "replacement pending phrase",
             },

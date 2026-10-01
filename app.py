@@ -34,9 +34,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.11.0"
-APP_RELEASE_DATE = "2026-09-22"
-APP_BUILD = "2026-09-22-v2.11.0-retention-broadcast-r1"
+APP_VERSION = "2.12.0"
+APP_RELEASE_DATE = "2026-10-01"
+APP_BUILD = "2026-10-01-v2.12.0-secure-profile-approval-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -52,6 +52,23 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.12.0",
+        "release_date": "2026-10-01",
+        "title": "Secure profile approval workflow",
+        "new": [
+            "Added a free-text company employer field to public profile requests for administrator review.",
+            "Added a one-time Application Admin login reminder when verified profile requests are awaiting review.",
+        ],
+        "enhanced": [
+            "Profile requests now require mailbox verification and explicit Application Admin approval before access is created.",
+            "Application Admins select the configured company during approval; approved profiles always start with standard User permissions.",
+        ],
+        "fixed": [
+            "Removed automatic company tenancy assignment from email-domain matching during public registration.",
+            "Company Admins can no longer approve, reject or assign tenancy for public profile requests.",
+        ],
+    },
     {
         "version": "2.11.0",
         "release_date": "2026-09-22",
@@ -996,7 +1013,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
                  'Use User Guide from the header whenever you need step-by-step guidance without leaving the application.',
                  'Use global search when you know part of an account, contact, partner, outreach subject or timeline entry.',
                  'Use Sign Out when your session is finished, especially on a shared machine.'],
-  'steps': ['Request a profile with your unique work email, full name, password and secret phrase. A recognised company domain only suggests the company; PipeFlow sends a verification email before any access is approved.',
+  'steps': ['Request a profile with your unique work email, full name, employer name, password and secret phrase. The employer name is review context only; PipeFlow sends a verification email before any access is approved.',
             'Open the verification link in the email. An administrator must then approve the verified request and tenant membership before sign-in is enabled.',
             'If that email already has a profile, use the password reset form with the current password and matching secret phrase to recover access.',
             'Sign in using the approved profile created for your company tenant.',
@@ -2175,6 +2192,7 @@ def inject_dropdown_values():
         "csrf_token": csrf_token,
         "nightly_service_alert": nightly_service_alert_for_user(signed_in_user),
         "broadcast_messages": broadcast_messages,
+        "pending_registration_notice": bool(session.pop("pending_registration_notice", False)) if signed_in_user and is_application_admin(signed_in_user) else False,
     }
 
 
@@ -2475,9 +2493,9 @@ PAGE_INSTRUCTIONS = {
     "register": {
         "title": "Registration Guidance",
         "items": [
-            "Register with your work email, full name and password; PipeFlow validates the email domain against configured companies.",
+            "Register with your work email, full name, employer name and password. The employer name is free text for Application Admin review and does not assign access.",
             "Choose a secret reset phrase you can remember because it is required for secure password reset.",
-            "A recognised company domain activates the private workspace immediately; otherwise an application admin reviews the request.",
+            "Verify the mailbox from the emailed link. An Application Admin must then select the configured company and approve the request; every approved profile starts as a standard User.",
         ],
     },
     "forgot_password": {
@@ -2793,6 +2811,10 @@ def login():
             session["user_email"] = user["email"]
             session["user_name"] = user["full_name"]
             session["workspace_schema"] = ensure_user_workspace_schema(user)
+            # Show the pending-profile reminder once after an Application
+            # Admin signs in; the admin page remains the source of truth.
+            if is_application_admin(user) and list_pending_registration_requests(user):
+                session["pending_registration_notice"] = True
             initialise_database()
             connection = get_db_connection()
             connection.execute(
@@ -2917,13 +2939,13 @@ def register():
             limit_keys = rate_limit_keys("register", email)
             if rate_limit_exceeded(REGISTRATION_ATTEMPTS, limit_keys):
                 return render_template("register.html", error="Too many registration attempts. Please wait and try again.", message="", reset_mode=False, email=email), 429
-            matched_tenant = tenant_for_email(email)
+            requested_company = request.form.get("company", "").strip()
             token, error = create_registration_request(
                 email,
                 request.form.get("password", ""),
                 request.form.get("full_name", ""),
                 request.form.get("reset_phrase", ""),
-                matched_tenant["company_name"] if matched_tenant else "",
+                requested_company,
             )
             if not error:
                 delivery_error = send_registration_verification(email, token)
@@ -2932,8 +2954,8 @@ def register():
                     record_auth_failure(REGISTRATION_ATTEMPTS, limit_keys)
                 else:
                     clear_auth_failures(REGISTRATION_ATTEMPTS, limit_keys)
-                    log_admin_audit(None, "Account registration requested", "Registration", email, f"Verification email sent; suggested company: {matched_tenant['company_name'] if matched_tenant else 'Not matched'}.")
-                    message = "Check your email and open the verification link. After verification, an administrator must approve your company access before you can sign in."
+                    log_admin_audit(None, "Account registration requested", "Registration", email, f"Verification email sent; requested employer: {requested_company or 'Not provided'}. No company tenancy or permissions were assigned.")
+                    message = "Your profile request has been submitted. Check your email to verify that you control the mailbox; after verification, an Application Admin must approve and configure your company access. You will be advised when your profile is ready."
 
     return render_template(
         "register.html",
@@ -2949,7 +2971,7 @@ def verify_registration(token):
     registration, error = verify_registration_email(token)
     if error:
         return render_template("registration_verified.html", error=error, email="")
-    log_admin_audit(None, "Registration email verified", "Registration", registration["email"], f"Mailbox ownership verified; suggested company: {registration.get('suggested_company') or 'Not matched'}.")
+    log_admin_audit(None, "Registration email verified", "Registration", registration["email"], f"Mailbox ownership verified; requested employer: {registration.get('suggested_company') or 'Not provided'}. Awaiting Application Admin approval.")
     return render_template("registration_verified.html", error="", email=registration["email"])
 
 
@@ -2994,7 +3016,7 @@ def render_admin_permissions(temporary_credentials=None, message_override=""):
         broadcast_company_options=tenant_options if is_app_admin else [],
         broadcast_messages=broadcast_rows_for_admin(actor),
         scheduler_runs=scheduler_run_history(30) if is_app_admin else [],
-        pending_registrations=list_pending_registration_requests(actor),
+        pending_registrations=list_pending_registration_requests(actor) if is_app_admin else [],
         audit_retention_config=audit_retention_configuration(),
         temporary_credentials=temporary_credentials,
         actor_user_id=actor["id"] if actor else None,
@@ -3147,11 +3169,9 @@ def admin_export_users_csv():
 @admin_required
 def admin_resolve_registration_request(request_id, decision):
     actor = current_user()
-    if not (is_application_admin(actor) or is_company_admin(actor)):
-        return redirect(url_for("admin_permissions", error="Only administrators can approve or reject verified profile requests."))
+    if not is_application_admin(actor):
+        return redirect(url_for("admin_permissions", error="Only Application Admins can approve or reject verified profile requests."))
     requested_company = request.form.get("company", "")
-    if is_company_admin(actor):
-        requested_company = actor["company"]
     error = resolve_registration_request(
         request_id,
         decision,

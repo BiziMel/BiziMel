@@ -109,6 +109,20 @@
     </dialog>
     {% endif %}
 
+    {% if pending_registration_notice %}
+    <dialog id="pendingRegistrationNotice" class="pipeflow-dialog" aria-labelledby="pendingRegistrationNoticeTitle">
+        <div class="dialog-header">
+            <h3 id="pendingRegistrationNoticeTitle">New profile requests require approval</h3>
+            <button type="button" class="dialog-close-button" data-close-pending-registration aria-label="Close">&times;</button>
+        </div>
+        <p>One or more verified new user profiles are waiting for Application Admin approval.</p>
+        <div class="form-actions">
+            <a class="btn btn-primary" href="{{ url_for('admin_permissions') }}">Review profile requests</a>
+            <button type="button" class="btn btn-secondary" data-close-pending-registration>Close</button>
+        </div>
+    </dialog>
+    {% endif %}
+
     {% if page_not_found_alert %}
     <dialog id="pageNotFoundAlert" class="pipeflow-dialog" aria-labelledby="pageNotFoundAlertTitle">
         <div class="dialog-header">
@@ -137,6 +151,13 @@
                 pageNotFoundAlert.showModal();
                 pageNotFoundAlert.querySelectorAll("[data-close-page-not-found]").forEach((button) => {
                     button.addEventListener("click", () => pageNotFoundAlert.close());
+                });
+            }
+            const pendingRegistrationNotice = document.getElementById("pendingRegistrationNotice");
+            if (pendingRegistrationNotice) {
+                pendingRegistrationNotice.showModal();
+                pendingRegistrationNotice.querySelectorAll("[data-close-pending-registration]").forEach((button) => {
+                    button.addEventListener("click", () => pendingRegistrationNotice.close());
                 });
             }
             document.querySelectorAll("form").forEach((form) => {
