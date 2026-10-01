@@ -10,6 +10,7 @@
     <a href="{{ url_for('export_outreach_reports', **export_xlsx_args) }}" class="btn btn-secondary">Export XLSX</a>
 </div>
 
+<div class="outreach-report-top">
 <div class="dashboard-grid report-metric-grid outreach-report-metrics">
     <div class="dashboard-card report-metric-card report-metric-blue">
         <h3>Total Outreach</h3>
@@ -71,7 +72,7 @@
         </div>
 
         <div class="filter-field">
-            <label for="outreach-report-period">Completed Activity Period</label>
+            <label for="outreach-report-period">Activity Period</label>
             <select id="outreach-report-period" name="period">
                 {% for period_key, period_label in period_options.items() %}
                     <option value="{{ period_key }}" {% if selected_period == period_key %}selected{% endif %}>{{ period_label }}</option>
@@ -163,12 +164,13 @@
         </div>
     </form>
 </div>
+</div>
 
 <div class="report-card completed-activity-summary-card">
     <div class="section-header">
         <div>
             <h2>Outreach Activity by Account and Activity Type</h2>
-            <p>Completed or closed activity in {{ report_range_label }}. People counts are distinct contacts or partner contacts reached in the selected period.</p>
+            <p>All matching outreach activity in {{ report_range_label }}. People counts are distinct contacts or partner contacts reached in the selected period.</p>
         </div>
         <div class="summary-total-pills">
             <span class="status-pill">{{ completed_activity_count }} activities</span>
@@ -178,7 +180,7 @@
     <div class="table-container">
         <table class="report-table completed-activity-summary-table">
             <thead>
-                <tr><th>Company / Account</th><th>Activity Type</th><th>Completed Activities</th><th>People</th></tr>
+                <tr><th>Company / Account</th><th>Activity Type</th><th>Activities</th><th>People</th></tr>
             </thead>
             <tbody>
                 {% for item in completed_activity_summary %}
