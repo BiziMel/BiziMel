@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
-Version: 2.12.0
+Version: 2.12.1
 Release date: 2026-10-01
-Build: 2026-10-01-v2.12.0-secure-profile-approval-r1
+Build: 2026-10-01-v2.12.1-session-direct-mail-r1
 Package purpose: Hosted enterprise deployment only.

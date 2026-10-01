@@ -34,9 +34,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.12.0"
+APP_VERSION = "2.12.1"
 APP_RELEASE_DATE = "2026-10-01"
-APP_BUILD = "2026-10-01-v2.12.0-secure-profile-approval-r1"
+APP_BUILD = "2026-10-01-v2.12.1-session-direct-mail-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -52,6 +52,21 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.12.1",
+        "release_date": "2026-10-01",
+        "title": "Reliable login sessions and Direct Mail outreach",
+        "new": [
+            "Added Direct Mail to individual Outreach and Campaign Builder activity type selections.",
+        ],
+        "enhanced": [
+            "Moved the Flask session to a PipeFlow-specific cookie name so stale cookies from older releases cannot be interpreted as current sessions.",
+            "Made the server-side login session explicit and retried transient database failures during token validation.",
+        ],
+        "fixed": [
+            "Reduced intermittent post-login token failures caused by stale cookies or short-lived database connectivity issues between the login redirect and the first protected request.",
+        ],
+    },
     {
         "version": "2.12.0",
         "release_date": "2026-10-01",
@@ -1115,7 +1130,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
             'Select a Sales Play already used for that account or associated to that account from the Sales Play form.',
             'Select one or more contacts. The first selected contact is the primary report contact and additional contacts are retained as '
             'recipients.',
-            'Set task status, assignee, activity type including SMS/WhatsApp where appropriate, activity start date/time, activity due date/time and subject.',
+            'Set task status, assignee, activity type including SMS/WhatsApp and Direct Mail where appropriate, activity start date/time, activity due date/time and subject.',
             'Use the optional Notes box directly beneath Subject for multiline context and links. Add one or more attachments or screenshots on this form or later from Edit Outreach.',
             'Choose an outcome when known. Scheduled Meeting Date / Time only appears for Meeting Booked, NBM Booked, Discovery Booked or '
             'Exec Meeting Booked.',
@@ -1138,7 +1153,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
   'steps': ['Choose an account that has active contacts.',
             'Select one or more contacts for the campaign.',
             'Select one Sales Play that is available for the selected account.',
-            'Optionally tick activity types, including SMS/WhatsApp, to constrain the generated campaign mix.',
+            'Optionally tick activity types, including SMS/WhatsApp and Direct Mail, to constrain the generated campaign mix.',
             'Set PG Week, campaign start, campaign end, total task quantity and tasks per week.',
             'Generate the campaign. PipeFlow creates dated tasks across selected contacts.',
             'Review generated tasks, assignees and due dates in Outreach before starting execution.'],
@@ -1306,6 +1321,7 @@ def configured_secret_key():
 
 
 app.config["SECRET_KEY"] = configured_secret_key()
+app.config["SESSION_COOKIE_NAME"] = "pipeflow_session_v2"
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Strict"
 app.config["SESSION_COOKIE_SECURE"] = os.environ.get(
@@ -2335,7 +2351,7 @@ PAGE_INSTRUCTIONS = {
         "title": "Campaign Builder Guidance",
         "items": [
             "Campaigns use one sales play only and can be generated for multiple contacts on the selected account.",
-            "Use Campaign Activity Types to limit generated tasks to selected activities, including SMS/WhatsApp, or leave them blank for a varied mix.",
+            "Use Campaign Activity Types to limit generated tasks to selected activities, including SMS/WhatsApp and Direct Mail, or leave them blank for a varied mix.",
             "Every generated campaign starts with VITO before moving into the selected or varied follow-up activity mix.",
             "PG Week Start, Campaign Start and Campaign End begin blank and must be entered by the user.",
             "Campaign start date cannot be earlier than today and generated tasks stay on or after the configured start date.",
@@ -2805,6 +2821,7 @@ def login():
         if user:
             clear_auth_failures(LOGIN_ATTEMPTS, limit_keys)
             session.clear()
+            session.permanent = True
             csrf_token()
             session["user_id"] = user["id"]
             session["auth_session_token"] = create_login_session(user["id"])
@@ -4274,6 +4291,13 @@ def campaign_step_templates():
             "subject_prefix": "SMS/WhatsApp outreach",
             "next_action": "Send a concise SMS or WhatsApp message and track the response",
             "time": "14:30"
+        },
+        {
+            "campaign": "Direct Mail",
+            "activity_type": "Direct Mail",
+            "subject_prefix": "Direct Mail outreach",
+            "next_action": "Prepare and send the relevant direct-mail package",
+            "time": "14:45"
         },
         {
             "campaign": "Events",

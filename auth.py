@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import secrets
+import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from functools import wraps
@@ -12,7 +13,7 @@ from pathlib import Path
 from flask import redirect, session, url_for
 from cryptography.fernet import Fernet, InvalidToken
 from werkzeug.security import check_password_hash, generate_password_hash
-from db_compat import get_connection, postgres_identifier, using_postgres
+from db_compat import get_connection, postgres_identifier, using_postgres, transient_database_error
 
 
 AUTH_DB_NAME = "pipeflow_server_auth.db"
@@ -1043,20 +1044,28 @@ def create_login_session(user_id: int, lifetime_hours: int = 12) -> str:
 def validate_login_session(user_id: int, token: str) -> bool:
     if not user_id or not token:
         return False
-    connection = get_auth_connection()
     expires_clause = "expires_at::timestamptz > CURRENT_TIMESTAMP" if using_postgres() else "expires_at > CURRENT_TIMESTAMP"
-    row = connection.execute(
-        f"""
-        SELECT id FROM login_sessions
-        WHERE user_id = ? AND token_hash = ? AND revoked_at IS NULL AND {expires_clause}
-        """,
-        (user_id, registration_token_hash(token)),
-    ).fetchone()
-    if row:
-        connection.execute("UPDATE login_sessions SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?", (row["id"],))
-        connection.commit()
-    connection.close()
-    return bool(row)
+    for attempt in range(3):
+        connection = get_auth_connection()
+        try:
+            row = connection.execute(
+                f"""
+                SELECT id FROM login_sessions
+                WHERE user_id = ? AND token_hash = ? AND revoked_at IS NULL AND {expires_clause}
+                """,
+                (user_id, registration_token_hash(token)),
+            ).fetchone()
+            if row:
+                connection.execute("UPDATE login_sessions SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?", (row["id"],))
+                connection.commit()
+            return bool(row)
+        except Exception as exc:
+            if not transient_database_error(exc) or attempt == 2:
+                raise
+            time.sleep(0.08 * (attempt + 1))
+        finally:
+            connection.close()
+    return False
 
 
 def revoke_login_session(token: str):
