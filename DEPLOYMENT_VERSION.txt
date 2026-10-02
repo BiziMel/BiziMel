@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
-Version: 2.13.2
+Version: 2.13.3
 Release date: 2026-10-02
-Build: 2026-10-02-v2.13.2-outreach-table-export-r1
+Build: 2026-10-02-v2.13.3-outreach-date-filters-r1
 Package purpose: Hosted enterprise deployment only.

@@ -34,9 +34,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.2"
+APP_VERSION = "2.13.3"
 APP_RELEASE_DATE = "2026-10-02"
-APP_BUILD = "2026-10-02-v2.13.2-outreach-table-export-r1"
+APP_BUILD = "2026-10-02-v2.13.3-outreach-date-filters-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -52,6 +52,14 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.3",
+        "release_date": "2026-10-02",
+        "title": "Outreach date filter consistency",
+        "fixed": [
+            "Explicit Outreach From and To dates now take precedence over a preset period, ensuring graphs, tables and CSV exports use the dates entered by the user.",
+        ],
+    },
     {
         "version": "2.13.2",
         "release_date": "2026-10-02",
@@ -19828,6 +19836,11 @@ def outreach_reports():
     selected_last_updated_start = request.args.get("last_updated_start", "")
     selected_last_updated_end = request.args.get("last_updated_end", "")
     selected_period = request.args.get("period", "last_30_days")
+    # Explicit date inputs take precedence even if an older form submission
+    # still carries a preset period value. This keeps the graphs and table
+    # aligned with the dates the user actually entered.
+    if selected_period != "custom" and (selected_start_date or selected_end_date):
+        selected_period = "custom"
     period_start, period_end = outreach_report_period_range(selected_period, report_today)
     if selected_period != "custom":
         selected_start_date = period_start.isoformat()
@@ -20112,14 +20125,10 @@ def outreach_reports():
         }.items()
         if value not in (None, "")
     }
-    date_bits = []
     if selected_start_date or selected_end_date:
-        date_bits.append(f"Activity {format_display_date(selected_start_date) if selected_start_date else 'Any'} to {format_display_date(selected_end_date) if selected_end_date else 'Any'}")
-    if selected_due_start_date or selected_due_end_date:
-        date_bits.append(f"Due {format_display_date(selected_due_start_date) if selected_due_start_date else 'Any'} to {format_display_date(selected_due_end_date) if selected_due_end_date else 'Any'}")
-    if selected_last_updated_start or selected_last_updated_end:
-        date_bits.append(f"Updated {format_display_date(selected_last_updated_start) if selected_last_updated_start else 'Any'} to {format_display_date(selected_last_updated_end) if selected_last_updated_end else 'Any'}")
-    report_range_label = "; ".join(date_bits) if date_bits else "All outreach records"
+        report_range_label = f"{format_display_date(selected_start_date) if selected_start_date else 'Any'} to {format_display_date(selected_end_date) if selected_end_date else 'Any'}"
+    else:
+        report_range_label = "All"
 
     return render_template(
         "outreach_reports.html",
@@ -20187,6 +20196,8 @@ def export_outreach_reports():
     selected_period = request.args.get("period", "last_30_days")
     selected_start_date = request.args.get("start_date", "")
     selected_end_date = request.args.get("end_date", "")
+    if selected_period != "custom" and (selected_start_date or selected_end_date):
+        selected_period = "custom"
     selected_account = request.args.get("company_id") or request.args.get("account_id", "")
     selected_contact = request.args.get("contact_id", "")
     selected_activity_type = request.args.get("activity_type", "")
