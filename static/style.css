@@ -2358,9 +2358,9 @@ a:hover {
     display: grid;
     gap: 12px;
     margin-top: 16px;
-    max-height: 360px;
-    overflow-y: auto;
-    padding-right: 4px;
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
 }
 
 .report-bar-label {

@@ -34,9 +34,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.0"
+APP_VERSION = "2.13.1"
 APP_RELEASE_DATE = "2026-10-02"
-APP_BUILD = "2026-10-02-v2.13.0-outreach-reports-refresh-r1"
+APP_BUILD = "2026-10-02-v2.13.1-outreach-report-filter-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -52,6 +52,14 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.1",
+        "release_date": "2026-10-02",
+        "title": "Filtered Outreach Report graphs",
+        "fixed": [
+            "Bound closed-activity graphs explicitly to the final filtered Outreach table rows so selected date, account, contact, activity, outcome and status filters apply consistently.",
+        ],
+    },
     {
         "version": "2.13.0",
         "release_date": "2026-10-02",
@@ -20012,11 +20020,13 @@ def outreach_reports():
         for summary in sorted(completed_summary.values(), key=lambda value: (value["account_name"], value["activity_type"]))
     ]
 
+    # Graphs must be derived from the final filtered table rows. Keeping this
+    # subset explicit prevents a graph from accidentally reverting to the
+    # unfiltered all_outreach collection when new filters are added.
+    closed_activity_rows = [item for item in filtered_outreach if is_closed_task_status(item["task_status"])]
     closed_by_activity_totals = {}
     closed_by_account_totals = {}
-    for item in filtered_outreach:
-        if not is_closed_task_status(item["task_status"]):
-            continue
+    for item in closed_activity_rows:
         activity_label = item["activity_type"] or "Unknown"
         account_label = item["account_label"] or "Unassigned Account"
         closed_by_activity_totals[activity_label] = closed_by_activity_totals.get(activity_label, 0) + 1
@@ -20157,7 +20167,7 @@ def outreach_reports():
         completed_people_count=len(completed_people),
         closed_by_activity=closed_by_activity,
         closed_by_account=closed_by_account,
-        closed_activity_count=sum(closed_by_activity_totals.values()),
+        closed_activity_count=len(closed_activity_rows),
         closed_account_count=len(closed_by_account_totals),
     )
 
