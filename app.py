@@ -34,9 +34,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.1"
+APP_VERSION = "2.13.2"
 APP_RELEASE_DATE = "2026-10-02"
-APP_BUILD = "2026-10-02-v2.13.1-outreach-report-filter-r1"
+APP_BUILD = "2026-10-02-v2.13.2-outreach-table-export-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -52,6 +52,15 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.2",
+        "release_date": "2026-10-02",
+        "title": "Collapsible Outreach activity table",
+        "enhanced": [
+            "Made the full Outreach Activities table collapsible so the report can be scanned without keeping the detailed rows open.",
+            "Added an explicit Export Activity CSV action using the same filters as the visible table.",
+        ],
+    },
     {
         "version": "2.13.1",
         "release_date": "2026-10-02",

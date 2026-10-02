@@ -2402,6 +2402,49 @@ a:hover {
 
 .outreach-report-full-table {
     margin-top: 22px;
+    padding: 0;
+}
+
+.outreach-report-full-table summary {
+    cursor: pointer;
+    list-style: none;
+    padding: 14px 16px;
+    color: #173f35;
+    font-size: 18px;
+    font-weight: 800;
+}
+
+.outreach-report-full-table summary::-webkit-details-marker {
+    display: none;
+}
+
+.outreach-report-full-table summary::before {
+    content: "+";
+    display: inline-grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    margin-right: 8px;
+    border: 1px solid #9bb8ab;
+    border-radius: 4px;
+    color: #176b54;
+    font-size: 16px;
+    line-height: 1;
+}
+
+.outreach-report-full-table[open] summary::before {
+    content: "-";
+}
+
+.outreach-report-full-table summary span {
+    margin-left: 8px;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.outreach-report-full-table[open] .table-container {
+    padding: 0 16px 16px;
 }
 
 .outreach-report-top {

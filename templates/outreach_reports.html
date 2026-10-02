@@ -5,7 +5,7 @@
 
 <div class="button-group outreach-report-actions">
     <a href="/reports" class="btn btn-secondary">Back to Reports</a>
-    <a href="{{ url_for('export_outreach_reports', **export_csv_args) }}" class="btn btn-primary">Export CSV</a>
+    <a href="{{ url_for('export_outreach_reports', **export_csv_args) }}" class="btn btn-primary">Export Activity CSV</a>
     <a href="{{ url_for('export_outreach_reports', **export_xlsx_args) }}" class="btn btn-secondary">Export XLSX</a>
 </div>
 
@@ -97,8 +97,8 @@
     })();
 </script>
 
-<section class="report-table-section outreach-report-full-table">
-    <div class="section-header"><div><h2>All Outreach Activities</h2><p>{{ total_outreach }} record(s) matching {{ report_range_label }} and the selected filters.</p></div></div>
+<details class="report-card outreach-report-full-table" open>
+    <summary>All Outreach Activities <span>{{ total_outreach }} record(s) matching {{ report_range_label }}. Export uses the same filters.</span></summary>
     <div class="table-container">
         <table class="report-table">
             <thead><tr><th>Date</th><th>Subject</th><th>Account</th><th>Contact</th><th>Type</th><th>Outcome</th><th>Due</th><th>Status</th><th>Last Updated</th><th>Assigned To</th></tr></thead>
@@ -117,5 +117,5 @@
             </tbody>
         </table>
     </div>
-</section>
+</details>
 {% endblock %}
