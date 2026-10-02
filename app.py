@@ -34,9 +34,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.12.1"
-APP_RELEASE_DATE = "2026-10-01"
-APP_BUILD = "2026-10-01-v2.12.1-session-direct-mail-reports-r2"
+APP_VERSION = "2.13.0"
+APP_RELEASE_DATE = "2026-10-02"
+APP_BUILD = "2026-10-02-v2.13.0-outreach-reports-refresh-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -52,6 +52,22 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.0",
+        "release_date": "2026-10-02",
+        "title": "Outreach Reports refresh",
+        "new": [
+            "Added compact collapsible filters at the top of Outreach Reports.",
+            "Added graph tiles for closed Outreach Activities by Activity and by Account.",
+        ],
+        "enhanced": [
+            "The full Outreach Activities table now follows the graphs and remains constrained by every selected filter.",
+            "Removed the previous duplicate metric-card, summary and breakdown presentation from Outreach Reports.",
+        ],
+        "fixed": [
+            "Aligned report graphs and table results to the same filtered activity set and reporting period.",
+        ],
+    },
     {
         "version": "2.12.1",
         "release_date": "2026-10-01",
@@ -19996,6 +20012,24 @@ def outreach_reports():
         for summary in sorted(completed_summary.values(), key=lambda value: (value["account_name"], value["activity_type"]))
     ]
 
+    closed_by_activity_totals = {}
+    closed_by_account_totals = {}
+    for item in filtered_outreach:
+        if not is_closed_task_status(item["task_status"]):
+            continue
+        activity_label = item["activity_type"] or "Unknown"
+        account_label = item["account_label"] or "Unassigned Account"
+        closed_by_activity_totals[activity_label] = closed_by_activity_totals.get(activity_label, 0) + 1
+        closed_by_account_totals[account_label] = closed_by_account_totals.get(account_label, 0) + 1
+    closed_by_activity = report_bar_rows(
+        [{"activity_type": label, "count": count} for label, count in closed_by_activity_totals.items()],
+        "count",
+    )
+    closed_by_account = report_bar_rows(
+        [{"account_name": label, "count": count} for label, count in closed_by_account_totals.items()],
+        "count",
+    )
+
     outcome_totals = {}
     type_totals = {}
     account_totals = {}
@@ -20121,6 +20155,10 @@ def outreach_reports():
         completed_activity_summary=completed_activity_summary,
         completed_activity_count=completed_activity_count,
         completed_people_count=len(completed_people),
+        closed_by_activity=closed_by_activity,
+        closed_by_account=closed_by_account,
+        closed_activity_count=sum(closed_by_activity_totals.values()),
+        closed_account_count=len(closed_by_account_totals),
     )
 
 
