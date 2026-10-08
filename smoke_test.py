@@ -354,10 +354,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.13.3" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.13.4" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.13.3",
+            "health/version did not report Release 2.13.4",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -963,13 +963,55 @@ def main():
             ),
         )
         closed_task_id = closed_cursor.lastrowid
-        nightly_test_ids = {*nightly_task_ids, closed_task_id}
+        overdue_slot = nightly_now - timedelta(days=5)
+        overdue_cursor = connection.execute(
+            """
+            INSERT INTO outreach (
+                fy, quarter, account_id, contact_id, campaign, sales_play,
+                activity_date, activity_time, activity_type, subject, outcome,
+                next_action, next_action_date, next_action_time, task_status, assigned_to
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "27", "Q1", account_id, contact_id, "Nightly scheduler smoke", "Smoke Test Play",
+                overdue_slot.date().isoformat(), overdue_slot.strftime("%H:%M"), "Email",
+                "Nightly overdue weekend task", "", "Manage this overdue task manually",
+                overdue_slot.date().isoformat(), overdue_slot.strftime("%H:%M"), "Not Started", "Smoke Test Admin",
+            ),
+        )
+        overdue_task_id = overdue_cursor.lastrowid
+        valid_future_slot = datetime.combine(
+            nightly_block_date + timedelta(days=3),
+            datetime.strptime("13:00", "%H:%M").time(),
+        )
+        valid_future_cursor = connection.execute(
+            """
+            INSERT INTO outreach (
+                fy, quarter, account_id, contact_id, campaign, sales_play,
+                activity_date, activity_time, activity_type, subject, outcome,
+                next_action, next_action_date, next_action_time, task_status, assigned_to
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "27", "Q1", account_id, contact_id, "Nightly scheduler smoke", "Smoke Test Play",
+                valid_future_slot.date().isoformat(), valid_future_slot.strftime("%H:%M"), "Email",
+                "Nightly valid future task", "", "Leave this valid task in place",
+                valid_future_slot.date().isoformat(), valid_future_slot.strftime("%H:%M"), "Not Started", "Smoke Test Admin",
+            ),
+        )
+        valid_future_task_id = valid_future_cursor.lastrowid
+        nightly_test_ids = {
+            *nightly_task_ids,
+            closed_task_id,
+            overdue_task_id,
+            valid_future_task_id,
+        }
         other_task_statuses = connection.execute(
-            "SELECT id, task_status FROM outreach WHERE id NOT IN (?, ?, ?, ?)",
+            "SELECT id, task_status FROM outreach WHERE id NOT IN (?, ?, ?, ?, ?, ?)",
             tuple(nightly_test_ids),
         ).fetchall()
         connection.execute(
-            "UPDATE outreach SET task_status = 'Closed' WHERE id NOT IN (?, ?, ?, ?)",
+            "UPDATE outreach SET task_status = 'Closed' WHERE id NOT IN (?, ?, ?, ?, ?, ?)",
             tuple(nightly_test_ids),
         )
         connection.commit()
@@ -1005,12 +1047,28 @@ def main():
             closed_row["next_action_date"] == closed_slot.date().isoformat() and closed_row["next_action_time"] == closed_slot.strftime("%H:%M"),
             "nightly review changed closed Outreach history",
         )
+        untouched_rows = connection.execute(
+            "SELECT id, next_action_date, next_action_time FROM outreach WHERE id IN (?, ?)",
+            (overdue_task_id, valid_future_task_id),
+        ).fetchall()
+        untouched_slots = {
+            row["id"]: datetime.fromisoformat(f"{row['next_action_date']}T{row['next_action_time']}")
+            for row in untouched_rows
+        }
+        assert_ok(
+            untouched_slots.get(overdue_task_id) == overdue_slot,
+            "nightly review automatically rescheduled an overdue task",
+        )
+        assert_ok(
+            untouched_slots.get(valid_future_task_id) == valid_future_slot,
+            "nightly review moved a future task that was already inside working availability",
+        )
         connection.commit()
         second_pass_count = pipeflow_app.nightly_reflow_outreach_schedule(connection, nightly_now)
         assert_ok(second_pass_count == 0, "nightly review was not idempotent for an already valid schedule")
         connection.execute(
-            "DELETE FROM outreach WHERE id IN (?, ?, ?, ?)",
-            (*nightly_task_ids, closed_task_id),
+            "DELETE FROM outreach WHERE id IN (?, ?, ?, ?, ?, ?)",
+            (*nightly_task_ids, closed_task_id, overdue_task_id, valid_future_task_id),
         )
         for task_row in other_task_statuses:
             connection.execute(

@@ -34,9 +34,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.3"
-APP_RELEASE_DATE = "2026-10-02"
-APP_BUILD = "2026-10-02-v2.13.3-outreach-date-filters-r1"
+APP_VERSION = "2.13.4"
+APP_RELEASE_DATE = "2026-10-08"
+APP_BUILD = "2026-10-08-v2.13.4-nightly-availability-only-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -52,6 +52,15 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.4",
+        "release_date": "2026-10-08",
+        "title": "Nightly availability-only rescheduling",
+        "fixed": [
+            "Limited the nightly schedule review to future tasks that fall on non-working days, outside working hours or inside configured availability blocks.",
+            "Kept overdue tasks overdue until a user explicitly manages or reschedules them.",
+        ],
+    },
     {
         "version": "2.13.3",
         "release_date": "2026-10-02",
@@ -1270,7 +1279,7 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
   'tips': ['Only the logged-in user can access their own secret phrase data.',
            'Saturday and Sunday are treated as non-working by auto-scheduling.',
            'Expired availability blocks are removed automatically.',
-           'The nightly 23:00 review applies current working hours and availability blocks to every open scheduled Outreach task. Application Admins receive an in-app dialog if that service run fails.',
+           'The nightly 23:00 review moves only future Outreach work that falls on non-working days, outside working hours or inside availability blocks. Overdue work stays overdue until the user manages or reschedules it. Application Admins receive an in-app dialog if that service run fails.',
            'Manual date entry can still be saved after warnings when intentional.']},
  {'slug': 'admin',
   'title': 'Admin, Tenants, Users and Teams',
@@ -2279,7 +2288,7 @@ PAGE_INSTRUCTIONS = {
             "Use Save Assignment after changing the assignee. The selected user must already have access to the account.",
             "Select several rows and use Reschedule Selected to retain their current order while moving them into the next collision-free working slots.",
             "New Outreach schedule fields open blank; use Auto Schedule only when you want PipeFlow to populate them.",
-            "The daily 23:00 schedule review keeps open work in its existing order and moves only unavailable or clashing tasks to later valid slots.",
+            "The daily 23:00 schedule review moves only future work on non-working days, outside working hours or inside availability blocks; overdue work stays overdue until you manage or reschedule it.",
             "Open the task to complete it, add a mandatory Activity Update or create a follow-on task.",
         ],
     },
@@ -15781,6 +15790,18 @@ def datetime_within_blocks(value, blocks):
     return any(start_at <= value < end_at for start_at, end_at in map(non_working_block_bounds, blocks or []))
 
 
+def outreach_schedule_is_unavailable(value, profile=None, non_working_blocks=None):
+    """Return whether a scheduled datetime violates configured availability."""
+    if value is None:
+        return False
+    work_start, work_end = profile_work_bounds(profile)
+    return bool(
+        value.time() < work_start
+        or value.time() > work_end
+        or non_working_datetime(value.date(), value.time(), profile, non_working_blocks)
+    )
+
+
 def reschedule_outreach_for_new_non_working_block(connection, new_block, actor_label):
     """Reflow the future open schedule from the first new availability conflict."""
     now = current_app_datetime().replace(second=0, microsecond=0)
@@ -15990,7 +16011,7 @@ def auto_reschedule_outreach_records(connection, outreach_ids, actor_label):
 
 
 def nightly_reflow_outreach_schedule(connection, now=None):
-    """Move open scheduled work forward into valid slots without changing its order."""
+    """Move only future work that violates configured availability into valid slots."""
     now = round_datetime_to_next_slot(now or current_app_datetime())
     profile = connection.execute("SELECT * FROM user_profile WHERE id = 1").fetchone()
     block_rows = connection.execute("""
@@ -16015,11 +16036,30 @@ def nightly_reflow_outreach_schedule(connection, now=None):
         due_at = task_due_datetime(row["next_action_date"], row["next_action_time"])
         if not activity_at and not due_at:
             continue
-        # The due date is the live execution schedule. A past activity start is
-        # retained as history when a future due date is being moved.
-        move_due = bool(due_at)
-        move_activity = bool(activity_at and (activity_at >= now or not due_at))
-        original_slot = due_at or activity_at
+        # The due date is the live execution schedule. Once it is overdue, the
+        # entire task is left for an explicit user action, even when its old slot
+        # was outside today's availability rules.
+        live_schedule_at = due_at or activity_at
+        if live_schedule_at < now:
+            continue
+        move_activity = bool(
+            activity_at
+            and activity_at >= now
+            and outreach_schedule_is_unavailable(activity_at, profile, non_working_blocks)
+        )
+        move_due = bool(
+            due_at
+            and due_at >= now
+            and outreach_schedule_is_unavailable(due_at, profile, non_working_blocks)
+        )
+        movable_values = [
+            value
+            for value in (activity_at if move_activity else None, due_at if move_due else None)
+            if value
+        ]
+        if not movable_values:
+            continue
+        original_slot = min(movable_values)
         scheduled_rows.append((original_slot, row, move_activity, move_due))
 
     scheduled_rows.sort(key=lambda item: (item[0], item[1]["id"]))
