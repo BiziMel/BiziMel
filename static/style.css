@@ -6281,6 +6281,52 @@ body {
     letter-spacing: 0.01em;
 }
 
+.contact-list-table .contact-account-group-row th {
+    padding: 14px 18px;
+    border-top: 10px solid #ffffff;
+    border-bottom: 1px solid #b8d3bc;
+    background: #e8f3e9;
+    color: #173f1d;
+    text-align: left;
+}
+
+.contact-account-group:first-of-type .contact-account-group-row th {
+    border-top-width: 0;
+}
+
+.contact-account-group-row th {
+    display: table-cell;
+}
+
+.contact-account-group-title,
+.contact-account-group-count {
+    display: inline-flex;
+    align-items: center;
+}
+
+.contact-account-group-title {
+    gap: 10px;
+    font-size: 16px;
+    font-weight: 900;
+}
+
+.contact-account-group-title small {
+    color: #52675a;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.contact-account-group-count {
+    float: right;
+    margin-left: 16px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #365b3b;
+    font-size: 12px;
+    font-weight: 800;
+}
+
 .contact-status-legend {
     display: flex;
     gap: 14px;

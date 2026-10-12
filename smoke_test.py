@@ -263,6 +263,7 @@ def main():
         os.environ["PIPEFLOW_SECRET_KEY"] = "pipeflow-smoke-test-key"
 
         import app as pipeflow_app
+        import database as pipeflow_database
         import db_compat
         pipeflow_app.app.config["TESTING"] = True
 
@@ -354,10 +355,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.13.9" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.13.10" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.13.9",
+            "health/version did not report Release 2.13.10",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -1105,12 +1106,114 @@ def main():
         assert_ok("Last Outreach" in contacts_html, "Contacts table last outreach column missing")
         assert_ok("08-05-2026 10:30" in contacts_html, "Contacts table did not show the latest active outreach date")
         assert_ok("05-08-2026 11:30" not in contacts_html, "Contacts table used a deleted outreach as the last active outreach date")
+        assert_ok(
+            "contact-account-group-row" in contacts_html
+            and 'data-sort-within-groups="true"' in contacts_html
+            and contacts_html.index("Smoke Second Contact") < contacts_html.index("Smoke Test Contact"),
+            "Contacts were not grouped by account with alphanumeric contact ordering",
+        )
+        assert_ok(
+            sorted(["Account 10", "Account 2", "Account 1"], key=pipeflow_app.alphanumeric_sort_key)
+            == ["Account 1", "Account 2", "Account 10"],
+            "Natural alphanumeric account ordering failed",
+        )
         contact_table_styles = (Path(__file__).parent / "static" / "style.css").read_text(encoding="utf-8")
         assert_ok(
             ".container:has(.contact-list-table)" in contact_table_styles
             and "min-width: 1380px" in contact_table_styles
             and "font-size: 15px" in contact_table_styles,
             "Contacts table wide, readable layout styles missing",
+        )
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        connection.executemany(
+            """
+            INSERT INTO audit_entries
+                (entity_type, entity_id, action_type, field_name, field_label, value_from, value_to)
+            VALUES ('contact', ?, 'Create', ?, ?, '', ?)
+            """,
+            [
+                (contact_id, "name", "Name", "Smoke Test Contact"),
+                (contact_id, "email", "Email", "contact@example.com"),
+                (contact_id, "status", "Status", "Active"),
+            ],
+        )
+        connection.executemany(
+            """
+            INSERT INTO timeline_entries
+                (related_type, related_id, entry_type, entry_text, created_by)
+            VALUES ('contact', ?, ?, ?, 'Legacy Smoke')
+            """,
+            [
+                (contact_id, "Auto Audit", "Contact created: Name Smoke Test Contact; Email contact@example.com"),
+                (contact_id, "Auto Audit", "Contact updated: Role changed from 'CIO' to 'CTO'; Status changed from 'Active' to 'Inactive'"),
+                (contact_id, "Call note", "Manual relationship note retained."),
+            ],
+        )
+        pipeflow_database.normalise_contact_history(connection.cursor())
+        pipeflow_database.normalise_contact_history(connection.cursor())
+        connection.commit()
+        creation_audits = connection.execute(
+            "SELECT field_name, value_to FROM audit_entries WHERE entity_type = 'contact' AND entity_id = ? AND action_type = 'Create'",
+            (contact_id,),
+        ).fetchall()
+        cleansed_timeline = connection.execute(
+            "SELECT entry_type, entry_text FROM timeline_entries WHERE related_type = 'contact' AND related_id = ? AND created_by = 'Legacy Smoke'",
+            (contact_id,),
+        ).fetchall()
+        connection.close()
+        assert_ok(
+            len(creation_audits) == 1
+            and creation_audits[0]["field_name"] == "record"
+            and creation_audits[0]["value_to"] == "Contact created",
+            "Legacy contact creation audit was not consolidated",
+        )
+        cleansed_timeline_values = {(row["entry_type"], row["entry_text"]) for row in cleansed_timeline}
+        assert_ok(
+            ("Contact created", "Contact created.") in cleansed_timeline_values
+            and ("Contact updated", "Role changed from 'CIO' to 'CTO'") in cleansed_timeline_values
+            and ("Contact updated", "Status changed from 'Active' to 'Inactive'") in cleansed_timeline_values
+            and ("Call note", "Manual relationship note retained.") in cleansed_timeline_values
+            and len(cleansed_timeline_values) == 4,
+            "Legacy contact timeline was not cleansed idempotently or a manual note was changed",
+        )
+        response = client.post(
+            "/contacts/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "account_id": str(account_id),
+                "name": "Smoke Concise History Contact",
+                "status": "Active",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "Contact creation for concise history coverage failed")
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        concise_contact = connection.execute(
+            "SELECT id FROM contacts WHERE name = ?",
+            ("Smoke Concise History Contact",),
+        ).fetchone()
+        concise_audits = connection.execute(
+            "SELECT action_type, field_name, value_to FROM audit_entries WHERE entity_type = 'contact' AND entity_id = ?",
+            (concise_contact["id"],),
+        ).fetchall()
+        concise_timeline = connection.execute(
+            "SELECT entry_type, entry_text FROM timeline_entries WHERE related_type = 'contact' AND related_id = ?",
+            (concise_contact["id"],),
+        ).fetchall()
+        connection.execute("DELETE FROM timeline_entries WHERE related_type = 'contact' AND related_id = ?", (concise_contact["id"],))
+        connection.execute("DELETE FROM audit_entries WHERE entity_type = 'contact' AND entity_id = ?", (concise_contact["id"],))
+        connection.execute("DELETE FROM contacts WHERE id = ?", (concise_contact["id"],))
+        connection.commit()
+        connection.close()
+        assert_ok(
+            len(concise_audits) == 1
+            and concise_audits[0]["field_name"] == "record"
+            and concise_audits[0]["value_to"] == "Contact created"
+            and len(concise_timeline) == 1
+            and concise_timeline[0]["entry_type"] == "Contact created",
+            "New contact history was not recorded as one concise creation event",
         )
 
         accounts_html = client.get("/accounts").get_data(as_text=True)

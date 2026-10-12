@@ -65,7 +65,7 @@
 </div>
 
 <div class="table-container full-width-table-container contact-table-container">
-    <table class="report-table contact-list-table">
+    <table class="report-table contact-list-table" data-sort-within-groups="true">
         <colgroup>
             <col class="contact-select-col">
             <col class="contact-photo-col">
@@ -95,9 +95,23 @@
             </tr>
         </thead>
 
-        <tbody>
-            {% for contact in contacts %}
-                <tr>
+        {% for group in contact_groups %}
+        <tbody class="contact-account-group">
+            <tr class="contact-account-group-row" data-table-group-heading>
+                <th colspan="10" scope="rowgroup">
+                    <span class="contact-account-group-title">
+                        {% if group.account_id %}
+                            <a href="{{ url_for('view_account', account_id=group.account_id) }}">{{ group.account_name }}</a>
+                        {% else %}
+                            {{ group.account_name }}
+                        {% endif %}
+                        {% if group.business_unit %}<small>{{ group.business_unit }}</small>{% endif %}
+                    </span>
+                    <span class="contact-account-group-count">{{ group.contacts|length }} contact{% if group.contacts|length != 1 %}s{% endif %}</span>
+                </th>
+            </tr>
+            {% for contact in group.contacts %}
+                <tr data-sort-row>
                     <td class="bulk-select-col">
                         <input type="checkbox" name="selected_ids" value="{{ contact['id'] }}" form="bulk-delete-contacts-form" aria-label="Select {{ contact['name'] }}">
                     </td>
@@ -195,6 +209,7 @@
                 </tr>
             {% endfor %}
         </tbody>
+        {% endfor %}
     </table>
 </div>
 

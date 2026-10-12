@@ -1,3 +1,5 @@
+import re
+
 from db_compat import get_connection, using_postgres, current_user_schema, sqlite_database_path
 
 _INITIALISED_DATABASES = set()
@@ -85,6 +87,82 @@ def normalise_account_pg_bible_orders(cursor):
                 (value, row["id"]),
             )
         used.add(value)
+
+
+def normalise_contact_history(cursor):
+    """Make legacy contact creation and automatic update history concise and readable."""
+    creation_groups = cursor.execute("""
+        SELECT entity_id, MIN(id) AS keeper_id, COUNT(*) AS entry_count
+        FROM audit_entries
+        WHERE LOWER(COALESCE(entity_type, '')) = 'contact'
+          AND LOWER(COALESCE(action_type, '')) = 'create'
+          AND entity_id IS NOT NULL
+        GROUP BY entity_id
+    """).fetchall()
+    for group in creation_groups:
+        if int(group["entry_count"] or 0) == 1:
+            keeper = cursor.execute(
+                "SELECT field_name FROM audit_entries WHERE id = ?",
+                (group["keeper_id"],),
+            ).fetchone()
+            if keeper and (keeper["field_name"] or "").casefold() == "record":
+                continue
+        cursor.execute("""
+            UPDATE audit_entries
+            SET action_type = 'Create',
+                field_name = 'record',
+                field_label = 'Record',
+                value_from = '',
+                value_to = 'Contact created'
+            WHERE id = ?
+        """, (group["keeper_id"],))
+        cursor.execute("""
+            DELETE FROM audit_entries
+            WHERE LOWER(COALESCE(entity_type, '')) = 'contact'
+              AND LOWER(COALESCE(action_type, '')) = 'create'
+              AND entity_id = ?
+              AND id != ?
+        """, (group["entity_id"], group["keeper_id"]))
+
+    legacy_creation_entries = cursor.execute("""
+        SELECT id
+        FROM timeline_entries
+        WHERE LOWER(COALESCE(related_type, '')) = 'contact'
+          AND LOWER(COALESCE(entry_type, '')) = 'auto audit'
+          AND LOWER(COALESCE(entry_text, '')) LIKE 'contact created:%'
+    """).fetchall()
+    for entry in legacy_creation_entries:
+        cursor.execute("""
+            UPDATE timeline_entries
+            SET entry_type = 'Contact created', entry_text = 'Contact created.'
+            WHERE id = ?
+        """, (entry["id"],))
+
+    legacy_update_entries = cursor.execute("""
+        SELECT id, related_id, entry_text, created_by, date_created
+        FROM timeline_entries
+        WHERE LOWER(COALESCE(related_type, '')) = 'contact'
+          AND LOWER(COALESCE(entry_type, '')) = 'auto audit'
+          AND LOWER(COALESCE(entry_text, '')) LIKE 'contact updated:%'
+    """).fetchall()
+    for entry in legacy_update_entries:
+        detail = re.sub(r"^Contact updated:\s*", "", entry["entry_text"] or "", flags=re.IGNORECASE).strip()
+        changes = [
+            change.strip()
+            for change in re.split(r";\s+(?=[^;]+ changed from ')", detail)
+            if change.strip()
+        ] or ["Contact updated."]
+        cursor.execute("""
+            UPDATE timeline_entries
+            SET entry_type = 'Contact updated', entry_text = ?
+            WHERE id = ?
+        """, (changes[0], entry["id"]))
+        for change in changes[1:]:
+            cursor.execute("""
+                INSERT INTO timeline_entries
+                    (related_type, related_id, entry_type, entry_text, created_by, date_created)
+                VALUES ('contact', ?, 'Contact updated', ?, ?, ?)
+            """, (entry["related_id"], change, entry["created_by"], entry["date_created"]))
 
 
 def initialise_database(force=False, connection=None):
@@ -911,6 +989,7 @@ def initialise_database(force=False, connection=None):
     """)
 
     normalise_account_pg_bible_orders(cursor)
+    normalise_contact_history(cursor)
     cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_accounts_pg_bible_order ON accounts (pg_bible_order)")
     cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_accounts_create_request_id ON accounts (create_request_id)")
 

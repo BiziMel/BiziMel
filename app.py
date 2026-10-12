@@ -34,9 +34,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.9"
+APP_VERSION = "2.13.10"
 APP_RELEASE_DATE = "2026-10-12"
-APP_BUILD = "2026-10-12-v2.13.9-contacts-table-readability-r1"
+APP_BUILD = "2026-10-12-v2.13.10-contact-grouping-history-cleanup-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -52,6 +52,17 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.10",
+        "release_date": "2026-10-12",
+        "title": "Contact grouping and readable history",
+        "enhanced": [
+            "Grouped the Contacts list by attached account, with natural alphanumeric account and contact ordering.",
+            "Retained column sorting within each account group without breaking group headings.",
+            "Changed new contact history to one concise Contact created entry and separate human-readable from/to entries for later field changes.",
+            "Added an idempotent sweep that consolidates legacy contact creation audits and splits oversized automatic update timeline entries while preserving manual notes.",
+        ],
+    },
     {
         "version": "2.13.9",
         "release_date": "2026-10-12",
@@ -4053,6 +4064,22 @@ def audit_record_update(connection, entity_type, entity_id, existing_record, new
 
 def audit_record_delete(connection, entity_type, entity_id, label=""):
     audit_entry(connection, entity_type, entity_id, "Delete", "record", "Record", label, "")
+
+
+def audit_contact_created(connection, contact_id, source=""):
+    detail = "Contact created"
+    if source:
+        detail = f"Contact created via {source}"
+    audit_entry(connection, "contact", contact_id, "Create", "record", "Record", "", detail)
+    actor = audit_actor()
+    add_timeline_entry(
+        connection,
+        "contact",
+        contact_id,
+        "Contact created",
+        f"{detail}.",
+        actor["name"] or actor["email"] or "System",
+    )
 
 
 def current_user_can_delete_partner(partner):
@@ -10042,12 +10069,7 @@ def ingest_mapped_contact_rows(connection, account_id, data_rows, mapping):
                 payload["additional_notes"],
                 payload["status"],
             ))
-            audit_record_create(connection, "contact", cursor.lastrowid, {
-                "account_id": account_id,
-                "name": payload["name"],
-                "email": payload["email"],
-                "source": "spreadsheet_import",
-            })
+            audit_contact_created(connection, cursor.lastrowid, "spreadsheet import")
             result["created"] += 1
     return result
 
@@ -14226,6 +14248,14 @@ def delete_account_org_chart_person(account_id, chart_id, node_id):
     return redirect(url_for("account_org_chart", account_id=account_id, chart_id=chart_id, message="Person removed from org chart."))
 
 
+def alphanumeric_sort_key(value):
+    """Return a case-insensitive natural key so Contact 2 sorts before Contact 10."""
+    return tuple(
+        (0, int(part)) if part.isdigit() else (1, part.casefold())
+        for part in re.split(r"(\d+)", str(value or ""))
+    )
+
+
 @app.route("/contacts")
 def contacts():
     connection = get_db_connection()
@@ -14299,8 +14329,33 @@ def contacts():
     if status_filter:
         query += " AND COALESCE(contacts.status, 'Active') = ?"
         params.append(status_filter)
-    query += " ORDER BY contacts.name"
-    contacts = connection.execute(query, params).fetchall()
+    contact_rows = [dict(row) for row in connection.execute(query, params).fetchall()]
+    contact_rows.sort(key=lambda contact: (
+        contact.get("account_id") is None,
+        alphanumeric_sort_key(contact.get("account_name") or "Unassigned contacts"),
+        alphanumeric_sort_key(contact.get("business_unit") or ""),
+        alphanumeric_sort_key(contact.get("name") or ""),
+        int(contact.get("id") or 0),
+    ))
+    contact_groups = []
+    groups_by_account = {}
+    for contact in contact_rows:
+        group_key = (
+            contact.get("account_id"),
+            contact.get("account_name") or "Unassigned contacts",
+            contact.get("business_unit") or "",
+        )
+        if group_key not in groups_by_account:
+            group = {
+                "account_id": contact.get("account_id"),
+                "account_name": contact.get("account_name") or "Unassigned contacts",
+                "business_unit": contact.get("business_unit") or "",
+                "contacts": [],
+            }
+            groups_by_account[group_key] = group
+            contact_groups.append(group)
+        groups_by_account[group_key]["contacts"].append(contact)
+    contacts = contact_rows
     accounts = connection.execute("""
         SELECT id, account_name, business_unit
         FROM accounts
@@ -14310,6 +14365,7 @@ def contacts():
     return render_template(
         "contacts.html",
         contacts=contacts,
+        contact_groups=contact_groups,
         accounts=accounts,
         account_filter=account_filter,
         name_filter=name_filter,
@@ -14356,20 +14412,7 @@ def add_contact():
             request.form.get("status") or "Active"
         ))
         contact_id = cursor.lastrowid
-        audit_record_create(connection, "contact", contact_id, {
-            "account_id": request.form.get("account_id"),
-            "category": request.form.get("category"),
-            "name": request.form.get("name"),
-            "job_title": request.form.get("job_title"),
-            "org_dept": request.form.get("org_dept"),
-            "email": request.form.get("email"),
-            "phone": combined_contact_phone(request.form.get("office_phone"), request.form.get("mobile_phone"), request.form.get("phone")),
-            "office_phone": request.form.get("office_phone"),
-            "mobile_phone": request.form.get("mobile_phone"),
-            "photo": photo_path,
-            "status": request.form.get("status") or "Active",
-            "bmc_relationship": request.form.get("bmc_relationship"),
-        })
+        audit_contact_created(connection, contact_id)
         connection.commit()
         connection.close()
 
@@ -14651,13 +14694,16 @@ def edit_contact(contact_id):
 
         if changes:
             audit_record_update(connection, "contact", contact_id, contact, new_values, labels)
-            add_timeline_entry(
-                connection,
-                "contact",
-                contact_id,
-                "Auto Audit",
-                "Contact updated: " + "; ".join(changes)
-            )
+            actor = audit_actor()
+            for change in changes:
+                add_timeline_entry(
+                    connection,
+                    "contact",
+                    contact_id,
+                    "Contact updated",
+                    change,
+                    actor["name"] or actor["email"] or "System",
+                )
 
         commit_with_retry(connection)
         connection.close()

@@ -49,18 +49,24 @@
     }
 
     function sortTable(table, columnIndex, header) {
-        const tbody = table.tBodies[0];
-        if (!tbody) return;
+        const tbodies = table.dataset.sortWithinGroups === "true"
+            ? Array.from(table.tBodies)
+            : [table.tBodies[0]].filter(Boolean);
+        if (!tbodies.length) return;
 
         const currentDirection = header.dataset.sortDirection === SORT_ASC ? SORT_DESC : SORT_ASC;
-        const rows = Array.from(tbody.rows).map((row, index) => ({ row, index }));
+        tbodies.forEach((tbody) => {
+            const rows = Array.from(tbody.rows)
+                .filter((row) => !row.matches("[data-table-group-heading]"))
+                .map((row, index) => ({ row, index }));
 
-        rows.sort((left, right) => {
-            const comparison = compareValues(cellText(left.row, columnIndex), cellText(right.row, columnIndex), currentDirection);
-            return comparison || left.index - right.index;
+            rows.sort((left, right) => {
+                const comparison = compareValues(cellText(left.row, columnIndex), cellText(right.row, columnIndex), currentDirection);
+                return comparison || left.index - right.index;
+            });
+
+            rows.forEach(({ row }) => tbody.appendChild(row));
         });
-
-        rows.forEach(({ row }) => tbody.appendChild(row));
 
         table.querySelectorAll("th.sortable-heading").forEach((th) => {
             th.dataset.sortDirection = "";
