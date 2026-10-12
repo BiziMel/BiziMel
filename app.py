@@ -34,9 +34,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.8"
+APP_VERSION = "2.13.9"
 APP_RELEASE_DATE = "2026-10-12"
-APP_BUILD = "2026-10-12-v2.13.8-account-save-delete-resilience-r1"
+APP_BUILD = "2026-10-12-v2.13.9-contacts-table-readability-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -52,6 +52,16 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.9",
+        "release_date": "2026-10-12",
+        "title": "Contacts table readability",
+        "enhanced": [
+            "Expanded the Contacts page to use more of the available browser width.",
+            "Increased contact table typography, row spacing, photo size and pill sizing for easier reading.",
+            "Rebalanced contact table columns and retained horizontal scrolling on narrower screens instead of compressing content into tiny text.",
+        ],
+    },
     {
         "version": "2.13.8",
         "release_date": "2026-10-12",

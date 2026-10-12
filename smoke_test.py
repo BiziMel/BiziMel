@@ -354,10 +354,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.13.8" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.13.9" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.13.8",
+            "health/version did not report Release 2.13.9",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -1105,6 +1105,13 @@ def main():
         assert_ok("Last Outreach" in contacts_html, "Contacts table last outreach column missing")
         assert_ok("08-05-2026 10:30" in contacts_html, "Contacts table did not show the latest active outreach date")
         assert_ok("05-08-2026 11:30" not in contacts_html, "Contacts table used a deleted outreach as the last active outreach date")
+        contact_table_styles = (Path(__file__).parent / "static" / "style.css").read_text(encoding="utf-8")
+        assert_ok(
+            ".container:has(.contact-list-table)" in contact_table_styles
+            and "min-width: 1380px" in contact_table_styles
+            and "font-size: 15px" in contact_table_styles,
+            "Contacts table wide, readable layout styles missing",
+        )
 
         accounts_html = client.get("/accounts").get_data(as_text=True)
         logo_path = f"/accounts/{account_id}/logo"

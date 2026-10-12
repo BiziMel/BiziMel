@@ -1848,12 +1848,12 @@ a:hover {
 
 .contact-table-photo {
     display: block;
-    width: 46px;
-    height: 46px;
-    min-width: 46px;
-    max-width: 46px;
-    min-height: 46px;
-    max-height: 46px;
+    width: 52px;
+    height: 52px;
+    min-width: 52px;
+    max-width: 52px;
+    min-height: 52px;
+    max-height: 52px;
     aspect-ratio: 1 / 1;
     border-radius: 6px;
     object-fit: cover;
@@ -5637,6 +5637,12 @@ body {
     overflow: hidden;
 }
 
+.contact-table-photo-frame {
+    width: 52px;
+    height: 52px;
+    min-width: 52px;
+}
+
 .account-table-logo,
 .account-page-logo,
 .account-logo-preview,
@@ -6229,15 +6235,24 @@ body {
     max-width: 100%;
 }
 
+.container:has(.contact-list-table) {
+    width: 96%;
+    max-width: 1720px;
+}
+
 .contact-table-container {
-    overflow-x: hidden;
+    overflow-x: auto;
+    padding: 24px;
 }
 
 .contact-list-table,
 .contact-report-table {
     table-layout: fixed;
-    min-width: 0;
     width: 100%;
+}
+
+.contact-list-table {
+    min-width: 1380px;
 }
 
 .contact-list-table th,
@@ -6253,8 +6268,17 @@ body {
 
 .contact-list-table th,
 .contact-list-table td {
-    padding: 8px 9px;
-    font-size: 12px;
+    padding: 14px 16px;
+    font-size: 15px;
+    line-height: 1.45;
+    vertical-align: middle;
+}
+
+.contact-list-table th {
+    padding-top: 16px;
+    padding-bottom: 16px;
+    font-size: 14px;
+    letter-spacing: 0.01em;
 }
 
 .contact-status-legend {
@@ -6299,40 +6323,43 @@ body {
 }
 
 .contact-select-col {
-    width: 34px;
+    width: 52px;
 }
 
 .contact-photo-col {
-    width: 54px;
+    width: 82px;
 }
 
 .contact-name-col {
-    width: 124px;
+    width: 178px;
 }
 
 .contact-account-col {
-    width: 158px;
+    width: 205px;
 }
 
-.contact-tier-col,
+.contact-tier-col {
+    width: 118px;
+}
+
 .contact-status-col {
-    width: 74px;
+    width: 86px;
 }
 
 .contact-outreach-col {
-    width: 70px;
+    width: 96px;
 }
 
 .contact-last-outreach-col {
-    width: 92px;
+    width: 142px;
 }
 
 .contact-role-col {
-    width: 188px;
+    width: 235px;
 }
 
 .contact-relationship-col {
-    width: 106px;
+    width: 158px;
 }
 
 .contact-list-table .record-primary-link,
@@ -6346,13 +6373,13 @@ body {
 
 .contact-list-table .status-pill,
 .contact-list-table .health-pill {
-    padding: 3px 6px;
-    font-size: 11px;
+    padding: 5px 9px;
+    font-size: 13px;
 }
 
 .contact-last-outreach-cell {
     color: #64748b;
-    font-size: 11px;
+    font-size: 13px;
 }
 
 .contact-last-outreach-cell .subtle-date {
@@ -6388,7 +6415,8 @@ body {
     background: transparent;
     color: #102810 !important;
     font-weight: 900;
-    line-height: 1.25;
+    font-size: 16px;
+    line-height: 1.35;
     box-shadow: none;
     text-decoration: underline;
     text-underline-offset: 2px;
@@ -6404,6 +6432,17 @@ body {
 
 .contact-list-table .record-primary-link::before {
     content: none;
+}
+
+.contact-list-table small {
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.contact-list-table .button-as-link,
+.contact-list-table .table-primary-link,
+.contact-list-table .table-secondary-link {
+    font-size: 14px;
 }
 
 .contact-outreach-choice-card h2 {

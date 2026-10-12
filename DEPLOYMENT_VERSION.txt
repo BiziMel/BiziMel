@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
-Version: 2.13.8
+Version: 2.13.9
 Release date: 2026-10-12
-Build: 2026-10-12-v2.13.8-account-save-delete-resilience-r1
+Build: 2026-10-12-v2.13.9-contacts-table-readability-r1
 Package purpose: Hosted enterprise deployment only.
