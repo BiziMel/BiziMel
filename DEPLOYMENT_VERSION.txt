@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
-Version: 2.13.4
-Release date: 2026-10-08
-Build: 2026-10-08-v2.13.4-nightly-availability-only-r1
+Version: 2.13.6
+Release date: 2026-10-12
+Build: 2026-10-12-v2.13.6-insights-structured-grid-r1
 Package purpose: Hosted enterprise deployment only.

@@ -354,10 +354,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.13.4" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.13.6" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.13.4",
+            "health/version did not report Release 2.13.6",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -621,6 +621,13 @@ def main():
         assert_ok(
             "Portfolio Totals" in overview_html and "<tfoot>" in overview_html,
             "Insights Account Execution Measures did not render its totals footer",
+        )
+        assert_ok(
+            "overview-glass-table-container" in overview_html
+            and "overview-structured-grid" in overview_html
+            and "overview-metric-chip" in overview_html
+            and "rag-row-" in overview_html,
+            "Insights Account Execution Measures did not render its grouped glass table treatment",
         )
         momentum_html = period_pages["30"]
         assert_ok(

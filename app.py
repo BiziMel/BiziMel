@@ -34,9 +34,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.4"
-APP_RELEASE_DATE = "2026-10-08"
-APP_BUILD = "2026-10-08-v2.13.4-nightly-availability-only-r1"
+APP_VERSION = "2.13.6"
+APP_RELEASE_DATE = "2026-10-12"
+APP_BUILD = "2026-10-12-v2.13.6-insights-structured-grid-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -52,6 +52,24 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.6",
+        "release_date": "2026-10-12",
+        "title": "Structured Insights table grid",
+        "enhanced": [
+            "Added continuous horizontal and vertical rules to the Account Execution Measures table so every value is clearly tied to its row and column.",
+            "Strengthened the six metric group boundaries, introduced subtle column-band colours and alternating row tones, and widened the account column for easier scanning.",
+        ],
+    },
+    {
+        "version": "2.13.5",
+        "release_date": "2026-10-08",
+        "title": "Glass execution measures table",
+        "enhanced": [
+            "Reworked the Account Execution Measures table into grouped Portfolio, Activity, Outcomes, Workload, Coverage and Recency bands.",
+            "Added a restrained glass surface, distinct account cards, RAG edge accents and tonal metric chips to make dense dashboard data easier to scan.",
+        ],
+    },
     {
         "version": "2.13.4",
         "release_date": "2026-10-08",

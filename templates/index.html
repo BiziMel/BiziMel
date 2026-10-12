@@ -54,13 +54,21 @@
         <span><i class="rag-red"></i><b>Stalled</b> recent activity without progress</span>
         <span><i class="rag-blue"></i><b>Inactive</b> no engagement in 30 days</span>
     </div>
-    <div class="table-container command-table-container"><table class="report-table overview-metrics-table">
-        <thead><tr><th>Account / Business Org</th><th>RAG</th><th>Momentum</th><th>Total Activity This Week</th><th>Total Activity All Time</th><th>Positive Responses</th><th>Meetings</th><th>Overdue</th><th>Future Actions</th><th>Active Contacts</th><th>Inactive Contacts</th><th>Last Activity</th></tr></thead>
-        <tbody>{% for account in momentum_rows %}<tr>
-            <td><a href="{{ url_for('view_account', account_id=account.account_id) }}"><strong>{{ account.account_label }}</strong></a></td>
+    <div class="table-container command-table-container overview-glass-table-container overview-structured-grid" role="region" aria-label="Account execution measures" tabindex="0"><table class="report-table overview-metrics-table">
+        <thead><tr><th>Account / Business Org</th><th>RAG</th><th>Momentum</th><th aria-label="Total Activity This Week">This Week</th><th aria-label="Total Activity All Time">All Time</th><th aria-label="Positive Responses">Positive</th><th>Meetings</th><th>Overdue</th><th aria-label="Future Actions">Future</th><th aria-label="Active Contacts">Active</th><th aria-label="Inactive Contacts">Inactive</th><th>Last Activity</th></tr></thead>
+        <tbody>{% for account in momentum_rows %}<tr class="overview-account-row rag-row-{{ account.rag_status }}">
+            <td class="overview-account-cell"><a href="{{ url_for('view_account', account_id=account.account_id) }}"><strong>{{ account.account_label }}</strong></a></td>
             <td class="insights-rag-cell"><span class="insights-rag-dot rag-{{ account.rag_status }}" role="img" aria-label="{{ account.rag_label }} RAG" title="{{ account.rag_label }}"></span></td>
             <td><span class="momentum-state state-{{ account.state_tone }}"><i></i>{{ account.state }}</span></td>
-            <td>{{ account.activity_this_week }}</td><td>{{ account.activity_all_time }}</td><td>{{ account.recent_positive }}</td><td>{{ account.recent_meetings }}</td><td class="{% if account.overdue %}risk-text{% endif %}">{{ account.overdue }}</td><td>{{ account.future_actions }}</td><td>{{ account.active_contacts }}</td><td>{{ account.inactive_contacts }}</td><td>{{ account.last_activity }}</td>
+            <td class="metric-cell metric-cell-activity"><span class="overview-metric-chip {% if not account.activity_this_week %}is-zero{% endif %}">{{ account.activity_this_week }}</span></td>
+            <td class="metric-cell metric-cell-activity"><span class="overview-metric-chip {% if not account.activity_all_time %}is-zero{% endif %}">{{ account.activity_all_time }}</span></td>
+            <td class="metric-cell metric-cell-outcome"><span class="overview-metric-chip {% if not account.recent_positive %}is-zero{% endif %}">{{ account.recent_positive }}</span></td>
+            <td class="metric-cell metric-cell-outcome"><span class="overview-metric-chip {% if not account.recent_meetings %}is-zero{% endif %}">{{ account.recent_meetings }}</span></td>
+            <td class="metric-cell metric-cell-overdue {% if account.overdue %}risk-text{% endif %}"><span class="overview-metric-chip {% if not account.overdue %}is-zero{% endif %}">{{ account.overdue }}</span></td>
+            <td class="metric-cell metric-cell-future"><span class="overview-metric-chip {% if not account.future_actions %}is-zero{% endif %}">{{ account.future_actions }}</span></td>
+            <td class="metric-cell metric-cell-coverage"><span class="overview-metric-chip {% if not account.active_contacts %}is-zero{% endif %}">{{ account.active_contacts }}</span></td>
+            <td class="metric-cell metric-cell-coverage"><span class="overview-metric-chip {% if not account.inactive_contacts %}is-zero{% endif %}">{{ account.inactive_contacts }}</span></td>
+            <td class="metric-cell metric-cell-recency"><span class="overview-date-chip">{{ account.last_activity }}</span></td>
         </tr>{% else %}<tr><td colspan="12">No account execution data is available.</td></tr>{% endfor %}</tbody>
         <tfoot><tr>
             <td>Portfolio Totals</td>

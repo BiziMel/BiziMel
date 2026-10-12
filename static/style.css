@@ -7949,3 +7949,415 @@ body {
         display: block;
     }
 }
+
+/* Execution Overview: grouped glass data table */
+.overview-execution-section {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(177, 197, 221, 0.68);
+    border-radius: 18px;
+    background:
+        radial-gradient(circle at 8% 0%, rgba(184, 219, 255, 0.42), transparent 31%),
+        radial-gradient(circle at 93% 12%, rgba(202, 238, 224, 0.38), transparent 28%),
+        linear-gradient(135deg, rgba(248, 252, 255, 0.91), rgba(237, 246, 247, 0.78));
+    box-shadow: 0 18px 44px rgba(34, 61, 88, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    -webkit-backdrop-filter: blur(18px) saturate(135%);
+    backdrop-filter: blur(18px) saturate(135%);
+}
+
+.overview-execution-section::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(118deg, rgba(255, 255, 255, 0.48), transparent 42%, rgba(255, 255, 255, 0.2));
+}
+
+.overview-execution-section > * {
+    position: relative;
+    z-index: 1;
+}
+
+.overview-execution-section .compact-section-header {
+    padding: 18px 20px 15px;
+    border-bottom: 1px solid rgba(158, 181, 205, 0.45);
+    background: rgba(255, 255, 255, 0.28);
+}
+
+.overview-execution-section .record-count {
+    padding: 6px 10px;
+    border: 1px solid rgba(130, 158, 183, 0.35);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.6);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.overview-execution-section .momentum-legend {
+    padding: 10px 20px;
+    border-top: 0;
+    border-bottom: 1px solid rgba(158, 181, 205, 0.38);
+    background: rgba(244, 249, 250, 0.5);
+}
+
+.overview-glass-table-container {
+    padding: 8px 14px 14px;
+    background: transparent;
+    scrollbar-color: rgba(78, 106, 132, 0.45) transparent;
+}
+
+.overview-glass-table-container .overview-metrics-table {
+    border-collapse: separate;
+    border-spacing: 0 8px;
+}
+
+.overview-metrics-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    padding-top: 29px;
+    padding-bottom: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.82);
+    border-bottom: 1px solid rgba(139, 164, 191, 0.42);
+    background: rgba(229, 239, 251, 0.74);
+    color: #254367;
+    box-shadow: inset 0 3px 0 #6f91b8, 0 8px 18px rgba(45, 69, 94, 0.08);
+    -webkit-backdrop-filter: blur(14px) saturate(130%);
+    backdrop-filter: blur(14px) saturate(130%);
+}
+
+.overview-metrics-table thead th:nth-child(n+4):nth-child(-n+5) {
+    box-shadow: inset 0 3px 0 #6688d8, 0 8px 18px rgba(45, 69, 94, 0.08);
+}
+
+.overview-metrics-table thead th:nth-child(n+6):nth-child(-n+7) {
+    box-shadow: inset 0 3px 0 #3c9a77, 0 8px 18px rgba(45, 69, 94, 0.08);
+}
+
+.overview-metrics-table thead th:nth-child(n+8):nth-child(-n+9) {
+    box-shadow: inset 0 3px 0 #d29136, 0 8px 18px rgba(45, 69, 94, 0.08);
+}
+
+.overview-metrics-table thead th:nth-child(n+10):nth-child(-n+11) {
+    box-shadow: inset 0 3px 0 #8a72bd, 0 8px 18px rgba(45, 69, 94, 0.08);
+}
+
+.overview-metrics-table thead th:nth-child(12) {
+    box-shadow: inset 0 3px 0 #708093, 0 8px 18px rgba(45, 69, 94, 0.08);
+}
+
+.overview-metrics-table thead th:first-child {
+    border-radius: 10px 0 0 10px;
+}
+
+.overview-metrics-table thead th:last-child {
+    border-radius: 0 10px 10px 0;
+}
+
+.overview-metrics-table thead th:nth-child(1)::before,
+.overview-metrics-table thead th:nth-child(4)::before,
+.overview-metrics-table thead th:nth-child(6)::before,
+.overview-metrics-table thead th:nth-child(8)::before,
+.overview-metrics-table thead th:nth-child(10)::before,
+.overview-metrics-table thead th:nth-child(12)::before {
+    position: absolute;
+    top: 8px;
+    left: 10px;
+    color: #637891;
+    font-size: 0.58rem;
+    font-weight: 850;
+    letter-spacing: 0.09em;
+    line-height: 1;
+    text-transform: uppercase;
+}
+
+.overview-metrics-table thead th:nth-child(1)::before { content: "Portfolio"; }
+.overview-metrics-table thead th:nth-child(4)::before { content: "Activity"; }
+.overview-metrics-table thead th:nth-child(6)::before { content: "Outcomes"; }
+.overview-metrics-table thead th:nth-child(8)::before { content: "Workload"; }
+.overview-metrics-table thead th:nth-child(10)::before { content: "Coverage"; }
+.overview-metrics-table thead th:nth-child(12)::before { content: "Recency"; }
+
+.overview-metrics-table thead th:nth-child(4),
+.overview-metrics-table thead th:nth-child(6),
+.overview-metrics-table thead th:nth-child(8),
+.overview-metrics-table thead th:nth-child(10),
+.overview-metrics-table thead th:nth-child(12),
+.overview-metrics-table tbody td:nth-child(4),
+.overview-metrics-table tbody td:nth-child(6),
+.overview-metrics-table tbody td:nth-child(8),
+.overview-metrics-table tbody td:nth-child(10),
+.overview-metrics-table tbody td:nth-child(12),
+.overview-metrics-table tfoot td:nth-child(4),
+.overview-metrics-table tfoot td:nth-child(6),
+.overview-metrics-table tfoot td:nth-child(8),
+.overview-metrics-table tfoot td:nth-child(10),
+.overview-metrics-table tfoot td:nth-child(12) {
+    border-left: 1px solid rgba(116, 142, 167, 0.2);
+}
+
+.overview-metrics-table tbody td {
+    padding-top: 10px;
+    padding-bottom: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.92);
+    border-bottom: 1px solid rgba(164, 183, 201, 0.34);
+    background: rgba(255, 255, 255, 0.7);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    vertical-align: middle;
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+}
+
+.overview-metrics-table tbody tr:nth-child(even) td {
+    background: rgba(244, 249, 252, 0.73);
+}
+
+.overview-metrics-table tbody tr:hover td {
+    background: rgba(232, 243, 252, 0.94);
+    border-bottom-color: rgba(104, 139, 174, 0.5);
+}
+
+.overview-metrics-table tbody td:first-child {
+    border-left: 4px solid #708093;
+    border-radius: 10px 0 0 10px;
+}
+
+.overview-metrics-table tbody td:last-child {
+    border-right: 1px solid rgba(164, 183, 201, 0.34);
+    border-radius: 0 10px 10px 0;
+}
+
+.overview-metrics-table .rag-row-green td:first-child { border-left-color: #23834f; }
+.overview-metrics-table .rag-row-amber td:first-child { border-left-color: #d28a20; }
+.overview-metrics-table .rag-row-red td:first-child { border-left-color: #c73535; }
+.overview-metrics-table .rag-row-blue td:first-child { border-left-color: #2d6fa6; }
+
+.overview-account-cell a {
+    color: #172d45;
+    text-decoration-color: rgba(38, 83, 126, 0.38);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+}
+
+.overview-account-cell a:hover {
+    color: #175d92;
+    text-decoration-color: currentColor;
+}
+
+.overview-metrics-table .insights-rag-dot {
+    width: 13px;
+    height: 13px;
+    border: 2px solid rgba(255, 255, 255, 0.88);
+    box-shadow: 0 0 0 1px rgba(31, 50, 67, 0.16), 0 4px 10px rgba(31, 50, 67, 0.16);
+}
+
+.overview-metrics-table .momentum-state {
+    justify-content: center;
+    min-width: 74px;
+    padding: 5px 8px;
+    border: 1px solid rgba(112, 128, 147, 0.22);
+    border-radius: 999px;
+    background: rgba(236, 241, 245, 0.76);
+    color: #435466;
+}
+
+.overview-metrics-table .momentum-state.state-green { background: rgba(218, 241, 227, 0.82); color: #17613c; }
+.overview-metrics-table .momentum-state.state-amber { background: rgba(250, 233, 202, 0.84); color: #86560d; }
+.overview-metrics-table .momentum-state.state-red { background: rgba(249, 218, 218, 0.84); color: #982c2c; }
+.overview-metrics-table .momentum-state.state-blue { background: rgba(218, 233, 247, 0.84); color: #285c86; }
+
+.overview-metric-chip,
+.overview-date-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    min-height: 26px;
+    padding: 3px 8px;
+    border: 1px solid rgba(91, 120, 150, 0.18);
+    border-radius: 8px;
+    background: rgba(232, 240, 249, 0.78);
+    color: #274966;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.metric-cell-outcome .overview-metric-chip { background: rgba(221, 241, 230, 0.8); color: #246044; }
+.metric-cell-overdue .overview-metric-chip { background: rgba(250, 225, 220, 0.88); color: #a12d2d; }
+.metric-cell-future .overview-metric-chip { background: rgba(251, 237, 208, 0.85); color: #7a5719; }
+.metric-cell-coverage .overview-metric-chip { background: rgba(235, 228, 248, 0.82); color: #5b467d; }
+.overview-metric-chip.is-zero { background: rgba(239, 243, 246, 0.62); color: #7b8792; font-weight: 650; }
+
+.overview-date-chip {
+    min-width: 92px;
+    background: rgba(238, 242, 246, 0.76);
+    color: #455565;
+    font-size: 0.7rem;
+    white-space: nowrap;
+}
+
+.overview-metrics-table tfoot td {
+    border-top: 1px solid rgba(79, 133, 101, 0.42);
+    border-bottom: 1px solid rgba(79, 133, 101, 0.3);
+    background: rgba(218, 238, 225, 0.86);
+    color: #183d29;
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+}
+
+.overview-metrics-table tfoot td:first-child { border-radius: 10px 0 0 10px; }
+.overview-metrics-table tfoot td:last-child { border-radius: 0 10px 10px 0; }
+
+.overview-metrics-table .sortable-heading:hover,
+.overview-metrics-table .sortable-heading:focus {
+    background: rgba(216, 232, 247, 0.96);
+}
+
+@media (max-width: 900px) {
+    .overview-execution-section { border-radius: 13px; }
+    .overview-glass-table-container { padding-inline: 8px; }
+}
+
+/* 2.13.6: explicit row and column structure for dense execution data */
+.overview-structured-grid {
+    padding: 14px 16px 18px;
+    outline: none;
+}
+
+.overview-structured-grid:focus-visible {
+    box-shadow: inset 0 0 0 3px rgba(46, 105, 154, 0.3);
+}
+
+.overview-structured-grid .overview-metrics-table {
+    min-width: 1540px !important;
+    border: 1px solid rgba(116, 143, 170, 0.56);
+    border-radius: 12px;
+    border-spacing: 0;
+    overflow: hidden;
+    box-shadow: 0 12px 28px rgba(41, 67, 91, 0.1);
+}
+
+.overview-structured-grid .overview-metrics-table th:nth-child(1) { width: 18%; }
+.overview-structured-grid .overview-metrics-table th:nth-child(2) { width: 4%; }
+.overview-structured-grid .overview-metrics-table th:nth-child(3) { width: 9%; }
+.overview-structured-grid .overview-metrics-table th:nth-child(n+4):nth-child(-n+11) { width: 7.5%; }
+.overview-structured-grid .overview-metrics-table th:nth-child(12) { width: 9%; }
+
+.overview-structured-grid .overview-metrics-table thead th {
+    border-right: 1px solid rgba(119, 145, 172, 0.46);
+    border-bottom: 2px solid rgba(87, 116, 145, 0.62);
+    border-radius: 0;
+    background: rgba(221, 233, 247, 0.92);
+}
+
+.overview-structured-grid .overview-metrics-table thead th:nth-child(n+4):nth-child(-n+5) {
+    background: rgba(222, 230, 250, 0.94);
+}
+
+.overview-structured-grid .overview-metrics-table thead th:nth-child(n+6):nth-child(-n+7) {
+    background: rgba(218, 239, 230, 0.94);
+}
+
+.overview-structured-grid .overview-metrics-table thead th:nth-child(n+8):nth-child(-n+9) {
+    background: rgba(248, 232, 202, 0.94);
+}
+
+.overview-structured-grid .overview-metrics-table thead th:nth-child(n+10):nth-child(-n+11) {
+    background: rgba(235, 227, 248, 0.94);
+}
+
+.overview-structured-grid .overview-metrics-table thead th:nth-child(12) {
+    border-right: 0;
+    background: rgba(226, 233, 239, 0.94);
+}
+
+.overview-structured-grid .overview-metrics-table tbody td {
+    border-top: 0;
+    border-right: 1px solid rgba(145, 165, 184, 0.42);
+    border-bottom: 1px solid rgba(126, 151, 176, 0.48);
+    border-radius: 0;
+    background: rgba(255, 255, 255, 0.82);
+}
+
+.overview-structured-grid .overview-metrics-table tbody td:nth-child(n+4):nth-child(-n+5) {
+    background: rgba(242, 246, 253, 0.86);
+}
+
+.overview-structured-grid .overview-metrics-table tbody td:nth-child(n+6):nth-child(-n+7) {
+    background: rgba(240, 249, 245, 0.86);
+}
+
+.overview-structured-grid .overview-metrics-table tbody td:nth-child(n+8):nth-child(-n+9) {
+    background: rgba(253, 248, 237, 0.88);
+}
+
+.overview-structured-grid .overview-metrics-table tbody td:nth-child(n+10):nth-child(-n+11) {
+    background: rgba(248, 244, 252, 0.88);
+}
+
+.overview-structured-grid .overview-metrics-table tbody td:nth-child(12) {
+    border-right: 0;
+    background: rgba(244, 247, 249, 0.88);
+}
+
+.overview-structured-grid .overview-metrics-table tbody tr:nth-child(even) td {
+    box-shadow: inset 0 0 0 999px rgba(218, 228, 237, 0.18);
+}
+
+.overview-structured-grid .overview-metrics-table tbody tr:hover td {
+    box-shadow: inset 0 0 0 999px rgba(194, 220, 240, 0.32);
+}
+
+.overview-structured-grid .overview-metrics-table tbody td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    border-left-width: 5px;
+    border-radius: 0;
+    background: rgba(250, 252, 254, 0.97);
+    box-shadow: 6px 0 12px rgba(47, 72, 96, 0.06);
+}
+
+.overview-structured-grid .overview-metrics-table tbody tr:nth-child(even) td:first-child {
+    background: rgba(240, 246, 250, 0.98);
+    box-shadow: 6px 0 12px rgba(47, 72, 96, 0.07);
+}
+
+.overview-structured-grid .overview-metrics-table tbody tr:hover td:first-child {
+    background: rgba(225, 239, 248, 0.99);
+}
+
+.overview-structured-grid .overview-metrics-table thead th:nth-child(4),
+.overview-structured-grid .overview-metrics-table thead th:nth-child(6),
+.overview-structured-grid .overview-metrics-table thead th:nth-child(8),
+.overview-structured-grid .overview-metrics-table thead th:nth-child(10),
+.overview-structured-grid .overview-metrics-table thead th:nth-child(12),
+.overview-structured-grid .overview-metrics-table tbody td:nth-child(4),
+.overview-structured-grid .overview-metrics-table tbody td:nth-child(6),
+.overview-structured-grid .overview-metrics-table tbody td:nth-child(8),
+.overview-structured-grid .overview-metrics-table tbody td:nth-child(10),
+.overview-structured-grid .overview-metrics-table tbody td:nth-child(12),
+.overview-structured-grid .overview-metrics-table tfoot td:nth-child(4),
+.overview-structured-grid .overview-metrics-table tfoot td:nth-child(6),
+.overview-structured-grid .overview-metrics-table tfoot td:nth-child(8),
+.overview-structured-grid .overview-metrics-table tfoot td:nth-child(10),
+.overview-structured-grid .overview-metrics-table tfoot td:nth-child(12) {
+    border-left: 3px solid rgba(91, 119, 148, 0.58);
+}
+
+.overview-structured-grid .overview-metrics-table tfoot td {
+    border-right: 1px solid rgba(105, 143, 121, 0.42);
+    border-bottom: 0;
+    border-radius: 0;
+    background: rgba(215, 235, 223, 0.96);
+}
+
+.overview-structured-grid .overview-metrics-table tfoot td:last-child {
+    border-right: 0;
+}
+
+.overview-structured-grid .overview-metric-chip,
+.overview-structured-grid .overview-date-chip {
+    border-color: rgba(76, 102, 127, 0.24);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86), 0 1px 2px rgba(53, 75, 95, 0.08);
+}
