@@ -170,7 +170,9 @@
                     <span id="orgConnectorStatus">Select a connector, click the first tile, then click the second tile.</span>
                 </div>
 
-                <div class="org-single-pane" id="orgChartPane" aria-label="Org chart canvas">
+                <div class="org-export-sheet" id="orgExportSheet">
+                    <h1 class="org-export-print-title">{{ active_chart.chart_name }}</h1>
+                    <div class="org-single-pane" id="orgChartPane" aria-label="Org chart canvas">
                     <div class="org-canvas-expander" id="orgCanvasExpander" aria-hidden="true"></div>
                     <svg class="org-link-layer" id="orgLinkLayer" aria-hidden="true"></svg>
                     <div class="org-selection-box" id="orgSelectionBox" aria-hidden="true" hidden></div>
@@ -224,6 +226,7 @@
                             <span class="org-connector-dot org-connector-dot-left" data-side="left" aria-hidden="true"></span>
                         </div>
                     {% endfor %}
+                    </div>
                 </div>
                 <canvas id="orgExportCanvas" hidden></canvas>
             </div>
@@ -249,6 +252,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const printPdfButton = document.getElementById("orgPrintPdfButton");
     const exportPngButton = document.getElementById("orgExportPngButton");
     const exportCanvas = document.getElementById("orgExportCanvas");
+    const exportSheet = document.getElementById("orgExportSheet");
     const chartExportName = {{ (active_chart.chart_name if active_chart else account.account_name ~ " Org Chart")|tojson }};
     const stagedActions = new Map();
     const manualConnectors = [
@@ -1106,22 +1110,62 @@ document.addEventListener("DOMContentLoaded", function () {
     printPdfButton?.addEventListener("click", function () {
         const previousTitle = document.title;
         document.title = safeFilename(chartExportName, "PipeFlow Org Chart");
-        pane.classList.add("org-print-target");
-        window.print();
-        setTimeout(() => {
-            pane.classList.remove("org-print-target");
+        exportSheet?.classList.add("org-print-target");
+        const finishPrint = () => {
+            exportSheet?.classList.remove("org-print-target");
             document.title = previousTitle;
-        }, 300);
+        };
+        window.addEventListener("afterprint", finishPrint, { once: true });
+        window.print();
     });
     exportPngButton?.addEventListener("click", function () {
         if (!exportCanvas) return;
         const nodes = Array.from(pane.querySelectorAll(".org-canvas-node"));
         const labels = Array.from(pane.querySelectorAll(".org-canvas-label"));
         const width = Math.max(1200, pane.scrollWidth);
-        const height = Math.max(760, pane.scrollHeight);
+        const chartHeight = Math.max(760, pane.scrollHeight);
+        const ctx = exportCanvas.getContext("2d");
+        const horizontalPadding = 32;
+        const titleLineHeight = 30;
+        const titleTop = 30;
+        const titleBottomPadding = 24;
+        ctx.font = "700 22px Arial";
+        const titleWords = String(chartExportName || "PipeFlow Org Chart").split(/\s+/).filter(Boolean);
+        const titleLines = [];
+        let titleLine = "";
+        const maximumTitleWidth = width - (horizontalPadding * 2);
+        titleWords.forEach((word) => {
+            if (ctx.measureText(word).width > maximumTitleWidth) {
+                if (titleLine) {
+                    titleLines.push(titleLine);
+                    titleLine = "";
+                }
+                let wordPart = "";
+                Array.from(word).forEach((character) => {
+                    if (wordPart && ctx.measureText(wordPart + character).width > maximumTitleWidth) {
+                        titleLines.push(wordPart);
+                        wordPart = character;
+                    } else {
+                        wordPart += character;
+                    }
+                });
+                titleLine = wordPart;
+                return;
+            }
+            const candidate = titleLine ? `${titleLine} ${word}` : word;
+            if (titleLine && ctx.measureText(candidate).width > maximumTitleWidth) {
+                titleLines.push(titleLine);
+                titleLine = word;
+            } else {
+                titleLine = candidate;
+            }
+        });
+        if (titleLine) titleLines.push(titleLine);
+        if (!titleLines.length) titleLines.push("PipeFlow Org Chart");
+        const chartOffsetY = titleTop + (titleLines.length * titleLineHeight) + titleBottomPadding;
+        const height = chartHeight + chartOffsetY;
         exportCanvas.width = width;
         exportCanvas.height = height;
-        const ctx = exportCanvas.getContext("2d");
         ctx.fillStyle = "#f8fafc";
         ctx.fillRect(0, 0, width, height);
         ctx.strokeStyle = "#94a3b8";
@@ -1129,7 +1173,9 @@ document.addEventListener("DOMContentLoaded", function () {
         ctx.strokeRect(18, 18, width - 36, height - 36);
         ctx.fillStyle = "#0f172a";
         ctx.font = "700 22px Arial";
-        ctx.fillText({{ (active_chart.chart_name if active_chart else account.account_name ~ " Org Chart")|tojson }}, 32, 42);
+        titleLines.forEach((line, index) => {
+            ctx.fillText(line, horizontalPadding, titleTop + 22 + (index * titleLineHeight));
+        });
         ctx.strokeStyle = "#166534";
         ctx.lineWidth = 2;
         manualConnectors.forEach(function (connector) {
@@ -1138,20 +1184,20 @@ document.addEventListener("DOMContentLoaded", function () {
             if (!source || !target) return;
             const { start, end } = connectorLinePoints(source, target, connector);
             ctx.beginPath();
-            ctx.moveTo(start.x, start.y);
-            ctx.lineTo(end.x, end.y);
+            ctx.moveTo(start.x, start.y + chartOffsetY);
+            ctx.lineTo(end.x, end.y + chartOffsetY);
             ctx.stroke();
         });
         labels.forEach(function (label) {
             ctx.fillStyle = "#e0f2fe";
             ctx.strokeStyle = "#94a3b8";
             ctx.beginPath();
-            ctx.roundRect(label.offsetLeft, label.offsetTop, label.offsetWidth, label.offsetHeight, 8);
+            ctx.roundRect(label.offsetLeft, label.offsetTop + chartOffsetY, label.offsetWidth, label.offsetHeight, 8);
             ctx.fill();
             ctx.stroke();
             ctx.fillStyle = "#0f172a";
             ctx.font = "700 13px Arial";
-            ctx.fillText(label.textContent.trim(), label.offsetLeft + 10, label.offsetTop + 22);
+            ctx.fillText(label.textContent.trim(), label.offsetLeft + 10, label.offsetTop + chartOffsetY + 22);
         });
         function textLines(text, maxChars) {
             const words = String(text || "").split(/\s+/).filter(Boolean);
@@ -1170,33 +1216,34 @@ document.addEventListener("DOMContentLoaded", function () {
             return lines.slice(0, 2);
         }
         nodes.forEach(function (node) {
+            const nodeTop = node.offsetTop + chartOffsetY;
             ctx.fillStyle = "#ffffff";
             ctx.strokeStyle = "#cbd5e1";
             ctx.beginPath();
-            ctx.roundRect(node.offsetLeft, node.offsetTop, node.offsetWidth, node.offsetHeight, 10);
+            ctx.roundRect(node.offsetLeft, nodeTop, node.offsetWidth, node.offsetHeight, 10);
             ctx.fill();
             ctx.stroke();
             ctx.fillStyle = "#e0f2fe";
             ctx.beginPath();
-            ctx.arc(node.offsetLeft + 34, node.offsetTop + 38, 20, 0, Math.PI * 2);
+            ctx.arc(node.offsetLeft + 34, nodeTop + 38, 20, 0, Math.PI * 2);
             ctx.fill();
             ctx.fillStyle = "#0369a1";
             ctx.font = "700 13px Arial";
             const initials = (node.dataset.personName || "?").trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join("").toUpperCase();
-            ctx.fillText(initials || "?", node.offsetLeft + 24, node.offsetTop + 43);
+            ctx.fillText(initials || "?", node.offsetLeft + 24, nodeTop + 43);
             ctx.fillStyle = "#0f172a";
             ctx.font = "700 14px Arial";
             textLines(node.dataset.personName || "Contact", 24).forEach((line, index) => {
-                ctx.fillText(line, node.offsetLeft + 64, node.offsetTop + 28 + index * 16);
+                ctx.fillText(line, node.offsetLeft + 64, nodeTop + 28 + index * 16);
             });
             ctx.font = "12px Arial";
             ctx.fillStyle = "#334155";
             textLines(node.dataset.personTitle || "", 26).slice(0, 1).forEach((line) => {
-                ctx.fillText(line, node.offsetLeft + 64, node.offsetTop + 66);
+                ctx.fillText(line, node.offsetLeft + 64, nodeTop + 66);
             });
             ctx.fillStyle = "#64748b";
             textLines(node.dataset.personGroup || "", 26).slice(0, 1).forEach((line) => {
-                ctx.fillText(line, node.offsetLeft + 64, node.offsetTop + 84);
+                ctx.fillText(line, node.offsetLeft + 64, nodeTop + 84);
             });
         });
         const link = document.createElement("a");

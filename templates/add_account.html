@@ -7,7 +7,8 @@
     <div class="alert-error">{{ error }}</div>
 {% endif %}
 
-<form method="POST" enctype="multipart/form-data">
+<form method="POST" enctype="multipart/form-data" id="addAccountForm">
+    <input type="hidden" id="create_request_id" name="create_request_id" value="{{ create_request_id }}">
 
     <label>Account Name</label>
     <input type="text" name="account_name" value="{{ prefill.account_name or '' }}" required>
@@ -101,11 +102,17 @@
         {% endfor %}
     {% endif %}
 
-    <button type="submit">Save Account</button>
+    <button type="submit" id="saveAccountButton">Save Account</button>
+    <p id="accountSaveStatus" class="field-help" role="status" aria-live="polite" hidden>
+        Saving your account. Please wait&hellip;
+    </p>
 
 </form>
 
 <script>
+    const addAccountForm = document.getElementById("addAccountForm");
+    const saveAccountButton = document.getElementById("saveAccountButton");
+    const accountSaveStatus = document.getElementById("accountSaveStatus");
     const accountSalesPlayPicker = document.getElementById("account_sales_play_picker");
     const accountSalesPlayToggle = document.getElementById("account_sales_play_toggle");
     const accountSalesPlayPanel = document.getElementById("account_sales_play_panel");
@@ -136,6 +143,21 @@
         accountSalesPlayChecks.forEach((checkbox) => checkbox.addEventListener("change", updateAccountSalesPlayToggle));
         updateAccountSalesPlayToggle();
     }
+
+    addAccountForm?.addEventListener("submit", (event) => {
+        if (addAccountForm.dataset.submitting === "true") {
+            event.preventDefault();
+            return;
+        }
+        addAccountForm.dataset.submitting = "true";
+        if (saveAccountButton) {
+            saveAccountButton.disabled = true;
+            saveAccountButton.textContent = "Saving Account...";
+        }
+        if (accountSaveStatus) {
+            accountSaveStatus.hidden = false;
+        }
+    });
 </script>
 
 {% endblock %}

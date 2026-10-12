@@ -19,7 +19,7 @@ from datetime import date, datetime, time, timedelta
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from flask import Flask, render_template, request, redirect, url_for, Response, send_file, send_from_directory, session, abort, jsonify, make_response, has_request_context
+from flask import Flask, render_template, request, redirect, url_for, Response, send_file, send_from_directory, session, abort, jsonify, make_response, has_request_context, current_app
 from werkzeug.exceptions import HTTPException
 from werkzeug.utils import secure_filename
 try:
@@ -34,9 +34,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.6"
+APP_VERSION = "2.13.8"
 APP_RELEASE_DATE = "2026-10-12"
-APP_BUILD = "2026-10-12-v2.13.6-insights-structured-grid-r1"
+APP_BUILD = "2026-10-12-v2.13.8-account-save-delete-resilience-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -52,6 +52,26 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.8",
+        "release_date": "2026-10-12",
+        "title": "Account save and deletion resilience",
+        "fixed": [
+            "Prevented repeated Save Account submissions from creating duplicate accounts by combining an immediate save-state lock with database-backed request idempotency.",
+            "Added a visible saving message so users know that account creation is in progress.",
+            "Fixed single and bulk account deletion to remove sharing, Sales Play, PG Progress and org-chart dependencies before deleting the account.",
+            "Changed failed account deletions to return to Accounts with a clear error instead of falling back to Insights.",
+        ],
+    },
+    {
+        "version": "2.13.7",
+        "release_date": "2026-10-12",
+        "title": "Org chart export title clearance",
+        "fixed": [
+            "Reserved a dedicated title area in PNG and print/PDF org chart exports so chart content can never cover the title.",
+            "Added title wrapping for long org chart names while retaining the configured chart name as the exported filename basis.",
+        ],
+    },
     {
         "version": "2.13.6",
         "release_date": "2026-10-12",
@@ -4103,12 +4123,22 @@ def record_deleted_log(connection, entity_type, entity_id, primary_fields, reaso
 def delete_account_records(connection, account_ids):
     for account_id in account_ids:
         account = connection.execute("SELECT account_name FROM accounts WHERE id = ?", (account_id,)).fetchone()
+        if not account:
+            continue
         record_deleted_log(connection, "account", account_id, dict(account) if account else {"account_name": ""})
         audit_record_delete(connection, "account", account_id, account["account_name"] if account else "")
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'account' AND related_id = ?", (account_id,))
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'contact' AND related_id IN (SELECT id FROM contacts WHERE account_id = ?)", (account_id,))
         connection.execute("DELETE FROM timeline_entries WHERE related_type = 'outreach' AND related_id IN (SELECT id FROM outreach WHERE account_id = ?)", (account_id,))
         connection.execute("DELETE FROM outreach_attachments WHERE outreach_id IN (SELECT id FROM outreach WHERE account_id = ?)", (account_id,))
+        connection.execute("DELETE FROM account_shared_users WHERE account_id = ?", (account_id,))
+        connection.execute("DELETE FROM account_sales_plays WHERE account_id = ?", (account_id,))
+        connection.execute("DELETE FROM pg_action_contact_updates WHERE account_id = ?", (account_id,))
+        connection.execute("DELETE FROM pg_action_updates WHERE account_id = ?", (account_id,))
+        connection.execute("DELETE FROM account_org_chart_connectors WHERE account_id = ?", (account_id,))
+        connection.execute("DELETE FROM account_org_chart_labels WHERE account_id = ?", (account_id,))
+        connection.execute("DELETE FROM account_org_chart_people WHERE account_id = ?", (account_id,))
+        connection.execute("DELETE FROM account_org_charts WHERE account_id = ?", (account_id,))
         connection.execute("DELETE FROM account_partners WHERE account_id = ?", (account_id,))
         connection.execute("DELETE FROM partner_contact_accounts WHERE account_id = ?", (account_id,))
         connection.execute("DELETE FROM account_custom_values WHERE account_id = ?", (account_id,))
@@ -12422,6 +12452,14 @@ def pg_bible_order_unique_error(exc):
     return "pg_bible_order" in message and ("unique" in message or "duplicate" in message)
 
 
+def account_create_request_unique_error(exc):
+    message = str(exc or "").casefold()
+    return (
+        "create_request_id" in message
+        or "uq_accounts_create_request_id" in message
+    ) and ("unique" in message or "duplicate" in message)
+
+
 def account_pg_bible_order_conflict(connection, pg_bible_order, exclude_account_id=None):
     query = "SELECT id FROM accounts WHERE pg_bible_order = ?"
     params = [pg_bible_order]
@@ -12435,6 +12473,9 @@ def account_pg_bible_order_conflict(connection, pg_bible_order, exclude_account_
 def add_account():
     custom_fields = account_custom_field_payload(active_only=True)
     sales_play_options = []
+    create_request_id = (request.form.get("create_request_id") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", create_request_id):
+        create_request_id = secrets.token_urlsafe(24)
     if request.method == "POST":
         connection = get_db_connection()
         selected_sales_play_ids = request.form.getlist("sales_play_ids")
@@ -12456,8 +12497,8 @@ def add_account():
                 try:
                     cursor = connection.execute("""
                         INSERT INTO accounts
-                        (account_name, pg_bible_order, account_tier, industry, business_unit, country, city, website, customer_logo, pipeline_target, sales_play, owner_user_id, owner_name, owner_email, notes)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        (account_name, pg_bible_order, account_tier, industry, business_unit, country, city, website, customer_logo, pipeline_target, sales_play, owner_user_id, owner_name, owner_email, create_request_id, notes)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         request.form.get("account_name"),
                         pg_bible_order,
@@ -12473,6 +12514,7 @@ def add_account():
                         owner["owner_user_id"],
                         owner["owner_name"],
                         owner["owner_email"],
+                        create_request_id,
                         request.form.get("notes")
                     ))
                     break
@@ -12499,8 +12541,18 @@ def add_account():
             save_account_sales_play_links(connection, account_id, selected_sales_play_ids)
             save_account_custom_values(connection, account_id, custom_fields, request.form)
             commit_with_retry(connection)
-        except Exception:
+        except Exception as exc:
             connection.rollback()
+            if account_create_request_unique_error(exc):
+                existing_account = connection.execute(
+                    "SELECT id FROM accounts WHERE create_request_id = ?",
+                    (create_request_id,),
+                ).fetchone()
+                connection.close()
+                return redirect(url_for(
+                    "accounts",
+                    message="Account already saved; the repeated submission was ignored.",
+                ))
             traceback.print_exc()
             connection.close()
             return render_template(
@@ -12511,6 +12563,7 @@ def add_account():
                 selected_sales_play_ids=selected_sales_play_ids,
                 error="The account could not be saved. Check the required values and try again.",
                 prefill=dict(request.form),
+                create_request_id=create_request_id,
             )
         connection.close()
         return redirect(url_for("accounts"))
@@ -12526,6 +12579,7 @@ def add_account():
         sales_play_options=sales_play_options,
         selected_sales_play_ids=[],
         prefill={"owner_user_id": default_owner["owner_user_id"]},
+        create_request_id=create_request_id,
         error="",
     )
 
@@ -13088,23 +13142,35 @@ def edit_account(account_id):
 @admin_required
 def delete_account(account_id):
     connection = get_db_connection()
-    delete_account_records(connection, [account_id])
-    connection.commit()
+    try:
+        delete_account_records(connection, [account_id])
+        commit_with_retry(connection)
+    except Exception:
+        connection.rollback()
+        current_app.logger.exception("Account deletion failed for account_id=%s", account_id)
+        connection.close()
+        return redirect(url_for("accounts", error="The account could not be deleted. No records were changed."))
     connection.close()
-
-    return redirect(url_for("accounts"))
+    return redirect(url_for("accounts", message="Account deleted."))
 
 
 @app.route("/accounts/bulk-delete", methods=("POST",))
 @admin_required
 def bulk_delete_accounts():
-    account_ids = selected_record_ids()
-    if account_ids:
-        connection = get_db_connection()
+    account_ids = list(dict.fromkeys(selected_record_ids()))
+    if not account_ids:
+        return redirect(url_for("accounts", error="Select at least one account to delete."))
+    connection = get_db_connection()
+    try:
         delete_account_records(connection, account_ids)
-        connection.commit()
+        commit_with_retry(connection)
+    except Exception:
+        connection.rollback()
+        current_app.logger.exception("Bulk account deletion failed for account_ids=%s", account_ids)
         connection.close()
-    return redirect(url_for("accounts"))
+        return redirect(url_for("accounts", error="The selected accounts could not be deleted. No records were changed."))
+    connection.close()
+    return redirect(url_for("accounts", message=f"Deleted {len(account_ids)} account(s)."))
 
 
 @app.route("/accounts/<int:account_id>/timeline/add", methods=("POST",))

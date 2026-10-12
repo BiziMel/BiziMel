@@ -114,6 +114,7 @@ def initialise_database(force=False, connection=None):
             owner_user_id INTEGER,
             owner_name TEXT,
             owner_email TEXT,
+            create_request_id TEXT,
             notes TEXT,
             date_created TEXT DEFAULT CURRENT_TIMESTAMP,
             last_updated TEXT DEFAULT CURRENT_TIMESTAMP
@@ -589,6 +590,7 @@ def initialise_database(force=False, connection=None):
     add_column_if_missing(cursor, "accounts", "owner_user_id", "INTEGER")
     add_column_if_missing(cursor, "accounts", "owner_name", "TEXT")
     add_column_if_missing(cursor, "accounts", "owner_email", "TEXT")
+    add_column_if_missing(cursor, "accounts", "create_request_id", "TEXT")
     add_column_if_missing(cursor, "accounts", "notes", "TEXT")
     add_column_if_missing(cursor, "accounts", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "accounts", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
@@ -910,6 +912,7 @@ def initialise_database(force=False, connection=None):
 
     normalise_account_pg_bible_orders(cursor)
     cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_accounts_pg_bible_order ON accounts (pg_bible_order)")
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_accounts_create_request_id ON accounts (create_request_id)")
 
     index_definitions = [
         ("idx_accounts_pg_bible_order", "accounts", ["pg_bible_order", "account_name"]),

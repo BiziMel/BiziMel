@@ -7162,6 +7162,10 @@ body {
     resize: vertical;
 }
 
+.org-export-print-title {
+    display: none;
+}
+
 .org-canvas-expander {
     position: absolute;
     left: 0;
@@ -7438,8 +7442,25 @@ body {
         width: calc(100% - 24mm);
         height: auto;
         overflow: visible;
-        border: 1px solid #94a3b8;
         background: #ffffff !important;
+        box-shadow: none;
+    }
+
+    .org-print-target .org-export-print-title {
+        display: block;
+        margin: 0 0 8mm;
+        color: #0f172a;
+        font-size: 22pt;
+        line-height: 1.2;
+        overflow-wrap: anywhere;
+    }
+
+    .org-print-target .org-single-pane {
+        width: 100%;
+        height: auto;
+        min-height: 180mm;
+        overflow: visible;
+        border: 1px solid #94a3b8;
         box-shadow: none;
     }
 }

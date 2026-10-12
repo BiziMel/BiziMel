@@ -354,10 +354,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.13.6" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.13.8" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.13.6",
+            "health/version did not report Release 2.13.8",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -1140,6 +1140,9 @@ def main():
         org_chart_html = client.get(f"/accounts/{account_id}/org-chart?chart_id={chart_id}").get_data(as_text=True)
         assert_ok("Connectors" in org_chart_html and "org-connector-dot" in org_chart_html, "Manual org chart connector controls missing")
         assert_ok("click the first tile" in org_chart_html, "Org chart click-to-connect guidance missing")
+        assert_ok("org-export-print-title" in org_chart_html, "Org chart PDF export title missing")
+        assert_ok("chartOffsetY" in org_chart_html and "nodeTop" in org_chart_html, "Org chart PNG title clearance missing")
+        assert_ok("safeFilename(chartExportName" in org_chart_html, "Org chart export filename is not based on its title")
         layout_actions = [
             {
                 "type": "person",
@@ -1929,34 +1932,46 @@ def main():
             and "assigns the next available PG Bible number" in add_account_html,
             "Account creation still allows manual PG Bible Order entry",
         )
+        create_request_id = input_value(add_account_html, "create_request_id")
+        assert_ok(create_request_id, "Account creation idempotency token missing")
+        assert_ok(
+            "addAccountForm.dataset.submitting" in add_account_html
+            and "Saving your account. Please wait" in add_account_html,
+            "Account Save repeat-submit lock or progress message missing",
+        )
         connection = sqlite3.connect(db_path)
         expected_pg_bible_order = connection.execute(
             "SELECT COALESCE(MAX(pg_bible_order), 0) + 1 FROM accounts"
         ).fetchone()[0]
         connection.close()
-        response = client.post(
-            "/accounts/add",
-            data={
-                "csrf_token": csrf_from_session(client),
-                "account_name": "Smoke Auto Number Account",
-                "country": "United Kingdom",
-                "account_tier": "2",
-                "pipeline_target": "50000",
-            },
-            follow_redirects=False,
-        )
+        account_create_data = {
+            "csrf_token": csrf_from_session(client),
+            "create_request_id": create_request_id,
+            "account_name": "Smoke Auto Number Account",
+            "country": "United Kingdom",
+            "account_tier": "2",
+            "pipeline_target": "50000",
+        }
+        response = client.post("/accounts/add", data=account_create_data, follow_redirects=False)
         assert_ok(response.status_code in (302, 303), "Account auto-number creation failed")
+        repeated_response = client.post("/accounts/add", data=account_create_data, follow_redirects=False)
+        assert_ok(repeated_response.status_code in (302, 303), "Repeated Account submission was not handled safely")
         connection = sqlite3.connect(db_path)
         connection.row_factory = sqlite3.Row
         auto_number_account = connection.execute(
             "SELECT id, pg_bible_order FROM accounts WHERE account_name = ?",
             ("Smoke Auto Number Account",),
         ).fetchone()
+        auto_number_count = connection.execute(
+            "SELECT COUNT(*) FROM accounts WHERE account_name = ?",
+            ("Smoke Auto Number Account",),
+        ).fetchone()[0]
         connection.close()
         assert_ok(
             auto_number_account is not None
-            and auto_number_account["pg_bible_order"] == expected_pg_bible_order,
-            "Account creation did not assign the next PG Bible Order",
+            and auto_number_account["pg_bible_order"] == expected_pg_bible_order
+            and auto_number_count == 1,
+            "Account creation was not auto-numbered or allowed a repeated submission",
         )
         response = client.post(
             f"/accounts/{auto_number_account['id']}/edit",
@@ -1975,12 +1990,86 @@ def main():
             and "is already allocated to another account" in response.get_data(as_text=True),
             "Duplicate PG Bible Order edit did not return clear validation",
         )
+        connection = sqlite3.connect(db_path)
+        dependency_sales_play_id = connection.execute("SELECT id FROM sales_plays ORDER BY id LIMIT 1").fetchone()[0]
+        connection.execute(
+            "INSERT INTO account_shared_users (account_id, user_id, full_name, email) VALUES (?, ?, ?, ?)",
+            (auto_number_account["id"], 1, "Smoke Shared User", "shared@example.com"),
+        )
+        connection.execute(
+            "INSERT INTO account_sales_plays (account_id, sales_play_id) VALUES (?, ?)",
+            (auto_number_account["id"], dependency_sales_play_id),
+        )
+        connection.execute(
+            "INSERT INTO pg_action_updates (account_id, rag_status) VALUES (?, ?)",
+            (auto_number_account["id"], "Amber"),
+        )
+        dependency_contact_id = connection.execute(
+            "INSERT INTO contacts (account_id, name) VALUES (?, ?)",
+            (auto_number_account["id"], "Delete dependency contact"),
+        ).lastrowid
+        connection.execute(
+            "INSERT INTO pg_action_contact_updates (account_id, contact_id, rag_status) VALUES (?, ?, ?)",
+            (auto_number_account["id"], dependency_contact_id, "Amber"),
+        )
+        smoke_chart_id = connection.execute(
+            "INSERT INTO account_org_charts (account_id, chart_name) VALUES (?, ?)",
+            (auto_number_account["id"], "Delete dependency chart"),
+        ).lastrowid
+        first_node_id = connection.execute(
+            "INSERT INTO account_org_chart_people (chart_id, account_id, person_type) VALUES (?, ?, ?)",
+            (smoke_chart_id, auto_number_account["id"], "contact"),
+        ).lastrowid
+        second_node_id = connection.execute(
+            "INSERT INTO account_org_chart_people (chart_id, account_id, person_type) VALUES (?, ?, ?)",
+            (smoke_chart_id, auto_number_account["id"], "contact"),
+        ).lastrowid
+        connection.execute(
+            "INSERT INTO account_org_chart_labels (chart_id, account_id, label_text) VALUES (?, ?, ?)",
+            (smoke_chart_id, auto_number_account["id"], "Delete dependency label"),
+        )
+        connection.execute(
+            """
+            INSERT INTO account_org_chart_connectors
+                (chart_id, account_id, source_node_id, target_node_id, orientation)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (smoke_chart_id, auto_number_account["id"], first_node_id, second_node_id, "horizontal"),
+        )
+        connection.commit()
+        connection.close()
         response = client.post(
-            f"/accounts/{auto_number_account['id']}/delete",
-            data={"csrf_token": csrf_from_session(client)},
+            "/accounts/bulk-delete",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "selected_ids": [str(auto_number_account["id"])],
+            },
             follow_redirects=False,
         )
-        assert_ok(response.status_code in (302, 303), "Smoke auto-number account cleanup failed")
+        assert_ok(response.status_code in (302, 303), "Bulk account deletion failed")
+        connection = sqlite3.connect(db_path)
+        remaining_dependencies = connection.execute(
+            "SELECT COUNT(*) FROM accounts WHERE id = ?",
+            (auto_number_account["id"],),
+        ).fetchone()[0] + sum(
+            connection.execute(
+                f"SELECT COUNT(*) FROM {table_name} WHERE account_id = ?",
+                (auto_number_account["id"],),
+            ).fetchone()[0]
+            for table_name in (
+                "account_shared_users",
+                "account_sales_plays",
+                "pg_action_updates",
+                "pg_action_contact_updates",
+                "contacts",
+                "account_org_charts",
+                "account_org_chart_people",
+                "account_org_chart_labels",
+                "account_org_chart_connectors",
+            )
+        )
+        connection.close()
+        assert_ok(remaining_dependencies == 0, "Bulk account deletion left dependent account records behind")
 
         response = client.post(
             f"/tasks/{outreach_id}/update",
