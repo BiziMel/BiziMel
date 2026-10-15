@@ -253,10 +253,15 @@ class PgConnectionAdapter:
             translated = translated.rstrip().rstrip(";") + " RETURNING id"
             auto_returning = True
 
-        cursor = execute_with_retry(
-            lambda: self.connection.execute(translated, params),
-            rollback=self.connection.rollback,
-        )
+        # Passing an empty parameter sequence makes psycopg parse every percent
+        # sign as a client-side placeholder.  Unparameterised SQL can contain
+        # legitimate PostgreSQL patterns such as LIKE 'contact created:%', so
+        # call execute() without a second argument when there is nothing to bind.
+        if params:
+            operation = lambda: self.connection.execute(translated, params)
+        else:
+            operation = lambda: self.connection.execute(translated)
+        cursor = execute_with_retry(operation, rollback=self.connection.rollback)
         lastrowid = None
         if auto_returning and cursor.description:
             row = cursor.fetchone()

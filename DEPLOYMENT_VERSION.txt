@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
-Version: 2.13.10
-Release date: 2026-10-12
-Build: 2026-10-12-v2.13.10-contact-grouping-history-cleanup-r1
+Version: 2.13.11
+Release date: 2026-10-15
+Build: 2026-10-15-v2.13.11-postgres-migration-placeholder-r1
 Package purpose: Hosted enterprise deployment only.

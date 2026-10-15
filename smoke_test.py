@@ -288,6 +288,41 @@ def main():
             retry_result == "recovered" and retry_rollbacks["count"] == 1,
             "Postgres aborted transaction recovery did not rollback and retry",
         )
+
+        class RecordingPostgresCursor:
+            description = None
+
+            def fetchall(self):
+                return []
+
+        class RecordingPostgresConnection:
+            def __init__(self):
+                self.calls = []
+
+            def execute(self, *args):
+                self.calls.append(args)
+                return RecordingPostgresCursor()
+
+            def rollback(self):
+                pass
+
+        recording_connection = RecordingPostgresConnection()
+        postgres_adapter = db_compat.PgConnectionAdapter(recording_connection)
+        pipeflow_database.normalise_contact_history(postgres_adapter)
+        postgres_adapter.execute("SELECT ? AS bound_value", ("value",))
+        literal_percent_calls = [
+            call for call in recording_connection.calls
+            if "LIKE 'contact created:%'" in call[0]
+        ]
+        assert_ok(
+            len(literal_percent_calls) == 1 and len(literal_percent_calls[0]) == 1,
+            "Unparameterised PostgreSQL SQL incorrectly received an empty parameter binding",
+        )
+        assert_ok(
+            recording_connection.calls[-1][0] == "SELECT %s AS bound_value"
+            and recording_connection.calls[-1][1] == ("value",),
+            "Parameterized PostgreSQL SQL did not retain its bound values",
+        )
         assert_ok(
             len(pipeflow_app.diagnostic_error_code("OUTREACH-ADD")) <= 10,
             "diagnostic error code is too long",
@@ -355,10 +390,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.13.10" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.13.11" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.13.10",
+            "health/version did not report Release 2.13.11",
         )
 
         with client.session_transaction() as signed_in_session:

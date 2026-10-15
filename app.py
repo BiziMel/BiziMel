@@ -34,9 +34,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.10"
-APP_RELEASE_DATE = "2026-10-12"
-APP_BUILD = "2026-10-12-v2.13.10-contact-grouping-history-cleanup-r1"
+APP_VERSION = "2.13.11"
+APP_RELEASE_DATE = "2026-10-15"
+APP_BUILD = "2026-10-15-v2.13.11-postgres-migration-placeholder-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -52,6 +52,16 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.11",
+        "release_date": "2026-10-15",
+        "title": "Nightly scheduler PostgreSQL migration repair",
+        "fixed": [
+            "Fixed the PostgreSQL compatibility adapter so unparameterised migration SQL containing literal percent signs is not parsed as a psycopg placeholder expression.",
+            "Restored the nightly Outreach schedule review across hosted workspaces after the contact-history cleanup migration introduced LIKE patterns with literal percent wildcards.",
+            "Added regression coverage confirming literal percent SQL is executed without an empty parameter binding while genuine query parameters remain bound.",
+        ],
+    },
     {
         "version": "2.13.10",
         "release_date": "2026-10-12",
