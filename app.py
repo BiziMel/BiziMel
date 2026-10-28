@@ -34,9 +34,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.11"
-APP_RELEASE_DATE = "2026-10-15"
-APP_BUILD = "2026-10-15-v2.13.11-postgres-migration-placeholder-r1"
+APP_VERSION = "2.13.12"
+APP_RELEASE_DATE = "2026-10-28"
+APP_BUILD = "2026-10-28-v2.13.12-guided-priorities-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -52,6 +52,22 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.12",
+        "release_date": "2026-10-28",
+        "title": "Guided Priorities and measurable meeting outcomes",
+        "new": [
+            "Rebuilt the Insights Dashboard as Guided Priorities, with three account actions ordered by urgency and pipeline value.",
+            "Added New Business Meeting, Discovery Meeting and Other Meeting as completed Outreach outcomes.",
+            "Added completed New Business Meeting, Discovery Meeting and All Meetings metrics to the Pipeline Plan.",
+        ],
+        "enhanced": [
+            "Replaced the crowded account execution table and unused lower dashboard sections with pipeline coverage, weekly commitments and activity outcomes.",
+            "Added plain-language reasons and recommended next steps to every priority account card.",
+            "Defined All Meetings as completed New Business, Discovery and Other Meetings while excluding booked, cancelled and rescheduled work from completed results.",
+            "Updated Insights guidance and smoke-test coverage for the new dashboard and meeting-result rules.",
+        ],
+    },
     {
         "version": "2.13.11",
         "release_date": "2026-10-15",
@@ -1164,22 +1180,19 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
            'If a menu item is missing, check your role or company admin permissions before troubleshooting the page.',
            'Dates and times are displayed as dd-mm-yyyy hh:mm where date/time is shown.']},
  {'slug': 'dashboard',
-  'title': 'Execution Command Centre',
-  'summary': 'Use distinct dashboard views to assess portfolio risk, measure progress, understand account momentum and learn what converts.',
-  'navigation': ['Insights Dashboard opens the Overview of the Execution Command Centre.',
-                 'Use Overview, Progress, Account Momentum and Effectiveness to move between distinct analytical questions.',
-                 'Managers also see Team, containing weekly execution measures for the users they manage.',
+  'title': 'Guided Priorities Dashboard',
+  'summary': 'Use one focused dashboard to see the accounts that need action, pipeline position, weekly commitments and completed meeting results.',
+  'navigation': ['Insights Dashboard opens Guided Priorities.',
                  'Change Evidence Period to compare the last 7 days, last 30 days, current quarter, current year, all history or an inclusive Custom From and To range.'],
-  'steps': ['Start in Overview and review Meetings This Week, Due Today, Overdue, Accounts at Risk and Completed This Week. The same five measures appear above Outreach for context while working tasks.',
-            'Use Overview to compare account execution measures and their shaded Portfolio Totals row, then review portfolio coverage and expand risk groups for missing contacts, overdue work and missing future actions.',
-            'Open Progress to review the engagement-to-meeting conversion path, eight-week trend and response and meeting conversion rates.',
-            'Open Account Momentum to distinguish Advancing, Stalled, Relapsing and Inactive accounts, understand why, and check action continuity.',
-            'Open Effectiveness to compare activity types, Sales Plays, contact categories and campaign sequences; use the on-page legend to interpret each rate.',
-            'Open any metric, account or action link to work directly with the records behind the result.'],
+  'steps': ['Review Pipeline Target, Current Pipeline, Pipeline Gap and Needs Attention at the top of the page.',
+            'Use Act Next to work through the three highest-priority accounts, ordered by overdue work, missing next actions, relationship risk, momentum and pipeline value.',
+            'Review Pipeline Plan for pipeline coverage and completed New Business Meeting, Discovery Meeting and All Meetings results in the selected evidence period.',
+            'Use This Week’s Commitments to open overdue, due and completed Outreach records.',
+            'Use Activity Outcomes to compare completed New Business Meeting, Discovery Meeting and Other Meeting results.'],
   'tips': ['Deleted Outreach records are excluded from every Command Centre calculation.',
-           'Account guidance is consolidated so the same account is not repeated as several separate insights.',
-           'Strong effectiveness evidence requires at least 10 completed examples; four to nine is Emerging and fewer than four is Limited data.',
-           'The weekly meeting goal is eight and can be changed for the hosted service with PIPEFLOW_WEEKLY_MEETING_TARGET.']},
+           'Booked meetings are commitments, not completed results, so they do not increase Activity Outcomes.',
+           'All Meetings is the sum of completed New Business, Discovery and Other Meeting outcomes.',
+           'Legacy completed Meeting activities without a specific result are measured as Other Meetings.']},
  {'slug': 'sales-plays',
   'title': 'Sales Plays',
   'summary': 'Configure reusable Sales Plays, products, assets and the accounts where each Sales Play applies.',
@@ -2341,11 +2354,11 @@ PAGE_INSTRUCTIONS = {
     "home": {
         "title": "How to Use This Page",
         "items": [
-            "Start in Overview to compare account activity, outcomes, workload, relationship coverage and grouped portfolio risks on one page.",
-            "Use Progress to compare completed activity, positive responses and customer meetings over the last eight weeks.",
-            "Use Account Momentum to understand why each account is Advancing, Stalled, Relapsing or Inactive and whether a next action exists.",
-            "Use Effectiveness to compare activity types, Sales Plays, contact categories and campaigns; its legend defines every rate and confidence measure.",
-            "Choose a preset Evidence Period or Custom to filter all period-sensitive Insights measures with an inclusive From and To date.",
+            "Review the pipeline summary first, then work through Act Next in priority order.",
+            "Each priority explains why the account needs attention and recommends the next step using live account and Outreach data.",
+            "Pipeline Plan measures completed New Business Meetings, Discovery Meetings and All Meetings for the selected Evidence Period.",
+            "Activity Outcomes separates completed New Business, Discovery and Other Meetings; booked meetings do not count as completed results.",
+            "Choose a preset Evidence Period or Custom to apply an inclusive From and To date to meeting results and evidence.",
         ],
     },
     "outreach": {
@@ -5131,8 +5144,11 @@ POSITIVE_OUTCOMES = (
 
 PG_SUCCESS_OUTCOMES = (
     "Discovery Booked",
+    "Discovery Meeting",
     "NBM Booked",
     "NBM Meeting",
+    "New Business Meeting",
+    "Other Meeting",
     "Exec Meeting Booked",
     "Meeting Booked",
 )
@@ -5146,11 +5162,21 @@ SCHEDULED_MEETING_OUTCOMES = (
 
 PRIMARY_PG_SUCCESS_OUTCOMES = (
     "Discovery Booked",
+    "Discovery Meeting",
     "NBM Booked",
+    "New Business Meeting",
 )
 
 NBM_SUCCESS_OUTCOMES = (
     "NBM Booked",
+    "NBM Meeting",
+    "New Business Meeting",
+)
+
+MEETING_RESULT_LABELS = (
+    "New Business Meeting",
+    "Discovery Meeting",
+    "Other Meeting",
 )
 
 EXECUTIVE_CONTACT_CATEGORIES = (
@@ -5409,6 +5435,25 @@ def report_scheduled_task_params():
 
 def is_pg_success_outcome(outcome, activity_type=""):
     return (outcome or "").strip() in PG_SUCCESS_OUTCOMES or (activity_type or "").strip() == "Meeting"
+
+
+def completed_meeting_result(outcome, activity_type=""):
+    """Map a completed outreach record to one measurable meeting result.
+
+    Booked outcomes are future commitments and are deliberately excluded. The
+    legacy NBM Meeting value remains mapped so historical results are retained.
+    A closed legacy activity whose type is Meeting falls back to Other Meeting.
+    """
+    outcome = normalise_outreach_outcome(outcome)
+    if outcome in {"New Business Meeting", "NBM Meeting"}:
+        return "New Business Meeting"
+    if outcome == "Discovery Meeting":
+        return "Discovery Meeting"
+    if outcome == "Other Meeting":
+        return "Other Meeting"
+    if (activity_type or "").strip() == "Meeting" and outcome not in SCHEDULED_MEETING_OUTCOMES:
+        return "Other Meeting"
+    return ""
 
 
 def outcome_requires_scheduled_meeting(outcome):
@@ -7217,8 +7262,14 @@ def build_execution_command_centre(connection):
     for task in outreach:
         outreach_by_account.setdefault(task.get("account_id"), []).append(task)
 
+    pipeline_target = sum(money_value(account.get("pipeline_target")) for account in accounts)
+    current_pipeline = money_value(dashboard_setting(connection, "current_pipeline", "0"))
+    pipeline_gap = max(0, pipeline_target - current_pipeline)
+    pipeline_coverage_percent = min(100, round((current_pipeline / pipeline_target) * 100)) if pipeline_target else 0
+
     due_today = due_week = overdue_total = completed_week = meetings_week = meetings_month = 0
     completed_period = positive_period = reached_contacts = 0
+    meeting_result_counts = {label: 0 for label in MEETING_RESULT_LABELS}
     reached_contact_ids = set()
     for task in outreach:
         closed = is_closed_task_status(task.get("task_status"))
@@ -7244,6 +7295,9 @@ def build_execution_command_centre(connection):
                 reached_contact_ids.add(task["contact_id"])
             if task.get("outcome") in positive_outcomes or task.get("outcome") in meeting_outcomes:
                 positive_period += 1
+            meeting_result = completed_meeting_result(task.get("outcome"), task.get("activity_type"))
+            if meeting_result:
+                meeting_result_counts[meeting_result] += 1
         if task.get("outcome") in meeting_outcomes and meeting_at:
             if week_start <= meeting_at.date() <= week_end:
                 meetings_week += 1
@@ -7342,6 +7396,17 @@ def build_execution_command_centre(connection):
                 else:
                     overdue_tasks.append(task)
 
+        overdue_tasks.sort(key=lambda task: (
+            task.get("next_action_date") or "9999-12-31",
+            task.get("next_action_time") or "23:59",
+            task.get("id") or 0,
+        ))
+        future_tasks.sort(key=lambda task: (
+            task.get("next_action_date") or "9999-12-31",
+            task.get("next_action_time") or "23:59",
+            task.get("id") or 0,
+        ))
+
         engagement = calculate_automated_pg_rag_status(account_pg_rag_activities(connection, account["id"]), today=today)
         state = engagement["state"]
         state_tone = engagement["automatedRagStatus"]
@@ -7349,6 +7414,45 @@ def build_execution_command_centre(connection):
         rag_status = engagement["automatedRagStatus"]
 
         account_label = command_centre_account_label(account)
+        if overdue_tasks:
+            priority_task = overdue_tasks[0]
+            priority_label = "Overdue action"
+            priority_tone = "risk"
+            priority_score = 0
+            priority_why = f"{len(overdue_tasks)} open action{'s are' if len(overdue_tasks) != 1 else ' is'} overdue."
+            priority_action = priority_task.get("subject") or priority_task.get("activity_type") or "Complete the overdue customer action"
+            priority_due = format_display_datetime(priority_task.get("next_action_date"), priority_task.get("next_action_time"))
+        elif not future_tasks:
+            priority_label = "No next action"
+            priority_tone = "risk"
+            priority_score = 1
+            priority_why = "There is no future customer action scheduled for this account."
+            priority_action = "Create a clear next customer action"
+            priority_due = ""
+        elif not executive_contacts:
+            priority_task = future_tasks[0]
+            priority_label = "Relationship risk"
+            priority_tone = "attention"
+            priority_score = 2
+            priority_why = "The account has no active executive relationship mapped."
+            priority_action = "Identify an executive route before the next meeting"
+            priority_due = format_display_datetime(priority_task.get("next_action_date"), priority_task.get("next_action_time"))
+        elif state != "Advancing":
+            priority_task = future_tasks[0]
+            priority_label = "Momentum needed"
+            priority_tone = "attention"
+            priority_score = 3
+            priority_why = state_reason
+            priority_action = priority_task.get("subject") or priority_task.get("activity_type") or "Complete the next planned action"
+            priority_due = format_display_datetime(priority_task.get("next_action_date"), priority_task.get("next_action_time"))
+        else:
+            priority_task = future_tasks[0]
+            priority_label = "Milestone approaching"
+            priority_tone = "success"
+            priority_score = 4
+            priority_why = "The account is advancing and has a scheduled continuation."
+            priority_action = priority_task.get("subject") or priority_task.get("activity_type") or "Prepare the next planned action"
+            priority_due = format_display_datetime(priority_task.get("next_action_date"), priority_task.get("next_action_time"))
         row = {
             "account_id": account["id"], "account_label": account_label,
             "state": state, "state_tone": state_tone, "rag_status": rag_status,
@@ -7361,6 +7465,13 @@ def build_execution_command_centre(connection):
             "overdue": len(overdue_tasks),
             "last_progress": format_display_date(latest_progress.date().isoformat()) if latest_progress else "No progress recorded",
             "last_activity": format_display_date(latest_activity.date().isoformat()) if latest_activity else "No activity recorded",
+            "pipeline_target": money_value(account.get("pipeline_target")),
+            "priority_label": priority_label,
+            "priority_tone": priority_tone,
+            "priority_score": priority_score,
+            "priority_why": priority_why,
+            "priority_action": priority_action,
+            "priority_due": priority_due,
             "next_action_status": (
                 f"{len(overdue_tasks)} overdue action{'s' if len(overdue_tasks) != 1 else ''}"
                 if overdue_tasks else
@@ -7382,6 +7493,10 @@ def build_execution_command_centre(connection):
             risk_groups["Positive response without progression"].append(row)
     momentum_order = {"Relapsing": 0, "Stalled": 1, "Inactive": 2, "Advancing": 3}
     momentum_rows.sort(key=lambda row: (momentum_order.get(row["state"], 9), -row["overdue"], row["account_label"].casefold()))
+    priority_rows = sorted(
+        momentum_rows,
+        key=lambda row: (row["priority_score"], -row["pipeline_target"], row["account_label"].casefold()),
+    )[:3]
     accounts_at_risk = sum(1 for row in momentum_rows if row["state"] != "Advancing")
 
     trend_rows = []
@@ -7423,6 +7538,16 @@ def build_execution_command_centre(connection):
         ],
         "weekly_target": weekly_target,
         "weekly_goal_percent": min(100, round((meetings_week / weekly_target) * 100)),
+        "pipeline_target": pipeline_target,
+        "current_pipeline": current_pipeline,
+        "pipeline_gap": pipeline_gap,
+        "pipeline_coverage_percent": pipeline_coverage_percent,
+        "priority_rows": priority_rows,
+        "meeting_result_counts": meeting_result_counts,
+        "all_meeting_results": sum(meeting_result_counts.values()),
+        "due_week": due_week,
+        "overdue_total": overdue_total,
+        "completed_week": completed_week,
         "momentum_rows": momentum_rows,
         "momentum_counts": {state: sum(1 for row in momentum_rows if row["state"] == state) for state in ("Advancing", "Stalled", "Relapsing", "Inactive")},
         "effectiveness_rows": effectiveness_rows,
@@ -7491,6 +7616,10 @@ def home():
             risk_groups=[], coverage_metrics=[], trend_rows=[], trend_max=1, conversion_steps=[], team_rows=[],
             show_team_view=False, completed_period=0, positive_period=0, meetings_period=0,
             positive_rate=0, meeting_rate=0, weekly_target=8, weekly_goal_percent=0,
+            pipeline_target=0, current_pipeline=0, pipeline_gap=0, pipeline_coverage_percent=0,
+            priority_rows=[], meeting_result_counts={label: 0 for label in MEETING_RESULT_LABELS},
+            all_meeting_results=0, due_week=0, overdue_total=0, completed_week=0,
+            week_start="", week_end="",
             broadcast_messages=fallback_broadcasts,
             dashboard_error=diagnostic_user_message("Execution Insights could not be fully loaded.", code),
         )

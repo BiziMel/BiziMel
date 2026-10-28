@@ -1,10 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Execution Command Centre | PipeFlow{% endblock %}
+{% block title %}Guided Priorities | PipeFlow{% endblock %}
 {% block content %}
-<div class="page-header insights-command-header">
-    <div><h1>Execution Command Centre</h1><p>Prioritise customer action, measure progress and find the routes producing meetings.</p></div>
+<div class="page-header guided-priorities-header">
+    <div>
+        <h1>Your priorities</h1>
+        <p>A guided view of the work most likely to move pipeline.</p>
+    </div>
     <form method="GET" action="{{ url_for('home') }}" class="insights-period-control" data-period-filter>
-        <input type="hidden" name="view" value="{{ active_insights_view }}">
         <label for="insights-period">Evidence period</label>
         <select id="insights-period" name="period" data-period-select>
             <option value="7" {% if period_key == '7' %}selected{% endif %}>Last 7 days</option>
@@ -23,156 +25,94 @@
         </div>
     </form>
 </div>
+
 {% if period_error %}<div class="message error-message">{{ period_error }}</div>{% endif %}
 {% if dashboard_error %}<div class="message error-message">{{ dashboard_error }}</div>{% endif %}
 
-<nav class="insights-view-tabs" aria-label="Execution dashboard views">
-    {% set views = [('today', 'Overview'), ('progress', 'Progress'), ('accounts', 'Account Momentum'), ('effectiveness', 'Effectiveness')] %}
-    {% for view_key, view_label in views %}
-    <a href="{{ url_for('home', view=view_key, period=period_key, date_from=period_date_from, date_to=period_date_to) }}" class="insights-view-tab {% if active_insights_view == view_key %}active{% endif %}" {% if active_insights_view == view_key %}aria-current="page"{% endif %}>{{ view_label }}</a>
-    {% endfor %}
-    {% if show_team_view %}<a href="{{ url_for('home', view='team', period=period_key, date_from=period_date_from, date_to=period_date_to) }}" class="insights-view-tab {% if active_insights_view == 'team' %}active{% endif %}" {% if active_insights_view == 'team' %}aria-current="page"{% endif %}>Team</a>{% endif %}
-</nav>
-
-<section class="insights-metric-band" aria-label="Current execution measures">
-    {% for metric in summary_metrics %}
-    <a href="{{ metric.link }}" class="insights-metric insights-metric-{{ metric.tone }}"><span class="insights-metric-label">{{ metric.label }}</span><strong>{{ metric.value }}</strong><span>{{ metric.detail }}</span></a>
-    {% else %}<div class="empty-state"><p>Execution measures are temporarily unavailable.</p></div>{% endfor %}
+<section class="guided-pipeline-summary" aria-label="Pipeline summary">
+    <div><span>Pipeline target</span><strong>${{ "{:,.0f}".format(pipeline_target or 0) }}</strong><small>Current financial-year plan</small></div>
+    <div><span>Current pipeline</span><strong>${{ "{:,.0f}".format(current_pipeline or 0) }}</strong><small>{{ pipeline_coverage_percent or 0 }}% of target</small></div>
+    <div class="{% if pipeline_gap %}guided-summary-attention{% endif %}"><span>Pipeline gap</span><strong>${{ "{:,.0f}".format(pipeline_gap or 0) }}</strong><small>Target less current pipeline</small></div>
+    <div class="{% if overdue_total %}guided-summary-risk{% endif %}"><span>Needs attention</span><strong>{{ priority_rows|length }}</strong><small>{{ overdue_total or 0 }} overdue action{% if overdue_total != 1 %}s{% endif %}</small></div>
 </section>
 
-{% if active_insights_view == 'today' %}
-    <div class="insights-section-heading">
-    <div><h2>Execution Overview</h2><p>Compare activity, outcomes, workload and relationship coverage across the portfolio.</p></div>
-    <div class="weekly-goal-summary" aria-label="Weekly meeting goal"><span>Weekly meeting goal</span><strong>{{ summary_metrics[0].value if summary_metrics else 0 }} / {{ weekly_target }}</strong><div class="goal-progress-track"><span style="width: {{ weekly_goal_percent }}%"></span></div></div>
-</div>
-<section class="insights-table-section overview-execution-section">
-    <div class="section-header compact-section-header"><div><h3>Account Execution Measures</h3><p>Recorded execution facts for the selected evidence period. Scheduled work remains managed in Outreach Tasks.</p></div><span class="record-count">{{ momentum_rows|length }} accounts</span></div>
-    <div class="momentum-legend" aria-label="Momentum legend">
-        <strong>Momentum</strong>
-        <span><i class="rag-green"></i><b>Advancing</b> positive response or meeting in 30 days</span>
-        <span><i class="rag-amber"></i><b>Relapsing</b> earlier progress, none in 30 days</span>
-        <span><i class="rag-red"></i><b>Stalled</b> recent activity without progress</span>
-        <span><i class="rag-blue"></i><b>Inactive</b> no engagement in 30 days</span>
-    </div>
-    <div class="table-container command-table-container overview-glass-table-container overview-structured-grid" role="region" aria-label="Account execution measures" tabindex="0"><table class="report-table overview-metrics-table">
-        <thead><tr><th>Account / Business Org</th><th>RAG</th><th>Momentum</th><th aria-label="Total Activity This Week">This Week</th><th aria-label="Total Activity All Time">All Time</th><th aria-label="Positive Responses">Positive</th><th>Meetings</th><th>Overdue</th><th aria-label="Future Actions">Future</th><th aria-label="Active Contacts">Active</th><th aria-label="Inactive Contacts">Inactive</th><th>Last Activity</th></tr></thead>
-        <tbody>{% for account in momentum_rows %}<tr class="overview-account-row rag-row-{{ account.rag_status }}">
-            <td class="overview-account-cell"><a href="{{ url_for('view_account', account_id=account.account_id) }}"><strong>{{ account.account_label }}</strong></a></td>
-            <td class="insights-rag-cell"><span class="insights-rag-dot rag-{{ account.rag_status }}" role="img" aria-label="{{ account.rag_label }} RAG" title="{{ account.rag_label }}"></span></td>
-            <td><span class="momentum-state state-{{ account.state_tone }}"><i></i>{{ account.state }}</span></td>
-            <td class="metric-cell metric-cell-activity"><span class="overview-metric-chip {% if not account.activity_this_week %}is-zero{% endif %}">{{ account.activity_this_week }}</span></td>
-            <td class="metric-cell metric-cell-activity"><span class="overview-metric-chip {% if not account.activity_all_time %}is-zero{% endif %}">{{ account.activity_all_time }}</span></td>
-            <td class="metric-cell metric-cell-outcome"><span class="overview-metric-chip {% if not account.recent_positive %}is-zero{% endif %}">{{ account.recent_positive }}</span></td>
-            <td class="metric-cell metric-cell-outcome"><span class="overview-metric-chip {% if not account.recent_meetings %}is-zero{% endif %}">{{ account.recent_meetings }}</span></td>
-            <td class="metric-cell metric-cell-overdue {% if account.overdue %}risk-text{% endif %}"><span class="overview-metric-chip {% if not account.overdue %}is-zero{% endif %}">{{ account.overdue }}</span></td>
-            <td class="metric-cell metric-cell-future"><span class="overview-metric-chip {% if not account.future_actions %}is-zero{% endif %}">{{ account.future_actions }}</span></td>
-            <td class="metric-cell metric-cell-coverage"><span class="overview-metric-chip {% if not account.active_contacts %}is-zero{% endif %}">{{ account.active_contacts }}</span></td>
-            <td class="metric-cell metric-cell-coverage"><span class="overview-metric-chip {% if not account.inactive_contacts %}is-zero{% endif %}">{{ account.inactive_contacts }}</span></td>
-            <td class="metric-cell metric-cell-recency"><span class="overview-date-chip">{{ account.last_activity }}</span></td>
-        </tr>{% else %}<tr><td colspan="12">No account execution data is available.</td></tr>{% endfor %}</tbody>
-        <tfoot><tr>
-            <td>Portfolio Totals</td>
-            <td aria-label="Not applicable">-</td>
-            <td aria-label="Not applicable">-</td>
-            <td>{{ momentum_rows|sum(attribute='activity_this_week') }}</td>
-            <td>{{ momentum_rows|sum(attribute='activity_all_time') }}</td>
-            <td>{{ momentum_rows|sum(attribute='recent_positive') }}</td>
-            <td>{{ momentum_rows|sum(attribute='recent_meetings') }}</td>
-            <td>{{ momentum_rows|sum(attribute='overdue') }}</td>
-            <td>{{ momentum_rows|sum(attribute='future_actions') }}</td>
-            <td>{{ momentum_rows|sum(attribute='active_contacts') }}</td>
-            <td>{{ momentum_rows|sum(attribute='inactive_contacts') }}</td>
-            <td aria-label="Not applicable">-</td>
-        </tr></tfoot>
-    </table></div>
-</section>
-<div class="insights-section-heading insights-subsection-heading">
-    <div><h2>Coverage & Risk</h2><p>Find the structural gaps most likely to interrupt meeting and pipeline progress.</p></div>
-</div>
-<section class="coverage-summary-grid" aria-label="Portfolio coverage measures">
-    {% for metric in coverage_metrics %}<div class="coverage-summary-item"><span>{{ metric.label }}</span><strong>{{ metric.value }}</strong><small>{{ metric.detail }}</small></div>{% endfor %}
-</section>
-<section class="insights-panel overview-risk-panel">
-    <div class="section-header compact-section-header"><div><h3>Coverage Exceptions</h3><p>Open an exception group to identify the accounts that need structural attention.</p></div><span class="record-count">{{ risk_groups|length }} risk groups</span></div>
-    <div class="risk-section-list">
-        {% for group in risk_groups %}<details class="risk-accordion" {% if loop.first %}open{% endif %}><summary><span>{{ group.title }}</span><strong>{{ group.rows|length }}</strong></summary><div class="risk-account-list">
-            {% for account in group.rows %}<div><a href="{{ url_for('view_account', account_id=account.account_id) }}"><strong>{{ account.account_label }}</strong></a><span>{{ account.reason }}</span><a class="btn btn-secondary btn-small" href="{{ url_for('view_account', account_id=account.account_id) }}">View Account</a></div>{% endfor %}
-        </div></details>{% else %}<div class="empty-state"><h3>No coverage risks detected</h3><p>Current contact coverage and future-action checks have no exceptions.</p></div>{% endfor %}
-    </div>
-</section>
-
-{% elif active_insights_view == 'progress' %}
-<div class="insights-section-heading"><div><h2>Progress</h2><p>Follow execution from account engagement through to customer meetings.</p></div></div>
-<section class="conversion-funnel" aria-label="Execution conversion path">
-    {% for step in conversion_steps %}
-    <a href="{% if loop.index == 1 %}{{ url_for('accounts') }}{% elif loop.index == 2 %}{{ url_for('contacts') }}{% else %}{{ url_for('outreach', task_status='All') }}{% endif %}" class="conversion-step"><span>{{ step.label }}</span><strong>{{ step.value }}</strong></a>
-    {% if not loop.last %}<span class="conversion-arrow" aria-hidden="true">›</span>{% endif %}{% endfor %}
-</section>
-<div class="progress-summary-grid">
-    <section class="insights-panel">
-        <div class="section-header compact-section-header"><div><h3>Eight-Week Activity Trend</h3><p>Completed activity, positive response and meeting outcomes.</p></div></div>
-        <div class="trend-chart" role="img" aria-label="Eight week execution trend">
-            {% for point in trend_rows %}<div class="trend-column"><div class="trend-bars"><span class="trend-bar trend-completed" style="height: {{ (point.completed / trend_max * 100)|round|int }}%" title="{{ point.completed }} completed"></span><span class="trend-bar trend-positive" style="height: {{ (point.positive / trend_max * 100)|round|int }}%" title="{{ point.positive }} positive"></span><span class="trend-bar trend-meeting" style="height: {{ (point.meetings / trend_max * 100)|round|int }}%" title="{{ point.meetings }} meetings"></span></div><span>{{ point.label }}</span></div>{% endfor %}
+<div class="guided-priorities-layout">
+    <main class="guided-priority-column">
+        <div class="guided-section-heading">
+            <div><h2>Act next</h2><p>Recommended actions ordered by urgency and pipeline value.</p></div>
+            <span>{{ period_label|title }}</span>
         </div>
-        <div class="trend-legend"><span><i class="legend-completed"></i>Completed</span><span><i class="legend-positive"></i>Positive</span><span><i class="legend-meeting"></i>Meetings</span></div>
-    </section>
-    <section class="insights-panel conversion-rate-panel">
-        <div class="section-header compact-section-header"><div><h3>Conversion Quality</h3><p>Based on {{ completed_period }} completed activities in the selected period.</p></div></div>
-        <div class="rate-measure"><span>Positive response rate</span><strong>{{ positive_rate }}%</strong><div><i style="width: {{ positive_rate }}%"></i></div></div>
-        <div class="rate-measure"><span>Meeting conversion rate</span><strong>{{ meeting_rate }}%</strong><div><i style="width: {{ meeting_rate }}%"></i></div></div>
-        <dl class="rate-totals"><div><dt>Positive responses</dt><dd>{{ positive_period }}</dd></div><div><dt>Meetings booked</dt><dd>{{ meetings_period }}</dd></div></dl>
-    </section>
+
+        <div class="guided-priority-list">
+            {% for priority in priority_rows %}
+            <article class="guided-priority-card guided-priority-{{ priority.priority_tone }}">
+                <div class="guided-priority-card-head">
+                    <div>
+                        <span class="guided-priority-status">{{ priority.priority_label }}</span>
+                        <h3>{{ priority.account_label }}</h3>
+                        <p>${{ "{:,.0f}".format(priority.pipeline_target or 0) }} pipeline target</p>
+                    </div>
+                    <span class="guided-impact-tag">{% if priority.priority_score <= 1 %}High impact{% elif priority.priority_score <= 3 %}Needs focus{% else %}On track{% endif %}</span>
+                </div>
+                <div class="guided-priority-evidence">
+                    <div><span>Why this matters</span><p>{{ priority.priority_why }}</p></div>
+                    <div><span>Recommended next step</span><p><strong>{{ priority.priority_action }}</strong>{% if priority.priority_due %}<br><small>Due {{ priority.priority_due }}</small>{% endif %}</p></div>
+                </div>
+                <div class="guided-priority-actions">
+                    <span>Last activity: {{ priority.last_activity }}</span>
+                    <a href="{{ url_for('view_account', account_id=priority.account_id) }}" class="btn btn-secondary btn-small">Open account</a>
+                </div>
+            </article>
+            {% else %}
+            <section class="guided-empty-state">
+                <h3>No account priorities are available</h3>
+                <p>Add accounts, contacts and outreach activity to generate guided priorities.</p>
+                <a href="{{ url_for('add_account') }}" class="btn btn-primary">Add account</a>
+            </section>
+            {% endfor %}
+        </div>
+    </main>
+
+    <aside class="guided-insight-column">
+        <section class="guided-side-panel">
+            <div class="guided-side-panel-head"><h2>Pipeline plan</h2><span>{{ period_label|title }}</span></div>
+            <div class="guided-coverage-measure">
+                <div><span>Pipeline coverage</span><strong>${{ "{:,.0f}".format(current_pipeline or 0) }} / ${{ "{:,.0f}".format(pipeline_target or 0) }}</strong></div>
+                <div class="guided-progress-track" role="progressbar" aria-label="Pipeline coverage" aria-valuenow="{{ pipeline_coverage_percent or 0 }}" aria-valuemin="0" aria-valuemax="100"><span style="width: {{ pipeline_coverage_percent or 0 }}%"></span></div>
+            </div>
+            <table class="guided-plan-metrics no-sort">
+                <thead><tr><th>Meeting metric</th><th>Completed</th></tr></thead>
+                <tbody>
+                    <tr><td>New Business Meetings</td><td>{{ meeting_result_counts.get('New Business Meeting', 0) }}</td></tr>
+                    <tr><td>Discovery Meetings</td><td>{{ meeting_result_counts.get('Discovery Meeting', 0) }}</td></tr>
+                    <tr><td>All Meetings</td><td>{{ all_meeting_results or 0 }}</td></tr>
+                </tbody>
+            </table>
+            <p class="guided-panel-note">All Meetings includes completed New Business, Discovery and Other Meetings.</p>
+        </section>
+
+        <section class="guided-side-panel">
+            <div class="guided-side-panel-head"><h2>This week’s commitments</h2><span>{{ due_week or 0 }} due</span></div>
+            <div class="guided-commitment-list">
+                <a href="{{ url_for('outreach', task_status='All Open', overdue='1') }}"><strong class="guided-risk-text">{{ overdue_total or 0 }} overdue</strong><span>Open actions requiring recovery</span></a>
+                <a href="{{ url_for('outreach', task_status='All Open', due_start=week_start, due_end=week_end) }}"><strong>{{ due_week or 0 }} due this week</strong><span>Planned customer activity</span></a>
+                <a href="{{ url_for('outreach', task_status='All Closed', updated_start=week_start, updated_end=week_end) }}"><strong class="guided-success-text">{{ completed_week or 0 }} completed</strong><span>Closed execution activities</span></a>
+            </div>
+        </section>
+
+        <section class="guided-side-panel">
+            <div class="guided-side-panel-head"><h2>Activity outcomes</h2><span>Completed</span></div>
+            <div class="guided-outcome-grid">
+                <div><strong>{{ meeting_result_counts.get('New Business Meeting', 0) }}</strong><span>New Business Meetings</span></div>
+                <div><strong>{{ meeting_result_counts.get('Discovery Meeting', 0) }}</strong><span>Discovery Meetings</span></div>
+                <div><strong>{{ meeting_result_counts.get('Other Meeting', 0) }}</strong><span>Other Meetings</span></div>
+                <div><strong>{{ all_meeting_results or 0 }}</strong><span>All Meetings</span></div>
+            </div>
+            <p class="guided-panel-note">Only completed meeting outcomes count. Booked, cancelled and rescheduled activities remain visible in Outreach without inflating results.</p>
+        </section>
+    </aside>
 </div>
 
-{% elif active_insights_view == 'accounts' %}
-<div class="insights-section-heading"><div><h2>Account Momentum</h2><p>Understand each account's direction, the evidence behind it and whether engagement has a clear continuation.</p></div></div>
-<section class="momentum-summary" aria-label="Account momentum totals">
-    {% for state in ['Advancing', 'Stalled', 'Relapsing', 'Inactive'] %}<div class="momentum-summary-item momentum-{{ state|lower }}"><span>{{ state }}</span><strong>{{ momentum_counts.get(state, 0) }}</strong></div>{% endfor %}
-</section>
-<div class="table-container command-table-container"><table class="report-table momentum-table">
-    <thead><tr><th>Account / Business Org</th><th>RAG</th><th>Momentum</th><th>Why this state</th><th>Last progress</th><th>Action continuity</th></tr></thead>
-    <tbody>{% for account in momentum_rows %}<tr>
-        <td><a href="{{ url_for('view_account', account_id=account.account_id) }}"><strong>{{ account.account_label }}</strong></a></td><td class="insights-rag-cell"><span class="insights-rag-dot rag-{{ account.rag_status }}" role="img" aria-label="{{ account.rag_label }} RAG" title="{{ account.rag_label }}"></span></td><td><span class="momentum-state state-{{ account.state_tone }}"><i></i>{{ account.state }}</span></td><td>{{ account.reason }}</td><td>{{ account.last_progress }}</td><td class="{% if account.overdue or not account.future_actions %}risk-text{% endif %}">{{ account.next_action_status }}</td>
-    </tr>{% else %}<tr><td colspan="6">No accounts are available.</td></tr>{% endfor %}</tbody>
-</table></div>
-
-{% elif active_insights_view == 'effectiveness' %}
-<div class="insights-section-heading"><div><h2>Engagement Effectiveness</h2><p>Compare activity routes by response and meeting conversion, with sample-size confidence.</p></div></div>
-<section class="effectiveness-legend" aria-label="Effectiveness measure definitions">
-    <strong>How to read the rates</strong>
-    <dl>
-        <div><dt>Response Rate</dt><dd>Positive responses divided by completed activities.</dd></div>
-        <div><dt>Meeting Rate</dt><dd>Meeting outcomes divided by completed activities.</dd></div>
-        <div><dt>Rate</dt><dd>Positive or meeting outcomes divided by completed use of that route.</dd></div>
-        <div><dt>Evidence Confidence</dt><dd>Limited: 1-3 records; Emerging: 4-9; Strong: 10 or more.</dd></div>
-    </dl>
-</section>
-<div class="table-container command-table-container effectiveness-container"><table class="report-table effectiveness-table">
-    <thead><tr><th>Activity Type</th><th>Completed</th><th>Positive Responses</th><th>Meetings</th><th>Response Rate</th><th>Meeting Rate</th><th>Evidence Confidence</th></tr></thead>
-    <tbody>{% for row in effectiveness_rows %}<tr>
-        <td><strong>{{ row.activity_type }}</strong></td><td>{{ row.total }}</td><td>{{ row.positive }}</td><td>{{ row.meetings }}</td><td><div class="inline-rate"><span style="width: {{ row.response_rate }}%"></span></div><strong>{{ row.response_rate }}%</strong></td><td><div class="inline-rate meeting-rate"><span style="width: {{ row.meeting_rate }}%"></span></div><strong>{{ row.meeting_rate }}%</strong></td><td><span class="confidence-label confidence-{{ row.confidence|lower|replace(' ', '-') }}">{{ row.confidence }}</span></td>
-    </tr>{% else %}<tr><td colspan="7">Complete outreach and record outcomes to build effectiveness evidence.</td></tr>{% endfor %}</tbody>
-</table></div>
-{% if best_timing %}<div class="best-timing-band"><span>Strongest response timing</span><strong>{{ best_timing.label }}</strong><span>{{ best_timing.successes }} positive or meeting outcome(s)</span></div>{% endif %}
-<div class="effectiveness-breakdown-grid">
-    {% for title, rows in [('Sales Plays', sales_play_effectiveness), ('Contact Categories', contact_category_effectiveness), ('Campaign Sequences', campaign_effectiveness)] %}
-    <section class="insights-panel effectiveness-breakdown-panel">
-        <div class="section-header compact-section-header"><div><h3>{{ title }}</h3><p>Completed activity and forward outcomes.</p></div></div>
-        <table><thead><tr><th>Name</th><th>Used</th><th>Positive</th><th>Meetings</th><th>Rate</th></tr></thead><tbody>
-            {% for item in rows %}<tr><td>{{ item.label }}</td><td>{{ item.total }}</td><td>{{ item.positive }}</td><td>{{ item.meetings }}</td><td><strong>{{ item.success_rate }}%</strong></td></tr>
-            {% else %}<tr><td colspan="5">Not enough completed data.</td></tr>{% endfor %}
-        </tbody></table>
-    </section>
-    {% endfor %}
-</div>
-
-{% elif active_insights_view == 'team' and show_team_view %}
-<div class="insights-section-heading"><div><h2>Team Execution</h2><p>Weekly execution and meeting progress for the teams you manage.</p></div></div>
-<div class="table-container command-table-container"><table class="report-table team-insights-table">
-    <thead><tr><th>User</th><th>Team</th><th>Due This Week</th><th>Completed</th><th>Completion Rate</th><th>Overdue</th><th>Meetings Booked</th><th>PG Progress</th></tr></thead>
-    <tbody>{% for row in team_rows %}<tr><td><strong>{{ row.name }}</strong></td><td>{{ row.team }}</td><td>{{ row.due }}</td><td>{{ row.completed }}</td><td>{{ row.completion_rate }}%</td><td class="{% if row.overdue %}risk-text{% endif %}">{{ row.overdue }}</td><td>{{ row.meetings }}</td><td><a class="btn btn-secondary btn-small" href="{{ url_for('pg_progress', user_id=row.user_id) }}">Open</a></td></tr>{% else %}<tr><td colspan="8">No managed team members are available.</td></tr>{% endfor %}</tbody>
-</table></div>
-{% endif %}
 <script>
 document.addEventListener("DOMContentLoaded", () => {
     const form = document.querySelector("[data-period-filter]");

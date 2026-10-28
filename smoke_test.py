@@ -386,14 +386,14 @@ def main():
             },
             follow_redirects=True,
         )
-        assert_ok(response.status_code == 200 and "Execution Command Centre" in response.get_data(as_text=True), "bootstrap admin login failed")
+        assert_ok(response.status_code == 200 and "Your priorities" in response.get_data(as_text=True), "bootstrap admin login failed")
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.13.11" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.13.12" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.13.11",
+            "health/version did not report Release 2.13.12",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -448,7 +448,7 @@ def main():
             },
             follow_redirects=True,
         )
-        assert_ok(response.status_code == 200 and "Execution Command Centre" in response.get_data(as_text=True), "admin could not sign back in")
+        assert_ok(response.status_code == 200 and "Your priorities" in response.get_data(as_text=True), "admin could not sign back in")
         assert_ok(client.get("/release-notes").status_code == 200 and client.get("/user-guide").status_code == 200, "authenticated release notes or user guide failed")
 
         # If the primary dashboard build and its optional broadcast lookup both
@@ -600,85 +600,49 @@ def main():
             html = response.get_data(as_text=True)
             assert_ok(response.status_code == 200 and marker in html, f"{path} failed")
 
-        insight_views = {
-            "/?view=today&period=30": ("Execution Command Centre", "Execution Overview"),
-            "/?view=progress&period=30": ("Progress", "Eight-Week Activity Trend"),
-            "/?view=accounts&period=30": ("Account Momentum", "Smoke Test Account"),
-            "/?view=effectiveness&period=30": ("Engagement Effectiveness", "How to read the rates"),
-        }
-        for path, markers in insight_views.items():
-            response = client.get(path)
-            html = response.get_data(as_text=True)
-            assert_ok(
-                response.status_code == 200
-                and all(marker in html for marker in markers)
-                and "Execution Insights could not be fully loaded" not in html,
-                f"Insights view {path} did not render its command-centre content",
-            )
-        overview_html = client.get("/?view=today&period=30").get_data(as_text=True)
+        response = client.get("/?period=30")
+        overview_html = response.get_data(as_text=True)
         assert_ok(
-            "Weekly meeting goal" in overview_html
-            and " / 8" in overview_html
-            and "Do Next" not in overview_html
-            and "Recommended Action" not in overview_html
-            and "Create Outreach" not in overview_html,
-            "Insights Overview introduced a separate action queue or did not use the weekly goal of eight",
+            response.status_code == 200
+            and all(marker in overview_html for marker in (
+                "Your priorities", "Act next", "Pipeline plan",
+                "This week’s commitments", "Activity outcomes",
+                "New Business Meetings", "Discovery Meetings", "Other Meetings", "All Meetings",
+            ))
+            and "Execution Insights could not be fully loaded" not in overview_html,
+            "Guided Priorities did not render its decision-focused content",
+        )
+        assert_ok(
+            "Account Execution Measures" not in overview_html
+            and "Coverage &amp; Risk" not in overview_html
+            and "Portfolio Totals" not in overview_html,
+            "Guided Priorities retained the removed crowded Insights tables",
         )
         period_pages = {
-            key: client.get(f"/?view=accounts&period={key}").get_data(as_text=True)
+            key: client.get(f"/?period={key}").get_data(as_text=True)
             for key in ("7", "30", "quarter", "year", "all")
         }
         custom_period_html = client.get(
-            "/?view=accounts&period=custom&date_from=2026-05-01&date_to=2026-05-31"
+            "/?period=custom&date_from=2026-05-01&date_to=2026-05-31"
         ).get_data(as_text=True)
         assert_ok(
             all(f'value="{key}" selected' in html for key, html in period_pages.items()),
             "Evidence Period did not retain every supported selection",
         )
         assert_ok(
-            "Relapsing" in period_pages["7"] and "Advancing" in period_pages["all"],
-            "Account Momentum did not recalculate when the Evidence Period changed",
-        )
-        assert_ok(
             'value="custom" selected' in custom_period_html
             and 'value="2026-05-01"' in custom_period_html
             and 'value="2026-05-31"' in custom_period_html
-            and "Advancing" in custom_period_html,
+            and "Activity outcomes" in custom_period_html,
             "Insights Custom evidence period did not retain or apply its inclusive date range",
         )
         assert_ok(
-            "Coverage Exceptions" in overview_html
-            and "View Account" in overview_html
-            and "Account Execution Measures" in overview_html
-            and "Inactive Contacts" in overview_html
-            and "Coverage & Risk" in overview_html,
-            "Overview did not merge account execution measures with portfolio coverage and risk",
-        )
-        assert_ok(
-            "Portfolio Totals" in overview_html and "<tfoot>" in overview_html,
-            "Insights Account Execution Measures did not render its totals footer",
-        )
-        assert_ok(
-            "overview-glass-table-container" in overview_html
-            and "overview-structured-grid" in overview_html
-            and "overview-metric-chip" in overview_html
-            and "rag-row-" in overview_html,
-            "Insights Account Execution Measures did not render its grouped glass table treatment",
-        )
-        momentum_html = period_pages["30"]
-        assert_ok(
-            "Why this state" in momentum_html
-            and "Action continuity" in momentum_html
-            and "Active Contacts" not in momentum_html
-            and "insights-rag-dot" in momentum_html,
-            "Account Momentum did not retain RAG while removing duplicated coverage measures",
-        )
-        effectiveness_html = client.get("/?view=effectiveness&period=30").get_data(as_text=True)
-        assert_ok(
-            "Positive responses divided by completed activities" in effectiveness_html
-            and "Meeting outcomes divided by completed activities" in effectiveness_html
-            and "Limited: 1-3 records" in effectiveness_html,
-            "Effectiveness rate legend is incomplete",
+            pipeflow_app.completed_meeting_result("New Business Meeting", "Call") == "New Business Meeting"
+            and pipeflow_app.completed_meeting_result("NBM Meeting", "Call") == "New Business Meeting"
+            and pipeflow_app.completed_meeting_result("Discovery Meeting", "Call") == "Discovery Meeting"
+            and pipeflow_app.completed_meeting_result("Other Meeting", "Call") == "Other Meeting"
+            and pipeflow_app.completed_meeting_result("Meeting Booked", "Call") == "",
+            "Completed meeting outcomes were not classified without counting booked meetings as results",
         )
 
         pg_default_html = client.get("/pg-progress").get_data(as_text=True)
@@ -1381,10 +1345,10 @@ def main():
         assert_ok("Return to Top" in pg_progress_html, "PG Progress return-to-top control missing")
         assert_ok(f"pg-rag-{expected_account_rag}" in pg_progress_html, "PG Progress did not render the shared account engagement colour")
         insights_html = client.get("/").get_data(as_text=True)
-        assert_ok("Total Activity This Week" in insights_html, "Insights weekly activity measure missing")
-        assert_ok("Total Activity All Time" in insights_html, "Insights all-time activity measure missing")
-        assert_ok("momentum-legend" in insights_html and "Inactive" in insights_html, "Insights Momentum legend missing")
-        assert_ok(f"rag-{expected_account_rag}" in insights_html, "Insights did not render the shared account engagement colour")
+        assert_ok("Pipeline target" in insights_html and "Current pipeline" in insights_html, "Guided Priorities pipeline measures missing")
+        assert_ok("Act next" in insights_html and "Recommended next step" in insights_html, "Guided Priorities action guidance missing")
+        assert_ok("Smoke Test Account" in insights_html, "Guided Priorities did not include the smoke account")
+        assert_ok("Activity outcomes" in insights_html and "Other Meetings" in insights_html, "Guided Priorities meeting outcomes missing")
         response = client.post(
             "/pg-progress",
             data={
@@ -2450,7 +2414,7 @@ def main():
             },
             follow_redirects=True,
         )
-        assert_ok(response.status_code == 200 and "Execution Command Centre" in response.get_data(as_text=True), "approved domain user could not sign in")
+        assert_ok(response.status_code == 200 and "Your priorities" in response.get_data(as_text=True), "approved domain user could not sign in")
         response = client.post(
             f"/admin/tenants/{smoke_tenant['id']}/update",
             data={
@@ -2755,7 +2719,7 @@ def main():
             },
             follow_redirects=True,
         )
-        assert_ok(response.status_code == 200 and "Execution Command Centre" in response.get_data(as_text=True), "approved profile could not sign in")
+        assert_ok(response.status_code == 200 and "Your priorities" in response.get_data(as_text=True), "approved profile could not sign in")
 
         response = client.post(
             "/admin/users/create",
@@ -2820,7 +2784,7 @@ def main():
             },
             follow_redirects=True,
         )
-        assert_ok(response.status_code == 200 and "Execution Command Centre" in response.get_data(as_text=True), "first-login password replacement did not unlock PipeFlow")
+        assert_ok(response.status_code == 200 and "Your priorities" in response.get_data(as_text=True), "first-login password replacement did not unlock PipeFlow")
         temporary_auth_connection = pipeflow_app.get_auth_connection()
         first_login_flag = temporary_auth_connection.execute(
             "SELECT must_change_password FROM users WHERE email = ?",
