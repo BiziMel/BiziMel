@@ -390,10 +390,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.13.16" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.13.17" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.13.16",
+            "health/version did not report Release 2.13.17",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -2381,6 +2381,35 @@ def main():
         for outcome in ("NBM Booked", "Discovery Booked", "Exec Meeting Booked"):
             assert_ok(outcome in add_html, f"{outcome} outcome missing from Outreach form")
         assert_ok("Close and Create New" in add_html, "Add Outreach close-and-new button missing")
+        assert_ok(
+            'id="sales_play_required_panel"' in add_html
+            and 'class="required-field-badge"' in add_html
+            and "A Sales Play is required before this Outreach can be saved." in add_html,
+            "Add Outreach did not present Sales Play as a prominent required step",
+        )
+        sales_play_select = re.search(r'<select[^>]+id="sales_play"[^>]*>', add_html)
+        assert_ok(
+            sales_play_select and "required" in sales_play_select.group(0) and 'aria-required="true"' in sales_play_select.group(0),
+            "Add Outreach Sales Play control is not marked as mandatory",
+        )
+        missing_sales_play_response = client.post(
+            "/outreach/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "account_id": str(account_id),
+                "fy": "27",
+                "quarter": "Q1",
+                "sales_play": "",
+            },
+            follow_redirects=True,
+        )
+        missing_sales_play_html = missing_sales_play_response.get_data(as_text=True)
+        assert_ok(
+            missing_sales_play_response.status_code == 200
+            and "Sales Play is mandatory" in missing_sales_play_html
+            and "outreach-sales-play-required is-missing" in missing_sales_play_html,
+            "Add Outreach did not keep the user on the form with clear missing Sales Play guidance",
+        )
         assert_ok(
             "Auto Schedule" in add_html and "outreach-auto-schedule-panel" in add_html,
             "Add Outreach auto-schedule button missing",

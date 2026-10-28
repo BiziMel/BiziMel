@@ -35,9 +35,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.16"
+APP_VERSION = "2.13.17"
 APP_RELEASE_DATE = "2026-10-28"
-APP_BUILD = "2026-10-28-v2.13.16-not-targeted-contacts-r1"
+APP_BUILD = "2026-10-28-v2.13.17-required-sales-play-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -54,6 +54,18 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.17",
+        "release_date": "2026-10-28",
+        "title": "Mandatory Sales Play visibility for Outreach",
+        "new": [
+            "Made Sales Play a prominent full-width required step immediately after Account when creating Outreach.",
+        ],
+        "enhanced": [
+            "Added clear required-state guidance and focused validation when an Outreach is submitted without a Sales Play.",
+            "Retained account-based Sales Play filtering so users only choose from relevant options.",
+        ],
+    },
     {
         "version": "2.13.16",
         "release_date": "2026-10-28",
@@ -9470,6 +9482,8 @@ def validate_new_outreach(connection, form, requested_status, sales_play_value, 
         return "Select a valid account before saving this Outreach task."
     if not fy_quarter_are_valid(form.get("fy"), form.get("quarter")):
         return fy_quarter_required_message()
+    if not str(sales_play_value or "").strip():
+        return "Sales Play is mandatory. Select a Sales Play before saving this Outreach task."
     if not sales_play_allowed_for_account(connection, form.get("account_id"), sales_play_value):
         return "Select a Sales Play used for or associated to the selected account."
     if not outreach_recipients_match_account(connection, form.get("account_id"), recipients):
