@@ -46,8 +46,9 @@
     <input type="file" name="customer_logo" accept="image/*">
     <p class="field-help">Upload an image logo. PipeFlow will resize it to fit account views.</p>
 
-    <label>Pipeline Target USD $ ACV</label>
+    <label>Initial PG Growth Target USD $ ACV</label>
     <input type="number" id="pipeline_target" name="pipeline_target" step="0.01" min="0" value="{{ prefill.pipeline_target or '' }}" placeholder="0.00">
+    <p class="field-help">The first growth target for this account. A new target will be required whenever an opportunity is moved to Salesforce.</p>
 
     <label for="account_sales_play_toggle">Sales Play(s)</label>
     <div class="checkbox-select" id="account_sales_play_picker">

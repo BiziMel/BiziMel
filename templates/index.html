@@ -31,7 +31,7 @@
 {% if dashboard_error %}<div class="message error-message">{{ dashboard_error }}</div>{% endif %}
 
 <section class="guided-pipeline-summary" aria-label="Pipeline summary">
-    <div><span>Pipeline target</span><strong>${{ "{:,.0f}".format(pipeline_target or 0) }}</strong><small>Current financial-year plan</small></div>
+    <div><span>Active PG target</span><strong>${{ "{:,.0f}".format(pipeline_target or 0) }}</strong><small>Current account growth targets</small></div>
     <form method="POST" action="{{ url_for('update_current_pipeline') }}" class="guided-current-pipeline-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="period" value="{{ period_key }}">

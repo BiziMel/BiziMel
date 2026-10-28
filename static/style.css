@@ -8144,6 +8144,93 @@ body {
     align-items: start;
 }
 
+/* Account PG lifecycle and Salesforce handoff */
+.account-pg-lifecycle-card {
+    border-left: 4px solid #2763c4;
+}
+
+.account-pg-current-state {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+    margin: 14px 0;
+}
+
+.account-pg-current-state > div {
+    padding: 12px;
+    border: 1px solid #dce4ef;
+    border-radius: 9px;
+    background: #f8fbff;
+}
+
+.account-pg-current-state span,
+.account-pg-current-state strong {
+    display: block;
+}
+
+.account-pg-current-state span {
+    margin-bottom: 5px;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.account-pg-current-state strong {
+    color: #172033;
+    overflow-wrap: anywhere;
+}
+
+.account-pg-active-state {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.account-pg-action-form {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+    gap: 12px;
+    align-items: end;
+    padding: 14px;
+    border-radius: 10px;
+    background: #f2f7ff;
+}
+
+.account-pg-action-form label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 750;
+}
+
+.account-pg-action-form input {
+    width: 100%;
+}
+
+.account-pg-submit-cell {
+    align-self: end;
+}
+
+.account-pg-history {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid #dce4ef;
+}
+
+@media (max-width: 1050px) {
+    .account-pg-current-state,
+    .account-pg-active-state,
+    .account-pg-action-form {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 680px) {
+    .account-pg-current-state,
+    .account-pg-active-state,
+    .account-pg-action-form {
+        grid-template-columns: 1fr;
+    }
+}
+
 .guided-priority-column,
 .guided-insight-column,
 .guided-priority-list {

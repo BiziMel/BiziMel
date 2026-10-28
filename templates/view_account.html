@@ -44,6 +44,9 @@
     </div>
 </div>
 
+{% if message %}<div class="message success-message">{{ message }}</div>{% endif %}
+{% if error %}<div class="message error-message">{{ error }}</div>{% endif %}
+
 <div class="dashboard-grid">
 
     <div class="metric-card">
@@ -74,6 +77,103 @@
     </div>
 
 </div>
+
+<section class="form-card account-pg-lifecycle-card">
+    <div class="section-header">
+        <div>
+            <p class="eyebrow">Pipeline generation lifecycle</p>
+            <h2>Account PG and Salesforce opportunity</h2>
+            <p>Track when growth becomes an opportunity, then close the PG when that opportunity moves into Salesforce.</p>
+        </div>
+        <span class="status-pill {% if active_pg_opportunity %}status-amber{% else %}status-green{% endif %}">
+            {% if active_pg_opportunity %}Opportunity raised{% else %}PG {{ next_pg_sequence }} active{% endif %}
+        </span>
+    </div>
+
+    {% if active_pg_opportunity %}
+        <div class="account-pg-current-state">
+            <div><span>PG</span><strong>{{ active_pg_opportunity.pg_sequence }}</strong></div>
+            <div><span>PG growth target</span><strong>${{ "{:,.2f}".format(active_pg_opportunity.pg_target or 0) }}</strong></div>
+            <div><span>Opportunity</span><strong>{{ active_pg_opportunity.opportunity_name }}</strong></div>
+            <div><span>Opportunity value</span><strong>${{ "{:,.2f}".format(active_pg_opportunity.opportunity_value or 0) }}</strong></div>
+            <div><span>Raised</span><strong>{{ active_pg_opportunity.raised_date|display_date }}</strong></div>
+        </div>
+
+        <form method="POST" action="{{ url_for('move_account_pg_to_salesforce', account_id=account.id) }}" class="account-pg-action-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div>
+                <label for="sfdc_reference">Salesforce opportunity reference</label>
+                <input type="text" id="sfdc_reference" name="sfdc_reference" placeholder="Example: 006XXXXXXXXXXXX" required>
+            </div>
+            <div>
+                <label for="moved_date">Date moved to Salesforce</label>
+                <input type="date" id="moved_date" name="moved_date" value="{{ today }}" min="{{ active_pg_opportunity.raised_date }}" required>
+            </div>
+            <div>
+                <label for="next_pg_target">Next PG growth target $</label>
+                <input type="number" id="next_pg_target" name="next_pg_target" step="0.01" min="0.01" placeholder="Required for the next PG" required>
+            </div>
+            <div class="account-pg-submit-cell">
+                <button type="submit" class="btn btn-primary" onclick="return confirm('Move this opportunity to Salesforce, close the current PG and start the next PG with the entered growth target?');">Move to Salesforce and start next PG</button>
+            </div>
+        </form>
+        <p class="field-help">The current PG is only closed when the Salesforce reference and next growth target are saved.</p>
+    {% else %}
+        <div class="account-pg-current-state account-pg-active-state">
+            <div><span>Active PG</span><strong>{{ next_pg_sequence }}</strong></div>
+            <div><span>Growth target</span><strong>${{ "{:,.2f}".format(account.pipeline_target or 0) }}</strong></div>
+            <div class="account-pg-state-explanation"><span>Next milestone</span><strong>Raise an opportunity</strong></div>
+        </div>
+
+        <form method="POST" action="{{ url_for('raise_account_pg_opportunity', account_id=account.id) }}" class="account-pg-action-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div>
+                <label for="opportunity_name">Opportunity name</label>
+                <input type="text" id="opportunity_name" name="opportunity_name" required>
+            </div>
+            <div>
+                <label for="opportunity_value">Opportunity value $</label>
+                <input type="number" id="opportunity_value" name="opportunity_value" step="0.01" min="0.01" value="{{ '%.2f'|format(account.pipeline_target or 0) }}" required>
+            </div>
+            <div>
+                <label for="raised_date">Date opportunity raised</label>
+                <input type="date" id="raised_date" name="raised_date" value="{{ today }}" required>
+            </div>
+            <div class="account-pg-submit-cell">
+                <button type="submit" class="btn btn-primary">Mark opportunity as raised</button>
+            </div>
+        </form>
+    {% endif %}
+
+    <div class="account-pg-history">
+        <h3>Completed PG history</h3>
+        {% if completed_pg_cycles %}
+            <div class="table-container">
+                <table class="report-table no-sort">
+                    <thead>
+                        <tr><th>PG</th><th>Completed target</th><th>Opportunity</th><th>Value</th><th>Raised</th><th>Moved to Salesforce</th><th>Salesforce reference</th><th>Next PG target</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for cycle in completed_pg_cycles %}
+                            <tr>
+                                <td>{{ cycle.pg_sequence }}</td>
+                                <td>${{ "{:,.2f}".format(cycle.pg_target or 0) }}</td>
+                                <td>{{ cycle.opportunity_name }}</td>
+                                <td>${{ "{:,.2f}".format(cycle.opportunity_value or 0) }}</td>
+                                <td>{{ cycle.raised_date|display_date }}</td>
+                                <td>{{ cycle.moved_date|display_date }}</td>
+                                <td><strong>{{ cycle.sfdc_reference }}</strong></td>
+                                <td>${{ "{:,.2f}".format(cycle.next_pg_target or 0) }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="muted-text">No PG has been moved to Salesforce yet.</p>
+        {% endif %}
+    </div>
+</section>
 
 <div class="form-card org-chart-entry-card">
     <div class="section-header">
@@ -119,7 +219,7 @@
     </p>
 
     <p>
-        <strong>Pipeline Target USD $ ACV:</strong>
+        <strong>Current PG Growth Target USD $ ACV:</strong>
         {% if account["pipeline_target"] %}
             ${{ "{:,.2f}".format(account["pipeline_target"]) }}
         {% else %}

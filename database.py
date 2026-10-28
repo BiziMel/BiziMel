@@ -214,6 +214,26 @@ def initialise_database(force=False, connection=None):
     """)
 
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS account_pg_cycles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            pg_sequence INTEGER NOT NULL,
+            pg_target REAL NOT NULL,
+            status TEXT NOT NULL DEFAULT 'Opportunity Raised',
+            opportunity_name TEXT NOT NULL,
+            opportunity_value REAL NOT NULL,
+            sfdc_reference TEXT,
+            raised_date TEXT NOT NULL,
+            moved_date TEXT,
+            next_pg_target REAL,
+            created_by TEXT,
+            date_created TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(account_id) REFERENCES accounts(id)
+        )
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS dashboard_settings (
             setting_key TEXT PRIMARY KEY,
             setting_value TEXT,
@@ -672,6 +692,21 @@ def initialise_database(force=False, connection=None):
     add_column_if_missing(cursor, "accounts", "notes", "TEXT")
     add_column_if_missing(cursor, "accounts", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
     add_column_if_missing(cursor, "accounts", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
+
+    # Safe migrations for account PG lifecycle and Salesforce opportunity history
+    add_column_if_missing(cursor, "account_pg_cycles", "account_id", "INTEGER")
+    add_column_if_missing(cursor, "account_pg_cycles", "pg_sequence", "INTEGER")
+    add_column_if_missing(cursor, "account_pg_cycles", "pg_target", "REAL")
+    add_column_if_missing(cursor, "account_pg_cycles", "status", "TEXT DEFAULT 'Opportunity Raised'")
+    add_column_if_missing(cursor, "account_pg_cycles", "opportunity_name", "TEXT")
+    add_column_if_missing(cursor, "account_pg_cycles", "opportunity_value", "REAL")
+    add_column_if_missing(cursor, "account_pg_cycles", "sfdc_reference", "TEXT")
+    add_column_if_missing(cursor, "account_pg_cycles", "raised_date", "TEXT")
+    add_column_if_missing(cursor, "account_pg_cycles", "moved_date", "TEXT")
+    add_column_if_missing(cursor, "account_pg_cycles", "next_pg_target", "REAL")
+    add_column_if_missing(cursor, "account_pg_cycles", "created_by", "TEXT")
+    add_column_if_missing(cursor, "account_pg_cycles", "date_created", "TEXT DEFAULT CURRENT_TIMESTAMP")
+    add_column_if_missing(cursor, "account_pg_cycles", "last_updated", "TEXT DEFAULT CURRENT_TIMESTAMP")
 
     # Safe migrations for configured sales plays
     add_column_if_missing(cursor, "sales_plays", "sales_play_title", "TEXT")

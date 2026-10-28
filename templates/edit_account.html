@@ -77,9 +77,10 @@
     <input type="file" name="customer_logo" accept="image/*">
     <p class="field-help">Upload an image to add or replace the customer logo. PipeFlow resizes it for display.</p>
 
-    <label>Pipeline Target USD $ ACV</label>
+    <label>Current PG Growth Target USD $ ACV</label>
     <input type="number" name="pipeline_target" step="0.01" min="0"
            value="{{ '%.2f'|format(account['pipeline_target']|float) if account['pipeline_target'] else '' }}">
+    <p class="field-help">This is the active growth target. When an opportunity moves to Salesforce, the next PG target entered on the account replaces this value.</p>
 
     <label for="account_sales_play_toggle">Sales Play(s)</label>
     <div class="checkbox-select" id="account_sales_play_picker">

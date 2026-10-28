@@ -390,10 +390,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.13.14" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.13.15" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.13.14",
+            "health/version did not report Release 2.13.15",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -623,6 +623,70 @@ def main():
             response = client.get(path)
             html = response.get_data(as_text=True)
             assert_ok(response.status_code == 200 and marker in html, f"{path} failed")
+
+        account_pg_html = client.get(f"/accounts/{account_id}").get_data(as_text=True)
+        assert_ok(
+            "Account PG and Salesforce opportunity" in account_pg_html
+            and "PG 1 active" in account_pg_html
+            and "Mark opportunity as raised" in account_pg_html
+            and "No PG has been moved to Salesforce yet" in account_pg_html,
+            "account did not show the initial PG lifecycle state",
+        )
+        response = client.post(
+            f"/accounts/{account_id}/pg/opportunity-raised",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "opportunity_name": "Smoke Salesforce Opportunity",
+                "opportunity_value": "1250000.00",
+                "raised_date": today.isoformat(),
+            },
+            follow_redirects=True,
+        )
+        raised_pg_html = response.get_data(as_text=True)
+        assert_ok(
+            response.status_code == 200
+            and "Opportunity raised" in raised_pg_html
+            and "Smoke Salesforce Opportunity" in raised_pg_html
+            and "Move to Salesforce and start next PG" in raised_pg_html,
+            "account opportunity-raised stage was not saved or displayed",
+        )
+        response = client.post(
+            f"/accounts/{account_id}/pg/move-to-salesforce",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "sfdc_reference": "006-SMOKE-TEST",
+                "moved_date": today.isoformat(),
+                "next_pg_target": "1250000.00",
+            },
+            follow_redirects=True,
+        )
+        moved_pg_html = response.get_data(as_text=True)
+        assert_ok(
+            response.status_code == 200
+            and "PG closed and moved to Salesforce as 006-SMOKE-TEST" in moved_pg_html
+            and "Completed PG history" in moved_pg_html
+            and "006-SMOKE-TEST" in moved_pg_html
+            and "PG 2 active" in moved_pg_html,
+            "Salesforce handoff did not close the PG and start the next cycle",
+        )
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        completed_cycle = connection.execute(
+            "SELECT * FROM account_pg_cycles WHERE account_id = ? AND status = 'Moved to Salesforce'",
+            (account_id,),
+        ).fetchone()
+        updated_account_target = connection.execute(
+            "SELECT pipeline_target FROM accounts WHERE id = ?",
+            (account_id,),
+        ).fetchone()[0]
+        connection.close()
+        assert_ok(
+            completed_cycle
+            and completed_cycle["sfdc_reference"] == "006-SMOKE-TEST"
+            and completed_cycle["next_pg_target"] == 1250000
+            and updated_account_target == 1250000,
+            "completed PG history or next account growth target was not persisted",
+        )
 
         response = client.get("/?period=30")
         overview_html = response.get_data(as_text=True)
@@ -1403,7 +1467,7 @@ def main():
         assert_ok("Return to Top" in pg_progress_html, "PG Progress return-to-top control missing")
         assert_ok(f"pg-rag-{expected_account_rag}" in pg_progress_html, "PG Progress did not render the shared account engagement colour")
         insights_html = client.get("/").get_data(as_text=True)
-        assert_ok("Pipeline target" in insights_html and "Current pipeline" in insights_html, "Guided Priorities pipeline measures missing")
+        assert_ok("Active PG target" in insights_html and "Current pipeline" in insights_html, "Guided Priorities pipeline measures missing")
         assert_ok("Act next" in insights_html and "Recommended next step" in insights_html, "Guided Priorities action guidance missing")
         assert_ok("Smoke Test Account" in insights_html, "Guided Priorities did not include the smoke account")
         assert_ok("Activity outcomes" in insights_html and "Other Meetings" in insights_html, "Guided Priorities meeting outcomes missing")

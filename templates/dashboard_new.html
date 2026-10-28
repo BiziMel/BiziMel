@@ -77,7 +77,7 @@
         <div class="section-header">
             <div>
                 <h2>PG Goals</h2>
-                <p>Pipeline target, current pipeline and gap position for the financial year.</p>
+                <p>Active account PG growth targets, current Salesforce pipeline and the remaining gap.</p>
             </div>
             {% if can_edit_pg_rag and not pg_progress_read_only %}
                 <button type="submit" class="btn btn-primary">Save PG Progress</button>
@@ -86,9 +86,9 @@
 
         <div class="pg-goals-metric-grid">
             <div class="metric-card">
-                <h3>FY Pipeline Target $</h3>
+                <h3>Active PG Growth Target $</h3>
                 <p class="metric-number">${{ "{:,.0f}".format(fy_pipeline_target or 0) }}</p>
-                <p class="metric-subtext">Sum of account Pipeline Target USD ACV</p>
+                <p class="metric-subtext">Sum of current account PG growth targets</p>
             </div>
 
             <div class="metric-card pg-current-pipeline-card">
@@ -109,7 +109,7 @@
             <div class="metric-card {% if pipeline_gap > 0 %}command-risk-card{% endif %}">
                 <h3>Pipeline Gap</h3>
                 <p class="metric-number">${{ "{:,.0f}".format(pipeline_gap or 0) }}</p>
-                <p class="metric-subtext">FY target minus current pipeline</p>
+                <p class="metric-subtext">Active PG growth target minus current Salesforce pipeline</p>
             </div>
         </div>
     </section>

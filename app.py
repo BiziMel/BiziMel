@@ -35,9 +35,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.14"
+APP_VERSION = "2.13.15"
 APP_RELEASE_DATE = "2026-10-28"
-APP_BUILD = "2026-10-28-v2.13.14-sfdc-pipeline-r1"
+APP_BUILD = "2026-10-28-v2.13.15-account-pg-lifecycle-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -53,6 +53,20 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.15",
+        "release_date": "2026-10-28",
+        "title": "Account PG lifecycle and Salesforce opportunity handoff",
+        "new": [
+            "Added an account-level Opportunity Raised stage with opportunity name, value and raised date.",
+            "Added a Move to Salesforce stage that records the Salesforce reference and closes the existing PG.",
+            "Added permanent completed-PG history to each account, including completed target, opportunity value, Salesforce reference and transition dates.",
+        ],
+        "enhanced": [
+            "Made the next PG growth target mandatory when an opportunity is moved to Salesforce, then immediately started the account's next growth cycle with that value.",
+            "Added account timeline and audit entries for both opportunity creation and Salesforce handoff.",
+        ],
+    },
     {
         "version": "2.13.14",
         "release_date": "2026-10-28",
@@ -2399,7 +2413,7 @@ PAGE_INSTRUCTIONS = {
         "items": [
             "Review the pipeline summary first, then work through Act Next in priority order.",
             "Each priority explains why the account needs attention and recommends the next step using live account and Outreach data.",
-            "Pipeline Plan measures completed New Business Meetings, Discovery Meetings and All Meetings for the selected Evidence Period.",
+            "Pipeline Plan compares the current Salesforce pipeline with active account PG growth targets and measures completed meetings for the selected Evidence Period.",
             "Activity Outcomes separates completed New Business, Discovery and Other Meetings; booked meetings do not count as completed results.",
             "Choose a preset Evidence Period or Custom to apply an inclusive From and To date to meeting results and evidence.",
         ],
@@ -4244,6 +4258,7 @@ def delete_account_records(connection, account_ids):
         connection.execute("DELETE FROM outreach_attachments WHERE outreach_id IN (SELECT id FROM outreach WHERE account_id = ?)", (account_id,))
         connection.execute("DELETE FROM account_shared_users WHERE account_id = ?", (account_id,))
         connection.execute("DELETE FROM account_sales_plays WHERE account_id = ?", (account_id,))
+        connection.execute("DELETE FROM account_pg_cycles WHERE account_id = ?", (account_id,))
         connection.execute("DELETE FROM pg_action_contact_updates WHERE account_id = ?", (account_id,))
         connection.execute("DELETE FROM pg_action_updates WHERE account_id = ?", (account_id,))
         connection.execute("DELETE FROM account_org_chart_connectors WHERE account_id = ?", (account_id,))
@@ -12987,6 +13002,26 @@ def view_account(account_id):
         ORDER BY date_created DESC
     """, (account_id,)).fetchall()
 
+    active_pg_opportunity = connection.execute("""
+        SELECT *
+        FROM account_pg_cycles
+        WHERE account_id = ?
+          AND status = 'Opportunity Raised'
+        ORDER BY pg_sequence DESC, id DESC
+        LIMIT 1
+    """, (account_id,)).fetchone()
+    completed_pg_cycles = connection.execute("""
+        SELECT *
+        FROM account_pg_cycles
+        WHERE account_id = ?
+          AND status = 'Moved to Salesforce'
+        ORDER BY moved_date DESC, id DESC
+    """, (account_id,)).fetchall()
+    pg_cycle_count = connection.execute(
+        "SELECT COUNT(*) FROM account_pg_cycles WHERE account_id = ?",
+        (account_id,),
+    ).fetchone()[0]
+
     custom_fields = account_custom_field_payload(active_only=True)
     custom_values = load_account_custom_values(connection, account_id)
 
@@ -13006,8 +13041,199 @@ def view_account(account_id):
         custom_fields=custom_fields,
         custom_values=custom_values,
         owner=owner,
-        is_account_owner=is_account_owner
+        is_account_owner=is_account_owner,
+        active_pg_opportunity=active_pg_opportunity,
+        completed_pg_cycles=completed_pg_cycles,
+        next_pg_sequence=(pg_cycle_count or 0) + 1,
+        today=now.date().isoformat(),
+        message=request.args.get("message", ""),
+        error=request.args.get("error", ""),
     )
+
+
+def account_pg_amount(raw_value):
+    cleaned = str(raw_value or "").replace(",", "").replace("$", "").replace("£", "").strip()
+    try:
+        amount = Decimal(cleaned)
+        if not amount.is_finite() or amount <= 0:
+            raise InvalidOperation
+        return amount.quantize(Decimal("0.01"))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def account_pg_date(raw_value):
+    value = str(raw_value or "").strip()
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date().isoformat()
+    except ValueError:
+        return ""
+
+
+@app.route("/accounts/<int:account_id>/pg/opportunity-raised", methods=("POST",))
+def raise_account_pg_opportunity(account_id):
+    opportunity_name = (request.form.get("opportunity_name") or "").strip()
+    opportunity_value = account_pg_amount(request.form.get("opportunity_value"))
+    raised_date = account_pg_date(request.form.get("raised_date"))
+    if not opportunity_name or opportunity_value is None or not raised_date:
+        return redirect(url_for(
+            "view_account",
+            account_id=account_id,
+            error="Enter the opportunity name, a value greater than zero and the date it was raised.",
+        ))
+
+    connection = get_db_connection()
+    account = connection.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    existing = connection.execute("""
+        SELECT id FROM account_pg_cycles
+        WHERE account_id = ? AND status = 'Opportunity Raised'
+        LIMIT 1
+    """, (account_id,)).fetchone()
+    if not account:
+        connection.close()
+        return redirect(url_for("accounts", error="Account could not be found."))
+    if existing:
+        connection.close()
+        return redirect(url_for(
+            "view_account",
+            account_id=account_id,
+            error="This account already has an opportunity raised for its active PG. Move it to Salesforce before starting another.",
+        ))
+
+    sequence = connection.execute(
+        "SELECT COALESCE(MAX(pg_sequence), 0) + 1 FROM account_pg_cycles WHERE account_id = ?",
+        (account_id,),
+    ).fetchone()[0]
+    actor = audit_actor()
+    cursor = connection.execute("""
+        INSERT INTO account_pg_cycles (
+            account_id, pg_sequence, pg_target, status, opportunity_name,
+            opportunity_value, raised_date, created_by
+        ) VALUES (?, ?, ?, 'Opportunity Raised', ?, ?, ?, ?)
+    """, (
+        account_id,
+        sequence,
+        money_value(account["pipeline_target"]),
+        opportunity_name,
+        format(opportunity_value, "f"),
+        raised_date,
+        actor["name"] or actor["email"] or "System",
+    ))
+    audit_record_create(connection, "account_pg_cycle", cursor.lastrowid, {
+        "account_id": account_id,
+        "pg_sequence": sequence,
+        "pg_target": money_value(account["pipeline_target"]),
+        "status": "Opportunity Raised",
+        "opportunity_name": opportunity_name,
+        "opportunity_value": format(opportunity_value, "f"),
+        "raised_date": raised_date,
+    })
+    add_timeline_entry(
+        connection,
+        "account",
+        account_id,
+        "Opportunity raised",
+        f"PG {sequence}: {opportunity_name} raised at ${opportunity_value:,.2f} on {format_display_date(raised_date)}.",
+        actor["name"] or actor["email"] or "System",
+    )
+    connection.commit()
+    connection.close()
+    return redirect(url_for(
+        "view_account",
+        account_id=account_id,
+        message="Opportunity raised. Add the Salesforce reference and next PG growth target when it moves to Salesforce.",
+    ))
+
+
+@app.route("/accounts/<int:account_id>/pg/move-to-salesforce", methods=("POST",))
+def move_account_pg_to_salesforce(account_id):
+    sfdc_reference = (request.form.get("sfdc_reference") or "").strip()
+    moved_date = account_pg_date(request.form.get("moved_date"))
+    next_pg_target = account_pg_amount(request.form.get("next_pg_target"))
+    if not sfdc_reference or not moved_date or next_pg_target is None:
+        return redirect(url_for(
+            "view_account",
+            account_id=account_id,
+            error="Enter the Salesforce opportunity reference, moved date and a next PG growth target greater than zero.",
+        ))
+
+    connection = get_db_connection()
+    account = connection.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    active_cycle = connection.execute("""
+        SELECT * FROM account_pg_cycles
+        WHERE account_id = ? AND status = 'Opportunity Raised'
+        ORDER BY pg_sequence DESC, id DESC
+        LIMIT 1
+    """, (account_id,)).fetchone()
+    if not account or not active_cycle:
+        connection.close()
+        return redirect(url_for(
+            "view_account",
+            account_id=account_id,
+            error="Raise an opportunity for the active PG before moving it to Salesforce.",
+        ))
+    if moved_date < str(active_cycle["raised_date"] or ""):
+        connection.close()
+        return redirect(url_for(
+            "view_account",
+            account_id=account_id,
+            error="The Salesforce moved date cannot be earlier than the opportunity raised date.",
+        ))
+
+    actor = audit_actor()
+    connection.execute("""
+        UPDATE account_pg_cycles
+        SET status = 'Moved to Salesforce',
+            sfdc_reference = ?,
+            moved_date = ?,
+            next_pg_target = ?,
+            last_updated = CURRENT_TIMESTAMP
+        WHERE id = ?
+    """, (sfdc_reference, moved_date, format(next_pg_target, "f"), active_cycle["id"]))
+    connection.execute("""
+        UPDATE accounts
+        SET pipeline_target = ?, last_updated = CURRENT_TIMESTAMP
+        WHERE id = ?
+    """, (format(next_pg_target, "f"), account_id))
+    audit_entry(
+        connection,
+        "account_pg_cycle",
+        active_cycle["id"],
+        "Update",
+        "status",
+        "PG status",
+        "Opportunity Raised",
+        "Moved to Salesforce",
+    )
+    audit_entry(
+        connection,
+        "account",
+        account_id,
+        "Update",
+        "pipeline_target",
+        "Next PG growth target",
+        account["pipeline_target"],
+        format(next_pg_target, "f"),
+    )
+    add_timeline_entry(
+        connection,
+        "account",
+        account_id,
+        "PG moved to Salesforce",
+        (
+            f"PG {active_cycle['pg_sequence']} closed: {active_cycle['opportunity_name']} moved to Salesforce "
+            f"as {sfdc_reference} on {format_display_date(moved_date)}. "
+            f"Next PG growth target set to ${next_pg_target:,.2f}."
+        ),
+        actor["name"] or actor["email"] or "System",
+    )
+    connection.commit()
+    connection.close()
+    return redirect(url_for(
+        "view_account",
+        account_id=account_id,
+        message=f"PG closed and moved to Salesforce as {sfdc_reference}. Next PG growth target: ${next_pg_target:,.2f}.",
+    ))
 
 
 @app.route("/accounts/<int:account_id>/partners/add", methods=("POST",))
@@ -17684,6 +17910,7 @@ def share_full_account_to_member(source_schema, account_id, target_member, actor
         target_connection.execute("DELETE FROM partner_contacts WHERE account_id = ?", (target_account_id,))
         target_connection.execute("DELETE FROM account_partners WHERE account_id = ?", (target_account_id,))
         target_connection.execute("DELETE FROM account_custom_values WHERE account_id = ?", (target_account_id,))
+        target_connection.execute("DELETE FROM account_pg_cycles WHERE account_id = ?", (target_account_id,))
         target_connection.execute("DELETE FROM outreach WHERE account_id = ?", (target_account_id,))
         target_connection.execute("DELETE FROM contacts WHERE account_id = ?", (target_account_id,))
         target_connection.execute("""
@@ -17729,6 +17956,22 @@ def share_full_account_to_member(source_schema, account_id, target_member, actor
             ["account_name", "pg_bible_order", "account_tier", "industry", "business_unit", "country", "city", "website", "customer_logo", "pipeline_target", "owner_user_id", "owner_name", "owner_email", "notes"],
             account,
             {"pg_bible_order": target_pg_bible_order},
+        )
+
+    for pg_cycle in source_connection.execute(
+        "SELECT * FROM account_pg_cycles WHERE account_id = ? ORDER BY pg_sequence, id",
+        (account_id,),
+    ).fetchall():
+        insert_copied_row(
+            target_connection,
+            "account_pg_cycles",
+            [
+                "account_id", "pg_sequence", "pg_target", "status", "opportunity_name",
+                "opportunity_value", "sfdc_reference", "raised_date", "moved_date",
+                "next_pg_target", "created_by",
+            ],
+            pg_cycle,
+            {"account_id": target_account_id},
         )
 
     contact_id_map = {}
