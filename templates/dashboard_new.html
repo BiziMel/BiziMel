@@ -240,11 +240,12 @@
                                 <span class="pg-rag-dot pg-rag-{{ row.rag_status }}" role="img" aria-label="{{ row.rag_label }} engagement" title="{{ row.rag_reason }}"></span>
                             </td>
                             <td class="pg-contact-cell">
-                                {% if not row.is_partner_row %}
+                                {% if not row.is_partner_row and not row.is_not_targeted %}
                                     <input type="hidden" name="pg_action_contact_id" value="{{ row.contact_id }}">
                                     <input type="hidden" name="pg_action_account_id_{{ row.contact_id }}" value="{{ row.account_id }}">
                                 {% endif %}
                                 <div class="pg-person-line"><span>Contact</span><strong>{{ row.targeted_discovery or "No account contacts entered" }}</strong></div>
+                                {% if row.is_not_targeted %}<div class="pg-person-line"><span>Status</span><strong class="pg-not-targeted-label">Not Targeted</strong></div>{% endif %}
                                 {% if row.contact_job_title %}
                                     <div class="pg-person-line"><span>Job Title</span><strong class="pg-job-title">{{ row.contact_job_title }}</strong></div>
                                 {% endif %}
@@ -255,7 +256,7 @@
                                            name="completed_discovery_contact_{{ row.contact_id }}"
                                            value="Yes"
                                            {% if row.completed_discovery_meeting == "Yes" %}checked{% endif %}
-                                           {% if row.is_partner_row or is_team_pg_progress or pg_progress_read_only %}disabled{% endif %}>
+                                           {% if row.is_partner_row or row.is_not_targeted or is_team_pg_progress or pg_progress_read_only %}disabled{% endif %}>
                                     <span aria-hidden="true"></span>
                                 </label>
                             </td>
@@ -265,7 +266,7 @@
                                            name="exec_first_contact_{{ row.contact_id }}"
                                            value="Yes"
                                            {% if row.exec_first == "Yes" %}checked{% endif %}
-                                           {% if row.is_partner_row or is_team_pg_progress or pg_progress_read_only %}disabled{% endif %}>
+                                           {% if row.is_partner_row or row.is_not_targeted or is_team_pg_progress or pg_progress_read_only %}disabled{% endif %}>
                                     <span aria-hidden="true"></span>
                                 </label>
                             </td>
@@ -275,7 +276,7 @@
                                            name="nbm_completed_contact_{{ row.contact_id }}"
                                            value="Yes"
                                            {% if row.nbm_completed == "Yes" %}checked{% endif %}
-                                           {% if row.is_partner_row or is_team_pg_progress or pg_progress_read_only %}disabled{% endif %}>
+                                           {% if row.is_partner_row or row.is_not_targeted or is_team_pg_progress or pg_progress_read_only %}disabled{% endif %}>
                                     <span aria-hidden="true"></span>
                                 </label>
                             </td>

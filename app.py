@@ -35,9 +35,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.15"
+APP_VERSION = "2.13.16"
 APP_RELEASE_DATE = "2026-10-28"
-APP_BUILD = "2026-10-28-v2.13.15-account-pg-lifecycle-r1"
+APP_BUILD = "2026-10-28-v2.13.16-not-targeted-contacts-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -46,6 +46,7 @@ REGISTRATION_ATTEMPTS = {}
 RATE_LIMIT_WINDOW_SECONDS = 15 * 60
 MAX_AUTH_ATTEMPTS = 5
 TEST_EMAIL_OUTBOX = []
+CONTACT_STATUSES = ("Active", "Not Targeted", "Inactive")
 
 try:
     APP_TIMEZONE = ZoneInfo(os.environ.get("PIPEFLOW_TIMEZONE", "Europe/London"))
@@ -53,6 +54,20 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.16",
+        "release_date": "2026-10-28",
+        "title": "Not Targeted contact status and management visibility",
+        "new": [
+            "Added Not Targeted as a contact status for valid contacts who are deliberately not being engaged at this time.",
+            "Added explicit Not Targeted rows to PG Progress so management can see why a person has no activity in the selected period.",
+        ],
+        "enhanced": [
+            "Displayed Not Targeted consistently across Contacts, account contact lists, contact detail, Contact Reports, imports and exports.",
+            "Excluded Not Targeted contacts from new Outreach selection, engagement RAG expectations and unexplained No Activity reporting without treating them as inactive.",
+            "Kept Not Targeted contacts outside the inactive-contact archive workflow while retaining them in organisation charts and relationship records.",
+        ],
+    },
     {
         "version": "2.13.15",
         "release_date": "2026-10-28",
@@ -1280,7 +1295,8 @@ USER_GUIDE_SECTIONS = [{'slug': 'getting-started',
   'steps': ['Create the contact and select the correct account and business organisation context.',
             'Capture name, job title, category, relationship, responsibilities, email, phone and LinkedIn where known.',
             'Upload, replace or remove a contact photo where useful. PipeFlow accepts recognised image formats and resizes them for display.',
-            'Keep contact status current so inactive contacts do not incorrectly drive PG Progress or reports.',
+            'Use Not Targeted when a valid contact is deliberately outside current engagement; use Inactive only when the person is no longer active.',
+            'PG Progress keeps Not Targeted contacts visible and explains why no activity is expected in the selected period.',
             'Use Print Contact when a clean contact sheet is needed.',
             'Update relationship and role details when outreach shows new influence or decision-making context.'],
   'tips': ['Accounts need active contacts before campaign generation can be useful.',
@@ -8637,6 +8653,21 @@ def account_pg_rag_activities(connection, account_id):
         FROM outreach
         WHERE account_id = ?
           AND COALESCE(task_status, '') NOT IN ('Deleted', 'Cancelled')
+          AND (
+                outreach.contact_id IS NULL
+             OR EXISTS (
+                    SELECT 1 FROM contacts
+                    WHERE contacts.id = outreach.contact_id
+                      AND COALESCE(contacts.status, 'Active') = 'Active'
+                )
+             OR EXISTS (
+                    SELECT 1
+                    FROM outreach_recipients
+                    JOIN contacts ON contacts.id = outreach_recipients.contact_id
+                    WHERE outreach_recipients.outreach_id = outreach.id
+                      AND COALESCE(contacts.status, 'Active') = 'Active'
+                )
+          )
     """, (account_id,)).fetchall()
 
 
@@ -8872,6 +8903,21 @@ def outreach_recipients_match_account(connection, account_id, recipients):
             outreach_recipient_matches_account(connection, account_id, contact_id, partner_contact_id)
             for contact_id, partner_contact_id in recipients
         )
+
+
+def unavailable_outreach_contact_names(connection, recipients):
+    contact_ids = [str(contact_id) for contact_id, _partner_contact_id in recipients if contact_id]
+    if not contact_ids:
+        return []
+    placeholders = ",".join("?" for _ in contact_ids)
+    rows = connection.execute(f"""
+        SELECT name, COALESCE(status, 'Active') AS status
+        FROM contacts
+        WHERE id IN ({placeholders})
+          AND COALESCE(status, 'Active') != 'Active'
+        ORDER BY name
+    """, contact_ids).fetchall()
+    return [(row["name"] or "Selected contact", row["status"]) for row in rows]
 
 
 def save_outreach_recipients(connection, outreach_id, recipients):
@@ -9428,6 +9474,12 @@ def validate_new_outreach(connection, form, requested_status, sales_play_value, 
         return "Select a Sales Play used for or associated to the selected account."
     if not outreach_recipients_match_account(connection, form.get("account_id"), recipients):
         return "Select a contact or partner contact that belongs to the selected account."
+    unavailable_contacts = unavailable_outreach_contact_names(connection, recipients)
+    if unavailable_contacts:
+        names = ", ".join(name for name, _status in unavailable_contacts)
+        if all(status == "Not Targeted" for _name, status in unavailable_contacts):
+            return f"{names} is Not Targeted. Change the contact status to Active before creating new engagement."
+        return f"{names} is not Active. Change the contact status to Active before creating new engagement."
     if status_requires_activity_update(requested_status) and not activity_update_is_valid(form.get("next_action")):
         return activity_update_required_message()
     if outcome_requires_scheduled_meeting(normalise_outreach_outcome(form.get("outcome"))) and not form.get("scheduled_meeting_at"):
@@ -10203,11 +10255,16 @@ def mapped_contact_payload(row, mapping):
     return payload
 
 
+def normalise_contact_status(value):
+    status = str(value or "Active").strip()
+    return status if status in CONTACT_STATUSES else "Active"
+
+
 def ingest_mapped_contact_rows(connection, account_id, data_rows, mapping):
     result = {"created": 0, "updated": 0, "skipped": 0, "errors": []}
     valid_categories = set(DROPDOWN_VALUES.get("contact_categories", []))
     valid_relationships = set(DROPDOWN_VALUES.get("bmc_relationships", []))
-    valid_statuses = {"Active", "Inactive"}
+    valid_statuses = set(CONTACT_STATUSES)
 
     for row_number, row in enumerate(data_rows, start=2):
         payload = mapped_contact_payload(row, mapping)
@@ -10633,9 +10690,11 @@ def campaign_validate_selected_records(connection, account_id, contact_ids, sale
         account_label = account_context_label(account)
         return connection, account, [], f"{names} cannot be used because they are not linked to {account_label}. Select contacts from the chosen account only."
 
-    inactive = [row for row in selected_rows if (row["status"] or "Active") != "Active"]
-    if inactive:
-        names = ", ".join(row["name"] or f"Contact {row['id']}" for row in inactive)
+    unavailable = [row for row in selected_rows if (row["status"] or "Active") != "Active"]
+    if unavailable:
+        names = ", ".join(row["name"] or f"Contact {row['id']}" for row in unavailable)
+        if all((row["status"] or "Active") == "Not Targeted" for row in unavailable):
+            return connection, account, [], f"{names} cannot be used because the contact is Not Targeted. Change the status to Active before planning engagement."
         return connection, account, [], f"{names} cannot be used because the contact status is not Active. Reactivate the contact or choose an active contact."
 
     connection, sales_play_allowed, sales_play_validation_error = campaign_sales_play_allowed_with_recovery(connection, account_id, sales_play)
@@ -10880,12 +10939,13 @@ def pg_dashboard_context(connection, activity_period=None):
                 contacts.name,
                 contacts.job_title,
                 contacts.org_dept,
+                COALESCE(contacts.status, 'Active') AS contact_status,
                 accounts.account_name,
                 accounts.business_unit
             FROM contacts
             LEFT JOIN accounts ON accounts.id = contacts.account_id
             WHERE contacts.account_id = ?
-              AND COALESCE(status, 'Active') = 'Active'
+              AND COALESCE(status, 'Active') IN ('Active', 'Not Targeted')
             ORDER BY name
         """, (account_id,)).fetchall()
         outreach_sales_play_rows = connection.execute(f"""
@@ -10927,6 +10987,48 @@ def pg_dashboard_context(connection, activity_period=None):
 
         for contact in contacts:
             contact_id = contact["id"]
+            if (contact["contact_status"] or "Active") == "Not Targeted":
+                not_targeted_reason = (
+                    f"No activity is expected in {activity_period['label']} because this contact is Not Targeted. "
+                    "Change the contact status to Active when engagement should resume."
+                )
+                pg_action_rows.append({
+                    "is_partner_row": False,
+                    "is_not_targeted": True,
+                    "account_id": account_id,
+                    "contact_id": contact_id,
+                    "target_number": pg_target_number,
+                    "colour_index": nbm_colour_index(pg_target_number),
+                    "account_rag_status": account_rag["status"],
+                    "account_rag_label": account_rag["label"],
+                    "account_rag_reason": account_rag["reason"],
+                    "account_automated_rag_status": account_rag["automatedRagStatus"],
+                    "rag_status": "blue",
+                    "rag_label": "Not Targeted",
+                    "rag_reason": "This contact is valid but is deliberately outside current PG engagement.",
+                    "account_name": account["account_name"],
+                    "sales_play": pg_sales_play or "No sales play entered",
+                    "targeted_discovery": contact["name"] or "No contact name",
+                    "contact_job_title": contact["job_title"] or "",
+                    "company_name": contact["account_name"] or account["account_name"],
+                    "business_org": contact["business_unit"] or "",
+                    "department": contact["org_dept"] or "",
+                    "completed_discovery_meeting": "N/A",
+                    "exec_first": "N/A",
+                    "nbm_completed": "N/A",
+                    "last_7_days_activity_entries": [{
+                        "date": "",
+                        "activity": "Not Targeted",
+                        "activity_update": not_targeted_reason,
+                    }],
+                    "next_7_days_actions": [{
+                        "subject": "No engagement planned while contact status is Not Targeted",
+                        "activity_type": "Status",
+                        "due": "",
+                        "is_overdue": False,
+                    }],
+                })
+                continue
             associated_outreach_rows = connection.execute(f"""
                 SELECT id
                 FROM outreach
@@ -11038,6 +11140,7 @@ def pg_dashboard_context(connection, activity_period=None):
 
             pg_action_rows.append({
                 "is_partner_row": False,
+                "is_not_targeted": False,
                 "account_id": account_id,
                 "contact_id": contact_id,
                 "target_number": pg_target_number,
@@ -14875,7 +14978,7 @@ def add_contact():
             request.form.get("education"),
             request.form.get("social_media"),
             request.form.get("additional_notes"),
-            request.form.get("status") or "Active"
+            normalise_contact_status(request.form.get("status"))
         ))
         contact_id = cursor.lastrowid
         audit_contact_created(connection, contact_id)
@@ -15068,7 +15171,7 @@ def edit_contact(contact_id):
             "mobile_phone": request.form.get("mobile_phone"),
             "location": request.form.get("location"),
             "linkedin": normalise_external_url(request.form.get("linkedin")),
-            "status": request.form.get("status") or "Active",
+            "status": normalise_contact_status(request.form.get("status")),
             "bmc_relationship": request.form.get("bmc_relationship"),
             "characteristics": request.form.get("characteristics"),
             "background": request.form.get("background"),
@@ -21137,8 +21240,14 @@ def contact_reports_impl():
         row["next_action_date"] = activity.get("next_action_date", "")
         row["account_label"] = report_account_display(row)
         row["days_since_last_activity"] = report_days_since(row["last_activity_date"], today)
-        row["engagement_score"] = contact_report_engagement_score(row)
-        row["engagement_band"] = "Meeting route" if row["meeting_count"] else ("Engaged" if row["positive_signal_count"] or row["recent_activity_count"] else "No activity")
+        row["engagement_score"] = 0 if (row["status"] or "Active") == "Not Targeted" else contact_report_engagement_score(row)
+        row["engagement_band"] = (
+            "Not Targeted"
+            if (row["status"] or "Active") == "Not Targeted"
+            else "Meeting route" if row["meeting_count"]
+            else "Engaged" if row["positive_signal_count"] or row["recent_activity_count"]
+            else "No activity"
+        )
         row["data_quality_gap"] = not bool(row["email"] and row["job_title"])
         enriched_contacts.append(row)
 
@@ -21185,6 +21294,7 @@ def contact_reports_impl():
     contact_metrics = {
         "total_contacts": len(enriched_contacts),
         "active_contacts": sum(1 for contact in enriched_contacts if (contact["status"] or "Active") not in ("Archived", "Inactive")),
+        "not_targeted_contacts": sum(1 for contact in enriched_contacts if (contact["status"] or "Active") == "Not Targeted"),
         "new_contacts": sum(1 for contact in enriched_contacts if report_days_since(contact["date_created"], today) is not None and report_days_since(contact["date_created"], today) <= 30),
         "executive_contacts": sum(
             1 for contact in enriched_contacts
@@ -21192,7 +21302,10 @@ def contact_reports_impl():
         ),
         "champions": sum(1 for contact in enriched_contacts if (contact["bmc_relationship"] or "").lower() in ("champion", "supporter")),
         "influencers": sum(1 for contact in enriched_contacts if "influenc" in (contact["category"] or "").lower() or "influenc" in (contact["bmc_relationship"] or "").lower()),
-        "no_activity": sum(1 for contact in enriched_contacts if contact["activity_count"] == 0),
+        "no_activity": sum(
+            1 for contact in enriched_contacts
+            if contact["activity_count"] == 0 and (contact["status"] or "Active") == "Active"
+        ),
         "missing_email_or_role": sum(1 for contact in enriched_contacts if contact["data_quality_gap"]),
         "accounts_one_contact": len(accounts_with_one_contact),
     }

@@ -390,10 +390,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.13.15" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.13.16" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.13.15",
+            "health/version did not report Release 2.13.16",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -623,6 +623,64 @@ def main():
             response = client.get(path)
             html = response.get_data(as_text=True)
             assert_ok(response.status_code == 200 and marker in html, f"{path} failed")
+
+        response = client.post(
+            "/contacts/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "account_id": str(account_id),
+                "category": "Technical",
+                "status": "Not Targeted",
+                "name": "Smoke Not Targeted Contact",
+                "job_title": "Future Stakeholder",
+                "email": "not-targeted@example.com",
+            },
+            follow_redirects=True,
+        )
+        assert_ok(response.status_code == 200, "Not Targeted contact could not be created")
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        not_targeted_contact = connection.execute(
+            "SELECT * FROM contacts WHERE email = ?",
+            ("not-targeted@example.com",),
+        ).fetchone()
+        assert_ok(not_targeted_contact and not_targeted_contact["status"] == "Not Targeted", "Not Targeted status was not persisted")
+        unavailable = pipeflow_app.unavailable_outreach_contact_names(
+            connection,
+            [(str(not_targeted_contact["id"]), None)],
+        )
+        assert_ok(unavailable == [("Smoke Not Targeted Contact", "Not Targeted")], "Not Targeted contact remained available for new Outreach")
+        pg_not_targeted_context = pipeflow_app.pg_dashboard_context(connection)
+        not_targeted_pg_row = next(
+            (row for row in pg_not_targeted_context["pg_action_rows"] if row.get("contact_id") == not_targeted_contact["id"]),
+            None,
+        )
+        archive_candidates = pipeflow_app.inactive_contacts_for_archive(connection, "", "")
+        connection.close()
+        assert_ok(
+            not_targeted_pg_row
+            and not_targeted_pg_row["is_not_targeted"]
+            and not_targeted_pg_row["rag_label"] == "Not Targeted"
+            and "No activity is expected" in not_targeted_pg_row["last_7_days_activity_entries"][0]["activity_update"],
+            "PG Progress did not explain the Not Targeted contact's lack of activity",
+        )
+        assert_ok(
+            all(row["id"] != not_targeted_contact["id"] for row in archive_candidates),
+            "Not Targeted contact entered the inactive archive workflow",
+        )
+        not_targeted_contacts_html = client.get("/contacts?status=Not+Targeted").get_data(as_text=True)
+        not_targeted_account_html = client.get(f"/accounts/{account_id}").get_data(as_text=True)
+        not_targeted_report_html = client.get("/reports/contacts").get_data(as_text=True)
+        not_targeted_pg_html = client.get("/pg-progress").get_data(as_text=True)
+        assert_ok(
+            "Smoke Not Targeted Contact" in not_targeted_contacts_html
+            and "Not Targeted" in not_targeted_contacts_html
+            and "Smoke Not Targeted Contact" in not_targeted_account_html
+            and "Valid contacts outside current engagement" in not_targeted_report_html
+            and "Smoke Not Targeted Contact" in not_targeted_pg_html
+            and "No activity is expected" in not_targeted_pg_html,
+            "Not Targeted status was not visible across Contacts, Accounts, Reports and PG Progress",
+        )
 
         account_pg_html = client.get(f"/accounts/{account_id}").get_data(as_text=True)
         assert_ok(

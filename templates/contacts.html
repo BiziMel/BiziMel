@@ -8,6 +8,7 @@
         <p>Your relationship intelligence board across accounts, roles and stakeholder influence.</p>
         <p class="contact-status-legend">
             <span><i class="contact-status-dot status-active" aria-hidden="true"></i> Active</span>
+            <span><i class="contact-status-dot status-not-targeted" aria-hidden="true"></i> Not Targeted</span>
             <span><i class="contact-status-dot status-inactive" aria-hidden="true"></i> Inactive</span>
         </p>
     </div>
@@ -38,8 +39,9 @@
             <div class="form-group">
                 <label for="status">Status</label>
                 <select id="status" name="status">
-                    <option value="">All active statuses</option>
+                    <option value="">All statuses</option>
                     <option value="Active" {% if status_filter == 'Active' %}selected{% endif %}>Active</option>
+                    <option value="Not Targeted" {% if status_filter == 'Not Targeted' %}selected{% endif %}>Not Targeted</option>
                     <option value="Inactive" {% if status_filter == 'Inactive' %}selected{% endif %}>Inactive</option>
                 </select>
             </div>
@@ -136,14 +138,18 @@
                         <br>
                         <small>{{ contact["category"] or "Category not set" }}</small>
                         <br>
-                        <button type="button"
-                                class="table-secondary-link button-as-link"
-                                data-contact-outreach-choice
-                                data-contact-name="{{ contact['name'] or 'this contact' }}"
-                                data-single-url="{{ url_for('add_outreach', account_id=contact['account_id'], contact_id=contact['id']) }}"
-                                data-campaign-url="{{ url_for('campaign_builder', account_id=contact['account_id'], contact_ids=contact['id']) }}">
-                            Create Outreach
-                        </button>
+                        {% if (contact['status'] or 'Active') == 'Active' %}
+                            <button type="button"
+                                    class="table-secondary-link button-as-link"
+                                    data-contact-outreach-choice
+                                    data-contact-name="{{ contact['name'] or 'this contact' }}"
+                                    data-single-url="{{ url_for('add_outreach', account_id=contact['account_id'], contact_id=contact['id']) }}"
+                                    data-campaign-url="{{ url_for('campaign_builder', account_id=contact['account_id'], contact_ids=contact['id']) }}">
+                                Create Outreach
+                            </button>
+                        {% elif contact['status'] == 'Not Targeted' %}
+                            <span class="muted">No engagement planned</span>
+                        {% endif %}
                     </td>
 
                     <td>
@@ -172,10 +178,9 @@
 
                     <td>
                         {% set contact_status = contact["status"] or "Active" %}
-                        {% set is_active = contact_status != "Inactive" %}
                         <span class="contact-status-indicator" title="{{ contact_status }}" aria-label="{{ contact_status }}">
-                            <i class="contact-status-dot {% if is_active %}status-active{% else %}status-inactive{% endif %}" aria-hidden="true"></i>
-                            <span class="sr-only">{{ contact_status }}</span>
+                            <i class="contact-status-dot {% if contact_status == 'Not Targeted' %}status-not-targeted{% elif contact_status == 'Inactive' %}status-inactive{% else %}status-active{% endif %}" aria-hidden="true"></i>
+                            <span>{{ contact_status }}</span>
                         </span>
                     </td>
 

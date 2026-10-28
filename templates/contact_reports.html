@@ -33,7 +33,12 @@
     <div class="dashboard-card report-metric-card report-metric-amber">
         <h3>No Activity</h3>
         <p>{{ contact_metrics.no_activity }}</p>
-        <span>Contacts with no outreach signal</span>
+        <span>Active contacts with no outreach signal</span>
+    </div>
+    <div class="dashboard-card report-metric-card report-metric-blue">
+        <h3>Not Targeted</h3>
+        <p>{{ contact_metrics.not_targeted_contacts }}</p>
+        <span>Valid contacts outside current engagement</span>
     </div>
     <div class="dashboard-card report-metric-card report-metric-red">
         <h3>Data Gaps</h3>
@@ -261,9 +266,8 @@
                         <td>{{ contact["category"] or "Unknown" }}</td>
                         <td>
                             {% set contact_status = contact["status"] or "Active" %}
-                            {% set is_active = contact_status != "Inactive" %}
                             <span class="contact-status-report">
-                                <i class="contact-status-dot {% if is_active %}status-active{% else %}status-inactive{% endif %}" aria-hidden="true"></i>
+                                <i class="contact-status-dot {% if contact_status == 'Not Targeted' %}status-not-targeted{% elif contact_status == 'Inactive' %}status-inactive{% else %}status-active{% endif %}" aria-hidden="true"></i>
                                 {{ contact_status }}
                             </span>
                         </td>

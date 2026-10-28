@@ -305,6 +305,7 @@
                         <th>Name</th>
                         <th>Title</th>
                         <th>Category</th>
+                        <th>Status</th>
                         <th>Relationship</th>
                     </tr>
                 </thead>
@@ -325,6 +326,7 @@
                             <td><a href="{{ url_for('view_contact', contact_id=contact.id) }}">{{ contact.name }}</a></td>
                             <td>{{ contact.job_title or "" }}</td>
                             <td>{{ contact.category or "" }}</td>
+                            <td><span class="status-pill">{{ contact.status or "Active" }}</span></td>
                             <td>{{ contact.bmc_relationship or "" }}</td>
                         </tr>
                     {% endfor %}

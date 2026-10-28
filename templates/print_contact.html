@@ -23,6 +23,7 @@
             {% set fields = [
                 ("Account Tier", "Tier " ~ contact.account_tier if contact.account_tier else ""),
                 ("Category", contact.category),
+                ("Status", contact.status or "Active"),
                 ("Org / Dept", contact.org_dept),
                 ("Email", contact.email),
                 ("Office Phone", contact.office_phone),

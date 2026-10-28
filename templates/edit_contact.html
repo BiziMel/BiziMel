@@ -37,8 +37,10 @@
     <label for="status">Status</label>
     <select id="status" name="status" required>
         <option value="Active" {% if (contact.status or 'Active') == 'Active' %}selected{% endif %}>Active</option>
+        <option value="Not Targeted" {% if contact.status == 'Not Targeted' %}selected{% endif %}>Not Targeted</option>
         <option value="Inactive" {% if contact.status == 'Inactive' %}selected{% endif %}>Inactive</option>
     </select>
+    <p class="field-help">Not Targeted keeps the contact valid and visible while showing that no current PG engagement is expected.</p>
 
     <label for="photo">Photo</label>
     {% set photo_url = contact_photo_url(contact.photo) %}

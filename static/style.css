@@ -6345,10 +6345,14 @@ body {
 }
 
 .contact-status-indicator {
-    display: inline-grid;
-    place-items: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     width: 100%;
     min-height: 24px;
+    font-size: 12px;
+    font-weight: 750;
 }
 
 .contact-status-dot {
@@ -6362,6 +6366,10 @@ body {
 
 .contact-status-dot.status-active {
     background: #16a34a;
+}
+
+.contact-status-dot.status-not-targeted {
+    background: #2563a6;
 }
 
 .contact-status-dot.status-inactive {
@@ -6389,7 +6397,11 @@ body {
 }
 
 .contact-status-col {
-    width: 86px;
+    width: 132px;
+}
+
+.pg-not-targeted-label {
+    color: #2563a6 !important;
 }
 
 .contact-outreach-col {

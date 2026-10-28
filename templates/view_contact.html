@@ -10,7 +10,9 @@
         <a href="{{ url_for('contacts') }}" class="btn btn-secondary">Back to Contacts</a>
         <a href="{{ url_for('print_contact', contact_id=contact.id) }}" target="_blank" class="btn btn-secondary">Print Contact</a>
         <a href="{{ url_for('edit_contact', contact_id=contact.id) }}" class="btn btn-primary">Edit Contact</a>
-        <a href="{{ url_for('add_outreach', account_id=contact.account_id, contact_id=contact.id) }}" class="btn btn-primary">Create Outreach</a>
+        {% if (contact.status or 'Active') == 'Active' %}
+            <a href="{{ url_for('add_outreach', account_id=contact.account_id, contact_id=contact.id) }}" class="btn btn-primary">Create Outreach</a>
+        {% endif %}
     </div>
 </div>
 
@@ -35,6 +37,8 @@
         {% endif %}
     </p>
     <p><strong>Category:</strong> {{ contact.category }}</p>
+    <p><strong>Status:</strong> <span class="status-pill">{{ contact.status or "Active" }}</span></p>
+    {% if contact.status == 'Not Targeted' %}<p class="field-help">This contact remains valid, but no current PG engagement is expected.</p>{% endif %}
     <p><strong>Job Title:</strong> {{ contact.job_title }}</p>
     <p><strong>Org / Dept:</strong> {{ contact.org_dept }}</p>
     <p><strong>Email:</strong> {{ contact.email }}</p>
