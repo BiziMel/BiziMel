@@ -27,11 +27,24 @@
 </div>
 
 {% if period_error %}<div class="message error-message">{{ period_error }}</div>{% endif %}
+{% if dashboard_message %}<div class="message success-message">{{ dashboard_message }}</div>{% endif %}
 {% if dashboard_error %}<div class="message error-message">{{ dashboard_error }}</div>{% endif %}
 
 <section class="guided-pipeline-summary" aria-label="Pipeline summary">
     <div><span>Pipeline target</span><strong>${{ "{:,.0f}".format(pipeline_target or 0) }}</strong><small>Current financial-year plan</small></div>
-    <div><span>Current pipeline</span><strong>${{ "{:,.0f}".format(current_pipeline or 0) }}</strong><small>{{ pipeline_coverage_percent or 0 }}% of target</small></div>
+    <form method="POST" action="{{ url_for('update_current_pipeline') }}" class="guided-current-pipeline-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="period" value="{{ period_key }}">
+        <input type="hidden" name="date_from" value="{{ period_date_from }}">
+        <input type="hidden" name="date_to" value="{{ period_date_to }}">
+        <label for="guided-current-pipeline">Current pipeline</label>
+        <div class="guided-pipeline-input-row">
+            <span aria-hidden="true">$</span>
+            <input type="number" id="guided-current-pipeline" name="current_pipeline" step="0.01" min="0" value="{{ '%.2f'|format(current_pipeline or 0) }}" aria-describedby="guided-current-pipeline-help" required>
+            <button type="submit" class="btn btn-primary btn-small">Update</button>
+        </div>
+        <small id="guided-current-pipeline-help">Manual Salesforce (SFDC) figure · {{ pipeline_coverage_percent or 0 }}% of target</small>
+    </form>
     <div class="{% if pipeline_gap %}guided-summary-attention{% endif %}"><span>Pipeline gap</span><strong>${{ "{:,.0f}".format(pipeline_gap or 0) }}</strong><small>Target less current pipeline</small></div>
     <div class="{% if overdue_total %}guided-summary-risk{% endif %}"><span>Needs attention</span><strong>{{ priority_rows|length }}</strong><small>{{ overdue_total or 0 }} overdue action{% if overdue_total != 1 %}s{% endif %}</small></div>
 </section>

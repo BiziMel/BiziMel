@@ -14,6 +14,7 @@ import base64
 import sqlite3
 import threading
 import smtplib
+from decimal import Decimal, InvalidOperation
 from email.message import EmailMessage
 from datetime import date, datetime, time, timedelta
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
@@ -34,9 +35,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.12"
+APP_VERSION = "2.13.14"
 APP_RELEASE_DATE = "2026-10-28"
-APP_BUILD = "2026-10-28-v2.13.12-guided-priorities-r1"
+APP_BUILD = "2026-10-28-v2.13.14-sfdc-pipeline-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -52,6 +53,26 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.14",
+        "release_date": "2026-10-28",
+        "title": "Editable Salesforce current pipeline",
+        "enhanced": [
+            "Made Current Pipeline directly editable from Guided Priorities as the authoritative Salesforce (SFDC) figure.",
+            "Recalculated pipeline coverage and pipeline gap immediately after the manual figure is saved.",
+            "Added clear save confirmation and validation without changing the separately calculated account pipeline target.",
+        ],
+    },
+    {
+        "version": "2.13.13",
+        "release_date": "2026-10-28",
+        "title": "Recoverable sign-in security token handling",
+        "fixed": [
+            "Replaced the raw Bad Request page shown for an expired or missing sign-in security token with the normal PipeFlow sign-in page.",
+            "Issued a fresh security token after a rejected sign-in so the user can retry immediately without refreshing or clearing browser data.",
+            "Added a clear message confirming that the rejected sign-in was not submitted and explaining what to do next.",
+        ],
+    },
     {
         "version": "2.13.12",
         "release_date": "2026-10-28",
@@ -1593,6 +1614,28 @@ def csrf_token_is_valid():
     return bool(expected and submitted and secrets.compare_digest(expected, submitted))
 
 
+def recover_expired_login_form():
+    """Reject an unsafe login POST while returning a fresh, usable form."""
+    attempted_email = request.form.get("email", "").strip()
+    session.pop(CSRF_SESSION_KEY, None)
+    csrf_token()
+    try:
+        broadcasts = list_broadcast_messages(active_only=True)
+    except Exception as exc:
+        log_diagnostic_exception("APP", exc, {"stage": "login_csrf_recovery_broadcasts"})
+        broadcasts = []
+    return render_template(
+        "login.html",
+        error=(
+            "Your sign-in page expired or changed after an update. For your security, "
+            "nothing was submitted. Please enter your password and select Sign In again."
+        ),
+        message="",
+        email=attempted_email,
+        broadcast_messages=broadcasts,
+    ), 400
+
+
 def format_display_date(value, month_name=False):
     if not value:
         return ""
@@ -2706,6 +2749,8 @@ def require_login_and_prepare_database():
     public_endpoints = {"login", "register", "verify_registration", "forgot_password", "reset_password", "version_health", "storage_health", "static"}
     if request.endpoint in public_endpoints:
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            if request.endpoint == "login" and not csrf_token_is_valid():
+                return recover_expired_login_form()
             validate_csrf_token()
         return None
 
@@ -2985,7 +3030,13 @@ def login():
         log_admin_audit(None, "Failed login", "Authentication", email.strip().lower(), f"Repeated-attempt controls applied; source IP: {request.remote_addr or 'unknown'}.")
         error = "Email or password was not recognised."
 
-    return render_template("login.html", error=error, message=message, broadcast_messages=list_broadcast_messages(active_only=True))
+    return render_template(
+        "login.html",
+        error=error,
+        message=message,
+        email=request.form.get("email", "").strip(),
+        broadcast_messages=list_broadcast_messages(active_only=True),
+    )
 
 
 @app.route("/first-login", methods=("GET", "POST"))
@@ -7518,6 +7569,8 @@ def build_execution_command_centre(connection):
 
     weekly_target = max(1, int(os.environ.get("PIPEFLOW_WEEKLY_MEETING_TARGET", "8")))
     return {
+        "dashboard_message": request.args.get("message", ""),
+        "dashboard_error": request.args.get("error", ""),
         "active_insights_view": active_view,
         "period_key": period_key,
         "period_label": period_label,
@@ -7622,10 +7675,58 @@ def home():
             week_start="", week_end="",
             broadcast_messages=fallback_broadcasts,
             dashboard_error=diagnostic_user_message("Execution Insights could not be fully loaded.", code),
+            dashboard_message="",
         )
     finally:
         if connection is not None:
             connection.close()
+
+
+@app.route("/insights/current-pipeline", methods=("POST",))
+def update_current_pipeline():
+    raw_value = (request.form.get("current_pipeline") or "").replace(",", "").replace("$", "").replace("£", "").strip()
+    try:
+        amount = Decimal(raw_value)
+        if not amount.is_finite() or amount < 0:
+            raise InvalidOperation
+    except (InvalidOperation, ValueError):
+        return redirect(url_for(
+            "home",
+            period=request.form.get("period", "30"),
+            date_from=request.form.get("date_from", ""),
+            date_to=request.form.get("date_to", ""),
+            error="Enter a valid Current Pipeline amount of zero or more.",
+        ))
+
+    amount = amount.quantize(Decimal("0.01"))
+    connection = get_db_connection()
+    try:
+        previous_value = dashboard_setting(connection, "current_pipeline", "0")
+        save_dashboard_setting(connection, "current_pipeline", format(amount, "f"))
+        audit_entry(
+            connection,
+            "insights",
+            None,
+            "update",
+            "current_pipeline",
+            "Salesforce current pipeline",
+            str(previous_value),
+            format(amount, "f"),
+        )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+    return redirect(url_for(
+        "home",
+        period=request.form.get("period", "30"),
+        date_from=request.form.get("date_from", ""),
+        date_to=request.form.get("date_to", ""),
+        message=f"Current Pipeline updated to ${amount:,.2f} from Salesforce.",
+    ))
 
 
 @app.route("/insights/next-24-hours/refresh", methods=("POST",))

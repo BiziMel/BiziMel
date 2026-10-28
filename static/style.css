@@ -8059,6 +8059,7 @@ body {
 }
 
 .guided-pipeline-summary > div,
+.guided-pipeline-summary > form,
 .guided-side-panel,
 .guided-priority-card,
 .guided-empty-state {
@@ -8068,7 +8069,8 @@ body {
     box-shadow: 0 7px 18px rgba(31, 57, 88, 0.06);
 }
 
-.guided-pipeline-summary > div {
+.guided-pipeline-summary > div,
+.guided-pipeline-summary > form {
     min-width: 0;
     padding: 15px 16px;
 }
@@ -8096,6 +8098,40 @@ body {
 
 .guided-pipeline-summary small {
     font-size: 12px;
+}
+
+.guided-current-pipeline-form label {
+    display: block;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.guided-pipeline-input-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 6px;
+    align-items: center;
+    margin: 5px 0 4px;
+}
+
+.guided-pipeline-input-row > span {
+    color: #172033;
+    font-size: 20px;
+    font-weight: 800;
+}
+
+.guided-pipeline-input-row input {
+    width: 100%;
+    min-width: 0;
+    padding: 7px 8px;
+    border: 1px solid #b8c5d6;
+    border-radius: 7px;
+    color: #172033;
+    font-size: 17px;
+    font-weight: 750;
 }
 
 .guided-pipeline-summary .guided-summary-attention strong { color: #9a5b00; }

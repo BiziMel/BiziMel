@@ -390,10 +390,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.13.12" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.13.14" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.13.12",
+            "health/version did not report Release 2.13.14",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -437,8 +437,32 @@ def main():
             },
             follow_redirects=False,
         )
-        assert_ok(response.status_code == 400, "login accepted a stale CSRF token")
-        client.get("/login")
+        stale_token_page = response.get_data(as_text=True)
+        assert_ok(
+            response.status_code == 400
+            and "Sign In" in stale_token_page
+            and "nothing was submitted" in stale_token_page
+            and "smoke-test@example.com" in stale_token_page
+            and csrf_from_session(client)
+            and csrf_from_session(client) != "stale-token-after-deploy",
+            "stale login CSRF token did not return a fresh, usable sign-in form",
+        )
+        token_after_stale_form = csrf_from_session(client)
+        response = client.post(
+            "/login",
+            data={
+                "email": "smoke-test@example.com",
+                "password": "Password123!",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(
+            response.status_code == 400
+            and "nothing was submitted" in response.get_data(as_text=True)
+            and csrf_from_session(client)
+            and csrf_from_session(client) != token_after_stale_form,
+            "missing login CSRF token did not return a fresh, usable sign-in form",
+        )
         response = client.post(
             "/login",
             data={
@@ -609,6 +633,8 @@ def main():
                 "This week’s commitments", "Activity outcomes",
                 "New Business Meetings", "Discovery Meetings", "Other Meetings", "All Meetings",
             ))
+            and 'id="guided-current-pipeline"' in overview_html
+            and "Manual Salesforce (SFDC) figure" in overview_html
             and "Execution Insights could not be fully loaded" not in overview_html,
             "Guided Priorities did not render its decision-focused content",
         )
@@ -617,6 +643,38 @@ def main():
             and "Coverage &amp; Risk" not in overview_html
             and "Portfolio Totals" not in overview_html,
             "Guided Priorities retained the removed crowded Insights tables",
+        )
+        response = client.post(
+            "/insights/current-pipeline",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "current_pipeline": "925000.50",
+                "period": "30",
+            },
+            follow_redirects=True,
+        )
+        updated_pipeline_html = response.get_data(as_text=True)
+        assert_ok(
+            response.status_code == 200
+            and "Current Pipeline updated to $925,000.50 from Salesforce." in updated_pipeline_html
+            and input_value(updated_pipeline_html, "guided-current-pipeline") == "925000.50",
+            "Guided Priorities did not save and redisplay the Salesforce pipeline figure",
+        )
+        response = client.post(
+            "/insights/current-pipeline",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "current_pipeline": "-1",
+                "period": "30",
+            },
+            follow_redirects=True,
+        )
+        invalid_pipeline_html = response.get_data(as_text=True)
+        assert_ok(
+            response.status_code == 200
+            and "Enter a valid Current Pipeline amount" in invalid_pipeline_html
+            and input_value(invalid_pipeline_html, "guided-current-pipeline") == "925000.50",
+            "Guided Priorities accepted an invalid Salesforce pipeline figure",
         )
         period_pages = {
             key: client.get(f"/?period={key}").get_data(as_text=True)
