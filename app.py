@@ -35,9 +35,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.17"
-APP_RELEASE_DATE = "2026-10-28"
-APP_BUILD = "2026-10-28-v2.13.17-required-sales-play-r1"
+APP_VERSION = "2.13.18"
+APP_RELEASE_DATE = "2026-10-31"
+APP_BUILD = "2026-10-31-v2.13.18-planned-activity-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -54,6 +54,19 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.18",
+        "release_date": "2026-10-31",
+        "title": "Condensed forward planned activity",
+        "new": [
+            "Added a dedicated Planned Activity page from PG Progress with next 7, 14 and 30 day horizons.",
+            "Added account and user filters with manager visibility across permitted team workspaces.",
+        ],
+        "enhanced": [
+            "Expanded multi-recipient Outreach into clear person-level rows and sorted the table by company, person, job title, action type and subject.",
+            "Kept the condensed view focused on open scheduled Outreach and excluded completed, closed, cancelled and deleted work.",
+        ],
+    },
     {
         "version": "2.13.17",
         "release_date": "2026-10-28",
@@ -11433,6 +11446,174 @@ def save_manual_pg_progress(connection, form):
             """, (account_id, contact_id, completed, exec_first, nbm_completed, next_action))
 
 
+def planned_activity_recipients(connection, outreach_row):
+    recipient_rows = connection.execute("""
+        SELECT
+            contacts.name AS contact_name,
+            contacts.job_title AS contact_job_title,
+            partner_contacts.name AS partner_contact_name,
+            partner_contacts.job_title AS partner_contact_job_title
+        FROM outreach_recipients
+        LEFT JOIN contacts ON outreach_recipients.contact_id = contacts.id
+        LEFT JOIN partner_contacts ON outreach_recipients.partner_contact_id = partner_contacts.id
+        WHERE outreach_recipients.outreach_id = ?
+        ORDER BY outreach_recipients.id
+    """, (outreach_row["id"],)).fetchall()
+    recipients = []
+    seen = set()
+    for recipient in recipient_rows:
+        person_name = recipient["contact_name"] or recipient["partner_contact_name"] or "No contact"
+        job_title = recipient["contact_job_title"] or recipient["partner_contact_job_title"] or ""
+        key = (person_name.casefold(), job_title.casefold())
+        if key not in seen:
+            seen.add(key)
+            recipients.append((person_name, job_title))
+    if recipients:
+        return recipients
+    person_name = outreach_row["primary_contact_name"] or outreach_row["primary_partner_contact_name"] or "No contact"
+    job_title = outreach_row["primary_contact_job_title"] or outreach_row["primary_partner_contact_job_title"] or ""
+    return [(person_name, job_title)]
+
+
+def planned_activity_rows_for_connection(connection, window_days, owner_user_id="", owner_name="", workspace_key=""):
+    today = current_app_datetime().date()
+    end_date = today + timedelta(days=window_days - 1)
+    outreach_rows = connection.execute(f"""
+        SELECT
+            outreach.id,
+            outreach.account_id,
+            outreach.activity_type,
+            outreach.subject,
+            outreach.next_action,
+            outreach.next_action_date,
+            outreach.next_action_time,
+            outreach.sales_play,
+            outreach.assigned_to,
+            outreach.task_status,
+            accounts.account_name,
+            accounts.business_unit,
+            contacts.name AS primary_contact_name,
+            contacts.job_title AS primary_contact_job_title,
+            partner_contacts.name AS primary_partner_contact_name,
+            partner_contacts.job_title AS primary_partner_contact_job_title
+        FROM outreach
+        LEFT JOIN accounts ON outreach.account_id = accounts.id
+        LEFT JOIN contacts ON outreach.contact_id = contacts.id
+        LEFT JOIN partner_contacts ON outreach.partner_contact_id = partner_contacts.id
+        WHERE outreach.next_action_date >= ?
+          AND outreach.next_action_date <= ?
+          AND {report_scheduled_task_sql("outreach")}
+        ORDER BY outreach.id
+    """, (today.isoformat(), end_date.isoformat(), *report_scheduled_task_params())).fetchall()
+    rows = []
+    account_options = {}
+    for outreach_row in outreach_rows:
+        account_name = outreach_row["account_name"] or "No account"
+        account_key = f"{workspace_key or owner_user_id or 'self'}:{outreach_row['account_id'] or ''}"
+        account_options[account_key] = account_name
+        assigned_user = (outreach_row["assigned_to"] or owner_name or "Unassigned").strip()
+        for person_name, job_title in planned_activity_recipients(connection, outreach_row):
+            rows.append({
+                "outreach_id": outreach_row["id"],
+                "account_id": outreach_row["account_id"],
+                "account_key": account_key,
+                "account_name": account_name,
+                "business_org": outreach_row["business_unit"] or "",
+                "user_name": assigned_user,
+                "owner_user_id": owner_user_id,
+                "person_name": person_name,
+                "job_title": job_title,
+                "action_type": outreach_row["activity_type"] or "No action type",
+                "subject": outreach_row["subject"] or outreach_row["next_action"] or "No subject",
+                "sales_play": outreach_row["sales_play"] or "",
+                "due_date": outreach_row["next_action_date"] or "",
+                "due_time": outreach_row["next_action_time"] or "",
+                "due_display": format_display_datetime(outreach_row["next_action_date"], outreach_row["next_action_time"]),
+                "task_status": outreach_row["task_status"] or "Not Started",
+            })
+    return rows, account_options
+
+
+def planned_activity_context(window_value="7", selected_account="", selected_user=""):
+    window_days = int(window_value) if str(window_value) in {"7", "14", "30"} else 7
+    user = current_user()
+    team_members = manager_team_members(user)
+    rows = []
+    account_options = {}
+    if team_members:
+        for member in team_members:
+            connection = None
+            try:
+                if using_postgres() and member["workspace_schema"]:
+                    connection = get_schema_connection(schema=member["workspace_schema"])
+                elif str(member["id"]) == str(user["id"]):
+                    connection = get_db_connection()
+                else:
+                    continue
+                member_rows, member_accounts = planned_activity_rows_for_connection(
+                    connection,
+                    window_days,
+                    owner_user_id=member["id"],
+                    owner_name=member["full_name"],
+                    workspace_key=member["workspace_schema"] or f"user-{member['id']}",
+                )
+                rows.extend(member_rows)
+                account_options.update(member_accounts)
+            except Exception as exc:
+                log_diagnostic_exception("PG-PLAN", exc, {"stage": "team_planned_activity", "user_id": member["id"]})
+            finally:
+                if connection:
+                    connection.close()
+    else:
+        connection = get_db_connection()
+        try:
+            own_rows, own_accounts = planned_activity_rows_for_connection(
+                connection,
+                window_days,
+                owner_user_id=user["id"] if user else "",
+                owner_name=user["full_name"] if user else "",
+                workspace_key=current_user_schema() or "self",
+            )
+            rows.extend(own_rows)
+            account_options.update(own_accounts)
+        finally:
+            connection.close()
+
+    user_options = sorted({row["user_name"] for row in rows}, key=alphanumeric_sort_key)
+    selected_account = str(selected_account or "")
+    selected_user = str(selected_user or "")
+    filtered_rows = [
+        row for row in rows
+        if (not selected_account or row["account_key"] == selected_account)
+        and (not selected_user or row["user_name"] == selected_user)
+    ]
+    filtered_rows.sort(key=lambda row: (
+        alphanumeric_sort_key(row["account_name"]),
+        alphanumeric_sort_key(row["person_name"]),
+        alphanumeric_sort_key(row["job_title"]),
+        alphanumeric_sort_key(row["action_type"]),
+        alphanumeric_sort_key(row["subject"]),
+        row["due_date"],
+        row["due_time"],
+        row["outreach_id"],
+    ))
+    account_option_rows = [
+        {"key": key, "name": name}
+        for key, name in sorted(account_options.items(), key=lambda item: (alphanumeric_sort_key(item[1]), item[0]))
+    ]
+    return {
+        "planned_activity_rows": filtered_rows,
+        "planned_activity_count": len(filtered_rows),
+        "window_days": window_days,
+        "window_end_date": (current_app_datetime().date() + timedelta(days=window_days - 1)).isoformat(),
+        "account_options": account_option_rows,
+        "user_options": user_options,
+        "selected_account": selected_account,
+        "selected_user": selected_user,
+        "is_team_view": bool(team_members),
+    }
+
+
 def pg_progress_report_context(selected_user_id=""):
     activity_period = selected_evidence_period("pg_period", "pg_date_from", "pg_date_to", "7")
     context = manager_pg_dashboard_context(selected_user_id, activity_period)
@@ -11934,6 +12115,16 @@ def pg_progress():
         error=request.args.get("error", ""),
         **context,
     )
+
+
+@app.route("/pg-progress/planned-activity")
+def pg_planned_activity():
+    context = planned_activity_context(
+        request.args.get("window", "7"),
+        request.args.get("account", ""),
+        request.args.get("user", ""),
+    )
+    return render_template("pg_planned_activity.html", **context)
 
 
 @app.route("/accounts")

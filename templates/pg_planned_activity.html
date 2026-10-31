@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}Planned Activity | PipeFlow{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Planned Activity</h1>
+        <p>Open Outreach due in the next {{ window_days }} days, condensed by account, user and person.</p>
+    </div>
+    <a href="{{ url_for('pg_progress') }}" class="btn btn-secondary">Back to PG Progress</a>
+</div>
+
+<section class="form-card pg-planned-window-card" aria-label="Planned activity period">
+    <div>
+        <h2>Planning horizon</h2>
+        <p>From today through {{ window_end_date|display_date }}. Completed, closed, cancelled and deleted activity is excluded.</p>
+    </div>
+    <div class="button-group pg-planned-window-buttons">
+        {% for days in (7, 14, 30) %}
+            <a href="{{ url_for('pg_planned_activity', window=days, account=selected_account, user=selected_user) }}"
+               class="btn {% if window_days == days %}btn-primary{% else %}btn-secondary{% endif %}"
+               {% if window_days == days %}aria-current="page"{% endif %}>
+                Next {{ days }} days
+            </a>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="form-card pg-planned-filter-card">
+    <form method="GET" action="{{ url_for('pg_planned_activity') }}" class="pipeflow-form">
+        <input type="hidden" name="window" value="{{ window_days }}">
+        <div class="form-grid compact-filter-grid">
+            <div class="form-group">
+                <label for="planned-account-filter">Account</label>
+                <select id="planned-account-filter" name="account">
+                    <option value="">All accounts</option>
+                    {% for account in account_options %}
+                        <option value="{{ account.key }}" {% if selected_account == account.key %}selected{% endif %}>{{ account.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="planned-user-filter">User</label>
+                <select id="planned-user-filter" name="user">
+                    <option value="">All users</option>
+                    {% for user_name in user_options %}
+                        <option value="{{ user_name }}" {% if selected_user == user_name %}selected{% endif %}>{{ user_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="form-actions pg-planned-filter-actions">
+            <button type="submit" class="btn btn-primary">Apply Filters</button>
+            <a href="{{ url_for('pg_planned_activity', window=window_days) }}" class="btn btn-secondary">Clear Filters</a>
+        </div>
+    </form>
+</section>
+
+<section class="form-card pg-planned-table-card">
+    <div class="section-header">
+        <div>
+            <h2>Planned Outreach</h2>
+            <p>{{ planned_activity_count }} planned {{ "activity" if planned_activity_count == 1 else "activities" }} shown{% if is_team_view %} across permitted team workspaces{% endif %}.</p>
+        </div>
+    </div>
+
+    {% if planned_activity_rows %}
+        <div class="table-container pg-planned-table-container">
+            <table class="report-table pg-planned-table">
+                <thead>
+                    <tr>
+                        <th>Company</th>
+                        <th>User</th>
+                        <th>Person</th>
+                        <th>Job Title</th>
+                        <th>Action Type</th>
+                        <th>Subject</th>
+                        <th>Due</th>
+                        <th>Sales Play</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in planned_activity_rows %}
+                        <tr>
+                            <td>
+                                <strong>{{ row.account_name }}</strong>
+                                {% if row.business_org %}<span class="pg-planned-cell-detail">{{ row.business_org }}</span>{% endif %}
+                            </td>
+                            <td>{{ row.user_name }}</td>
+                            <td><strong>{{ row.person_name }}</strong></td>
+                            <td>{{ row.job_title or "Not set" }}</td>
+                            <td>{{ row.action_type }}</td>
+                            <td><a href="{{ url_for('view_outreach', outreach_id=row.outreach_id) }}">{{ row.subject }}</a></td>
+                            <td data-sort-value="{{ row.due_date }} {{ row.due_time }}">
+                                <strong>{{ row.due_display }}</strong>
+                                <span class="pg-planned-cell-detail">{{ row.task_status }}</span>
+                            </td>
+                            <td>{{ row.sales_play or "Not set" }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state pg-planned-empty-state">
+            <h3>No planned activity in this view</h3>
+            <p>Try a longer planning horizon or clear the account and user filters.</p>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}

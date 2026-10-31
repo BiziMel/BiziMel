@@ -28,7 +28,7 @@
 
     {% if current_user %}<nav class="button-group nav-stack">
     <a href="/" class="btn btn-primary {% if request.endpoint == 'home' %}active-tab{% endif %}">Insights Dashboard</a>
-    <a href="{{ url_for('pg_progress') }}" class="btn btn-primary {% if request.endpoint == 'pg_progress' %}active-tab{% endif %}">PG Progress</a>
+    <a href="{{ url_for('pg_progress') }}" class="btn btn-primary {% if request.endpoint in ['pg_progress', 'pg_planned_activity'] %}active-tab{% endif %}">PG Progress</a>
     <a href="/outreach" class="btn btn-primary {% if request.endpoint in ['outreach', 'add_outreach', 'edit_outreach', 'view_outreach', 'campaign_builder'] %}active-tab{% endif %}">Outreach Tasks</a>
     <a href="{{ url_for('sales_plays') }}" class="btn btn-primary {% if request.endpoint in ['sales_plays', 'edit_sales_play', 'delete_sales_play'] %}active-tab{% endif %}">Sales Plays</a>
     <a href="/accounts" class="btn btn-primary {% if request.endpoint in ['accounts', 'add_account', 'edit_account', 'view_account'] %}active-tab{% endif %}">Accounts</a>

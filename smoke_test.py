@@ -390,10 +390,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.13.17" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.13.18" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.13.17",
+            "health/version did not report Release 2.13.18",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -506,6 +506,23 @@ def main():
         today = date.today()
         yesterday = (today - timedelta(days=1)).isoformat()
         tomorrow = (today + timedelta(days=1)).isoformat()
+        connection = sqlite3.connect(db_path)
+        connection.executemany(
+            """
+            INSERT INTO outreach (
+                fy, quarter, account_id, contact_id, sales_play, activity_type, subject,
+                next_action, next_action_date, next_action_time, task_status, assigned_to
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                ("FY27", "Q1", account_id, contact_id, "Smoke Test Play", "Email", "Zebra seven-day plan", "Send follow-up", (today + timedelta(days=1)).isoformat(), "09:00", "Not Started", "Smoke Planner"),
+                ("FY27", "Q1", account_id, second_contact_id, "Smoke Test Play", "Call", "Zulu seven-day plan", "Call stakeholder", (today + timedelta(days=2)).isoformat(), "10:00", "Not Started", "Smoke Planner"),
+                ("FY27", "Q1", account_id, second_contact_id, "Smoke Test Play", "Call", "Alpha fourteen-day plan", "Call stakeholder", (today + timedelta(days=10)).isoformat(), "11:00", "Not Started", "Smoke Planner"),
+                ("FY27", "Q1", account_id, contact_id, "Smoke Test Play", "Meeting", "Beyond thirty-day plan", "Future meeting", (today + timedelta(days=30)).isoformat(), "12:00", "Not Started", "Smoke Planner"),
+            ],
+        )
+        connection.commit()
+        connection.close()
 
         assert_ok(
             pipeflow_app.nightly_expected_run_date(datetime.combine(today, time(7, 14)), False) is None,
@@ -614,6 +631,7 @@ def main():
             "/reports/partners": "Partner Reports",
             "/reports/sales-plays": "Sales Play Reports",
             "/reports/pg-progress": "PG Progress",
+            "/pg-progress/planned-activity": "Planned Activity",
             "/reports/tasks": "Outreach Reports",
             "/search?q=Smoke": "Global Search",
             "/profile": "Profile",
@@ -623,6 +641,62 @@ def main():
             response = client.get(path)
             html = response.get_data(as_text=True)
             assert_ok(response.status_code == 200 and marker in html, f"{path} failed")
+
+        planned_7_html = client.get("/pg-progress/planned-activity?window=7").get_data(as_text=True)
+        planned_14_html = client.get("/pg-progress/planned-activity?window=14").get_data(as_text=True)
+        planned_30_html = client.get("/pg-progress/planned-activity?window=30").get_data(as_text=True)
+        assert_ok(
+            "Zebra seven-day plan" in planned_7_html
+            and "Zulu seven-day plan" in planned_7_html
+            and "Alpha fourteen-day plan" not in planned_7_html,
+            "Planned Activity did not apply the inclusive next 7 day horizon",
+        )
+        assert_ok(
+            "Alpha fourteen-day plan" in planned_14_html
+            and planned_14_html.index("Alpha fourteen-day plan") < planned_14_html.index("Zulu seven-day plan")
+            and planned_14_html.index("Zulu seven-day plan") < planned_14_html.index("Zebra seven-day plan")
+            and planned_14_html.index("Smoke Second Contact") < planned_14_html.index("Smoke Test Contact"),
+            "Planned Activity was not sorted by person, job title, action type and subject",
+        )
+        assert_ok(
+            "Alpha fourteen-day plan" in planned_30_html
+            and "Beyond thirty-day plan" not in planned_30_html
+            and "Next 7 days" in planned_30_html
+            and "Next 14 days" in planned_30_html
+            and "Next 30 days" in planned_30_html,
+            "Planned Activity did not apply the next 30 day horizon or show all horizon controls",
+        )
+        account_option = re.search(r'<option value="([^"]+)"[^>]*>Smoke Test Account</option>', planned_30_html)
+        assert_ok(account_option, "Planned Activity account filter did not include the planned account")
+        filtered_planned_html = client.get(
+            "/pg-progress/planned-activity",
+            query_string={"window": "30", "account": account_option.group(1), "user": "Smoke Planner"},
+        ).get_data(as_text=True)
+        empty_planned_html = client.get(
+            "/pg-progress/planned-activity",
+            query_string={"window": "30", "user": "No Such User"},
+        ).get_data(as_text=True)
+        assert_ok(
+            "3 planned activities shown" in filtered_planned_html
+            and "Smoke Planner" in filtered_planned_html
+            and "No planned activity in this view" in empty_planned_html,
+            "Planned Activity account or user filtering failed",
+        )
+        connection = sqlite3.connect(db_path)
+        connection.execute(
+            """
+            DELETE FROM outreach
+            WHERE subject IN (?, ?, ?, ?)
+            """,
+            (
+                "Zebra seven-day plan",
+                "Zulu seven-day plan",
+                "Alpha fourteen-day plan",
+                "Beyond thirty-day plan",
+            ),
+        )
+        connection.commit()
+        connection.close()
 
         response = client.post(
             "/contacts/add",
@@ -832,7 +906,9 @@ def main():
         assert_ok(
             'name="pg_period"' in pg_default_html
             and 'value="7" selected' in pg_default_html
-            and "Activity: The Last 7 Days" in pg_default_html,
+            and "Activity: The Last 7 Days" in pg_default_html
+            and "View Planned Activity" in pg_default_html
+            and pg_default_html.index("View Planned Activity") < pg_default_html.index('name="pg_period"'),
             "PG Actions did not default to the Last 7 Days evidence period",
         )
         assert_ok(
@@ -1857,8 +1933,11 @@ def main():
             "Campaign Builder did not validate malformed contact selections clearly",
         )
 
-        filter_campaign_start = (today + timedelta(days=35)).isoformat()
-        filter_campaign_end = (today + timedelta(days=45)).isoformat()
+        filter_campaign_start_date = today + timedelta(days=35)
+        while filter_campaign_start_date.weekday() >= 5:
+            filter_campaign_start_date += timedelta(days=1)
+        filter_campaign_start = filter_campaign_start_date.isoformat()
+        filter_campaign_end = (filter_campaign_start_date + timedelta(days=10)).isoformat()
         connection = sqlite3.connect(db_path)
         connection.execute(
             """

@@ -24,6 +24,14 @@
     <div class="alert-error">{{ error }}</div>
 {% endif %}
 
+<div class="pg-planned-activity-link-band">
+    <div>
+        <strong>Forward activity view</strong>
+        <span>Review planned Outreach by account and user for the next 7, 14 or 30 days.</span>
+    </div>
+    <a href="{{ url_for('pg_planned_activity', window=7) }}" class="btn btn-primary">View Planned Activity</a>
+</div>
+
 <section class="pg-actions-period-band" aria-label="PG Actions evidence period">
     <div>
         <h2>PG Actions Evidence Period</h2>

@@ -3073,6 +3073,102 @@ a:hover {
     font-weight: 800;
 }
 
+.pg-planned-activity-link-band {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 16px;
+    padding: 14px 16px;
+    border: 1px solid #b9d6c2;
+    border-left: 5px solid #2f6f4e;
+    border-radius: 8px;
+    background: #f3f9f4;
+}
+
+.pg-planned-activity-link-band > div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.pg-planned-activity-link-band span {
+    color: #4a6253;
+    font-size: 13px;
+}
+
+.pg-planned-window-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+.pg-planned-window-card h2,
+.pg-planned-window-card p {
+    margin: 0;
+}
+
+.pg-planned-window-card p {
+    margin-top: 5px;
+    color: #5b6b60;
+}
+
+.pg-planned-window-buttons {
+    flex: 0 0 auto;
+}
+
+.pg-planned-filter-card,
+.pg-planned-table-card {
+    margin-top: 16px;
+}
+
+.pg-planned-filter-actions {
+    margin-top: 0;
+}
+
+.pg-planned-table-container {
+    overflow-x: auto;
+}
+
+.pg-planned-table {
+    min-width: 1120px;
+    font-size: 13px;
+}
+
+.pg-planned-table th,
+.pg-planned-table td {
+    padding: 9px 10px;
+    vertical-align: top;
+}
+
+.pg-planned-table th {
+    white-space: nowrap;
+}
+
+.pg-planned-cell-detail {
+    display: block;
+    margin-top: 2px;
+    color: #66756b;
+    font-size: 11px;
+}
+
+.pg-planned-empty-state {
+    margin-top: 8px;
+}
+
+@media (max-width: 720px) {
+    .pg-planned-activity-link-band,
+    .pg-planned-window-card {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .pg-planned-window-buttons .btn {
+        flex: 1 1 auto;
+    }
+}
+
 @media (max-width: 720px) {
     .outreach-required-field-heading,
     .outreach-required-field-heading > div {
