@@ -35,9 +35,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.18"
-APP_RELEASE_DATE = "2026-10-31"
-APP_BUILD = "2026-10-31-v2.13.18-planned-activity-r1"
+APP_VERSION = "2.13.19"
+APP_RELEASE_DATE = "2026-11-02"
+APP_BUILD = "2026-11-02-v2.13.19-account-activity-matrix-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -54,6 +54,20 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.19",
+        "release_date": "2026-11-02",
+        "title": "Account and contact planned-activity matrix",
+        "new": [
+            "Replaced the flat Planned Activity table with a daily account-and-contact activity matrix.",
+            "Added per-account floating activity legends, contact totals and daily totals for the selected horizon.",
+        ],
+        "enhanced": [
+            "Restricted Planned Activity to Outreach assigned to the signed-in user and removed owner and user controls from the page.",
+            "Added compact colour-coded activity counts that link back to the underlying Outreach task.",
+            "Kept 7, 14 and 30 day horizons usable with sticky contact and total columns and horizontal scrolling.",
+        ],
+    },
     {
         "version": "2.13.18",
         "release_date": "2026-10-31",
@@ -11534,58 +11548,137 @@ def planned_activity_rows_for_connection(connection, window_days, owner_user_id=
     return rows, account_options
 
 
-def planned_activity_context(window_value="7", selected_account="", selected_user=""):
+def planned_activity_type_meta(activity_type):
+    label = (activity_type or "No action type").strip()
+    key = label.casefold()
+    known_types = {
+        "vito": ("V", "vito"),
+        "linkedin": ("L", "linkedin"),
+        "phone": ("C", "call"),
+        "call": ("C", "call"),
+        "sms/whatsapp": ("S", "message"),
+        "direct mail": ("D", "direct-mail"),
+        "white paper / webinar / consensus": ("W", "content"),
+        "events": ("EV", "event"),
+        "email": ("E", "email"),
+        "meeting": ("M", "meeting"),
+        "follow-up": ("F", "follow-up"),
+        "partner touchpoint": ("P", "partner"),
+        "other": ("O", "other"),
+        "no action type": ("?", "other"),
+    }
+    code, colour_key = known_types.get(key, (re.sub(r"[^A-Z0-9]", "", label.upper())[:2] or "?", "other"))
+    return {"label": label, "code": code, "colour_key": colour_key}
+
+
+def planned_activity_matrix(rows, window_days):
+    today = current_app_datetime().date()
+    days = []
+    for offset in range(window_days):
+        day = today + timedelta(days=offset)
+        days.append({
+            "date": day.isoformat(),
+            "label": f"{day.strftime('%a')} {day.day}",
+            "full_label": day.strftime("%A %d %B %Y"),
+            "is_weekend": day.weekday() >= 5,
+        })
+
+    groups = {}
+    for row in rows:
+        group = groups.setdefault(row["account_key"], {
+            "account_key": row["account_key"],
+            "account_name": row["account_name"],
+            "business_org": row["business_org"],
+            "activity_total": 0,
+            "daily_totals": {day["date"]: 0 for day in days},
+            "contacts": {},
+            "legend": {},
+        })
+        contact_key = (row["person_name"].casefold(), row["job_title"].casefold())
+        contact = group["contacts"].setdefault(contact_key, {
+            "person_name": row["person_name"],
+            "job_title": row["job_title"],
+            "activity_total": 0,
+            "days": {day["date"]: [] for day in days},
+        })
+        if row["due_date"] not in contact["days"]:
+            continue
+        meta = planned_activity_type_meta(row["action_type"])
+        group["legend"][meta["label"]] = meta
+        contact["days"][row["due_date"]].append({**row, **meta})
+        contact["activity_total"] += 1
+        group["daily_totals"][row["due_date"]] += 1
+        group["activity_total"] += 1
+
+    account_groups = []
+    for group in groups.values():
+        contacts = []
+        for contact in group["contacts"].values():
+            day_cells = []
+            for day in days:
+                activities = contact["days"][day["date"]]
+                by_type = {}
+                for activity in activities:
+                    bucket = by_type.setdefault(activity["label"], {
+                        "label": activity["label"],
+                        "code": activity["code"],
+                        "colour_key": activity["colour_key"],
+                        "activities": [],
+                    })
+                    bucket["activities"].append(activity)
+                activity_counts = []
+                for bucket in sorted(by_type.values(), key=lambda item: alphanumeric_sort_key(item["label"])):
+                    bucket["activities"].sort(key=lambda item: (
+                        item["due_time"],
+                        alphanumeric_sort_key(item["subject"]),
+                        item["outreach_id"],
+                    ))
+                    bucket["count"] = len(bucket["activities"])
+                    bucket["first_outreach_id"] = bucket["activities"][0]["outreach_id"]
+                    bucket["tooltip"] = "; ".join(
+                        " ".join(part for part in (activity["due_time"], activity["subject"]) if part)
+                        for activity in bucket["activities"]
+                    )
+                    activity_counts.append(bucket)
+                day_cells.append({"date": day["date"], "activity_counts": activity_counts})
+            contact["day_cells"] = day_cells
+            contacts.append(contact)
+        contacts.sort(key=lambda contact: (
+            alphanumeric_sort_key(contact["person_name"]),
+            alphanumeric_sort_key(contact["job_title"]),
+        ))
+        group["contacts"] = contacts
+        group["legend"] = sorted(group["legend"].values(), key=lambda item: alphanumeric_sort_key(item["label"]))
+        group["daily_total_cells"] = [group["daily_totals"][day["date"]] for day in days]
+        account_groups.append(group)
+    account_groups.sort(key=lambda group: alphanumeric_sort_key(group["account_name"]))
+    return days, account_groups
+
+
+def planned_activity_context(window_value="7", selected_account=""):
     window_days = int(window_value) if str(window_value) in {"7", "14", "30"} else 7
     user = current_user()
-    team_members = manager_team_members(user)
-    rows = []
-    account_options = {}
-    if team_members:
-        for member in team_members:
-            connection = None
-            try:
-                if using_postgres() and member["workspace_schema"]:
-                    connection = get_schema_connection(schema=member["workspace_schema"])
-                elif str(member["id"]) == str(user["id"]):
-                    connection = get_db_connection()
-                else:
-                    continue
-                member_rows, member_accounts = planned_activity_rows_for_connection(
-                    connection,
-                    window_days,
-                    owner_user_id=member["id"],
-                    owner_name=member["full_name"],
-                    workspace_key=member["workspace_schema"] or f"user-{member['id']}",
-                )
-                rows.extend(member_rows)
-                account_options.update(member_accounts)
-            except Exception as exc:
-                log_diagnostic_exception("PG-PLAN", exc, {"stage": "team_planned_activity", "user_id": member["id"]})
-            finally:
-                if connection:
-                    connection.close()
-    else:
-        connection = get_db_connection()
-        try:
-            own_rows, own_accounts = planned_activity_rows_for_connection(
-                connection,
-                window_days,
-                owner_user_id=user["id"] if user else "",
-                owner_name=user["full_name"] if user else "",
-                workspace_key=current_user_schema() or "self",
-            )
-            rows.extend(own_rows)
-            account_options.update(own_accounts)
-        finally:
-            connection.close()
-
-    user_options = sorted({row["user_name"] for row in rows}, key=alphanumeric_sort_key)
+    logged_in_user_name = (user["full_name"] if user else "").strip()
+    connection = get_db_connection()
+    try:
+        rows, _account_options = planned_activity_rows_for_connection(
+            connection,
+            window_days,
+            owner_user_id=user["id"] if user else "",
+            owner_name=logged_in_user_name,
+            workspace_key=current_user_schema() or "self",
+        )
+    finally:
+        connection.close()
+    rows = [row for row in rows if row["user_name"] == logged_in_user_name]
+    account_options = {
+        row["account_key"]: row["account_name"]
+        for row in rows
+    }
     selected_account = str(selected_account or "")
-    selected_user = str(selected_user or "")
     filtered_rows = [
         row for row in rows
         if (not selected_account or row["account_key"] == selected_account)
-        and (not selected_user or row["user_name"] == selected_user)
     ]
     filtered_rows.sort(key=lambda row: (
         alphanumeric_sort_key(row["account_name"]),
@@ -11601,16 +11694,17 @@ def planned_activity_context(window_value="7", selected_account="", selected_use
         {"key": key, "name": name}
         for key, name in sorted(account_options.items(), key=lambda item: (alphanumeric_sort_key(item[1]), item[0]))
     ]
+    planned_days, account_groups = planned_activity_matrix(filtered_rows, window_days)
     return {
         "planned_activity_rows": filtered_rows,
         "planned_activity_count": len(filtered_rows),
+        "planned_days": planned_days,
+        "account_groups": account_groups,
         "window_days": window_days,
         "window_end_date": (current_app_datetime().date() + timedelta(days=window_days - 1)).isoformat(),
         "account_options": account_option_rows,
-        "user_options": user_options,
         "selected_account": selected_account,
-        "selected_user": selected_user,
-        "is_team_view": bool(team_members),
+        "logged_in_user_name": logged_in_user_name,
     }
 
 
@@ -12122,7 +12216,6 @@ def pg_planned_activity():
     context = planned_activity_context(
         request.args.get("window", "7"),
         request.args.get("account", ""),
-        request.args.get("user", ""),
     )
     return render_template("pg_planned_activity.html", **context)
 

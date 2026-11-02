@@ -390,10 +390,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.13.18" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.13.19" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.13.18",
+            "health/version did not report Release 2.13.19",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -515,10 +515,11 @@ def main():
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                ("FY27", "Q1", account_id, contact_id, "Smoke Test Play", "Email", "Zebra seven-day plan", "Send follow-up", (today + timedelta(days=1)).isoformat(), "09:00", "Not Started", "Smoke Planner"),
-                ("FY27", "Q1", account_id, second_contact_id, "Smoke Test Play", "Call", "Zulu seven-day plan", "Call stakeholder", (today + timedelta(days=2)).isoformat(), "10:00", "Not Started", "Smoke Planner"),
-                ("FY27", "Q1", account_id, second_contact_id, "Smoke Test Play", "Call", "Alpha fourteen-day plan", "Call stakeholder", (today + timedelta(days=10)).isoformat(), "11:00", "Not Started", "Smoke Planner"),
-                ("FY27", "Q1", account_id, contact_id, "Smoke Test Play", "Meeting", "Beyond thirty-day plan", "Future meeting", (today + timedelta(days=30)).isoformat(), "12:00", "Not Started", "Smoke Planner"),
+                ("FY27", "Q1", account_id, contact_id, "Smoke Test Play", "Email", "Zebra seven-day plan", "Send follow-up", (today + timedelta(days=1)).isoformat(), "09:00", "Not Started", "Smoke Test Admin"),
+                ("FY27", "Q1", account_id, second_contact_id, "Smoke Test Play", "Call", "Zulu seven-day plan", "Call stakeholder", (today + timedelta(days=2)).isoformat(), "10:00", "Not Started", "Smoke Test Admin"),
+                ("FY27", "Q1", account_id, second_contact_id, "Smoke Test Play", "Call", "Alpha fourteen-day plan", "Call stakeholder", (today + timedelta(days=10)).isoformat(), "11:00", "Not Started", "Smoke Test Admin"),
+                ("FY27", "Q1", account_id, contact_id, "Smoke Test Play", "Meeting", "Beyond thirty-day plan", "Future meeting", (today + timedelta(days=30)).isoformat(), "12:00", "Not Started", "Smoke Test Admin"),
+                ("FY27", "Q1", account_id, contact_id, "Smoke Test Play", "Email", "Hidden other-user plan", "Do not show", (today + timedelta(days=1)).isoformat(), "13:00", "Not Started", "Another User"),
             ],
         )
         connection.commit()
@@ -648,15 +649,22 @@ def main():
         assert_ok(
             "Zebra seven-day plan" in planned_7_html
             and "Zulu seven-day plan" in planned_7_html
-            and "Alpha fourteen-day plan" not in planned_7_html,
+            and "Alpha fourteen-day plan" not in planned_7_html
+            and "Hidden other-user plan" not in planned_7_html
+            and "pg-planned-account-frame" in planned_7_html
+            and "pg-planned-floating-legend" in planned_7_html
+            and "Daily total" in planned_7_html
+            and "1E" in planned_7_html
+            and "1C" in planned_7_html
+            and 'id="planned-user-filter"' not in planned_7_html
+            and "Owner:" not in planned_7_html,
             "Planned Activity did not apply the inclusive next 7 day horizon",
         )
         assert_ok(
             "Alpha fourteen-day plan" in planned_14_html
-            and planned_14_html.index("Alpha fourteen-day plan") < planned_14_html.index("Zulu seven-day plan")
-            and planned_14_html.index("Zulu seven-day plan") < planned_14_html.index("Zebra seven-day plan")
+            and planned_14_html.index("Zulu seven-day plan") < planned_14_html.index("Alpha fourteen-day plan")
             and planned_14_html.index("Smoke Second Contact") < planned_14_html.index("Smoke Test Contact"),
-            "Planned Activity was not sorted by person, job title, action type and subject",
+            "Planned Activity matrix was not ordered by contact and day",
         )
         assert_ok(
             "Alpha fourteen-day plan" in planned_30_html
@@ -670,29 +678,31 @@ def main():
         assert_ok(account_option, "Planned Activity account filter did not include the planned account")
         filtered_planned_html = client.get(
             "/pg-progress/planned-activity",
-            query_string={"window": "30", "account": account_option.group(1), "user": "Smoke Planner"},
+            query_string={"window": "30", "account": account_option.group(1)},
         ).get_data(as_text=True)
         empty_planned_html = client.get(
             "/pg-progress/planned-activity",
-            query_string={"window": "30", "user": "No Such User"},
+            query_string={"window": "30", "account": "no-such-account"},
         ).get_data(as_text=True)
         assert_ok(
-            "3 planned activities shown" in filtered_planned_html
-            and "Smoke Planner" in filtered_planned_html
+            "3" in filtered_planned_html
+            and "planned activities across" in filtered_planned_html
+            and "Smoke Test Account" in filtered_planned_html
             and "No planned activity in this view" in empty_planned_html,
-            "Planned Activity account or user filtering failed",
+            "Planned Activity account filtering failed",
         )
         connection = sqlite3.connect(db_path)
         connection.execute(
             """
             DELETE FROM outreach
-            WHERE subject IN (?, ?, ?, ?)
+            WHERE subject IN (?, ?, ?, ?, ?)
             """,
             (
                 "Zebra seven-day plan",
                 "Zulu seven-day plan",
                 "Alpha fourteen-day plan",
                 "Beyond thirty-day plan",
+                "Hidden other-user plan",
             ),
         )
         connection.commit()
