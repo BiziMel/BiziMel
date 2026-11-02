@@ -3186,6 +3186,14 @@ a:hover {
     align-items: center;
     gap: 4px;
     white-space: nowrap;
+    color: #435448;
+    text-decoration: none;
+}
+
+.pg-planned-legend-item:hover,
+.pg-planned-legend-item:focus-visible {
+    color: #183b2b;
+    text-decoration: underline;
 }
 
 .pg-planned-legend-item .pg-activity-chip {
@@ -3213,19 +3221,37 @@ a:hover {
     font-size: 20px;
 }
 
+.pg-planned-account-header h2 a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.pg-planned-account-header h2 a:hover,
+.pg-planned-account-header h2 a:focus-visible {
+    text-decoration: underline;
+}
+
 .pg-planned-account-header p {
     margin-top: 3px;
     color: #66756b;
     font-size: 12px;
 }
 
-.pg-planned-account-header > strong {
+.pg-planned-account-total-link {
     flex: 0 0 auto;
     padding: 6px 10px;
     border-radius: 999px;
     background: #e8f3e9;
     color: #245b3d;
     font-size: 12px;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.pg-planned-account-total-link:hover,
+.pg-planned-account-total-link:focus-visible {
+    background: #d7ead9;
+    text-decoration: underline;
 }
 
 .pg-planned-matrix-scroll {
@@ -3250,6 +3276,31 @@ a:hover {
     border-right: 1px solid #e1e9e3;
     border-bottom: 1px solid #e1e9e3;
     text-align: center;
+}
+
+.pg-planned-matrix a:not(.pg-activity-chip) {
+    color: inherit;
+    text-decoration: none;
+}
+
+.pg-planned-matrix a:not(.pg-activity-chip):hover,
+.pg-planned-matrix a:not(.pg-activity-chip):focus-visible {
+    color: #185b39;
+    text-decoration: underline;
+}
+
+.pg-planned-day-column > a,
+.pg-planned-total-column > a,
+.pg-planned-daily-total > a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 28px;
+}
+
+.pg-planned-contact-column > a {
+    display: block;
 }
 
 .pg-planned-matrix thead th {

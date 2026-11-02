@@ -35,9 +35,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.19"
+APP_VERSION = "2.13.20"
 APP_RELEASE_DATE = "2026-11-02"
-APP_BUILD = "2026-11-02-v2.13.19-account-activity-matrix-r1"
+APP_BUILD = "2026-11-02-v2.13.20-planned-activity-drilldown-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -54,6 +54,19 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.20",
+        "release_date": "2026-11-02",
+        "title": "Planned Activity drill-down links",
+        "new": [
+            "Made account headings, legends, contacts, day headings, activity chips and totals in Planned Activity link to the Outreach table.",
+        ],
+        "enhanced": [
+            "Applied the clicked account, contact, activity type, date horizon and signed-in user as exact Outreach filters.",
+            "Exposed Contact, Activity Type, Due From, Due To and Assigned To controls on Outreach so drill-down filters are visible and adjustable.",
+            "Added a Back to Planned Activity link that preserves the selected planning view.",
+        ],
+    },
     {
         "version": "2.13.19",
         "release_date": "2026-11-02",
@@ -11463,6 +11476,8 @@ def save_manual_pg_progress(connection, form):
 def planned_activity_recipients(connection, outreach_row):
     recipient_rows = connection.execute("""
         SELECT
+            outreach_recipients.contact_id,
+            outreach_recipients.partner_contact_id,
             contacts.name AS contact_name,
             contacts.job_title AS contact_job_title,
             partner_contacts.name AS partner_contact_name,
@@ -11478,15 +11493,30 @@ def planned_activity_recipients(connection, outreach_row):
     for recipient in recipient_rows:
         person_name = recipient["contact_name"] or recipient["partner_contact_name"] or "No contact"
         job_title = recipient["contact_job_title"] or recipient["partner_contact_job_title"] or ""
-        key = (person_name.casefold(), job_title.casefold())
+        key = (
+            str(recipient["contact_id"] or ""),
+            str(recipient["partner_contact_id"] or ""),
+            person_name.casefold(),
+            job_title.casefold(),
+        )
         if key not in seen:
             seen.add(key)
-            recipients.append((person_name, job_title))
+            recipients.append({
+                "person_name": person_name,
+                "job_title": job_title,
+                "contact_id": recipient["contact_id"],
+                "partner_contact_id": recipient["partner_contact_id"],
+            })
     if recipients:
         return recipients
     person_name = outreach_row["primary_contact_name"] or outreach_row["primary_partner_contact_name"] or "No contact"
     job_title = outreach_row["primary_contact_job_title"] or outreach_row["primary_partner_contact_job_title"] or ""
-    return [(person_name, job_title)]
+    return [{
+        "person_name": person_name,
+        "job_title": job_title,
+        "contact_id": outreach_row["contact_id"],
+        "partner_contact_id": outreach_row["partner_contact_id"],
+    }]
 
 
 def planned_activity_rows_for_connection(connection, window_days, owner_user_id="", owner_name="", workspace_key=""):
@@ -11496,6 +11526,8 @@ def planned_activity_rows_for_connection(connection, window_days, owner_user_id=
         SELECT
             outreach.id,
             outreach.account_id,
+            outreach.contact_id,
+            outreach.partner_contact_id,
             outreach.activity_type,
             outreach.subject,
             outreach.next_action,
@@ -11526,7 +11558,7 @@ def planned_activity_rows_for_connection(connection, window_days, owner_user_id=
         account_key = f"{workspace_key or owner_user_id or 'self'}:{outreach_row['account_id'] or ''}"
         account_options[account_key] = account_name
         assigned_user = (outreach_row["assigned_to"] or owner_name or "Unassigned").strip()
-        for person_name, job_title in planned_activity_recipients(connection, outreach_row):
+        for recipient in planned_activity_recipients(connection, outreach_row):
             rows.append({
                 "outreach_id": outreach_row["id"],
                 "account_id": outreach_row["account_id"],
@@ -11535,8 +11567,15 @@ def planned_activity_rows_for_connection(connection, window_days, owner_user_id=
                 "business_org": outreach_row["business_unit"] or "",
                 "user_name": assigned_user,
                 "owner_user_id": owner_user_id,
-                "person_name": person_name,
-                "job_title": job_title,
+                "person_name": recipient["person_name"],
+                "job_title": recipient["job_title"],
+                "contact_id": recipient["contact_id"],
+                "partner_contact_id": recipient["partner_contact_id"],
+                "person_filter": (
+                    f"contact:{recipient['contact_id']}" if recipient["contact_id"]
+                    else f"partner:{recipient['partner_contact_id']}" if recipient["partner_contact_id"]
+                    else ""
+                ),
                 "action_type": outreach_row["activity_type"] or "No action type",
                 "subject": outreach_row["subject"] or outreach_row["next_action"] or "No subject",
                 "sales_play": outreach_row["sales_play"] or "",
@@ -11587,6 +11626,7 @@ def planned_activity_matrix(rows, window_days):
     for row in rows:
         group = groups.setdefault(row["account_key"], {
             "account_key": row["account_key"],
+            "account_id": row["account_id"],
             "account_name": row["account_name"],
             "business_org": row["business_org"],
             "activity_total": 0,
@@ -11594,10 +11634,16 @@ def planned_activity_matrix(rows, window_days):
             "contacts": {},
             "legend": {},
         })
-        contact_key = (row["person_name"].casefold(), row["job_title"].casefold())
+        contact_key = (
+            str(row["contact_id"] or ""),
+            str(row["partner_contact_id"] or ""),
+            row["person_name"].casefold(),
+            row["job_title"].casefold(),
+        )
         contact = group["contacts"].setdefault(contact_key, {
             "person_name": row["person_name"],
             "job_title": row["job_title"],
+            "person_filter": row["person_filter"],
             "activity_total": 0,
             "days": {day["date"]: [] for day in days},
         })
@@ -15660,7 +15706,17 @@ def outreach_impl():
     sales_play_filter = request.args.get("sales_play")
     account_filter = request.args.get("account_id")
     outcome_filter = request.args.get("outcome")
+    person_filter = request.args.get("person", "")
     contact_filter = request.args.get("contact_id", "")
+    partner_contact_filter = request.args.get("partner_contact_id", "")
+    if person_filter.startswith("contact:") and person_filter.split(":", 1)[1].isdigit():
+        contact_filter = person_filter.split(":", 1)[1]
+        partner_contact_filter = ""
+    elif person_filter.startswith("partner:") and person_filter.split(":", 1)[1].isdigit():
+        partner_contact_filter = person_filter.split(":", 1)[1]
+        contact_filter = ""
+    activity_type_filter = request.args.get("activity_type", "")
+    assigned_to_filter = request.args.get("assigned_to", "")
     due_start_filter = request.args.get("due_start", "")
     due_end_filter = request.args.get("due_end", "")
     activity_start_filter = request.args.get("activity_start", "")
@@ -15671,6 +15727,10 @@ def outreach_impl():
     followup_due_filter = request.args.get("followup_due", "")
     pg_success_filter = request.args.get("pg_success", "")
     nbm_success_week_filter = request.args.get("nbm_success_week", "")
+    planned_activity_return = (
+        safe_redirect_target(request.args.get("return_to"), "pg_planned_activity")
+        if request.args.get("return_to") else ""
+    )
     selected_statuses = request.args.getlist("task_status")
     if not selected_statuses:
         selected_statuses = ["All Open"]
@@ -15750,6 +15810,27 @@ def outreach_impl():
             )
         """
         params.extend([contact_filter, contact_filter])
+
+    if partner_contact_filter:
+        query += """
+            AND (
+                    outreach.partner_contact_id = ?
+                 OR outreach.id IN (
+                        SELECT outreach_id
+                        FROM outreach_recipients
+                        WHERE outreach_recipients.partner_contact_id = ?
+                    )
+            )
+        """
+        params.extend([partner_contact_filter, partner_contact_filter])
+
+    if activity_type_filter:
+        query += " AND outreach.activity_type = ?"
+        params.append(activity_type_filter)
+
+    if assigned_to_filter:
+        query += " AND COALESCE(NULLIF(TRIM(outreach.assigned_to), ''), ?) = ?"
+        params.extend([default_outreach_assignee(), assigned_to_filter])
 
     if outcome_filter:
         query += " AND outreach.outcome = ?"
@@ -15886,6 +15967,28 @@ def outreach_impl():
         ORDER BY sales_play
     """).fetchall()
     sales_play_options = sorted(row["sales_play"] for row in existing_sales_plays if row["sales_play"])
+    contact_options = connection.execute("""
+        SELECT contacts.id, contacts.name, contacts.job_title, contacts.account_id, accounts.account_name
+        FROM contacts
+        LEFT JOIN accounts ON accounts.id = contacts.account_id
+        ORDER BY accounts.account_name, contacts.name, contacts.job_title
+    """).fetchall()
+    partner_contact_options = connection.execute("""
+        SELECT partner_contacts.id, partner_contacts.name, partner_contacts.job_title, partners.partner_name
+        FROM partner_contacts
+        LEFT JOIN partners ON partners.id = partner_contacts.partner_id
+        ORDER BY partners.partner_name, partner_contacts.name, partner_contacts.job_title
+    """).fetchall()
+    assigned_to_rows = connection.execute("""
+        SELECT DISTINCT assigned_to
+        FROM outreach
+        WHERE assigned_to IS NOT NULL AND TRIM(assigned_to) != ''
+        ORDER BY assigned_to
+    """).fetchall()
+    assigned_to_options = sorted(
+        {default_outreach_assignee(), *(row["assigned_to"] for row in assigned_to_rows if row["assigned_to"])},
+        key=alphanumeric_sort_key,
+    )
 
     # Reuse the Insights calculation so the execution measures shown above the
     # Outreach table cannot drift from the dashboard figures.
@@ -15902,12 +16005,22 @@ def outreach_impl():
         outreach_records=outreach_records,
         accounts=accounts,
         sales_play_options=sales_play_options,
+        contact_options=contact_options,
+        partner_contact_options=partner_contact_options,
+        assigned_to_options=assigned_to_options,
         execution_summary_metrics=execution_summary_metrics,
         fy_filter=fy_filter,
         quarter_filter=quarter_filter,
         sales_play_filter=sales_play_filter,
         account_filter=account_filter,
         contact_filter=contact_filter,
+        partner_contact_filter=partner_contact_filter,
+        person_filter=person_filter or (f"contact:{contact_filter}" if contact_filter else f"partner:{partner_contact_filter}" if partner_contact_filter else ""),
+        activity_type_filter=activity_type_filter,
+        assigned_to_filter=assigned_to_filter,
+        due_start_filter=due_start_filter,
+        due_end_filter=due_end_filter,
+        planned_activity_return=planned_activity_return,
         outcome_filter=outcome_filter,
         nbm_success_week_filter=nbm_success_week_filter,
         selected_statuses=selected_statuses,

@@ -390,10 +390,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.13.19" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.13.20" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.13.19",
+            "health/version did not report Release 2.13.20",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -653,9 +653,13 @@ def main():
             and "Hidden other-user plan" not in planned_7_html
             and "pg-planned-account-frame" in planned_7_html
             and "pg-planned-floating-legend" in planned_7_html
+            and 'class="pg-planned-matrix no-sort"' in planned_7_html
             and "Daily total" in planned_7_html
             and "1E" in planned_7_html
             and "1C" in planned_7_html
+            and "activity_type=Email" in planned_7_html
+            and "assigned_to=Smoke+Test+Admin" in planned_7_html
+            and "return_to=" in planned_7_html
             and 'id="planned-user-filter"' not in planned_7_html
             and "Owner:" not in planned_7_html,
             "Planned Activity did not apply the inclusive next 7 day horizon",
@@ -690,6 +694,29 @@ def main():
             and "Smoke Test Account" in filtered_planned_html
             and "No planned activity in this view" in empty_planned_html,
             "Planned Activity account filtering failed",
+        )
+        drilldown_html = client.get(
+            "/outreach",
+            query_string={
+                "account_id": str(account_id),
+                "person": f"contact:{contact_id}",
+                "activity_type": "Email",
+                "due_start": (today + timedelta(days=1)).isoformat(),
+                "due_end": (today + timedelta(days=1)).isoformat(),
+                "assigned_to": "Smoke Test Admin",
+                "return_to": "/pg-progress/planned-activity?window=7",
+            },
+        ).get_data(as_text=True)
+        assert_ok(
+            "Zebra seven-day plan" in drilldown_html
+            and "Zulu seven-day plan" not in drilldown_html
+            and "Hidden other-user plan" not in drilldown_html
+            and "Back to Planned Activity" in drilldown_html
+            and 'value="Email" selected' in drilldown_html
+            and f'value="contact:{contact_id}" selected' in drilldown_html
+            and f'value="{(today + timedelta(days=1)).isoformat()}"' in drilldown_html
+            and 'value="Smoke Test Admin" selected' in drilldown_html,
+            "Planned Activity drill-down did not open an exactly filtered Outreach table",
         )
         connection = sqlite3.connect(db_path)
         connection.execute(

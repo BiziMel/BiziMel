@@ -60,28 +60,39 @@
                 <div class="pg-planned-floating-legend" aria-label="Activity legend for {{ account.account_name }}">
                     <strong>Activity key</strong>
                     {% for item in account.legend %}
-                        <span class="pg-planned-legend-item">
+                        <a class="pg-planned-legend-item"
+                           href="{{ url_for('outreach', account_id=account.account_id, activity_type=item.label, due_start=planned_days[0].date, due_end=planned_days[-1].date, assigned_to=logged_in_user_name, return_to=request.full_path) }}"
+                           title="Open {{ item.label }} Outreach for {{ account.account_name }}">
                             <span class="pg-activity-chip pg-activity-{{ item.colour_key }}">{{ item.code }}</span>
                             {{ item.label }}
-                        </span>
+                        </a>
                     {% endfor %}
                 </div>
 
                 <div class="pg-planned-account-header">
                     <div>
-                        <h2>{{ account.account_name }}</h2>
+                        <h2>
+                            <a href="{{ url_for('outreach', account_id=account.account_id, due_start=planned_days[0].date, due_end=planned_days[-1].date, assigned_to=logged_in_user_name, return_to=request.full_path) }}">
+                                {{ account.account_name }}
+                            </a>
+                        </h2>
                         {% if account.business_org %}<p>{{ account.business_org }}</p>{% endif %}
                     </div>
-                    <strong>{{ account.activity_total }} {{ "activity" if account.activity_total == 1 else "activities" }}</strong>
+                    <a class="pg-planned-account-total-link"
+                       href="{{ url_for('outreach', account_id=account.account_id, due_start=planned_days[0].date, due_end=planned_days[-1].date, assigned_to=logged_in_user_name, return_to=request.full_path) }}">
+                        {{ account.activity_total }} {{ "activity" if account.activity_total == 1 else "activities" }}
+                    </a>
                 </div>
 
                 <div class="pg-planned-matrix-scroll">
-                    <table class="pg-planned-matrix" style="--planned-day-count: {{ planned_days|length }};">
+                    <table class="pg-planned-matrix no-sort" style="--planned-day-count: {{ planned_days|length }};">
                         <thead>
                             <tr>
                                 <th class="pg-planned-contact-column">Contact</th>
                                 {% for day in planned_days %}
-                                    <th class="pg-planned-day-column{% if day.is_weekend %} is-weekend{% endif %}" title="{{ day.full_label }}">{{ day.label }}</th>
+                                    <th class="pg-planned-day-column{% if day.is_weekend %} is-weekend{% endif %}" title="{{ day.full_label }}">
+                                        <a href="{{ url_for('outreach', account_id=account.account_id, due_start=day.date, due_end=day.date, assigned_to=logged_in_user_name, return_to=request.full_path) }}">{{ day.label }}</a>
+                                    </th>
                                 {% endfor %}
                                 <th class="pg-planned-total-column">Total</th>
                             </tr>
@@ -90,15 +101,17 @@
                             {% for contact in account.contacts %}
                                 <tr>
                                     <th class="pg-planned-contact-column" scope="row">
-                                        <strong>{{ contact.person_name }}</strong>
-                                        {% if contact.job_title %}<span>{{ contact.job_title }}</span>{% endif %}
+                                        <a href="{{ url_for('outreach', account_id=account.account_id, person=contact.person_filter, due_start=planned_days[0].date, due_end=planned_days[-1].date, assigned_to=logged_in_user_name, return_to=request.full_path) }}">
+                                            <strong>{{ contact.person_name }}</strong>
+                                            {% if contact.job_title %}<span>{{ contact.job_title }}</span>{% endif %}
+                                        </a>
                                     </th>
                                     {% for cell in contact.day_cells %}
                                         <td class="pg-planned-activity-cell">
                                             {% if cell.activity_counts %}
                                                 <div class="pg-planned-cell-chips">
                                                     {% for activity in cell.activity_counts %}
-                                                        <a href="{{ url_for('view_outreach', outreach_id=activity.first_outreach_id) }}"
+                                                        <a href="{{ url_for('outreach', account_id=account.account_id, person=contact.person_filter, activity_type=activity.label, due_start=cell.date, due_end=cell.date, assigned_to=logged_in_user_name, return_to=request.full_path) }}"
                                                            class="pg-activity-chip pg-activity-{{ activity.colour_key }}"
                                                            title="{{ activity.label }}: {{ activity.tooltip }}"
                                                            aria-label="{{ activity.count }} {{ activity.label }} planned activity: {{ activity.tooltip }}">
@@ -111,17 +124,30 @@
                                             {% endif %}
                                         </td>
                                     {% endfor %}
-                                    <td class="pg-planned-total-column"><strong>{{ contact.activity_total }}</strong></td>
+                                    <td class="pg-planned-total-column">
+                                        <a href="{{ url_for('outreach', account_id=account.account_id, person=contact.person_filter, due_start=planned_days[0].date, due_end=planned_days[-1].date, assigned_to=logged_in_user_name, return_to=request.full_path) }}">
+                                            <strong>{{ contact.activity_total }}</strong>
+                                        </a>
+                                    </td>
                                 </tr>
                             {% endfor %}
                         </tbody>
                         <tfoot>
                             <tr>
-                                <th class="pg-planned-contact-column" scope="row">Daily total</th>
+                                <th class="pg-planned-contact-column" scope="row">
+                                    <a href="{{ url_for('outreach', account_id=account.account_id, due_start=planned_days[0].date, due_end=planned_days[-1].date, assigned_to=logged_in_user_name, return_to=request.full_path) }}">Daily total</a>
+                                </th>
                                 {% for total in account.daily_total_cells %}
-                                    <td class="pg-planned-daily-total">{{ total }}</td>
+                                    {% set day = planned_days[loop.index0] %}
+                                    <td class="pg-planned-daily-total">
+                                        <a href="{{ url_for('outreach', account_id=account.account_id, due_start=day.date, due_end=day.date, assigned_to=logged_in_user_name, return_to=request.full_path) }}">{{ total }}</a>
+                                    </td>
                                 {% endfor %}
-                                <td class="pg-planned-total-column"><strong>{{ account.activity_total }}</strong></td>
+                                <td class="pg-planned-total-column">
+                                    <a href="{{ url_for('outreach', account_id=account.account_id, due_start=planned_days[0].date, due_end=planned_days[-1].date, assigned_to=logged_in_user_name, return_to=request.full_path) }}">
+                                        <strong>{{ account.activity_total }}</strong>
+                                    </a>
+                                </td>
                             </tr>
                         </tfoot>
                     </table>

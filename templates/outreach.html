@@ -11,6 +11,9 @@
     </div>
 
     <div class="button-group">
+        {% if planned_activity_return %}
+            <a href="{{ planned_activity_return }}" class="btn btn-secondary">Back to Planned Activity</a>
+        {% endif %}
         <a href="{{ url_for('campaign_builder') }}" class="btn btn-primary">
             Campaign Builder
         </a>
@@ -48,6 +51,7 @@
         </div>
 
         <form method="GET" action="{{ url_for('outreach') }}" class="pipeflow-form compact-filter-form outreach-filter-form">
+            {% if planned_activity_return %}<input type="hidden" name="return_to" value="{{ planned_activity_return }}">{% endif %}
             <div class="form-grid compact-filter-grid outreach-filter-grid">
 
             <div class="form-group">
@@ -88,6 +92,53 @@
             </div>
 
             <div class="form-group">
+                <label for="person">Contact</label>
+                <select id="person" name="person">
+                    <option value="">All contacts</option>
+                    {% for contact in contact_options %}
+                        <option value="contact:{{ contact.id }}" {% if person_filter == 'contact:' ~ contact.id|string %}selected{% endif %}>
+                            {{ contact.account_name or "No account" }} - {{ contact.name }}{% if contact.job_title %} - {{ contact.job_title }}{% endif %}
+                        </option>
+                    {% endfor %}
+                    {% for contact in partner_contact_options %}
+                        <option value="partner:{{ contact.id }}" {% if person_filter == 'partner:' ~ contact.id|string %}selected{% endif %}>
+                            Partner: {{ contact.partner_name or "No partner" }} - {{ contact.name }}{% if contact.job_title %} - {{ contact.job_title }}{% endif %}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="activity_type">Activity Type</label>
+                <select id="activity_type" name="activity_type">
+                    <option value="">All activity types</option>
+                    {% for activity_type in dropdown_values.outreach_activity_types %}
+                        <option value="{{ activity_type }}" {% if activity_type_filter == activity_type %}selected{% endif %}>{{ activity_type }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="due_start">Due From</label>
+                <input type="date" id="due_start" name="due_start" value="{{ due_start_filter or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="due_end">Due To</label>
+                <input type="date" id="due_end" name="due_end" value="{{ due_end_filter or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="assigned_to">Assigned To</label>
+                <select id="assigned_to" name="assigned_to">
+                    <option value="">All users</option>
+                    {% for assigned_to in assigned_to_options %}
+                        <option value="{{ assigned_to }}" {% if assigned_to_filter == assigned_to %}selected{% endif %}>{{ assigned_to }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
                 <label for="outcome">Outcome</label>
                 <select id="outcome" name="outcome">
                     <option value="">All outcomes</option>
@@ -121,7 +172,7 @@
             <div class="form-group outreach-filter-actions">
                 <label>&nbsp;</label>
                 <button type="submit" class="btn btn-primary">Apply Filters</button>
-                <a href="{{ url_for('outreach') }}" class="btn btn-secondary">Clear Filters</a>
+                <a href="{{ url_for('outreach', return_to=planned_activity_return) if planned_activity_return else url_for('outreach') }}" class="btn btn-secondary">Clear Filters</a>
             </div>
             </div>
         </form>
