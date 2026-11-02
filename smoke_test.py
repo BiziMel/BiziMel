@@ -390,10 +390,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.13.20" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.13.21" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.13.20",
+            "health/version did not report Release 2.13.21",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -660,6 +660,10 @@ def main():
             and "activity_type=Email" in planned_7_html
             and "assigned_to=Smoke+Test+Admin" in planned_7_html
             and "return_to=" in planned_7_html
+            and 'data-activity-total="Call"' in planned_7_html
+            and 'data-activity-total="Email"' in planned_7_html
+            and 'data-overall-total="2"' in planned_7_html
+            and planned_7_html.rindex("pg-planned-period-totals") > planned_7_html.rindex("pg-planned-account-frame")
             and 'id="planned-user-filter"' not in planned_7_html
             and "Owner:" not in planned_7_html,
             "Planned Activity did not apply the inclusive next 7 day horizon",
@@ -669,6 +673,12 @@ def main():
             and planned_14_html.index("Zulu seven-day plan") < planned_14_html.index("Alpha fourteen-day plan")
             and planned_14_html.index("Smoke Second Contact") < planned_14_html.index("Smoke Test Contact"),
             "Planned Activity matrix was not ordered by contact and day",
+        )
+        assert_ok(
+            re.search(r'data-activity-total="Call"\s+data-activity-count="2"', planned_14_html)
+            and re.search(r'data-activity-total="Email"\s+data-activity-count="1"', planned_14_html)
+            and 'data-overall-total="3"' in planned_14_html,
+            "Planned Activity page totals did not aggregate activity types and the overall period",
         )
         assert_ok(
             "Alpha fourteen-day plan" in planned_30_html

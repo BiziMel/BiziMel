@@ -35,9 +35,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.20"
+APP_VERSION = "2.13.21"
 APP_RELEASE_DATE = "2026-11-02"
-APP_BUILD = "2026-11-02-v2.13.20-planned-activity-drilldown-r1"
+APP_BUILD = "2026-11-02-v2.13.21-period-activity-totals-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -54,6 +54,17 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.21",
+        "release_date": "2026-11-02",
+        "title": "Page-wide planned activity totals",
+        "new": [
+            "Added a Period Activity Totals section at the bottom of Planned Activity with totals by activity type and one overall total.",
+        ],
+        "enhanced": [
+            "Made each page-wide total drill into the Outreach table using the current horizon, signed-in user and optional account filter.",
+        ],
+    },
     {
         "version": "2.13.20",
         "release_date": "2026-11-02",
@@ -11741,15 +11752,31 @@ def planned_activity_context(window_value="7", selected_account=""):
         for key, name in sorted(account_options.items(), key=lambda item: (alphanumeric_sort_key(item[1]), item[0]))
     ]
     planned_days, account_groups = planned_activity_matrix(filtered_rows, window_days)
+    page_activity_totals = {}
+    for row in filtered_rows:
+        meta = planned_activity_type_meta(row["action_type"])
+        total = page_activity_totals.setdefault(meta["label"], {**meta, "count": 0})
+        total["count"] += 1
+    page_activity_totals = sorted(
+        page_activity_totals.values(),
+        key=lambda item: alphanumeric_sort_key(item["label"]),
+    )
+    selected_account_id = (
+        account_groups[0]["account_id"]
+        if selected_account and len(account_groups) == 1 else ""
+    )
     return {
         "planned_activity_rows": filtered_rows,
         "planned_activity_count": len(filtered_rows),
         "planned_days": planned_days,
         "account_groups": account_groups,
+        "page_activity_totals": page_activity_totals,
+        "page_overall_total": len(filtered_rows),
         "window_days": window_days,
         "window_end_date": (current_app_datetime().date() + timedelta(days=window_days - 1)).isoformat(),
         "account_options": account_option_rows,
         "selected_account": selected_account,
+        "selected_account_id": selected_account_id,
         "logged_in_user_name": logged_in_user_name,
     }
 

@@ -3430,6 +3430,72 @@ a.pg-activity-chip:focus-visible {
     margin-top: 16px;
 }
 
+.pg-planned-period-totals {
+    margin-top: 28px;
+    padding: 18px;
+    border: 2px solid #9fbea7;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #f4faf5 0%, #ffffff 100%);
+    box-shadow: 0 8px 22px rgba(31, 58, 41, 0.08);
+}
+
+.pg-planned-period-totals-header h2,
+.pg-planned-period-totals-header p {
+    margin: 0;
+}
+
+.pg-planned-period-totals-header h2 {
+    color: #183b2b;
+    font-size: 18px;
+}
+
+.pg-planned-period-totals-header p {
+    margin-top: 3px;
+    color: #617067;
+    font-size: 12px;
+}
+
+.pg-planned-period-total-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.pg-planned-period-total-item {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 8px;
+    min-height: 48px;
+    padding: 8px 10px;
+    border: 1px solid #cbd9ce;
+    border-radius: 9px;
+    background: #ffffff;
+    color: #304339;
+    text-decoration: none;
+}
+
+.pg-planned-period-total-item:hover,
+.pg-planned-period-total-item:focus-visible {
+    border-color: #6d9b7b;
+    box-shadow: 0 4px 12px rgba(31, 58, 41, 0.12);
+    transform: translateY(-1px);
+}
+
+.pg-planned-period-total-item > strong {
+    color: #173f29;
+    font-size: 20px;
+}
+
+.pg-planned-overall-total {
+    grid-template-columns: 1fr auto;
+    border-color: #4f8560;
+    background: #e6f2e8;
+    color: #1f5635;
+    font-weight: 800;
+}
+
 @media (max-width: 720px) {
     .pg-planned-activity-link-band,
     .pg-planned-window-card {

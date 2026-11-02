@@ -1,5 +1,5 @@
 PipeFlow hosted enterprise deployment
-Version: 2.13.20
+Version: 2.13.21
 Release date: 2026-10-28
-Build: 2026-11-02-v2.13.20-planned-activity-drilldown-r1
+Build: 2026-11-02-v2.13.21-period-activity-totals-r1
 Package purpose: Hosted enterprise deployment only.

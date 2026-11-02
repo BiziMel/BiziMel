@@ -161,4 +161,31 @@
         <p>Try a longer planning horizon or clear the account filter.</p>
     </div>
 {% endif %}
+
+<section class="pg-planned-period-totals" aria-labelledby="planned-period-totals-heading">
+    <div class="pg-planned-period-totals-header">
+        <div>
+            <h2 id="planned-period-totals-heading">Period Activity Totals</h2>
+            <p>All activity shown on this page for the selected {{ window_days }}-day period.</p>
+        </div>
+    </div>
+    <div class="pg-planned-period-total-grid">
+        {% for item in page_activity_totals %}
+            <a class="pg-planned-period-total-item"
+               data-activity-total="{{ item.label }}"
+               data-activity-count="{{ item.count }}"
+               href="{{ url_for('outreach', account_id=selected_account_id, activity_type=item.label, due_start=planned_days[0].date, due_end=planned_days[-1].date, assigned_to=logged_in_user_name, return_to=request.full_path) }}">
+                <span class="pg-activity-chip pg-activity-{{ item.colour_key }}">{{ item.code }}</span>
+                <span>{{ item.label }}</span>
+                <strong>{{ item.count }}</strong>
+            </a>
+        {% endfor %}
+        <a class="pg-planned-period-total-item pg-planned-overall-total"
+           data-overall-total="{{ page_overall_total }}"
+           href="{{ url_for('outreach', account_id=selected_account_id, due_start=planned_days[0].date, due_end=planned_days[-1].date, assigned_to=logged_in_user_name, return_to=request.full_path) }}">
+            <span>Overall total</span>
+            <strong>{{ page_overall_total }}</strong>
+        </a>
+    </div>
+</section>
 {% endblock %}
