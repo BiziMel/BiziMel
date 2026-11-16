@@ -398,10 +398,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.13.27" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.13.28" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.13.27",
+            "health/version did not report Release 2.13.28",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -3681,9 +3681,13 @@ def main():
             f'data-outreach-id="{representative_outreach["id"]}"' in partner_task_html
             and 'data-outreach-kind="partner"' in partner_task_html
             and "partner-outreach-task" in partner_task_html
+            and re.search(
+                rf'<tr class="outreach-main-row[^\"]*rag-red[^\"]*partner-outreach-task[^\"]*"[^>]*data-outreach-kind="partner"[^>]*data-outreach-id="{representative_outreach["id"]}"',
+                partner_task_html,
+            )
             and "Partner Task" in partner_task_html
             and "Smoke Test Partner" in partner_task_html,
-            "Outreach did not colour-code a task containing a Partner Contact as a Partner Task",
+            "Overdue Partner Outreach did not retain its badge while using the red overdue state",
         )
 
         response = client.post(

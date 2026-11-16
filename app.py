@@ -35,9 +35,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.27"
+APP_VERSION = "2.13.28"
 APP_RELEASE_DATE = "2026-11-16"
-APP_BUILD = "2026-11-16-v2.13.27-partner-outreach-colour-r1"
+APP_BUILD = "2026-11-16-v2.13.28-partner-outreach-priority-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -54,6 +54,15 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.28",
+        "release_date": "2026-11-16",
+        "title": "Partner Task urgency styling",
+        "enhanced": [
+            "Removed full-row purple shading from Partner Outreach tasks so the purple Partner Task badge is the sole partner identifier within each task row.",
+            "Ensured overdue Partner Tasks use the same red overdue row treatment as overdue customer tasks.",
+        ],
+    },
     {
         "version": "2.13.27",
         "release_date": "2026-11-16",

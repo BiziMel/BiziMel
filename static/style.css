@@ -2900,10 +2900,14 @@ a:hover {
     background: #7c3aed;
 }
 
-.partner-task-legend,
-.partner-task-contact-label {
+.partner-task-legend {
     color: #5b21b6;
     font-weight: 800;
+}
+
+.partner-task-contact-label {
+    color: inherit;
+    font-weight: 700;
 }
 
 .partner-task-badge {
@@ -2917,19 +2921,6 @@ a:hover {
     font-size: 11px;
     font-weight: 900;
     line-height: 1.2;
-}
-
-.outreach-table .outreach-main-row.partner-outreach-task td {
-    background: #f5f0ff;
-    border-color: #d8c8f5;
-}
-
-.outreach-table .outreach-main-row.partner-outreach-task:hover td {
-    background: #eee6ff;
-}
-
-.outreach-table .outreach-main-row.partner-outreach-task td:first-child {
-    box-shadow: inset 4px 0 0 #7c3aed;
 }
 
 .outreach-account-group-row td {
@@ -7384,6 +7375,15 @@ body {
 
 .outreach-main-row.rag-red {
     background: #fef2f2;
+}
+
+.outreach-table .outreach-main-row.rag-red td {
+    background: #fef2f2;
+    border-color: #fecaca;
+}
+
+.outreach-table .outreach-main-row.rag-red:hover td {
+    background: #fee2e2;
 }
 
 .outreach-main-row.rag-closed {
