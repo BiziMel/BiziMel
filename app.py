@@ -35,9 +35,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.23"
+APP_VERSION = "2.13.25"
 APP_RELEASE_DATE = "2026-11-16"
-APP_BUILD = "2026-11-16-v2.13.23-header-search-r1"
+APP_BUILD = "2026-11-16-v2.13.25-account-partner-contacts-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -54,6 +54,29 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.25",
+        "release_date": "2026-11-16",
+        "title": "Partner Contacts in account contact groups",
+        "new": [
+            "Added Partner Contacts to the Contacts page under every account they support.",
+        ],
+        "enhanced": [
+            "Colour-coded Partner Contact rows and badges so they are clearly distinct from customer contacts.",
+            "Kept Partner Contacts out of customer-contact bulk deletion and outreach actions, with links back to their Partner company record.",
+            "Allowed the same Partner Contact to appear in multiple account groups when multiple account associations are recorded.",
+        ],
+    },
+    {
+        "version": "2.13.24",
+        "release_date": "2026-11-16",
+        "title": "Partner Contact manager ownership",
+        "enhanced": [
+            "Renamed Relationship Owner to Partner Manager on Partner Contact create, list and edit views.",
+            "Made Partner Manager read-only on Partner Contacts and derived it from the Partner company record when contacts are created or edited.",
+            "Clarified the single editable address as Partner Contact Email and synchronized existing Partner Contacts when the company Partner Manager changes.",
+        ],
+    },
     {
         "version": "2.13.23",
         "release_date": "2026-11-16",
@@ -12945,6 +12968,13 @@ def edit_partner(partner_id):
             WHERE partner_id = ?
         """, (partner_name, partner_id))
 
+        connection.execute("""
+            UPDATE partner_contacts
+            SET relationship_owner = ?,
+                last_updated = CURRENT_TIMESTAMP
+            WHERE partner_id = ?
+        """, (new_values["bmc_partner_manager"], partner_id))
+
         connection.commit()
 
     connection.close()
@@ -12955,9 +12985,15 @@ def edit_partner(partner_id):
 def add_partner_contact(partner_id):
     connection = get_db_connection()
     contact_name = request.form.get("name", "").strip()
+    partner = connection.execute("""
+        SELECT partner_name, bmc_partner_manager, relationship_owner
+        FROM partners
+        WHERE id = ?
+    """, (partner_id,)).fetchone()
 
-    if contact_name:
+    if contact_name and partner:
         account_ids = normalise_selected_account_ids(request.form.getlist("account_ids") or request.form.getlist("account_id"))
+        partner_manager = partner["bmc_partner_manager"] or partner["relationship_owner"] or ""
         cursor = connection.execute("""
             INSERT INTO partner_contacts (
                 partner_id,
@@ -12983,7 +13019,7 @@ def add_partner_contact(partner_id):
             request.form.get("partner_contact_role"),
             request.form.get("coverage_area"),
             account_ids[0] if account_ids else None,
-            request.form.get("relationship_owner"),
+            partner_manager,
             request.form.get("email"),
             request.form.get("phone"),
             request.form.get("location"),
@@ -13000,7 +13036,6 @@ def add_partner_contact(partner_id):
             account_ids,
             request.form.get("relationship_status"),
         )
-        partner_row = connection.execute("SELECT partner_name FROM partners WHERE id = ?", (partner_id,)).fetchone()
         audit_record_create(connection, "partner_contact", contact_id, {
             "partner_id": partner_id,
             "name": contact_name,
@@ -13008,7 +13043,7 @@ def add_partner_contact(partner_id):
             "partner_contact_role": request.form.get("partner_contact_role"),
             "coverage_area": request.form.get("coverage_area"),
             "account_ids": ", ".join(account_ids),
-            "relationship_owner": request.form.get("relationship_owner"),
+            "relationship_owner": partner_manager,
             "email": request.form.get("email"),
             "relationship_status": request.form.get("relationship_status"),
             "next_action": "",
@@ -13052,16 +13087,21 @@ def edit_partner_contact(partner_id, contact_id):
         WHERE id = ?
           AND partner_id = ?
     """, (contact_id, partner_id)).fetchone()
-    partner = connection.execute("SELECT partner_name FROM partners WHERE id = ?", (partner_id,)).fetchone()
+    partner = connection.execute("""
+        SELECT partner_name, bmc_partner_manager, relationship_owner
+        FROM partners
+        WHERE id = ?
+    """, (partner_id,)).fetchone()
 
-    if existing:
+    if existing and partner:
         account_ids = normalise_selected_account_ids(request.form.getlist("account_ids") or request.form.getlist("account_id"))
+        partner_manager = partner["bmc_partner_manager"] or partner["relationship_owner"] or ""
         new_values = {
             "name": request.form.get("name"),
             "job_title": request.form.get("job_title"),
             "coverage_area": request.form.get("coverage_area"),
             "account_id": account_ids[0] if account_ids else None,
-            "relationship_owner": request.form.get("relationship_owner"),
+            "relationship_owner": partner_manager,
             "email": request.form.get("email"),
             "phone": combined_contact_phone(request.form.get("office_phone"), request.form.get("mobile_phone"), request.form.get("phone")),
             "office_phone": request.form.get("office_phone"),
@@ -13077,7 +13117,7 @@ def edit_partner_contact(partner_id, contact_id):
             "job_title": "Job title",
             "coverage_area": "Coverage / influence area",
             "account_id": "Responsible account",
-            "relationship_owner": "Relationship owner",
+            "relationship_owner": "Partner manager",
             "email": "Email",
             "phone": "Phone",
             "office_phone": "Office phone",
@@ -15291,6 +15331,60 @@ def contacts():
         query += " AND COALESCE(contacts.status, 'Active') = ?"
         params.append(status_filter)
     contact_rows = [dict(row) for row in connection.execute(query, params).fetchall()]
+    for contact in contact_rows:
+        contact["contact_kind"] = "customer"
+
+    partner_query = """
+        SELECT
+            partner_contacts.id,
+            partner_contacts.partner_id,
+            partner_contacts.name,
+            partner_contacts.job_title,
+            partner_contacts.partner_contact_role,
+            partner_contacts.email,
+            partner_contacts.phone,
+            partner_contacts.location,
+            partner_contacts.relationship_status AS contact_relationship_status,
+            partner_contact_accounts.relationship_status AS account_relationship_status,
+            partners.partner_name,
+            accounts.id AS account_id,
+            accounts.account_name,
+            accounts.account_tier,
+            accounts.business_unit
+        FROM partner_contact_accounts
+        JOIN partner_contacts ON partner_contacts.id = partner_contact_accounts.partner_contact_id
+        JOIN partners ON partners.id = partner_contact_accounts.partner_id
+        JOIN accounts ON accounts.id = partner_contact_accounts.account_id
+        WHERE 1 = 1
+    """
+    partner_params = []
+    if account_filter:
+        partner_query += " AND partner_contact_accounts.account_id = ?"
+        partner_params.append(account_filter)
+    if name_filter:
+        partner_query += " AND LOWER(partner_contacts.name) LIKE ?"
+        partner_params.append(f"%{name_filter.lower()}%")
+    # Status is a customer-contact lifecycle filter. Partner Contacts use their
+    # separate Partner Engagement value, so they are only included for the
+    # unfiltered status view.
+    if not status_filter:
+        for row in connection.execute(partner_query, partner_params).fetchall():
+            partner_contact = dict(row)
+            partner_contact.update({
+                "contact_kind": "partner",
+                "category": "Partner Contact",
+                "photo": "",
+                "status": "Partner Contact",
+                "outreach_total": 0,
+                "last_active_outreach_date": "",
+                "last_active_outreach_time": "",
+                "bmc_relationship": (
+                    partner_contact.get("account_relationship_status")
+                    or partner_contact.get("contact_relationship_status")
+                    or "No engagement set"
+                ),
+            })
+            contact_rows.append(partner_contact)
     contact_rows.sort(key=lambda contact: (
         contact.get("account_id") is None,
         alphanumeric_sort_key(contact.get("account_name") or "Unassigned contacts"),

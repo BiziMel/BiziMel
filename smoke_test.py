@@ -102,6 +102,14 @@ def seed_validation_data(db_path):
     ).lastrowid
     connection.execute(
         """
+        INSERT INTO partner_contact_accounts (
+            partner_contact_id, partner_id, account_id, relationship_status
+        ) VALUES (?, ?, ?, ?)
+        """,
+        (partner_contact_id, partner_id, account_id, "Engaged"),
+    )
+    connection.execute(
+        """
         INSERT INTO account_partners (account_id, partner_id, partner_name, partner_role, involvement_status)
         VALUES (?, ?, ?, ?, ?)
         """,
@@ -390,10 +398,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.13.23" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.13.25" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.13.23",
+            "health/version did not report Release 2.13.25",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -503,6 +511,48 @@ def main():
 
         db_path = Path(tmp) / "users" / "1" / "pipeflow.db"
         account_id, contact_id, second_contact_id, partner_id, partner_contact_id, outreach_id = seed_validation_data(db_path)
+        partner_page_html = client.get(f"/partners/{partner_id}").get_data(as_text=True)
+        partner_contact_create_form = re.search(
+            rf'<form method="POST" action="/partners/{partner_id}/contacts/add"[^>]*>(.*?)</form>',
+            partner_page_html,
+            re.DOTALL,
+        )
+        assert_ok(
+            partner_contact_create_form is not None
+            and partner_contact_create_form.group(1).count('type="email"') == 1
+            and "Partner Contact Email" in partner_contact_create_form.group(1)
+            and "Partner Manager" in partner_contact_create_form.group(1)
+            and 'name="relationship_owner"' in partner_contact_create_form.group(1)
+            and "readonly" in partner_contact_create_form.group(1),
+            "Partner Contact create form did not show one email and a read-only company Partner Manager",
+        )
+        response = client.post(
+            f"/partners/{partner_id}/contacts/add",
+            data={
+                "csrf_token": csrf_from_session(client),
+                "name": "Derived Manager Partner Contact",
+                "job_title": "Alliance Director",
+                "relationship_owner": "Form override must be ignored",
+                "email": "derived-manager@example.com",
+            },
+            follow_redirects=False,
+        )
+        assert_ok(response.status_code in (302, 303), "Partner Contact create failed")
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row
+        derived_manager_contact = connection.execute(
+            "SELECT id, relationship_owner, email FROM partner_contacts WHERE name = ?",
+            ("Derived Manager Partner Contact",),
+        ).fetchone()
+        assert_ok(
+            derived_manager_contact is not None
+            and derived_manager_contact["relationship_owner"] == "Smoke Tester"
+            and derived_manager_contact["email"] == "derived-manager@example.com",
+            "Partner Contact did not derive Partner Manager from the Partner company while retaining one contact email",
+        )
+        connection.execute("DELETE FROM partner_contacts WHERE id = ?", (derived_manager_contact["id"],))
+        connection.commit()
+        connection.close()
         today = date.today()
         yesterday = (today - timedelta(days=1)).isoformat()
         tomorrow = (today + timedelta(days=1)).isoformat()
@@ -1414,6 +1464,58 @@ def main():
             and contacts_html.index("Smoke Second Contact") < contacts_html.index("Smoke Test Contact"),
             "Contacts were not grouped by account with alphanumeric contact ordering",
         )
+        partner_contact_marker = f'data-partner-contact-id="{partner_contact_id}"'
+        assert_ok(
+            contacts_html.count(partner_contact_marker) == 1
+            and "Partner Contact" in contacts_html
+            and "Smoke Test Partner" in contacts_html
+            and f'/partners/{partner_id}#partner-contact-{partner_contact_id}' in contacts_html,
+            "Contacts did not show the associated Partner Contact with clear Partner styling and link",
+        )
+        active_contacts_html = client.get("/contacts?status=Active").get_data(as_text=True)
+        assert_ok(
+            partner_contact_marker not in active_contacts_html,
+            "Customer lifecycle status filter unexpectedly included a Partner Contact",
+        )
+
+        connection = sqlite3.connect(db_path)
+        second_partner_account_id = connection.execute(
+            "INSERT INTO accounts (account_name, pg_bible_order, account_tier, business_unit) VALUES (?, ?, ?, ?)",
+            ("Smoke Partner Second Account", 9998, "2", "Partner Coverage"),
+        ).lastrowid
+        connection.execute(
+            """
+            INSERT INTO partner_contact_accounts (
+                partner_contact_id, partner_id, account_id, relationship_status
+            ) VALUES (?, ?, ?, ?)
+            """,
+            (partner_contact_id, partner_id, second_partner_account_id, "Developing"),
+        )
+        connection.commit()
+        connection.close()
+
+        multi_account_contacts_html = client.get("/contacts").get_data(as_text=True)
+        assert_ok(
+            multi_account_contacts_html.count(partner_contact_marker) == 2
+            and "Smoke Partner Second Account" in multi_account_contacts_html,
+            "Partner Contact did not appear once under each associated account",
+        )
+        filtered_partner_contacts_html = client.get(
+            f"/contacts?account_id={second_partner_account_id}"
+        ).get_data(as_text=True)
+        assert_ok(
+            filtered_partner_contacts_html.count(partner_contact_marker) == 1
+            and "Smoke Partner Second Account" in filtered_partner_contacts_html,
+            "Account filter did not retain the Partner Contact association",
+        )
+        connection = sqlite3.connect(db_path)
+        connection.execute(
+            "DELETE FROM partner_contact_accounts WHERE account_id = ?",
+            (second_partner_account_id,),
+        )
+        connection.execute("DELETE FROM accounts WHERE id = ?", (second_partner_account_id,))
+        connection.commit()
+        connection.close()
         assert_ok(
             sorted(["Account 10", "Account 2", "Account 1"], key=pipeflow_app.alphanumeric_sort_key)
             == ["Account 1", "Account 2", "Account 10"],

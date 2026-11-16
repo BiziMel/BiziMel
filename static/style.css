@@ -6963,6 +6963,60 @@ body {
     background: #dc2626;
 }
 
+.contact-status-dot.status-partner {
+    background: #7c3aed;
+}
+
+.contact-status-legend .partner-contact-legend {
+    color: #5b21b6;
+}
+
+.contact-list-table .partner-contact-row td {
+    background: #f5f0ff;
+    border-color: #d8c8f5;
+}
+
+.contact-list-table .partner-contact-row:hover td {
+    background: #eee6ff;
+}
+
+.partner-contact-row-marker,
+.partner-contact-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #9f7aea;
+    background: #ede9fe;
+    color: #5b21b6;
+    font-weight: 900;
+}
+
+.partner-contact-row-marker {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    font-size: 12px;
+}
+
+.partner-contact-badge {
+    margin-top: 5px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    line-height: 1.2;
+}
+
+.partner-contact-company {
+    display: block;
+    margin-top: 4px;
+    color: #5b21b6;
+    font-weight: 750;
+}
+
+.partner-contact-status {
+    color: #5b21b6;
+}
+
 .contact-select-col {
     width: 52px;
 }

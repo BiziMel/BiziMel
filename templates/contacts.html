@@ -10,6 +10,7 @@
             <span><i class="contact-status-dot status-active" aria-hidden="true"></i> Active</span>
             <span><i class="contact-status-dot status-not-targeted" aria-hidden="true"></i> Not Targeted</span>
             <span><i class="contact-status-dot status-inactive" aria-hidden="true"></i> Inactive</span>
+            <span class="partner-contact-legend"><i class="contact-status-dot status-partner" aria-hidden="true"></i> Partner Contact</span>
         </p>
     </div>
 
@@ -113,9 +114,15 @@
                 </th>
             </tr>
             {% for contact in group.contacts %}
-                <tr data-sort-row>
+                <tr data-sort-row
+                    class="{% if contact.contact_kind == 'partner' %}partner-contact-row{% else %}customer-contact-row{% endif %}"
+                    {% if contact.contact_kind == 'partner' %}data-partner-contact-id="{{ contact.id }}"{% endif %}>
                     <td class="bulk-select-col">
-                        <input type="checkbox" name="selected_ids" value="{{ contact['id'] }}" form="bulk-delete-contacts-form" aria-label="Select {{ contact['name'] }}">
+                        {% if contact.contact_kind == 'partner' %}
+                            <span class="partner-contact-row-marker" title="Partner Contact" aria-label="Partner Contact">P</span>
+                        {% else %}
+                            <input type="checkbox" name="selected_ids" value="{{ contact['id'] }}" form="bulk-delete-contacts-form" aria-label="Select {{ contact['name'] }}">
+                        {% endif %}
                     </td>
                     <td class="contact-photo-cell">
                         {% set photo_url = contact_photo_url(contact["photo"]) %}
@@ -129,16 +136,23 @@
                         </span>
                     </td>
                     <td>
-                        <a href="{{ url_for('edit_contact', contact_id=contact['id']) }}"
+                        <a href="{% if contact.contact_kind == 'partner' %}{{ url_for('view_partner', partner_id=contact['partner_id']) }}#partner-contact-{{ contact['id'] }}{% else %}{{ url_for('edit_contact', contact_id=contact['id']) }}{% endif %}"
                            class="record-primary-link"
-                           title="Edit contact {{ contact['name'] or 'Unknown' }}"
-                           aria-label="Edit contact {{ contact['name'] or 'Unknown' }}">
+                           title="{% if contact.contact_kind == 'partner' %}Open Partner Contact{% else %}Edit contact{% endif %} {{ contact['name'] or 'Unknown' }}"
+                           aria-label="{% if contact.contact_kind == 'partner' %}Open Partner Contact{% else %}Edit contact{% endif %} {{ contact['name'] or 'Unknown' }}">
                             {{ contact["name"] or "Unknown" }}
                         </a>
                         <br>
-                        <small>{{ contact["category"] or "Category not set" }}</small>
+                        {% if contact.contact_kind == 'partner' %}
+                            <span class="partner-contact-badge">Partner Contact</span>
+                            <small class="partner-contact-company">{{ contact["partner_name"] }}</small>
+                        {% else %}
+                            <small>{{ contact["category"] or "Category not set" }}</small>
+                        {% endif %}
                         <br>
-                        {% if (contact['status'] or 'Active') == 'Active' %}
+                        {% if contact.contact_kind == 'partner' %}
+                            <a href="{{ url_for('view_partner', partner_id=contact['partner_id']) }}#partner-contact-{{ contact['id'] }}" class="table-secondary-link">View Partner record</a>
+                        {% elif (contact['status'] or 'Active') == 'Active' %}
                             <button type="button"
                                     class="table-secondary-link button-as-link"
                                     data-contact-outreach-choice
@@ -177,23 +191,36 @@
                     </td>
 
                     <td>
-                        {% set contact_status = contact["status"] or "Active" %}
-                        <span class="contact-status-indicator" title="{{ contact_status }}" aria-label="{{ contact_status }}">
-                            <i class="contact-status-dot {% if contact_status == 'Not Targeted' %}status-not-targeted{% elif contact_status == 'Inactive' %}status-inactive{% else %}status-active{% endif %}" aria-hidden="true"></i>
-                            <span>{{ contact_status }}</span>
-                        </span>
+                        {% if contact.contact_kind == 'partner' %}
+                            <span class="contact-status-indicator partner-contact-status" title="Partner Contact" aria-label="Partner Contact">
+                                <i class="contact-status-dot status-partner" aria-hidden="true"></i>
+                                <span>Partner</span>
+                            </span>
+                        {% else %}
+                            {% set contact_status = contact["status"] or "Active" %}
+                            <span class="contact-status-indicator" title="{{ contact_status }}" aria-label="{{ contact_status }}">
+                                <i class="contact-status-dot {% if contact_status == 'Not Targeted' %}status-not-targeted{% elif contact_status == 'Inactive' %}status-inactive{% else %}status-active{% endif %}" aria-hidden="true"></i>
+                                <span>{{ contact_status }}</span>
+                            </span>
+                        {% endif %}
                     </td>
 
                     <td>
-                        <a href="{{ url_for('outreach', contact_id=contact['id'], task_status='All') }}"
-                           class="metric-pill-link"
-                           title="Open outreach activity for {{ contact['name'] or 'this contact' }}">
-                            {{ contact["outreach_total"] or 0 }}
-                        </a>
+                        {% if contact.contact_kind == 'partner' %}
+                            <span class="muted">—</span>
+                        {% else %}
+                            <a href="{{ url_for('outreach', contact_id=contact['id'], task_status='All') }}"
+                               class="metric-pill-link"
+                               title="Open outreach activity for {{ contact['name'] or 'this contact' }}">
+                                {{ contact["outreach_total"] or 0 }}
+                            </a>
+                        {% endif %}
                     </td>
 
                     <td class="contact-last-outreach-cell">
-                        {% if contact["last_active_outreach_date"] %}
+                        {% if contact.contact_kind == 'partner' %}
+                            <span class="muted">Partner record</span>
+                        {% elif contact["last_active_outreach_date"] %}
                             <span class="subtle-date">
                                 {{ contact["last_active_outreach_date"]|display_datetime(contact["last_active_outreach_time"]) }}
                             </span>
