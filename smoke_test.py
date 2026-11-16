@@ -398,10 +398,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.13.26" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.13.27" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.13.26",
+            "health/version did not report Release 2.13.27",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -511,6 +511,72 @@ def main():
 
         db_path = Path(tmp) / "users" / "1" / "pipeflow.db"
         account_id, contact_id, second_contact_id, partner_id, partner_contact_id, outreach_id = seed_validation_data(db_path)
+
+        original_current_user = pipeflow_app.current_user
+        original_manager_team_members = pipeflow_app.manager_team_members
+        original_using_postgres = pipeflow_app.using_postgres
+        original_schema_connection = pipeflow_app.get_schema_connection
+        original_pg_dashboard_context = pipeflow_app.pg_dashboard_context
+
+        class TeamProgressConnection:
+            def __init__(self, schema):
+                self.schema = schema
+
+            def close(self):
+                return None
+
+        team_members = [
+            {"id": 11, "email": "one@example.com", "full_name": "Team Member One", "workspace_schema": "workspace_one"},
+            {"id": 12, "email": "two@example.com", "full_name": "Team Member Two", "workspace_schema": "workspace_two"},
+        ]
+        team_pg_values = {
+            "workspace_one": {"target": 100000, "pipeline": 40000, "gap": 60000, "account": "Account One"},
+            "workspace_two": {"target": 250000, "pipeline": 175000, "gap": 75000, "account": "Account Two"},
+        }
+
+        def fake_team_pg_context(connection, _activity_period):
+            values = team_pg_values[connection.schema]
+            return {
+                "fy_pipeline_target": values["target"],
+                "current_pipeline": values["pipeline"],
+                "pipeline_gap": values["gap"],
+                "pg_plan_rows": [{"account_name": values["account"], "sales_play": "Team play"}],
+                "pg_action_rows": [{"account_name": values["account"], "business_org": "", "sales_play": "Team play"}],
+            }
+
+        pipeflow_app.current_user = lambda: {"id": 11, "role": "manager"}
+        pipeflow_app.manager_team_members = lambda _user: team_members
+        pipeflow_app.using_postgres = lambda: True
+        pipeflow_app.get_schema_connection = lambda schema="": TeamProgressConnection(schema)
+        pipeflow_app.pg_dashboard_context = fake_team_pg_context
+        try:
+            all_team_pg = pipeflow_app.manager_pg_dashboard_context("")
+            member_pg = pipeflow_app.manager_pg_dashboard_context("12")
+        finally:
+            pipeflow_app.current_user = original_current_user
+            pipeflow_app.manager_team_members = original_manager_team_members
+            pipeflow_app.using_postgres = original_using_postgres
+            pipeflow_app.get_schema_connection = original_schema_connection
+            pipeflow_app.pg_dashboard_context = original_pg_dashboard_context
+
+        assert_ok(
+            all_team_pg["fy_pipeline_target"] == 350000
+            and all_team_pg["current_pipeline"] == 215000
+            and all_team_pg["pipeline_gap"] == 135000
+            and len(all_team_pg["pg_plan_rows"]) == 2
+            and all_team_pg["pg_scope_label"] == "All Team"
+            and all_team_pg["loaded_team_member_count"] == 2,
+            "Team Manager All Team PG Progress did not combine member values",
+        )
+        assert_ok(
+            member_pg["fy_pipeline_target"] == 250000
+            and member_pg["current_pipeline"] == 175000
+            and member_pg["pipeline_gap"] == 75000
+            and len(member_pg["pg_plan_rows"]) == 1
+            and member_pg["pg_plan_rows"][0]["owner_name"] == "Team Member Two"
+            and member_pg["pg_scope_label"] == "Team Member Two",
+            "Team Manager member filter did not return distinct PG values for the selected user",
+        )
         partner_page_html = client.get(f"/partners/{partner_id}").get_data(as_text=True)
         partner_contact_create_form = re.search(
             rf'<form method="POST" action="/partners/{partner_id}/contacts/add"[^>]*>(.*?)</form>',
@@ -3572,7 +3638,7 @@ def main():
                 "quarter": "Q1",
                 "account_id": str(account_id),
                 "sales_play": "Smoke Test Play",
-                "contact_ids": [f"partner_contact:{partner_contact_id}"],
+                "contact_ids": [str(contact_id), f"partner_contact:{partner_contact_id}"],
                 "task_status": "Not Started",
                 "assigned_to": "Smoke Test Admin",
                 "activity_type": "Meeting",
@@ -3590,14 +3656,34 @@ def main():
         connection = sqlite3.connect(db_path)
         connection.row_factory = sqlite3.Row
         representative_outreach = connection.execute(
-            "SELECT partner_contact_id FROM outreach WHERE subject = ?",
+            "SELECT id, contact_id, partner_contact_id FROM outreach WHERE subject = ?",
             ("Smoke account representative meeting outreach",),
         ).fetchone()
+        representative_partner_recipient = connection.execute(
+            """
+            SELECT partner_contact_id
+            FROM outreach_recipients
+            WHERE outreach_id = ?
+              AND partner_contact_id = ?
+            """,
+            (representative_outreach["id"], partner_contact_id),
+        ).fetchone() if representative_outreach else None
         connection.close()
         assert_ok(
             representative_outreach is not None
-            and str(representative_outreach["partner_contact_id"]) == str(partner_contact_id),
-            "account representative meeting Outreach was not saved",
+            and str(representative_outreach["contact_id"]) == str(contact_id)
+            and representative_outreach["partner_contact_id"] is None
+            and representative_partner_recipient is not None,
+            "mixed customer and Partner Contact Outreach was not saved",
+        )
+        partner_task_html = client.get("/outreach?task_status=All").get_data(as_text=True)
+        assert_ok(
+            f'data-outreach-id="{representative_outreach["id"]}"' in partner_task_html
+            and 'data-outreach-kind="partner"' in partner_task_html
+            and "partner-outreach-task" in partner_task_html
+            and "Partner Task" in partner_task_html
+            and "Smoke Test Partner" in partner_task_html,
+            "Outreach did not colour-code a task containing a Partner Contact as a Partner Task",
         )
 
         response = client.post(

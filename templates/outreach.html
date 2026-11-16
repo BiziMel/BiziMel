@@ -8,6 +8,10 @@
     <div>
         <h1>Outreach Tasks</h1>
         <p>Track, filter, share and assign prospecting follow-up tasks from one workspace.</p>
+        <p class="outreach-task-legend">
+            <span><i class="outreach-task-dot customer-task-dot" aria-hidden="true"></i> Customer Task</span>
+            <span class="partner-task-legend"><i class="outreach-task-dot partner-task-dot" aria-hidden="true"></i> Partner Task</span>
+        </p>
     </div>
 
     <div class="button-group">
@@ -252,7 +256,9 @@
                 <tbody>
                     {% for item in outreach_records %}
                         {% set task_locked = not item.can_modify %}
-                        <tr class="outreach-main-row {{ item.due_rag_class }}">
+                        <tr class="outreach-main-row {{ item.due_rag_class }} {% if item.contact_source == 'Partner' %}partner-outreach-task{% else %}customer-outreach-task{% endif %}"
+                            data-outreach-kind="{{ 'partner' if item.contact_source == 'Partner' else 'customer' }}"
+                            data-outreach-id="{{ item.id }}">
                             <td class="bulk-select-col">
                                 <input type="checkbox" name="selected_ids" value="{{ item.id }}" form="bulk-outreach-form" aria-label="Select outreach {{ item.subject or item.id }}">
                             </td>
@@ -262,6 +268,9 @@
                                 </a>
                                 <br>
                                 <span class="muted">{{ item.activity_type or "No activity type" }}</span>
+                                {% if item.contact_source == "Partner" %}
+                                    <span class="partner-task-badge"><i class="outreach-task-dot partner-task-dot" aria-hidden="true"></i> Partner Task</span>
+                                {% endif %}
                             </td>
                             <td>
                                 <strong>{{ item.account_name or "No account" }}</strong>
@@ -272,7 +281,7 @@
                                         <span class="multi-contact-count">+{{ item.additional_contact_count }}</span>
                                     {% endif %}
                                     {% if item.contact_source == "Partner" %}
-                                        · Partner{% if item.partner_name %}: {{ item.partner_name }}{% endif %}
+                                        <span class="partner-task-contact-label">· Partner{% if item.partner_name %}: {{ item.partner_name }}{% endif %}</span>
                                     {% endif %}
                                 </span>
                                 {% if item.contact_job_title %}

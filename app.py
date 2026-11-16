@@ -35,9 +35,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.26"
+APP_VERSION = "2.13.27"
 APP_RELEASE_DATE = "2026-11-16"
-APP_BUILD = "2026-11-16-v2.13.26-partner-contact-editor-r1"
+APP_BUILD = "2026-11-16-v2.13.27-partner-outreach-colour-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -54,6 +54,17 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.27",
+        "release_date": "2026-11-16",
+        "title": "Partner Outreach task colour coding",
+        "enhanced": [
+            "Colour-coded Partner Outreach tasks with the same purple treatment used for Partner Contacts.",
+            "Added a Partner Task badge and Outreach task legend so partner and customer work can be distinguished at a glance.",
+            "Classified multi-recipient Outreach as a Partner Task whenever any selected recipient is a Partner Contact.",
+            "Made Team Manager PG Progress show combined All Team values and recalculate distinct PG figures when an individual team member is selected.",
+        ],
+    },
     {
         "version": "2.13.26",
         "release_date": "2026-11-16",
@@ -11428,23 +11439,31 @@ def pg_dashboard_context(connection, activity_period=None):
 
 def manager_pg_dashboard_context(selected_user_id="", activity_period=None):
     user = current_user()
-    members = manager_team_members(user)
-    if not members:
+    all_members = manager_team_members(user)
+    if not all_members:
         return None
     selected_user_id = str(selected_user_id or "")
+    selected_member = next(
+        (member for member in all_members if str(member["id"]) == selected_user_id),
+        None,
+    ) if selected_user_id else None
+    members = list(all_members)
     if selected_user_id:
-        members = [member for member in members if str(member["id"]) == selected_user_id]
+        members = [selected_member] if selected_member else []
     team_context = {
         "fy_pipeline_target": 0,
         "current_pipeline": 0,
         "pipeline_gap": 0,
         "pg_plan_rows": [],
         "pg_action_rows": [],
-        "team_members": manager_team_members(user),
+        "team_members": all_members,
         "selected_team_user_id": selected_user_id,
+        "selected_team_member_name": selected_member["full_name"] if selected_member else "",
         "is_team_pg_progress": True,
         "can_edit_pg_rag": bool(selected_user_id and members),
+        "loaded_team_member_count": 0,
     }
+    loaded_member_names = []
     for member in members:
         connection = None
         try:
@@ -11455,6 +11474,7 @@ def manager_pg_dashboard_context(selected_user_id="", activity_period=None):
             else:
                 continue
             context = pg_dashboard_context(connection, activity_period)
+            loaded_member_names.append(member["full_name"] or member["email"])
             team_context["fy_pipeline_target"] += context["fy_pipeline_target"] or 0
             team_context["current_pipeline"] += context["current_pipeline"] or 0
             team_context["pipeline_gap"] += context["pipeline_gap"] or 0
@@ -11471,6 +11491,16 @@ def manager_pg_dashboard_context(selected_user_id="", activity_period=None):
         finally:
             if connection:
                 connection.close()
+    team_context["loaded_team_member_count"] = len(loaded_member_names)
+    if selected_member:
+        member_name = selected_member["full_name"] or selected_member["email"]
+        team_context["pg_scope_label"] = member_name
+        team_context["pg_scope_detail"] = f"Showing distinct PG values for {member_name}."
+    else:
+        member_total = len(loaded_member_names)
+        noun = "member" if member_total == 1 else "members"
+        team_context["pg_scope_label"] = "All Team"
+        team_context["pg_scope_detail"] = f"Showing combined PG values across {member_total} team {noun}."
     team_context["pg_plan_rows"].sort(key=lambda row: (row.get("owner_name") or "", row.get("account_name") or "", row.get("sales_play") or ""))
     team_context["pg_action_rows"].sort(key=lambda row: (row.get("owner_name") or "", row.get("account_name") or "", row.get("business_org") or "", row.get("sales_play") or ""))
     if activity_period:
@@ -15927,8 +15957,32 @@ def outreach_impl():
             COALESCE(contacts.email, partner_contacts.email) AS contact_email,
             COALESCE(contacts.phone, partner_contacts.phone) AS contact_phone,
             COALESCE(contacts.linkedin, partner_contacts.linkedin) AS contact_linkedin,
-            CASE WHEN outreach.partner_contact_id IS NOT NULL THEN 'Partner' ELSE 'Customer' END AS contact_source,
-            partners.partner_name AS partner_name
+            CASE
+                WHEN outreach.partner_contact_id IS NOT NULL
+                  OR EXISTS (
+                        SELECT 1
+                        FROM outreach_recipients AS partner_task_recipients
+                        WHERE partner_task_recipients.outreach_id = outreach.id
+                          AND partner_task_recipients.partner_contact_id IS NOT NULL
+                  )
+                THEN 'Partner'
+                ELSE 'Customer'
+            END AS contact_source,
+            COALESCE(
+                partners.partner_name,
+                (
+                    SELECT recipient_partners.partner_name
+                    FROM outreach_recipients AS partner_name_recipients
+                    JOIN partner_contacts AS recipient_partner_contacts
+                      ON recipient_partner_contacts.id = partner_name_recipients.partner_contact_id
+                    LEFT JOIN partners AS recipient_partners
+                      ON recipient_partners.id = recipient_partner_contacts.partner_id
+                    WHERE partner_name_recipients.outreach_id = outreach.id
+                      AND partner_name_recipients.partner_contact_id IS NOT NULL
+                    ORDER BY partner_name_recipients.sort_order, partner_name_recipients.id
+                    LIMIT 1
+                )
+            ) AS partner_name
         FROM outreach
         LEFT JOIN accounts ON outreach.account_id = accounts.id
         LEFT JOIN contacts ON outreach.contact_id = contacts.id
