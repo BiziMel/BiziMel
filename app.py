@@ -35,9 +35,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.25"
+APP_VERSION = "2.13.26"
 APP_RELEASE_DATE = "2026-11-16"
-APP_BUILD = "2026-11-16-v2.13.25-account-partner-contacts-r1"
+APP_BUILD = "2026-11-16-v2.13.26-partner-contact-editor-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -54,6 +54,17 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.26",
+        "release_date": "2026-11-16",
+        "title": "Full-width Partner Contact editor",
+        "enhanced": [
+            "Rebuilt Partner Contact editing as a full-width row beneath the selected contact instead of compressing the form inside the Actions column.",
+            "Updated Contacts page links to open the selected Partner Contact directly in the corrected editor.",
+            "Added a clear editor heading and Close action while retaining supported-account selection and all Partner Contact fields.",
+            "Added Opted Out to Partner Engagement for contacts who have explicitly chosen not to participate or work with the organisation.",
+        ],
+    },
     {
         "version": "2.13.25",
         "release_date": "2026-11-16",
@@ -12808,6 +12819,7 @@ def add_partner():
 @app.route("/partners/<int:partner_id>")
 def view_partner(partner_id):
     connection = get_db_connection()
+    edit_contact_id = request.args.get("edit_contact", type=int)
 
     partner = connection.execute("""
         SELECT *
@@ -12870,6 +12882,8 @@ def view_partner(partner_id):
         contact["supported_account_ids"] = supported["ids"] or ([str(row["account_id"])] if row["account_id"] else [])
         contact["supported_account_names"] = supported["names"] or ([row["account_name"]] if row["account_name"] else [])
         partner_contacts.append(contact)
+    if edit_contact_id not in {contact["id"] for contact in partner_contacts}:
+        edit_contact_id = None
 
     partner_contact_count = connection.execute("""
         SELECT COUNT(*)
@@ -12901,6 +12915,7 @@ def view_partner(partner_id):
         partner_account_count=partner_account_count,
         partner_contacts=partner_contacts,
         partner_contact_count=partner_contact_count,
+        edit_contact_id=edit_contact_id,
         accounts=accounts
     )
 

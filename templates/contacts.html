@@ -136,7 +136,7 @@
                         </span>
                     </td>
                     <td>
-                        <a href="{% if contact.contact_kind == 'partner' %}{{ url_for('view_partner', partner_id=contact['partner_id']) }}#partner-contact-{{ contact['id'] }}{% else %}{{ url_for('edit_contact', contact_id=contact['id']) }}{% endif %}"
+                        <a href="{% if contact.contact_kind == 'partner' %}{{ url_for('view_partner', partner_id=contact['partner_id'], edit_contact=contact['id']) }}#partner-contact-editor-{{ contact['id'] }}{% else %}{{ url_for('edit_contact', contact_id=contact['id']) }}{% endif %}"
                            class="record-primary-link"
                            title="{% if contact.contact_kind == 'partner' %}Open Partner Contact{% else %}Edit contact{% endif %} {{ contact['name'] or 'Unknown' }}"
                            aria-label="{% if contact.contact_kind == 'partner' %}Open Partner Contact{% else %}Edit contact{% endif %} {{ contact['name'] or 'Unknown' }}">
@@ -151,7 +151,7 @@
                         {% endif %}
                         <br>
                         {% if contact.contact_kind == 'partner' %}
-                            <a href="{{ url_for('view_partner', partner_id=contact['partner_id']) }}#partner-contact-{{ contact['id'] }}" class="table-secondary-link">View Partner record</a>
+                            <a href="{{ url_for('view_partner', partner_id=contact['partner_id'], edit_contact=contact['id']) }}#partner-contact-editor-{{ contact['id'] }}" class="table-secondary-link">Edit Partner Contact</a>
                         {% elif (contact['status'] or 'Active') == 'Active' %}
                             <button type="button"
                                     class="table-secondary-link button-as-link"

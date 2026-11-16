@@ -398,10 +398,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.13.25" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.13.26" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.13.25",
+            "health/version did not report Release 2.13.26",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -525,6 +525,21 @@ def main():
             and 'name="relationship_owner"' in partner_contact_create_form.group(1)
             and "readonly" in partner_contact_create_form.group(1),
             "Partner Contact create form did not show one email and a read-only company Partner Manager",
+        )
+        assert_ok(
+            '<option value="Opted Out">Opted Out</option>' in partner_contact_create_form.group(1),
+            "Partner Contact create form did not include the Opted Out engagement status",
+        )
+        partner_contact_editor_html = client.get(
+            f"/partners/{partner_id}?edit_contact={partner_contact_id}"
+        ).get_data(as_text=True)
+        assert_ok(
+            f'id="partner-contact-editor-{partner_contact_id}"' in partner_contact_editor_html
+            and 'class="partner-contact-editor-row"' in partner_contact_editor_html
+            and '<td colspan="7">' in partner_contact_editor_html
+            and "Save Partner Contact" in partner_contact_editor_html
+            and "Update contact details and the accounts this person supports." in partner_contact_editor_html,
+            "Partner Contact editor did not render in its full-width table row",
         )
         response = client.post(
             f"/partners/{partner_id}/contacts/add",
@@ -1469,7 +1484,7 @@ def main():
             contacts_html.count(partner_contact_marker) == 1
             and "Partner Contact" in contacts_html
             and "Smoke Test Partner" in contacts_html
-            and f'/partners/{partner_id}#partner-contact-{partner_contact_id}' in contacts_html,
+            and f'/partners/{partner_id}?edit_contact={partner_contact_id}#partner-contact-editor-{partner_contact_id}' in contacts_html,
             "Contacts did not show the associated Partner Contact with clear Partner styling and link",
         )
         active_contacts_html = client.get("/contacts?status=Active").get_data(as_text=True)

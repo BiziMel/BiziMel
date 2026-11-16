@@ -279,11 +279,35 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <details class="inline-edit-panel">
-                                    <summary class="btn btn-secondary btn-small">Edit</summary>
+                                <a href="{{ url_for('view_partner', partner_id=partner.id, edit_contact=contact.id) }}#partner-contact-editor-{{ contact.id }}"
+                                   class="btn btn-secondary btn-small">Edit</a>
+                                <form method="POST"
+                                      action="{{ url_for('delete_partner_contact', partner_id=partner.id, contact_id=contact.id) }}"
+                                      class="inline-form">
+                                    <button type="submit"
+                                            class="btn btn-danger btn-small"
+                                            onclick="return confirm('Delete this partner contact?');">
+                                        Delete
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% if edit_contact_id == contact.id %}
+                        <tr class="partner-contact-editor-row">
+                            <td colspan="7">
+                                <section class="partner-contact-editor" id="partner-contact-editor-{{ contact.id }}">
+                                    <div class="partner-contact-editor-header">
+                                        <div>
+                                            <p class="eyebrow">Partner Contact</p>
+                                            <h3>Edit {{ contact.name or "Partner Contact" }}</h3>
+                                            <p>Update contact details and the accounts this person supports.</p>
+                                        </div>
+                                        <a href="{{ url_for('view_partner', partner_id=partner.id) }}#partner-contact-{{ contact.id }}"
+                                           class="btn btn-secondary btn-small">Close</a>
+                                    </div>
                                     <form method="POST"
                                           action="{{ url_for('edit_partner_contact', partner_id=partner.id, contact_id=contact.id) }}"
-                                          class="pipeflow-form compact-inline-form">
+                                          class="pipeflow-form partner-contact-edit-form">
                                         <div class="form-grid">
                                             <div class="form-group">
                                                 <label for="edit_partner_contact_name_{{ contact.id }}">Name</label>
@@ -351,21 +375,15 @@
                                             </div>
                                         </div>
                                         <div class="button-group">
-                                            <button type="submit" class="btn btn-primary btn-small">Save</button>
+                                            <button type="submit" class="btn btn-primary">Save Partner Contact</button>
+                                            <a href="{{ url_for('view_partner', partner_id=partner.id) }}#partner-contact-{{ contact.id }}"
+                                               class="btn btn-secondary">Close</a>
                                         </div>
                                     </form>
-                                </details>
-                                <form method="POST"
-                                      action="{{ url_for('delete_partner_contact', partner_id=partner.id, contact_id=contact.id) }}"
-                                      class="inline-form">
-                                    <button type="submit"
-                                            class="btn btn-danger btn-small"
-                                            onclick="return confirm('Delete this partner contact?');">
-                                        Delete
-                                    </button>
-                                </form>
+                                </section>
                             </td>
                         </tr>
+                        {% endif %}
                     {% endfor %}
                 </tbody>
             </table>

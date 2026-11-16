@@ -110,6 +110,7 @@ DROPDOWN_VALUES = {
         "Engaged",
         "Active Collaborator",
         "Dormant",
+        "Opted Out",
         "Not Relevant",
     ],
     "quarters": [
