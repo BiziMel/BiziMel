@@ -390,10 +390,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.13.21" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.13.22" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.13.21",
+            "health/version did not report Release 2.13.22",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -2541,8 +2541,13 @@ def main():
             "Add Outreach auto-schedule button missing",
         )
         assert_ok(
-            "full-width outreach-auto-schedule-panel" not in add_html,
-            "Add Outreach auto-schedule control should not be full width",
+            "full-width outreach-auto-schedule-panel" in add_html
+            and "outreach-auto-schedule-explainer" in add_html,
+            "Add Outreach auto-schedule control should use a full-row layout with an explainer",
+        )
+        assert_ok(
+            add_html.find('id="auto_schedule_activity"') < add_html.find('id="activity_date"'),
+            "Add Outreach auto-schedule control should appear above the date and time fields",
         )
         for field_id in ("activity_date", "activity_time", "next_action_date", "next_action_time", "scheduled_meeting_at"):
             assert_ok(input_value(add_html, field_id) == "", f"new Outreach {field_id} should open blank")
@@ -3824,11 +3829,17 @@ def main():
         connection = sqlite3.connect(db_path)
         connection.row_factory = sqlite3.Row
         completed_follow_source = connection.execute(
-            "SELECT task_status, scheduled_meeting_time FROM outreach WHERE id = ?",
+            "SELECT task_status, completed_at, scheduled_meeting_time FROM outreach WHERE id = ?",
             (follow_source["id"],),
         ).fetchone()
         connection.close()
         assert_ok(completed_follow_source["task_status"] == "Completed", "complete and follow-on source was not completed")
+        follow_on_form_html = client.get(response.headers["Location"]).get_data(as_text=True)
+        assert_ok(
+            "Original subject: Smoke complete follow-on source" in follow_on_form_html
+            and f"Date completed: {pipeflow_app.format_display_date(completed_follow_source['completed_at'])}" in follow_on_form_html,
+            "follow-on task Notes did not identify the source subject and completion date",
+        )
 
         response = client.get("/outreach")
         outreach_html = response.get_data(as_text=True)

@@ -2975,18 +2975,33 @@ a:hover {
 }
 
 .outreach-auto-schedule-panel {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: stretch;
+    gap: 12px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.outreach-auto-schedule-explainer {
     display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    min-width: 0;
+    padding: 8px 12px;
     border: 1px solid #cfe6cc;
     border-radius: 6px;
     background: #f7fbf5;
-    align-self: start;
 }
 
-.outreach-auto-schedule-panel .field-help {
+.outreach-auto-schedule-explainer strong {
+    color: #244524;
+    font-size: 12px;
+}
+
+.outreach-auto-schedule-explainer .field-help {
     margin: 0;
     font-size: 12px;
     line-height: 1.35;
@@ -3547,10 +3562,22 @@ a.pg-activity-chip:focus-visible {
 
 .outreach-auto-schedule-form-button {
     flex: 0 0 auto;
+    align-self: center;
     min-width: 0;
     width: auto;
     padding: 6px 10px;
     white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+    .outreach-auto-schedule-panel {
+        grid-template-columns: 1fr;
+    }
+
+    .outreach-auto-schedule-panel .outreach-auto-schedule-form-button {
+        justify-self: start;
+        width: auto;
+    }
 }
 
 .alert-success {

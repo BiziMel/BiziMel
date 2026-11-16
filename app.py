@@ -35,9 +35,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.21"
-APP_RELEASE_DATE = "2026-11-02"
-APP_BUILD = "2026-11-02-v2.13.21-period-activity-totals-r1"
+APP_VERSION = "2.13.22"
+APP_RELEASE_DATE = "2026-11-16"
+APP_BUILD = "2026-11-16-v2.13.22-outreach-follow-on-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -54,6 +54,18 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.22",
+        "release_date": "2026-11-16",
+        "title": "Outreach scheduling and follow-on context",
+        "new": [
+            "Added the originating task subject and completion date to the Notes of a new follow-on Outreach task.",
+        ],
+        "enhanced": [
+            "Moved the Add Outreach Auto Schedule control above the date and time fields, reduced the button width and added a separate explanation panel.",
+            "Kept the Auto Schedule control compact and the explanation readable across desktop and mobile layouts.",
+        ],
+    },
     {
         "version": "2.13.21",
         "release_date": "2026-11-02",
@@ -16109,10 +16121,17 @@ def add_outreach():
         ).fetchone()
         if source:
             source_contact_values = selected_outreach_contact_values(connection, source)
+            source_subject = (source["subject"] or "").strip() or "No subject recorded"
+            source_completed_at = source["completed_at"] if "completed_at" in source.keys() else ""
+            source_completed_date = format_display_date(source_completed_at) or "Not recorded"
             prefill = {
                 "account_id": source["account_id"],
                 "contact_ids": source_contact_values,
-                "outreach_notes": f"Follow-on task from completed outreach #{source['id']}.",
+                "outreach_notes": "\n".join((
+                    f"Follow-on task from completed outreach #{source['id']}.",
+                    f"Original subject: {source_subject}",
+                    f"Date completed: {source_completed_date}",
+                )),
             }
     elif prefill_contact_id:
         contact = connection.execute(
