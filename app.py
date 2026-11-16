@@ -35,9 +35,9 @@ from dropdown_values import DROPDOWN_VALUES
 from db_compat import using_postgres, current_user_schema, get_connection as get_schema_connection, execute_with_retry, transient_database_error
 
 
-APP_VERSION = "2.13.22"
+APP_VERSION = "2.13.23"
 APP_RELEASE_DATE = "2026-11-16"
-APP_BUILD = "2026-11-16-v2.13.22-outreach-follow-on-r1"
+APP_BUILD = "2026-11-16-v2.13.23-header-search-r1"
 
 CSRF_SESSION_KEY = "_csrf_token"
 LOGIN_ATTEMPTS = {}
@@ -54,6 +54,15 @@ except ZoneInfoNotFoundError:
     APP_TIMEZONE = ZoneInfo("UTC")
 
 RELEASE_NOTES = [
+    {
+        "version": "2.13.23",
+        "release_date": "2026-11-16",
+        "title": "Header search placement",
+        "enhanced": [
+            "Moved Search PipeFlow into the top-right header directly below Release Notes and removed the detached search row beneath the signed-in message.",
+            "Kept the search field and header actions responsive across desktop and mobile layouts.",
+        ],
+    },
     {
         "version": "2.13.22",
         "release_date": "2026-11-16",

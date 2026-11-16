@@ -390,10 +390,10 @@ def main():
         version_response = client.get("/health/version")
         assert_ok(
             version_response.status_code == 200
-            and "pipeflow_version=2.13.22" in version_response.get_data(as_text=True)
+            and "pipeflow_version=2.13.23" in version_response.get_data(as_text=True)
             and "nightly_scheduler_enabled=" in version_response.get_data(as_text=True)
             and "nightly_scheduler_thread_alive=" in version_response.get_data(as_text=True),
-            "health/version did not report Release 2.13.22",
+            "health/version did not report Release 2.13.23",
         )
 
         with client.session_transaction() as signed_in_session:
@@ -2504,6 +2504,14 @@ def main():
 
         response = client.get("/outreach/add")
         add_html = response.get_data(as_text=True)
+        release_notes_position = add_html.find(">Release Notes</a>")
+        header_search_position = add_html.find('class="header-search"')
+        primary_nav_position = add_html.find('<nav class="button-group nav-stack">')
+        assert_ok(
+            add_html.count('class="header-search"') == 1
+            and release_notes_position < header_search_position < primary_nav_position,
+            "Search PipeFlow should appear once below Release Notes and above the primary menu",
+        )
         for outcome in ("NBM Booked", "Discovery Booked", "Exec Meeting Booked"):
             assert_ok(outcome in add_html, f"{outcome} outcome missing from Outreach form")
         assert_ok("Close and Create New" in add_html, "Add Outreach close-and-new button missing")

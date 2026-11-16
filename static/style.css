@@ -120,10 +120,12 @@ h1, h2, h3, h4, h5, h6, p, label, a, span {
     gap: 8px;
     justify-items: end;
     flex: 0 0 auto;
+    width: min(320px, 100%);
 }
 
 .header-action-stack .btn {
-    width: 100%;
+    width: auto;
+    min-width: 120px;
     text-align: center;
 }
 
@@ -1274,10 +1276,10 @@ a:hover {
 }
 
 .header-search {
-    width: 25%;
-    min-width: 240px;
-    max-width: 380px;
-    margin-left: auto;
+    width: 100%;
+    min-width: 0;
+    max-width: 320px;
+    margin: 0;
 }
 
 .header-search form,
@@ -6746,6 +6748,11 @@ body {
 
     .header-action-stack {
         justify-items: stretch;
+    }
+
+    .header-action-stack .btn {
+        width: 100%;
+        min-width: 0;
     }
 
     .guide-sidebar {
